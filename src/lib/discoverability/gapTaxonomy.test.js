@@ -33,12 +33,31 @@ describe("the taxonomy is closed and complete", () => {
     }
   });
 
-  it("has thirteen modules, and stores none of them by M-number", () => {
-    // The BRD names these M1-M13 and does not say which is which anywhere this
-    // repo can see. The slug is the contract; mCode is a display alias waiting
-    // for confirmation, and nothing may key off it.
+  it("maps the six recommendation destinations named by the §5 architecture", () => {
     expect(MODULE_IDS).toHaveLength(13);
-    for (const id of MODULE_IDS) expect(MODULES[id].mCode, id).toBeNull();
+    expect(Object.fromEntries(MODULE_IDS.map((id) => [id, MODULES[id].mCode]))).toEqual({
+      technical_remediation: null,
+      recommendation_studio: "M5",
+      schema_intelligence: null,
+      ai_visibility: "M7",
+      validation_lab: "M6",
+      business_truth_record: null,
+      entity_graph: "M9",
+      brand_discoverability: null,
+      product_discoverability: null,
+      service_findability: null,
+      local_directory: "M10",
+      trust_and_proof: "M11",
+      service_radius: null,
+    });
+  });
+
+  it("records why the other seven recommendation destinations have no M-code", () => {
+    const withoutArchitecturalCode = MODULE_IDS.filter((id) => MODULES[id].mCode === null);
+    expect(withoutArchitecturalCode).toHaveLength(7);
+    for (const id of withoutArchitecturalCode) {
+      expect(MODULES[id].mCodeReason, id).toMatch(/no standalone.*§5.*M-code/i);
+    }
   });
 
   it("says which phase each module can actually accept a referral in", () => {

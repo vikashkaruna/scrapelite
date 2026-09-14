@@ -249,6 +249,11 @@ export const apiClient = {
   setWorkspaceMemberPaused: (workspaceId, targetUserId, paused) =>
     request("/workspaces", "POST", { action: "set_member_paused", workspaceId, targetUserId, paused }),
 
+  setWorkspaceDiscoverabilityRole: (workspaceId, targetUserId, role) =>
+    request("/workspaces", "POST", {
+      action: "set_discoverability_role", workspaceId, targetUserId, role,
+    }),
+
   /** Revoke a still-pending invite. */
   revokeWorkspaceInvite: (workspaceId, inviteId) =>
     request("/workspaces", "POST", { action: "revoke_invite", workspaceId, inviteId }),

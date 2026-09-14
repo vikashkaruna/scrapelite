@@ -160,6 +160,7 @@ import {
   // Team workspaces
   Lock,
   Puzzle,
+  Plug,
   // Export branding — Brand Kit
   Palette,
 } from "lucide-react";
@@ -276,6 +277,7 @@ const MAP = {
   "x": X,
   "share-2": Share2,
   "lock": Lock,
+  plug: Plug,
   "alert-octagon": AlertOctagon,
   "file-up": FileUp,
   columns: Columns,

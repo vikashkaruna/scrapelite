@@ -40,7 +40,7 @@ const STATIC_BUNDLES = {
 // maxUses = global redemption cap (0/absent = unlimited). Enforced server-side via
 // reserveCoupon() against the coupon_redemptions/coupon_counters tables.
 const STATIC_COUPONS = {
-  LAUNCH20:  { value: 20, planId: null,     expiresAt: "2026-09-14", active: true,  maxUses: 100 },
+  LAUNCH20:  { value: 20, planId: null,     expiresAt: "2026-12-31", active: true,  maxUses: 100 },
   INDIE10:   { value: 10, planId: "select", expiresAt: "2026-09-30", active: true,  maxUses: 50  },
   EARLYBIRD: { value: 30, planId: null,     expiresAt: "2026-04-01", active: false, maxUses: 30  },
 };

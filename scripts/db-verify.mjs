@@ -176,10 +176,15 @@ grant usage on schema public to anon, authenticated;
 //   0054 and `validated_by_audit_id` has recorded the result; between them sat
 //   no way to ASK. Columns rather than a table, because nothing here is
 //   several writes that must not separate.
-// Taking these to 103 / 50 / 29.
+// 0065_entity_graph_taxonomy.sql widens 0056's two CHECK constraints without
+//   changing any stored id: eighteen internal entity types cover §9.2's
+//   fifteen semantic concepts, and thirteen internal predicates cover its
+//   nine relationships. No objects are added; counts are unchanged.
+// P3 migrations 0068 (+5 tables), 0069 (+5 tables), 0070 (+2 tables, +3 functions),
+// 0071 (+1 table, +1 function). Taking these to 117 / 54 / 29.
 const EXPECT = {
-  tables: 104,
-  functions: 50,
+  tables: 117,
+  functions: 54,
   triggers: 29,
   tablesWithoutRls: 0,
 };
@@ -2615,7 +2620,7 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   eq("everything is created proposed, whatever proposed it",
     (await one(`select state from public.audit_entities where id=$1`, [acme])).state, "proposed");
 
-  check("an invented entity type is refused — the fourteen are a contract", Boolean(await throws(
+  check("an invented entity type is refused — the stable registry is a contract", Boolean(await throws(
     `insert into public.audit_entities (user_id, entity_type, name, source)
      values ($1,'wizard','Merlin','declared')`, [owner])));
   check("an unnamed node is refused — it resolves nothing", Boolean(await throws(
@@ -2630,6 +2635,12 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   check("a confidence outside 0-1 is refused", Boolean(await throws(
     `insert into public.audit_entities (user_id, entity_type, name, source, confidence)
      values ($1,'organization','X','declared',1.5)`, [owner])));
+
+  for (const type of ["partner", "customer_case_study", "directory_listing", "competitor"]) {
+    check(`§9.2 additive entity type '${type}' is storable`, !(await throws(
+      `insert into public.audit_entities (user_id, entity_type, name, source)
+       values ($1,$2,$3,'declared')`, [owner, type, `Example ${type}`])));
+  }
 
   check("🔴 self-approval of an entity is refused by the database", Boolean(await throws(
     `insert into public.audit_entities (user_id, entity_type, name, source, proposed_by, reviewed_by, reviewed_at, state)
@@ -2649,9 +2660,16 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   eq("a relation is created proposed too",
     (await one(`select state from public.audit_entity_relationships where id=$1`, [owns])).state, "proposed");
 
-  check("an invented predicate is refused — the nine are a contract", Boolean(await throws(
+  check("an invented predicate is refused — the stable registry is a contract", Boolean(await throws(
     `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
      values ($1,$2,'vibes',$3,'declared')`, [owner, acme, cloud])));
+
+  for (const predicate of ["provides", "founded_by", "validated_by", "listed_on"]) {
+    check(`§9.2 additive predicate '${predicate}' is storable`, !(await throws(
+      `insert into public.audit_entity_relationships
+         (user_id, subject_id, predicate, object_id, source)
+       values ($1,$2,$3,$4,'declared')`, [owner, acme, predicate, cloud])));
+  }
 
   check("🔴 A SELF-EDGE IS REFUSED — it is vacuously true and pollutes every traversal",
     Boolean(await throws(
@@ -2732,19 +2750,32 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   {
     const { ENTITY_TYPE_IDS, PREDICATE_IDS, GRAPH_CONFLICT_CODES } = await import(
       "file://" + join(ROOT, "src", "lib", "discoverability", "entityGraph.js"));
+    const constraintValues = async (name) => {
+      const row = await one(
+        `select pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where conname=$1`,
+        [name],
+      );
+      return row ? [...row.definition.matchAll(/'([^']+)'/g)].map((x) => x[1]).sort() : null;
+    };
+    eq("parity: the entity_type CHECK matches ENTITY_TYPE_IDS exactly",
+      await constraintValues("audit_entities_entity_type_check"), [...ENTITY_TYPE_IDS].sort());
+    eq("parity: the predicate CHECK matches PREDICATE_IDS exactly",
+      await constraintValues("audit_entity_relationships_predicate_check"), [...PREDICATE_IDS].sort());
     const src = readFileSync(join(DIR, "0056_entity_graph.sql"), "utf8");
     const listIn = (col) => {
       const m = src.match(new RegExp(`${col}\\s+text not null[\\s\\S]*?check \\(${col} in \\(([\\s\\S]*?)\\)\\)`));
       return m ? [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort() : null;
     };
-    eq("parity: the entity_type CHECK matches ENTITY_TYPE_IDS exactly",
-      listIn("entity_type"), [...ENTITY_TYPE_IDS].sort());
-    eq("parity: the predicate CHECK matches PREDICATE_IDS exactly",
-      listIn("predicate"), [...PREDICATE_IDS].sort());
     eq("parity: the conflict-code CHECK matches GRAPH_CONFLICT_CODES exactly",
       listIn("code"), Object.keys(GRAPH_CONFLICT_CODES).sort());
-    eq("parity: fourteen types and nine predicates, as the plan calls for",
-      [ENTITY_TYPE_IDS.length, PREDICATE_IDS.length], [14, 9]);
+    eq("parity: eighteen stable ids cover §9.2's fifteen types and nine relationships",
+      [ENTITY_TYPE_IDS.length, PREDICATE_IDS.length], [18, 13]);
+
+    await db.exec(readFileSync(join(DIR, "0065_entity_graph_taxonomy.sql"), "utf8"));
+    eq("0065 is forward-only and safely re-runnable after entity rows exist",
+      await constraintValues("audit_entities_entity_type_check"), [...ENTITY_TYPE_IDS].sort());
   }
 
   // ── Evidence and conflicts ────────────────────────────────────────────────
@@ -2797,8 +2828,8 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     `insert into public.audit_targets (user_id, canonical_url, host, label)
      values ($1,'https://acme.com/pricing','acme.com','Pricing') returning id`, [owner])).id;
   const ent = (await one(
-    `insert into public.audit_entities (user_id, entity_type, name, source, canonical_domain)
-     values ($1,'brand','Acme Cloud','declared','acme.com') returning id`, [owner])).id;
+    `insert into public.audit_entities (user_id, entity_type, name, source, canonical_domain, proposed_by, reviewed_by, reviewed_at, state)
+     values ($1,'brand','Acme Cloud','declared','acme.com',$1,$2,now(),'approved') returning id`, [owner, other])).id;
   const rec = (await one(
     `insert into public.audit_business_truth_records (user_id, canonical_domain, display_name)
      values ($1,'acme.com','Acme') returning id`, [owner])).id;
@@ -2868,7 +2899,7 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   check("🔴 upsert_audit_subject is ATOMIC — every insert carries ON CONFLICT",
     (subjSrc.match(/insert into public\.audit_subjects/g) || []).length ===
     (subjSrc.match(/on conflict/gi) || []).length &&
-    (subjSrc.match(/on conflict/gi) || []).length === 3);
+    (subjSrc.match(/on conflict/gi) || []).length >= 3);
   check("...inferring each PARTIAL index by restating its predicate",
     /on conflict \(user_id, subject_kind, target_id\) where target_id is not null/i.test(subjSrc)
     && /on conflict \(user_id, subject_kind, entity_id\) where entity_id is not null/i.test(subjSrc)
@@ -3423,6 +3454,77 @@ group("W11 score RLS lockdown");
        join pg_class c on c.oid = p.polrelid where c.relname = 'audit_subject_scores'`);
   check("...and its only policy is service_role",
     pol.length === 1 && String(pol[0].roles).includes("service_role"));
+}
+
+// ── 0071 · durable, idempotent analytics imports ──────────────────────────
+group("analytics import queue — durable claims and exactly-once aggregate storage");
+{
+  const owner = (await one(
+    `insert into auth.users (email) values ('analytics-queue-owner@x.com') returning id`)).id;
+  const workspace = (await one(
+    `insert into public.workspaces (owner_id, name) values ($1,'Analytics QA') returning id`, [owner])).id;
+  const payload = JSON.stringify({
+    workspaceId: workspace,
+    auditId: "audit-queue-1",
+    dateBucket: "2026-09-14",
+    landingPage: "/pricing",
+    sourceChannel: "organic",
+    device: "mobile",
+    region: "global",
+    visitorType: "new",
+    eventCounts: { page_view: 12, form_submit: 2 },
+    metrics: { conversion_rate: 16.67 },
+  });
+
+  const job = await one(
+    `insert into public.audit_analytics_import_jobs
+       (user_id, workspace_id, provider, idempotency_key, payload_hash, aggregate_payload)
+     values ($1,$2,'ga4','queue-check-1',repeat('a',64),$3::jsonb)
+     returning id, state, attempts`, [owner, workspace, payload]);
+  eq("a queued import starts pending", job.state, "pending");
+  eq("...with no attempt charged before a worker claim", job.attempts, 0);
+
+  check("the same provider idempotency key cannot enqueue twice", Boolean(await throws(
+    `insert into public.audit_analytics_import_jobs
+       (user_id, workspace_id, provider, idempotency_key, payload_hash, aggregate_payload)
+     values ($1,$2,'ga4','queue-check-1',repeat('b',64),$3::jsonb)`, [owner, workspace, payload])));
+  check("a malformed payload hash is refused", Boolean(await throws(
+    `insert into public.audit_analytics_import_jobs
+       (user_id, provider, idempotency_key, payload_hash, aggregate_payload)
+     values ($1,'custom','bad-hash','short','{}'::jsonb)`, [owner])));
+
+  const claimed = await q(`select id, state, attempts from public.claim_audit_analytics_import_jobs(10)`);
+  const claimedJob = claimed.find((row) => row.id === job.id);
+  check("the due job is claimed", Boolean(claimedJob));
+  eq("...and enters processing", claimedJob?.state, "processing");
+  eq("...with exactly one charged attempt", claimedJob?.attempts, 1);
+  eq("a processing job is not claimed concurrently", (await q(
+    `select id from public.claim_audit_analytics_import_jobs(10) where id=$1`, [job.id])).length, 0);
+
+  check("one aggregate may be attributed to the import job", Boolean(await one(
+    `insert into public.audit_analytics_aggregates
+       (user_id, workspace_id, audit_id, event_counts, metrics, import_job_id)
+     values ($1,$2,'audit-queue-1','{"page_view":12}'::jsonb,'{}'::jsonb,$3)
+     returning id`, [owner, workspace, job.id])));
+  check("🔴 a retry cannot create a second aggregate for the same job", Boolean(await throws(
+    `insert into public.audit_analytics_aggregates
+       (user_id, workspace_id, audit_id, event_counts, metrics, import_job_id)
+     values ($1,$2,'audit-queue-1','{"page_view":12}'::jsonb,'{}'::jsonb,$3)`,
+    [owner, workspace, job.id])));
+
+  const fn = await one(`
+    select has_function_privilege('anon', p.oid, 'EXECUTE') anon_x,
+           has_function_privilege('authenticated', p.oid, 'EXECUTE') auth_x,
+           has_function_privilege('service_role', p.oid, 'EXECUTE') service_x
+      from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+     where n.nspname='public' and p.proname='claim_audit_analytics_import_jobs'`);
+  check("the claim RPC is service-role only", Boolean(fn) && !fn.anon_x && !fn.auth_x && fn.service_x);
+
+  const table = await one(`select relrowsecurity rls from pg_class where relname='audit_analytics_import_jobs'`);
+  check("the queue has RLS enabled", table?.rls === true);
+  eq("...and grants nothing to anon/authenticated", (await q(
+    `select 1 from information_schema.role_table_grants
+      where table_name='audit_analytics_import_jobs' and grantee in ('anon','authenticated')`)).length, 0);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

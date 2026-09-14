@@ -30,8 +30,18 @@ const approve = (r) => ({ ...r, state: "approved" });
 // ── Registries ─────────────────────────────────────────────────────────────
 
 describe("ENTITY_TYPES", () => {
-  it("declares the fourteen the plan calls for", () => {
-    expect(ENTITY_TYPE_IDS).toHaveLength(14);
+  it("preserves the original fourteen ids and additively covers all fifteen §9.2 types", () => {
+    expect(ENTITY_TYPE_IDS.slice(0, 14)).toEqual([
+      "organization", "brand", "product", "service", "location", "person", "offer",
+      "review", "credential", "event", "content_asset", "topic", "industry", "audience",
+    ]);
+    expect(ENTITY_TYPE_IDS).toHaveLength(18);
+    expect(ENTITY_TYPE_IDS.map((id) => ENTITY_TYPES[id].prdType).filter(Boolean)).toEqual([
+      "Organization/brand", "Sub-brand", "Product", "Service", "Location",
+      "Person/expert/founder", "Review profile", "Certification",
+      "Media/publication mention", "Industry/vertical", "Customer segment/persona",
+      "Partner", "Customer/case study", "Directory listing", "Competitor",
+    ]);
   });
 
   it("maps every type to a schema.org class, so the graph and the markup agree", () => {
@@ -49,13 +59,20 @@ describe("ENTITY_TYPES", () => {
     // An Organization is somebody. A Topic is not, and treating it as an anchor
     // would make "unconnected entity" fire on ordinary subject matter.
     expect([...IDENTIFYING_TYPES].sort())
-      .toEqual(["brand", "location", "organization", "person", "product", "service"]);
+      .toEqual(["brand", "competitor", "location", "organization", "partner", "person", "product", "service"]);
   });
 });
 
 describe("PREDICATES", () => {
-  it("declares the nine the plan calls for", () => {
-    expect(PREDICATE_IDS).toHaveLength(9);
+  it("preserves the original nine ids and additively covers all nine §9.2 relationships", () => {
+    expect(PREDICATE_IDS.slice(0, 9)).toEqual([
+      "owns", "offers", "located_at", "employs", "part_of", "same_as", "about", "serves", "competes_with",
+    ]);
+    expect(PREDICATE_IDS).toHaveLength(13);
+    expect(PREDICATE_IDS.map((id) => PREDICATES[id].prdPredicate).filter(Boolean)).toEqual([
+      "offers", "operatesAt", "employs", "serves", "competesWith",
+      "provides", "foundedBy", "validatedBy", "listedOn",
+    ]);
   });
 
   it("gives every predicate a domain and a range drawn from real types", () => {
@@ -118,6 +135,12 @@ describe("GRAPH_CONFLICT_CODES", () => {
 // ── Entities ───────────────────────────────────────────────────────────────
 
 describe("makeEntity", () => {
+  it("constructs every additive §9.2 entity type", () => {
+    for (const type of ["partner", "customer_case_study", "directory_listing", "competitor"]) {
+      expect(entity(type, `Example ${type}`), type).toMatchObject({ type });
+    }
+  });
+
   it("refuses an unknown type, an unknown source and an unnamed node", () => {
     expect(makeEntity({ type: "vibes", name: "x", source: "declared", statedAt: AT })).toBeNull();
     expect(makeEntity({ type: "organization", name: "x", source: "vibes", statedAt: AT })).toBeNull();
@@ -157,6 +180,15 @@ describe("makeEntity", () => {
 // ── Relation shape ─────────────────────────────────────────────────────────
 
 describe("validateRelation", () => {
+  it.each([
+    ["organization", "provides", "service"],
+    ["brand", "founded_by", "person"],
+    ["product", "validated_by", "review"],
+    ["organization", "listed_on", "directory_listing"],
+  ])("accepts additive §9.2 edge %s %s %s", (subjectType, predicate, objectType) => {
+    expect(validateRelation({ subjectType, predicate, objectType }).ok).toBe(true);
+  });
+
   it("accepts an edge that fits", () => {
     expect(validateRelation({ subjectType: "organization", predicate: "owns", objectType: "brand" }).ok).toBe(true);
   });

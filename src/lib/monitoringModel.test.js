@@ -22,7 +22,7 @@ const DAY = 86_400_000;
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 describe("AUTOMATION_JOBS registry (M-01)", () => {
-  it("registers the eleven platform jobs", () => {
+  it("registers the twelve platform jobs", () => {
     // Pinned deliberately. AUTOMATION_JOBS is the EXPECTATION and netlify.toml
     // is the REALITY: adding a job here does not schedule it, and scheduling one
     // without adding it here means it runs unmonitored. Both halves have to be
@@ -47,6 +47,8 @@ describe("AUTOMATION_JOBS registry (M-01)", () => {
       // ignored for v1 handlers, and was absent from BOTH registries — so it
       // had never once run on a cron and was invisible to this dashboard.
       "workflow-orchestrator-cron",
+      // Stage 3 analytics imports are queued and processed off the audit path.
+      "sxo-analytics-import-worker",
     ]);
   });
 

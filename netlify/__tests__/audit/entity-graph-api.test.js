@@ -107,12 +107,21 @@ const relRow = (over = {}) => ({
 });
 
 describe("GET /entity-graph/schema", () => {
-  it("serves fourteen types and nine predicates with their domains and ranges", () => {
+  it("serves the additive 18/13 registries and exact §9.2 semantic coverage", () => {
     return call("GET", "entity-graph/schema").then((res) => {
       expect(res.statusCode).toBe(200);
       const b = parse(res);
-      expect(b.entity_types).toHaveLength(14);
-      expect(b.predicates).toHaveLength(9);
+      expect(b.entity_types).toHaveLength(18);
+      expect(b.predicates).toHaveLength(13);
+      expect(b.entity_types.slice(0, 14).map((t) => t.id)).toEqual([
+        "organization", "brand", "product", "service", "location", "person", "offer",
+        "review", "credential", "event", "content_asset", "topic", "industry", "audience",
+      ]);
+      expect(b.entity_types.filter((t) => t.prdType)).toHaveLength(15);
+      expect(b.predicates.slice(0, 9).map((p) => p.id)).toEqual([
+        "owns", "offers", "located_at", "employs", "part_of", "same_as", "about", "serves", "competes_with",
+      ]);
+      expect(b.predicates.filter((p) => p.prdPredicate)).toHaveLength(9);
       expect(b.predicates.find((p) => p.id === "owns").domain).toEqual(["organization"]);
       expect(b.identifying_types).toContain("organization");
       expect(b.identifying_types).not.toContain("topic");
@@ -138,7 +147,8 @@ describe("POST /entity-graph/entities", () => {
   it("refuses an unknown type and names what is allowed", async () => {
     const res = await call("POST", "entity-graph/entities", { body: { entity_type: "wizard", name: "Merlin" } });
     expect(res.statusCode).toBe(400);
-    expect(parse(res).allowed).toHaveLength(14);
+    expect(parse(res).allowed).toHaveLength(18);
+    expect(parse(res).allowed).toContain("competitor");
     expect(storeMock.createEntity).not.toHaveBeenCalled();
   });
 
@@ -213,12 +223,13 @@ describe("POST /entity-graph/relationships", () => {
     expect(storeMock.createRelationship).not.toHaveBeenCalled();
   });
 
-  it("refuses an unknown predicate and names the nine", async () => {
+  it("refuses an unknown predicate and names all stable ids", async () => {
     const res = await call("POST", "entity-graph/relationships", {
       body: { subject_id: "e-org", predicate: "vibes", object_id: "e-brand" },
     });
     expect(res.statusCode).toBe(400);
-    expect(parse(res).allowed).toHaveLength(9);
+    expect(parse(res).allowed).toHaveLength(13);
+    expect(parse(res).allowed).toContain("listed_on");
   });
 
   it("🔴 refuses a client claiming `observed` provenance", async () => {
@@ -291,11 +302,13 @@ describe("approving a relationship", () => {
   });
 
   it("approves and reports the conflict sweep", async () => {
+    storeMock.ensureSubject = vi.fn();
     storeMock.approveEntityRelationship = vi.fn(async () => ({ ok: true }));
     const res = await call("POST", "entity-graph/relationships/r-1/approve", { body: { note: "Checked." } });
     expect(res.statusCode).toBe(200);
     expect(parse(res).approved).toBe(true);
     expect(parse(res).conflicts).toMatchObject({ found: expect.any(Number), recorded: expect.any(Number) });
+    expect(storeMock.ensureSubject).not.toHaveBeenCalled();
   });
 
   it("🔴 turns self-approval into 403", async () => {

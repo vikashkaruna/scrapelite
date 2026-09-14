@@ -586,10 +586,14 @@ describe("D2 — the discoverability namespace", () => {
 
     await mod.routeApiV1(ev("audits/abc"), auth, ["audits", "abc"]);
     await mod.routeApiV1(ev("discoverability/audits/abc"), auth, ["discoverability", "audits", "abc"]);
+    await mod.routeApiV1(ev("sxo/schema"), auth, ["sxo", "schema"]);
+    await mod.routeApiV1(ev("discoverability/sxo/schema"), auth, ["discoverability", "sxo", "schema"]);
 
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(4);
     expect(seen[0]).toBe("audits/abc");
     expect(seen[1]).toBe("audits/abc");   // the namespace segment is stripped
+    expect(seen[2]).toBe("sxo/schema");
+    expect(seen[3]).toBe("sxo/schema");
     vi.doUnmock("../functions/discoverability.js");
   });
 });

@@ -41,6 +41,17 @@ import { discoverability, describeAuditError } from "../lib/discoverability/disc
 import { downloadTextFile, hostOf } from "../lib/utils.js";
 import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 
+const DISCOVERABILITY_VIEWS = [
+  { id: "audit", label: "Audit", icon: "scan-search" },
+  { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
+  { id: "truth", label: "Business Truth", icon: "database", path: "/discoverability/truth" },
+  { id: "graph", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
+  { id: "directory", label: "Local Directory", icon: "map-pin", path: "/discoverability/local" },
+  { id: "schema", label: "Schema & Trust", icon: "shield-check", path: "/discoverability/trust" },
+  { id: "subjects", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
+  { id: "history", label: "History", icon: "clock" },
+];
+
 /**
  * Which pillar cards the reader has open, for this browsing session only.
  *
@@ -156,19 +167,46 @@ export default function Discoverability() {
   // covers this exact path, and netlify.toml's header rule is an EXACT match
   // that a sub-path would silently escape, leaving an audit-history screen
   // indexable. A query param needs none of those four touched.
-  const showHistory = params.get("view") === "history";
+  const currentView = params.get("view") || "audit";
+  const showHistory = currentView === "history";
+  const [subjects, setSubjects] = useState([]);
+
+  useEffect(() => {
+    const legacy = DISCOVERABILITY_VIEWS.find((view) => view.id === currentView && view.path);
+    if (!legacy) return;
+    navigate(`${legacy.path}${auditId ? `?audit=${encodeURIComponent(auditId)}` : ""}`, { replace: true });
+  }, [auditId, currentView, navigate]);
+
+  useEffect(() => {
+    if (!user) { setSubjects([]); return; }
+    (discoverability?.listSubjects ? discoverability.listSubjects(currentWorkspaceId ? { workspace_id: currentWorkspaceId } : {}) : Promise.resolve({ subjects: [] }))
+      .then((res) => setSubjects(res?.subjects || []))
+      .catch(() => setSubjects([]));
+  }, [user, currentWorkspaceId]);
 
   // ── Load an audit named in the URL ───────────────────────────────────────
+  const loadTrend = useCallback(async (targetId) => {
+    try {
+      const [t, h] = await Promise.all([
+        discoverability.trends(targetId, 30, { workspaceId: currentWorkspaceId }),
+        discoverability.history(targetId, { workspaceId: currentWorkspaceId }),
+      ]);
+      setTrend(t);
+      setHistory(h.audits || []);
+    } catch { /* the trend is supplementary; its absence must not break the page */ }
+  }, [currentWorkspaceId]);
+
   const loadAudit = useCallback(async (id) => {
     setRunning(true);
     setError(null);
     try {
-      const data = await discoverability.getResults(id);
+      const scope = { workspaceId: currentWorkspaceId };
+      const data = await discoverability.getResults(id, scope);
       setAudit(data);
       if (data?.audit?.target_id) await loadTrend(data.audit.target_id);
       if (data?.audit?.baseline_audit_id) {
         try {
-          const c = await discoverability.compare(id, data.audit.baseline_audit_id);
+          const c = await discoverability.compare(id, data.audit.baseline_audit_id, scope);
           setDiff(c.diff);
         } catch { /* a missing baseline is not an error worth surfacing */ }
       }
@@ -177,23 +215,14 @@ export default function Discoverability() {
     } finally {
       setRunning(false);
     }
-  }, []);
-
-  const loadTrend = useCallback(async (targetId) => {
-    try {
-      const [t, h] = await Promise.all([
-        discoverability.trends(targetId),
-        discoverability.history(targetId),
-      ]);
-      setTrend(t);
-      setHistory(h.audits || []);
-    } catch { /* the trend is supplementary; its absence must not break the page */ }
-  }, []);
+  }, [currentWorkspaceId, loadTrend]);
 
   useEffect(() => {
-    if (auditId && auditId !== audit?.auditId) loadAudit(auditId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditId]);
+    const loadedScope = audit?.audit?.workspace_id || null;
+    if (auditId && (auditId !== audit?.auditId || loadedScope !== (currentWorkspaceId || null))) {
+      loadAudit(auditId);
+    }
+  }, [auditId, audit?.auditId, audit?.audit?.workspace_id, currentWorkspaceId, loadAudit]);
 
   // ── Run ──────────────────────────────────────────────────────────────────
   const run = useCallback(async (payload) => {
@@ -303,13 +332,14 @@ export default function Discoverability() {
     setRunning(true);
     setError(null);
     try {
-      const data = await discoverability.rerun(audit.auditId, {});
+      const scope = { workspaceId: currentWorkspaceId };
+      const data = await discoverability.rerun(audit.auditId, {}, scope);
       setAudit(data);
       if (data.auditId) setParams({ audit: data.auditId }, { replace: true });
       // A re-run is automatically measured against the audit it re-ran, which
       // is what makes "did my fix work" a single click.
       try {
-        const c = await discoverability.compare(data.auditId, audit.auditId);
+        const c = await discoverability.compare(data.auditId, audit.auditId, scope);
         setDiff(c.diff);
       } catch { /* the comparison is a bonus, not the point */ }
       if (data.targetId) await loadTrend(data.targetId);
@@ -319,18 +349,18 @@ export default function Discoverability() {
     } finally {
       setRunning(false);
     }
-  }, [user, openAuth, lastRequest, audit, setParams, loadTrend, showToast]);
+  }, [user, openAuth, lastRequest, audit, setParams, loadTrend, showToast, currentWorkspaceId]);
 
   // ── Recommendation queue ─────────────────────────────────────────────────
   const changeStatus = useCallback(async (rec, status, reason) => {
     if (!rec.id) { showToast("This audit was not saved, so its queue can't be updated."); return; }
     setBusyRec(rec.id);
     try {
-      const fn = status === "accepted" ? discoverability.accept
-        : status === "dismissed" ? (id) => discoverability.dismiss(id, reason)
-        : status === "done" ? discoverability.markDone
-        : discoverability.reopen;
-      await fn(rec.id);
+      const scope = { workspaceId: currentWorkspaceId };
+      if (status === "accepted") await discoverability.accept(rec.id, scope);
+      else if (status === "dismissed") await discoverability.dismiss(rec.id, reason, scope);
+      else if (status === "done") await discoverability.markDone(rec.id, scope);
+      else await discoverability.reopen(rec.id, scope);
       setAudit((a) => ({
         ...a,
         recommendations: a.recommendations.map((r) => (r.id === rec.id ? { ...r, status } : r)),
@@ -341,13 +371,13 @@ export default function Discoverability() {
     } finally {
       setBusyRec(null);
     }
-  }, [showToast]);
+  }, [showToast, currentWorkspaceId]);
 
   const assignRecommendation = useCallback(async (rec, assignee) => {
     if (!rec.id) { showToast("This audit was not saved, so its queue can't be updated."); return; }
     setBusyRec(rec.id);
     try {
-      await discoverability.assign(rec.id, assignee);
+      await discoverability.assign(rec.id, assignee, { workspaceId: currentWorkspaceId });
       setAudit((a) => ({
         ...a,
         recommendations: a.recommendations.map((r) =>
@@ -361,7 +391,7 @@ export default function Discoverability() {
     } finally {
       setBusyRec(null);
     }
-  }, [showToast]);
+  }, [showToast, currentWorkspaceId]);
 
   // ── Export ───────────────────────────────────────────────────────────────
   const exportReport = useCallback(async (format) => {
@@ -384,20 +414,26 @@ export default function Discoverability() {
         const { downloadAuditPdf } = await import("../lib/discoverability/auditPdf.js");
         downloadAuditPdf(audit, { includeConstructs: true, diff, brandKit: readBrandKit() });
       } else if (format === "markdown") {
-        const md = await discoverability.reportMarkdown(audit.auditId, { constructs: true });
+        const md = await discoverability.reportMarkdown(audit.auditId, {
+          constructs: true, workspaceId: currentWorkspaceId,
+        });
         downloadTextFile(md, `discoverability-${slug}.md`, "text/markdown;charset=utf-8;");
       } else if (format === "csv") {
-        const csv = await discoverability.reportCsv(audit.auditId);
+        const csv = await discoverability.reportCsv(audit.auditId, "all", {
+          workspaceId: currentWorkspaceId,
+        });
         downloadTextFile(csv, `discoverability-${slug}.csv`, "text/csv;charset=utf-8;");
       } else {
-        const payload = await discoverability.reportJson(audit.auditId);
+        const payload = await discoverability.reportJson(audit.auditId, {
+          workspaceId: currentWorkspaceId,
+        });
         downloadTextFile(JSON.stringify(payload, null, 2), `discoverability-${slug}.json`, "application/json;charset=utf-8;");
       }
       showToast("Report downloaded");
     } catch (err) {
       showToast(err.message || "Could not build the report");
     }
-  }, [audit, diff, showToast]);
+  }, [audit, diff, showToast, currentWorkspaceId]);
 
   // ── Email report — new capability, no email feature existed on this page
   // before. Always sent to the signed-in account's own email (resolved
@@ -408,14 +444,16 @@ export default function Discoverability() {
     if (!audit?.auditId || emailingReport) return;
     setEmailingReport(true);
     try {
-      await discoverability.emailReport(audit.auditId, { format: "pdf", brandKit: readBrandKit() });
+      await discoverability.emailReport(audit.auditId, {
+        format: "pdf", brandKit: readBrandKit(), workspaceId: currentWorkspaceId,
+      });
       showToast(`Report emailed to ${user?.email || "your account"}`, "check");
     } catch (err) {
       showToast(err.message || "Could not email the report");
     } finally {
       setEmailingReport(false);
     }
-  }, [audit, emailingReport, user, showToast]);
+  }, [audit, emailingReport, user, showToast, currentWorkspaceId]);
 
   const issues = audit?.issues || [];
   const filteredIssueCount = useMemo(() => {
@@ -467,13 +505,46 @@ export default function Discoverability() {
         </div>
       </header>
 
-      {showHistory ? (
+      <nav className="dsc-tabs dsc-subnav-tabs" aria-label="Discoverability sections">
+        {DISCOVERABILITY_VIEWS.map((v) => {
+          const isActive = currentView === v.id;
+          return (
+            <button
+              key={v.id}
+              type="button"
+              className={`dsc-tab${isActive ? " dsc-tab-on" : ""}`}
+              onClick={() => {
+                if (v.path) {
+                  navigate(`${v.path}${audit?.auditId ? `?audit=${encodeURIComponent(audit.auditId)}` : ""}`);
+                  return;
+                }
+                if (v.id === "audit") {
+                  setParams(audit?.auditId ? { audit: audit.auditId } : {});
+                } else {
+                  setParams({ view: v.id, ...(audit?.auditId ? { audit: audit.auditId } : {}) });
+                }
+              }}
+              aria-current={isActive ? "page" : undefined}
+            >
+              <span className="dsc-tab-label">
+                <Icon name={v.icon} size={15} />
+                {v.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {currentView === "history" && (
         <AuditHistory
           currentAuditId={audit?.auditId || null}
+          workspaceId={currentWorkspaceId}
           onClose={() => setParams(audit?.auditId ? { audit: audit.auditId } : {})}
           onOpen={(id) => setParams({ audit: id })}
         />
-      ) : (
+      )}
+
+      {currentView === "audit" && (
       <>
       <AuditComposer
         // Forces a remount — and so a fresh read of the default* props below —
@@ -497,6 +568,8 @@ export default function Discoverability() {
         defaultGoal={resumedRequest?.primary_goal || ""}
         defaultGeography={resumedRequest?.target_geography || null}
         defaultCompetitors={resumedRequest?.competitor_urls || []}
+        subjects={subjects}
+        defaultSubjectId={resumedRequest?.subject_id || ""}
         signedIn={Boolean(user)}
       />
 
@@ -572,6 +645,7 @@ export default function Discoverability() {
           <AuditHeader
             audit={audit}
             diff={diff}
+            workspaceId={currentWorkspaceId}
             framework={tab}
             onFrameworkChange={setTab}
           />
@@ -720,7 +794,9 @@ export default function Discoverability() {
                           onClick={async (e) => {
                             e.stopPropagation();
                             try {
-                              const c = await discoverability.compare(audit.auditId, h.id);
+                              const c = await discoverability.compare(audit.auditId, h.id, {
+                                workspaceId: currentWorkspaceId,
+                              });
                               setDiff(c.diff);
                               showToast("Compared against that run");
                             } catch { showToast("Could not compare those audits"); }

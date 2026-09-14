@@ -28,6 +28,7 @@ import { withJobRun } from "./lib/jobControl.js";
 import { runAudit } from "./lib/audit/auditPipeline.js";
 import * as store from "./lib/audit/auditStore.js";
 import { diffAudits } from "../../src/lib/discoverability/auditDiff.js";
+import { evaluateSxo } from "../../src/lib/discoverability/sxoScoring.js";
 import { dispatchAuditEvent } from "./lib/audit/webhookDispatch.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
@@ -62,18 +63,45 @@ export function shouldAlert(diff, threshold = 3) {
   }
 
   const overall = diff.frameworks?.overall;
-  // Not comparable means we cannot say the page changed. Alerting on it would
-  // report our own measurement gap as the user's regression.
-  if (!overall?.comparable) return { alert: false, reason: "scores are not comparable" };
-
-  if (Math.abs(overall.change) >= threshold) {
+  const sxo = diff.frameworks?.sxo;
+  // An individual framework must be comparable before it can trigger. One
+  // unavailable framework does not erase a valid comparison in the other.
+  if (overall?.comparable && Math.abs(overall.change) >= threshold) {
     return {
       alert: true,
       reason: `Overall score ${overall.change > 0 ? "rose" : "fell"} ${Math.abs(overall.change)} points`,
       kind: overall.change > 0 ? "improvement" : "regression",
     };
   }
+  if (sxo?.comparable && Math.abs(sxo.change) >= threshold) {
+    return {
+      alert: true,
+      reason: `SXO score ${sxo.change > 0 ? "rose" : "fell"} ${Math.abs(sxo.change)} points`,
+      kind: sxo.change > 0 ? "improvement" : "regression",
+    };
+  }
+  if (!overall?.comparable && !sxo?.comparable) {
+    return { alert: false, reason: "scores are not comparable" };
+  }
   return { alert: false, reason: "below the alert threshold" };
+}
+
+/**
+ * Compare two SXO runs only when they use the same scoring contract. A model
+ * or weight change is a measurement change, not a page regression.
+ */
+export function diffSxoRuns(before, after) {
+  if (!before || !after) {
+    return { before: before?.sxo_total_score ?? null, after: after?.sxo_total_score ?? null, change: null, comparable: false, reason: "SXO missing from one audit" };
+  }
+  if (before.model_version !== after.model_version || before.weight_set_id !== after.weight_set_id) {
+    return { before: before.sxo_total_score ?? null, after: after.sxo_total_score ?? null, change: null, comparable: false, reason: "SXO model or weight set changed" };
+  }
+  if (!Number.isFinite(Number(before.sxo_total_score)) || !Number.isFinite(Number(after.sxo_total_score))) {
+    return { before: before.sxo_total_score ?? null, after: after.sxo_total_score ?? null, change: null, comparable: false, reason: "SXO score was not measured" };
+  }
+  const change = Math.round((Number(after.sxo_total_score) - Number(before.sxo_total_score)) * 10) / 10;
+  return { before: Number(before.sxo_total_score), after: Number(after.sxo_total_score), change, comparable: true };
 }
 
 /** Alert mail. Never throws — a mail failure must not fail the monitored run. */
@@ -93,7 +121,7 @@ async function sendAlert({ schedule, diff, result, verdict }) {
       <p style="color:#555;margin:0 0 16px">${escapeHtml(url)}</p>
       <p style="font-size:15px"><strong>${escapeHtml(diff.headline)}</strong></p>
       <table style="border-collapse:collapse;font-size:14px;margin:14px 0">
-        ${["overall", "seo", "aeo", "geo"].map((f) => {
+        ${["overall", "seo", "aeo", "geo", "sxo"].map((f) => {
           const d = diff.frameworks?.[f];
           if (!d) return "";
           return `<tr>
@@ -170,6 +198,7 @@ export async function runSchedule(schedule, opts = {}) {
     }
 
     const targetId = schedule.target_id;
+    const workspaceId = schedule.workspace_id || null;
     // ── EVERY RUN IS COMMISSIONED LIKE THE FIRST ONE ───────────────────────
     // The schedule carries the intake (migration 0049) precisely so this loop
     // can replay it. A monitor that re-audited a page without its goal,
@@ -190,6 +219,7 @@ export async function runSchedule(schedule, opts = {}) {
       pageTypeHint: schedule.page_type_hint || null,
       baselineAuditId: schedule.last_audit_id || null,
       source: "schedule",
+      workspaceId,
     });
     if (!created.ok) { summary.error = "could not open the audit"; return summary; }
 
@@ -203,17 +233,48 @@ export async function runSchedule(schedule, opts = {}) {
       pageTypeHint: schedule.page_type_hint || null,
       ...opts.auditOptions,
     });
-    await store.persistResult(schedule.user_id, created.audit.id, result);
+    await store.persistResult(schedule.user_id, created.audit.id, result, { workspaceId });
     summary.ran = true;
     summary.auditId = created.audit.id;
+
+    // Re-evaluate SXO on every scheduled run. This uses the previous run's
+    // weight set when available so the comparison is contract-stable; the
+    // evaluator still excludes every signal it cannot measure.
+    const priorSxo = schedule.last_audit_id
+      ? await store.getSxoForAudit(schedule.user_id, schedule.last_audit_id, { workspaceId })
+      : null;
+    const sxoResult = evaluateSxo(result, { weightSetId: priorSxo?.weight_set_id || undefined });
+    const savedSxo = await store.saveSxoRun(schedule.user_id, {
+      auditId: created.audit.id,
+      subjectId: created.audit.subject_id || null,
+      targetId,
+      workspaceId,
+      sxoTotalScore: sxoResult.score,
+      coverage: sxoResult.coverage,
+      layerScores: sxoResult.layerScores,
+      layerResults: sxoResult.layerResults,
+      findings: sxoResult.findings,
+      weightSetId: sxoResult.weightSetId,
+      modelVersion: sxoResult.modelVersion,
+    });
+    const currentSxo = savedSxo.run || null;
+    summary.sxoEvaluated = !!currentSxo;
+    if (!currentSxo) summary.sxoError = savedSxo.error || "SXO result could not be persisted";
 
     // Compare against the previous run, where there was one.
     let diff = null;
     if (schedule.last_audit_id) {
-      const prior = await store.getAuditFull(schedule.user_id, schedule.last_audit_id);
+      const prior = await store.getAuditFull(schedule.user_id, schedule.last_audit_id, { workspaceId });
       if (prior) {
         const { rehydrate } = await import("./discoverability.js");
         diff = diffAudits(rehydrate(prior), { ...result, auditId: created.audit.id });
+        diff.frameworks = {
+          ...(diff.frameworks || {}),
+          sxo: diffSxoRuns(priorSxo, currentSxo),
+        };
+        if (!diff.frameworks.sxo.comparable) {
+          diff.caveats = [...(diff.caveats || []), `SXO not compared: ${diff.frameworks.sxo.reason}.`];
+        }
       }
     }
 

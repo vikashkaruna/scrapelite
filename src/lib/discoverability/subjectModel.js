@@ -70,6 +70,35 @@ export const SUBJECT_KINDS = Object.freeze({
 
 export const SUBJECT_KIND_IDS = Object.freeze(Object.keys(SUBJECT_KINDS));
 
+/** Entity types that may back each score-bearing subject kind. */
+export const SCORABLE_ENTITY_TYPES = Object.freeze({
+  brand: Object.freeze(["organization", "brand"]),
+  product: Object.freeze(["product"]),
+  service: Object.freeze(["service"]),
+});
+
+/**
+ * CP-1.1 — entity-backed score subjects are explicit and approval-gated.
+ * The server and 0066 enforce the same rule; keeping it pure gives the client
+ * an actionable refusal before a database constraint message.
+ */
+export function canCreateEntitySubject(entity, kind) {
+  if (!SCORABLE_ENTITY_TYPES[kind]) {
+    return { ok: false, reason: `${kind} is not a score-bearing entity subject kind` };
+  }
+  if (!entity) return { ok: false, reason: "entity not found" };
+  if (entity.state !== "approved") {
+    return { ok: false, reason: "the entity must be approved before it can carry score history" };
+  }
+  if (!SCORABLE_ENTITY_TYPES[kind].includes(entity.entity_type)) {
+    return {
+      ok: false,
+      reason: `a ${kind} subject cannot be backed by an ${entity.entity_type} entity`,
+    };
+  }
+  return { ok: true };
+}
+
 /** The three reference columns, in the order the database declares them. */
 export const SUBJECT_REFS = Object.freeze(["target", "entity", "truth_record"]);
 

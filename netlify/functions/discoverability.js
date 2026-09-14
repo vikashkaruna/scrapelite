@@ -53,6 +53,7 @@
 // limit, so it can hold neither a quota nor a history worth keeping. Same
 // reasoning as scrape consent and referrals.
 
+import { createHash } from "node:crypto";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
@@ -63,7 +64,9 @@ import { createDeadline, budgetFromEnv } from "./lib/audit/deadline.js";
 import {
   resolveRequestEntitlement, checkCapability, DENY_STATUS, denyBody,
 } from "./lib/requireEntitlement.js";
-import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
+import {
+  buildWorkspaceCtx, requireWorkspaceDiscoverabilityAction,
+} from "./lib/workspaceContext.js";
 import {
   APPROVED_TYPES, APPROVED_TYPE_IDS, EXCLUDED_TYPES,
   SCHEMA_COMPONENTS, SCHEMA_COMPONENT_IDS,
@@ -79,7 +82,9 @@ import { summariseAudit } from "./lib/audit/aiEvaluator.js";
 import * as store from "./lib/audit/auditStore.js";
 import { canonicalAuditUrl } from "../../src/lib/discoverability/auditUrl.js";
 import { diffAudits, buildTrend, incomparableDiff, subjectMismatchCause } from "../../src/lib/discoverability/auditDiff.js";
-import { sameSubject, subjectMismatchReason, scoreIdFor } from "../../src/lib/discoverability/subjectModel.js";
+import {
+  sameSubject, subjectMismatchReason, scoreIdFor, canCreateEntitySubject,
+} from "../../src/lib/discoverability/subjectModel.js";
 import {
   scoreSubject, missingFacts, isThin, intentCoverage,
   SUBJECT_SCORES, SUBJECT_SCORE_IDS, SUBJECT_MODEL_VERSION, THIN_COVERAGE,
@@ -119,6 +124,35 @@ import {
   RELATION_SOURCES, REVIEW_STATES, GRAPH_CONFLICT_CODES, IDENTIFYING_TYPES,
   validateRelation, detectGraphConflicts, graphCoverage, buildIndex,
 } from "../../src/lib/discoverability/entityGraph.js";
+import {
+  SXO_LAYERS,
+  SXO_LAYER_WEIGHTS,
+  MASTER_FRAMEWORK_WEIGHTS,
+  SXO_MODEL_VERSION,
+  DEFAULT_WEIGHT_SET_ID,
+  SXO_WEIGHT_SETS,
+  isKnownSxoWeightSet,
+} from "../../src/lib/discoverability/sxoModel.js";
+import { INTENT_CLASSES, INTENT_CLASS_DETAILS } from "../../src/lib/discoverability/intentMatch.js";
+import { FIRST_SCREEN_FLAGS } from "../../src/lib/discoverability/firstScreen.js";
+import { PRIMARY_OUTCOMES, PRIMARY_OUTCOME_DETAILS } from "../../src/lib/discoverability/conversionDesign.js";
+import { evaluateSxo, computeMasterScore } from "../../src/lib/discoverability/sxoScoring.js";
+import {
+  NORMALIZED_EVENTS,
+  NORMALIZED_EVENT_SET,
+  SEGMENTATION_AXES,
+  ANALYTICS_CONNECTOR_PROVIDERS,
+  ANALYTICS_IMPORT_PROVIDERS,
+  mapSourceEvent,
+  isValidNormalizedEvent,
+} from "../../src/lib/discoverability/eventTaxonomy.js";
+import { FUNNEL_STAGES, calculateJourneyFunnel } from "../../src/lib/discoverability/journeyModel.js";
+import { FORM_METRIC_KEYS, evaluateFormDiagnostics } from "../../src/lib/discoverability/formDiagnostics.js";
+import { evaluateMeasurementMaturity } from "../../src/lib/discoverability/measurementMaturity.js";
+import { classifyPageTemplate } from "../../src/lib/discoverability/templateClassification.js";
+import { calculatePortfolioRollup, PORTFOLIO_ROLLUP_AXES } from "../../src/lib/discoverability/portfolioModel.js";
+import { PERSONA_PACKS, filterPersonaQueue } from "../../src/lib/discoverability/personaPacks.js";
+import { createExperimentRecord, evaluateExperimentImpact } from "../../src/lib/discoverability/optimizationExperiments.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -144,6 +178,19 @@ const unauthorized = () => json(401, {
   error: "Sign in to run discoverability audits.",
   code: "AUTH_REQUIRED",
 });
+
+function validateSxoOptions(body = {}) {
+  if (body.intent_class && !INTENT_CLASSES.includes(body.intent_class)) {
+    return bad("Unknown `intent_class`.", { allowed: INTENT_CLASSES });
+  }
+  if (body.primary_outcome && !PRIMARY_OUTCOMES.includes(body.primary_outcome)) {
+    return bad("Unknown `primary_outcome`.", { allowed: PRIMARY_OUTCOMES });
+  }
+  if (body.weight_set_id && !isKnownSxoWeightSet(body.weight_set_id)) {
+    return bad("Unknown `weight_set_id`.", { allowed: Object.keys(SXO_WEIGHT_SETS) });
+  }
+  return null;
+}
 
 export function parsePath(splat) {
   if (!splat) return [];
@@ -186,7 +233,11 @@ function resolveSplat(event) {
   const p = event.path || "";
   const marker = "/discoverability/";
   const idx = p.lastIndexOf(marker);
-  return idx === -1 ? "" : p.slice(idx + marker.length);
+  if (idx !== -1) return p.slice(idx + marker.length);
+  const sxoMarker = "/sxo/";
+  const sIdx = p.lastIndexOf(sxoMarker);
+  if (sIdx !== -1) return "sxo/" + p.slice(sIdx + sxoMarker.length);
+  return "";
 }
 
 function readBody(event) {
@@ -398,7 +449,9 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   await store.recordEvent(userId, { auditId, eventType: "created", payload: { url: rawUrl, source } });
 
   // W9 — check the page against the approved record, if there is one.
-  const truth = await checkAgainstTruthRecord(userId, auditId, rawUrl, result);
+  const truth = await checkAgainstTruthRecord(
+    userId, auditId, rawUrl, result, options.workspaceId || null,
+  );
   if (truth) result.businessTruth = truth;
 
   // Fire and forget. dispatchAuditEvent swallows its own failures, so a user's
@@ -569,16 +622,25 @@ export const handler = async (event) => {
       if (!id && method === "POST") return await createAuditRoute(event, userId, body);
       if (!id && method === "GET") {
         const q = event.queryStringParameters || {};
+        const workspaceId = q.workspace_id || null;
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
         const rows = await store.listAudits(userId, {
           limit: Number(q.limit) || 25, offset: Number(q.offset) || 0,
-          targetId: q.target_id || null, status: q.status || null,
+          targetId: q.target_id || null, status: q.status || null, workspaceId,
         });
         return json(200, { audits: rows });
       }
       if (!id) return json(405, { error: "Method not allowed." });
 
+      const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
+
       if (method === "DELETE" && !sub) {
-        const r = await store.deleteAudit(userId, id);
+        const scoped = await store.getAudit(userId, id, { workspaceId });
+        if (!scoped) return notFound("Audit not found.");
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const r = await store.deleteAudit(userId, id, { workspaceId });
         if (r.notFound) return notFound("Audit not found.");
         if (!r.ok) return json(503, { error: "Could not delete the audit." });
         await store.recordEvent(userId, { auditId: id, eventType: "deleted", payload: {} });
@@ -588,10 +650,12 @@ export const handler = async (event) => {
       if (method === "POST" && sub === "rerun") return await rerunRoute(event, userId, id, body);
 
       if (method === "GET") {
-        const full = await store.getAuditFull(userId, id);
+        const full = await store.getAuditFull(userId, id, { workspaceId });
         // 404, never 403, for somebody else's audit: a 403 confirms the id is
         // real, which is how an id space gets enumerated.
         if (!full) return notFound("Audit not found.");
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
 
         if (!sub) return json(200, { audit: full.audit, result: full.result });
         if (sub === "results") return json(200, shapeFull(full));
@@ -612,22 +676,39 @@ export const handler = async (event) => {
           });
           return reportRoute(event, full);
         }
-        if (sub === "compare" && subId) return await compareRoute(userId, full, subId);
+        if (sub === "compare" && subId) return await compareRoute(userId, full, subId, workspaceId);
       }
       if (method === "POST" && id && sub === "summary") {
-        const full = await store.getAuditFull(userId, id);
+        const full = await store.getAuditFull(userId, id, { workspaceId });
         if (!full) return notFound("Audit not found.");
-        return await summaryRoute(userId, id, full);
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        return await summaryRoute(userId, id, full, workspaceId);
       }
       return json(405, { error: "Method not allowed." });
     }
 
     // ── /recommendations ───────────────────────────────────────────────────
     if (root === "recommendations" && id) {
+      const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
+      let scopedRecommendation = null;
+      if (workspaceId) {
+        // Scope first, permission second: foreign ids remain indistinguishable
+        // from missing ids and cannot be enumerated through a role error.
+        scopedRecommendation = await store.getRecommendation(userId, id, { workspaceId });
+        if (!scopedRecommendation) return notFound("Recommendation not found.");
+      }
+
       if (method === "POST" && sub === "assign") {
+        if (workspaceId) {
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
         // `assignee: null` puts it down. Anything else is checked against
         // shared workspace membership by the database, not here.
-        const r = await store.setRecommendationAssignee(userId, id, body.assignee ?? null);
+        const r = await (workspaceId
+          ? store.setRecommendationAssignee(userId, id, body.assignee ?? null, { workspaceId })
+          : store.setRecommendationAssignee(userId, id, body.assignee ?? null));
         if (r.notFound) return notFound("Recommendation not found.");
         if (!r.ok) return bad(r.error);
         await store.recordEvent(userId, {
@@ -648,18 +729,23 @@ export const handler = async (event) => {
       // W8 — the full lifecycle. The four original verbs keep their exact
       // meanings so no existing client breaks; the rest are new.
       if (method === "POST" && VERB_TO_STATE[sub]) {
+        if (workspaceId) {
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
         const status = VERB_TO_STATE[sub];
         const r = await store.setRecommendationStatus(userId, id, status, body.reason, {
           validatedByAuditId: body.validated_by_audit_id || null,
           assignee: body.assignee || null,
           dueAt: body.due_at,
           notes: body.notes,
+          ...(workspaceId ? { workspaceId } : {}),
         });
         if (r.notFound) return notFound("Recommendation not found.");
         if (!r.ok) return bad(r.error);
         // W8 — the audit trail entry AND the webhook, which are different
         // readers: the first is ours, the second is somebody's integration.
-        await dispatchAuditEvent(userId, WEBHOOK_EVENT_FOR[status] || null, {
+        await dispatchAuditEvent(scopedRecommendation?.user_id || userId, WEBHOOK_EVENT_FOR[status] || null, {
           audit: { id: r.recommendation.audit_id },
           recommendation: r.recommendation,
         }).catch(() => {});
@@ -671,7 +757,9 @@ export const handler = async (event) => {
         return json(200, { recommendation: r.recommendation });
       }
       if (method === "GET" && sub === "asset") {
-        const full = await store.getAuditFull(userId, body.audit_id || event.queryStringParameters?.audit_id);
+        const full = await store.getAuditFull(
+          userId, body.audit_id || event.queryStringParameters?.audit_id, { workspaceId },
+        );
         const rec = full?.recommendations?.find((r) => r.id === id);
         if (!rec) return notFound("Recommendation not found.");
         return json(200, { asset: rec.implementation_asset_json || null });
@@ -681,12 +769,21 @@ export const handler = async (event) => {
 
     // ── /targets ───────────────────────────────────────────────────────────
     if (root === "targets") {
-      if (!id && method === "GET") return json(200, { targets: await store.listTargets(userId) });
+      const workspaceId = event.queryStringParameters?.workspace_id || null;
+      const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+      if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+      if (!id && method === "GET") {
+        return json(200, { targets: await store.listTargets(userId, { workspaceId }) });
+      }
       if (id && method === "GET" && sub === "history") {
-        return json(200, { audits: await store.listAudits(userId, { targetId: id, limit: 50 }) });
+        return json(200, {
+          audits: await store.listAudits(userId, { targetId: id, limit: 50, workspaceId }),
+        });
       }
       if (id && method === "GET" && sub === "trends") {
-        const rows = await store.getTargetTrend(userId, id, Number(event.queryStringParameters?.limit) || 30);
+        const rows = await store.getTargetTrend(
+          userId, id, Number(event.queryStringParameters?.limit) || 30, { workspaceId },
+        );
         return json(200, buildTrend(rows));
       }
       return json(405, { error: "Method not allowed." });
@@ -708,9 +805,12 @@ export const handler = async (event) => {
     // audit-scoped since the module shipped, which is the wrong unit for
     // somebody working a backlog across twenty pages.
     if (root === "queue" && method === "GET") {
+      const workspaceId = event.queryStringParameters?.workspace_id || null;
+      const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+      if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
       const rows = await store.listRecommendationQueue(userId, {
         status: sub || null,
-        workspaceId: event.queryStringParameters?.workspace_id || null,
+        workspaceId,
       });
       const format = (event.queryStringParameters?.format || "json").toLowerCase();
       if (format === "csv") {
@@ -749,6 +849,721 @@ export const handler = async (event) => {
 
     // ── /schedules ─────────────────────────────────────────────────────────
     if (root === "schedules") return await scheduleRoute(event, userId, method, id, body);
+
+    if (root === "connectors") {
+      if (id === "dispatch" && method === "POST") {
+        const { provider, idempotency_key, truth_record_id, entity_id, workspace_id, payload } = body || {};
+        if (!provider || !idempotency_key) {
+          return bad("provider and idempotency_key are required.");
+        }
+        const res = await store.claimConnectorDispatch(userId, {
+          provider,
+          idempotencyKey: idempotency_key,
+          truthRecordId: truth_record_id,
+          entityId: entity_id,
+          workspaceId: workspace_id,
+          payload,
+        });
+        if (!res.ok) {
+          if (res.reason === "not_authorized") return json(403, { error: "Not authorized to dispatch connectors in this workspace." });
+          if (res.reason === "source_not_approved") return json(409, { error: "Source record or entity must be approved before connector dispatch." });
+          return bad(res.error || res.reason || "Dispatch claim refused.");
+        }
+        return json(res.replay ? 200 : 201, res);
+      }
+      return json(405, { error: "Method not allowed." });
+    }
+
+    // ── /sxo — Search Experience Optimization (SXO) (P3A / Stage 2) ────────
+    if (root === "sxo") {
+      if (id === "schema" && method === "GET") {
+        return json(200, {
+          layers: SXO_LAYERS,
+          layer_weights: SXO_LAYER_WEIGHTS,
+          master_weights: MASTER_FRAMEWORK_WEIGHTS,
+          intent_classes: INTENT_CLASS_DETAILS,
+          primary_outcomes: PRIMARY_OUTCOME_DETAILS,
+          flags: FIRST_SCREEN_FLAGS,
+          model_version: SXO_MODEL_VERSION,
+          default_weight_set_id: DEFAULT_WEIGHT_SET_ID,
+          weight_sets: SXO_WEIGHT_SETS,
+        });
+      }
+
+      if (id === "evaluate" && method === "POST") {
+        const invalidOptions = validateSxoOptions(body);
+        if (invalidOptions) return invalidOptions;
+        const workspaceId = body.workspace_id || null;
+        const capabilityGate = await gateP2Capability(event, "audit.sxo", workspaceId, "run_analysis");
+        if (!capabilityGate.ok) return capabilityGate.response;
+
+        if (!body.audit_id) {
+          return bad("`audit_id` is required to evaluate SXO.");
+        }
+
+        const full = await store.getAuditFull(userId, body.audit_id, { workspaceId });
+        if (!full) return notFound("Audit not found.");
+
+        const hydrated = rehydrate(full);
+        const sxoResult = evaluateSxo(hydrated, {
+          intentClass: body.intent_class,
+          primaryOutcome: body.primary_outcome,
+          weightSetId: body.weight_set_id,
+        });
+
+        const masterScore = computeMasterScore({
+          seo: hydrated.frameworks.seo.score,
+          aeo: hydrated.frameworks.aeo.score,
+          geo: hydrated.frameworks.geo.score,
+          sxo: sxoResult.score,
+        });
+
+        const saved = await store.saveSxoRun(userId, {
+          auditId: body.audit_id,
+          subjectId: full.audit?.subject_id || null,
+          targetId: full.audit?.target_id || null,
+          workspaceId: workspaceId || full.audit?.workspace_id || null,
+          sxoTotalScore: sxoResult.score,
+          coverage: sxoResult.coverage,
+          layerScores: sxoResult.layerScores,
+          layerResults: sxoResult.layerResults,
+          findings: sxoResult.findings,
+          weightSetId: sxoResult.weightSetId,
+          modelVersion: sxoResult.modelVersion,
+        });
+
+        return json(200, {
+          ok: true,
+          sxo: sxoResult,
+          master: masterScore,
+          run: saved.run || null,
+        });
+      }
+
+      if (id === "runs" && !sub) {
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          const runs = await store.listSxoRuns(userId, {
+            auditId: q.audit_id || null,
+            subjectId: q.subject_id || null,
+            workspaceId: q.workspace_id || null,
+            limit: Number(q.limit) || 50,
+          });
+          return json(200, { runs });
+        }
+      }
+
+      if (id === "runs" && sub) {
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          const run = await store.getSxoRun(userId, sub, { workspaceId: q.workspace_id || null });
+          if (!run) return notFound("SXO run not found.");
+          return json(200, { run });
+        }
+      }
+
+      if (id === "composite" && sub) {
+        if (method === "GET") {
+          const workspaceId = event.queryStringParameters?.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const full = await store.getAuditFull(userId, sub, { workspaceId });
+          if (!full) return notFound("Audit not found.");
+          const hydrated = rehydrate(full);
+          const existingRun = await store.getSxoForAudit(userId, sub, { workspaceId });
+          const sxoScore = existingRun?.sxo_total_score ?? null;
+          const masterScore = computeMasterScore({
+            seo: hydrated.frameworks.seo.score,
+            aeo: hydrated.frameworks.aeo.score,
+            geo: hydrated.frameworks.geo.score,
+            sxo: sxoScore,
+          });
+          return json(200, {
+            audit_id: sub,
+            master: masterScore,
+            sxo_run_id: existingRun?.id || null,
+          });
+        }
+      }
+
+      // ── Stage 3 / P3B & Stage 4 / P3C Endpoints ──
+
+      // 1. POST /sxo/audits (create/evaluate SXO audit)
+      if (id === "audits" && !sub && method === "POST") {
+        const invalidOptions = validateSxoOptions(body);
+        if (invalidOptions) return invalidOptions;
+        const workspaceId = body.workspace_id || null;
+        const capabilityGate = await gateP2Capability(event, "audit.sxo", workspaceId, "run_analysis");
+        if (!capabilityGate.ok) return capabilityGate.response;
+
+        if (!body.audit_id) {
+          return bad("`audit_id` is required to evaluate SXO.");
+        }
+
+        const full = await store.getAuditFull(userId, body.audit_id, { workspaceId });
+        if (!full) return notFound("Audit not found.");
+
+        const hydrated = rehydrate(full);
+        const sxoResult = evaluateSxo(hydrated, {
+          intentClass: body.intent_class,
+          primaryOutcome: body.primary_outcome,
+          weightSetId: body.weight_set_id,
+        });
+
+        const masterScore = computeMasterScore({
+          seo: hydrated.frameworks.seo.score,
+          aeo: hydrated.frameworks.aeo.score,
+          geo: hydrated.frameworks.geo.score,
+          sxo: sxoResult.score,
+        });
+
+        const saved = await store.saveSxoRun(userId, {
+          auditId: body.audit_id,
+          subjectId: full.audit?.subject_id || null,
+          targetId: full.audit?.target_id || null,
+          workspaceId: workspaceId || full.audit?.workspace_id || null,
+          sxoTotalScore: sxoResult.score,
+          coverage: sxoResult.coverage,
+          layerScores: sxoResult.layerScores,
+          layerResults: sxoResult.layerResults,
+          findings: sxoResult.findings,
+          weightSetId: sxoResult.weightSetId,
+          modelVersion: sxoResult.modelVersion,
+        });
+
+        return json(200, {
+          ok: true,
+          sxo: sxoResult,
+          master: masterScore,
+          run: saved.run || null,
+        });
+      }
+
+      // 2. GET /sxo/audits/:id (summary / status)
+      if (id === "audits" && sub && !subId && method === "GET") {
+        const workspaceId = event.queryStringParameters?.workspace_id || null;
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const full = await store.getAuditFull(userId, sub, { workspaceId });
+        if (!full) return notFound("Audit not found.");
+        const run = await store.getSxoForAudit(userId, sub, { workspaceId });
+        return json(200, { ok: true, audit: full.audit, sxo_run: run });
+      }
+
+      // 3. GET /sxo/audits/:id/results (scores + evidence)
+      if (id === "audits" && sub && subId === "results" && method === "GET") {
+        const workspaceId = event.queryStringParameters?.workspace_id || null;
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const full = await store.getAuditFull(userId, sub, { workspaceId });
+        if (!full) return notFound("Audit not found.");
+        const run = await store.getSxoForAudit(userId, sub, { workspaceId });
+        return json(200, {
+          ok: true,
+          audit_id: sub,
+          sxo_results: run?.layer_results || null,
+          layer_scores: run?.layer_scores || null,
+          coverage: run?.coverage ?? null,
+        });
+      }
+
+      // 4. GET /sxo/audits/:id/intent-match (intent findings)
+      if (id === "audits" && sub && subId === "intent-match" && method === "GET") {
+        const workspaceId = event.queryStringParameters?.workspace_id || null;
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const full = await store.getAuditFull(userId, sub, { workspaceId });
+        if (!full) return notFound("Audit not found.");
+        const run = await store.getSxoForAudit(userId, sub, { workspaceId });
+        return json(200, {
+          ok: true,
+          audit_id: sub,
+          intent_match: run?.layer_results?.ic || null,
+        });
+      }
+
+      // 5. GET /sxo/audits/:id/first-screen (first-screen findings)
+      if (id === "audits" && sub && subId === "first-screen" && method === "GET") {
+        const workspaceId = event.queryStringParameters?.workspace_id || null;
+        const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+        if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        const full = await store.getAuditFull(userId, sub, { workspaceId });
+        if (!full) return notFound("Audit not found.");
+        const run = await store.getSxoForAudit(userId, sub, { workspaceId });
+        return json(200, {
+          ok: true,
+          audit_id: sub,
+          first_screen: run?.layer_results?.ia || null,
+        });
+      }
+
+      // 6. GET /sxo/audits/:id/journey
+      if (id === "audits" && sub && subId === "journey") {
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          const workspaceId = q.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const full = await store.getAuditFull(userId, sub, { workspaceId });
+          if (!full) return notFound("Audit not found.");
+          let funnel = await store.getJourneyFunnel(userId, sub, { workspaceId });
+          if (!funnel) {
+            const aggregates = await store.listAnalyticsAggregates(userId, { auditId: sub, workspaceId });
+            const aggregatedCounts = {};
+            for (const agg of aggregates) {
+              for (const [evt, count] of Object.entries(agg.event_counts || {})) {
+                aggregatedCounts[evt] = (aggregatedCounts[evt] || 0) + Number(count || 0);
+              }
+            }
+            const stageInputs = {
+              landing_session: aggregatedCounts.page_view ?? null,
+              engaged_session: (aggregatedCounts.scroll_50 || aggregatedCounts.scroll_75 || aggregatedCounts.scroll_90) ?? null,
+              key_content_seen: (aggregatedCounts.pricing_view || aggregatedCounts.form_view) ?? null,
+              primary_cta_view: aggregatedCounts.primary_cta_view ?? null,
+              primary_cta_click: aggregatedCounts.primary_cta_click ?? null,
+              action_start: (aggregatedCounts.form_start || aggregatedCounts.booking_start || aggregatedCounts.checkout_start) ?? null,
+              conversion_complete: (aggregatedCounts.form_submit || aggregatedCounts.booking_complete || aggregatedCounts.purchase_complete) ?? null,
+              qualified_outcome: aggregatedCounts.qualified_conversion ?? null,
+            };
+            const calculated = calculateJourneyFunnel(stageInputs, { name: `audit_${sub}_funnel` });
+            const mi = evaluateMeasurementMaturity({
+              connected: aggregates.length > 0,
+              trackedEventsCount: Object.keys(aggregatedCounts).length,
+              measuredFunnelStagesCount: calculated.measured_stages_count,
+            });
+            funnel = {
+              audit_id: sub,
+              funnel_name: calculated.funnel_name,
+              stage_results: calculated.stages,
+              overall_conversion_rate: calculated.overall_conversion_rate,
+              mi_score: mi.score,
+              mi_caveats: calculated.caveats.concat(mi.caveats),
+            };
+          }
+          return json(200, { ok: true, audit_id: sub, funnel });
+        }
+      }
+
+      // 7. GET /sxo/audits/:id/form-diagnostics
+      if (id === "audits" && sub && subId === "form-diagnostics") {
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          const workspaceId = q.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const full = await store.getAuditFull(userId, sub, { workspaceId });
+          if (!full) return notFound("Audit not found.");
+          let diagnostics = await store.getFormDiagnostics(userId, sub, {
+            formId: q.form_id || null,
+            workspaceId,
+          });
+          if (!diagnostics) {
+            diagnostics = null;
+          }
+          return json(200, { ok: true, audit_id: sub, diagnostics });
+        }
+      }
+
+      // 8. POST /sxo/events/import
+      if (id === "events" && sub === "import") {
+        if (method === "POST") {
+          const workspaceId = body.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+
+          const idempotencyKey = typeof body.idempotency_key === "string"
+            ? body.idempotency_key.trim() : "";
+          if (!idempotencyKey || idempotencyKey.length > 200) {
+            return bad("`idempotency_key` is required and must be 1–200 characters.");
+          }
+
+          const events = Array.isArray(body.events) ? body.events : [body];
+          const provider = body.provider || "custom";
+          if (!ANALYTICS_IMPORT_PROVIDERS.includes(provider)) {
+            return bad("Unsupported analytics import provider.", { allowed: ANALYTICS_IMPORT_PROVIDERS });
+          }
+          if (body.audit_id) {
+            const audit = await store.getAuditFull(userId, body.audit_id, { workspaceId });
+            if (!audit) return notFound("Audit not found.");
+          }
+          if (body.subject_id) {
+            const subject = await store.getSubject(userId, body.subject_id, { workspaceId });
+            if (!subject) return notFound("Subject not found.");
+          }
+          const mappedCounts = {};
+          const unmappedList = [];
+
+          for (const item of events) {
+            const rawName = item.event_name || item.name || item.event;
+            if (!rawName) continue;
+            const props = item.properties || item.params || {};
+            const mapResult = mapSourceEvent(provider, rawName, props);
+            if (mapResult.valid && mapResult.normalized_event) {
+              const count = item.count === undefined ? 1 : Number(item.count);
+              if (!Number.isSafeInteger(count) || count < 0) {
+                return bad("Every event `count` must be a non-negative safe integer.");
+              }
+              mappedCounts[mapResult.normalized_event] = (mappedCounts[mapResult.normalized_event] || 0) + count;
+            } else {
+              unmappedList.push({
+                unmapped_name: mapResult.unmapped_name || rawName,
+                reason: mapResult.reason || "Unrecognized event name",
+              });
+            }
+          }
+
+          const eventCounts = Object.fromEntries(Object.entries(mappedCounts).sort(([a], [b]) => a.localeCompare(b)));
+          const aggregatePayload = {
+            auditId: body.audit_id || null,
+            subjectId: body.subject_id || null,
+            dateBucket: body.date_bucket || null,
+            landingPage: body.landing_page || "/",
+            sourceChannel: body.source_channel || "direct",
+            device: body.device || "all",
+            region: body.region || "global",
+            visitorType: body.visitor_type || "all",
+            conversionGoalId: body.conversion_goal_id || null,
+            eventCounts,
+            metrics: body.metrics || {},
+            workspaceId,
+            unmapped: unmappedList,
+          };
+          const payloadHash = createHash("sha256").update(JSON.stringify(aggregatePayload)).digest("hex");
+          const queued = await store.enqueueAnalyticsImport(userId, {
+            provider,
+            idempotencyKey,
+            payloadHash,
+            aggregatePayload,
+            workspaceId,
+          });
+          if (!queued.ok) return json(503, { ok: false, error: queued.error || "Could not queue analytics import." });
+          if (queued.replay && queued.job.payload_hash !== payloadHash) {
+            return json(409, {
+              ok: false,
+              code: "IDEMPOTENCY_CONFLICT",
+              error: "That idempotency key was already used for a different analytics import.",
+            });
+          }
+
+          const completed = queued.job.state === "completed";
+          return json(completed ? 200 : 202, {
+            ok: true,
+            queued: !completed,
+            replay: queued.replay,
+            job: {
+              id: queued.job.id,
+              state: queued.job.state,
+              attempts: queued.job.attempts,
+            },
+            imported_events_count: completed
+              ? queued.job.result_json?.imported_events_count ?? Object.keys(eventCounts).length
+              : 0,
+            event_counts: eventCounts,
+            unmapped: unmappedList,
+            result: completed ? queued.job.result_json || null : null,
+          });
+        }
+      }
+
+      // 9. /sxo/integrations
+      if (id === "integrations") {
+        if (sub && subId === "connect" && method === "POST") {
+          const provider = sub;
+          if (!ANALYTICS_CONNECTOR_PROVIDERS.includes(provider)) {
+            return bad("Unsupported analytics connector.", { allowed: ANALYTICS_CONNECTOR_PROVIDERS });
+          }
+          if (!body.token && !body.api_key) return bad("`token` or `api_key` is required.");
+          const workspaceId = body.workspace_id || null;
+          if (workspaceId) {
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
+            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          }
+          const saved = await store.saveAnalyticsConnection(userId, {
+            provider,
+            providerAccountId: body.provider_account_id || null,
+            token: body.token || body.api_key || null,
+            settings: body.settings || {},
+            workspaceId,
+          });
+          return saved.ok
+            ? json(200, saved)
+            : json(saved.code === "ENCRYPTION_UNAVAILABLE" ? 503 : 502, saved);
+        }
+
+        if (!sub && method === "GET") {
+          const q = event.queryStringParameters || {};
+          const workspaceId = q.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const connections = await store.listAnalyticsConnections(userId, {
+            workspaceId,
+          });
+          return json(200, { ok: true, connections });
+        }
+
+        if (sub && !subId && method === "DELETE") {
+          const provider = sub;
+          const q = event.queryStringParameters || {};
+          const workspaceId = q.workspace_id || null;
+          const purgeData = q.purge_data === "true" || q.purge_data === "1" || body?.purge_data === true;
+          if (workspaceId) {
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
+            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          }
+          await store.deleteAnalyticsConnection(userId, provider, { workspaceId, purgeData });
+          return json(200, { ok: true, disconnected: provider, purged_data: purgeData });
+        }
+      }
+
+      // Early Analytics Data Purge (D16 / §13 provision for operators and users)
+      if ((id === "analytics" && sub === "purge" && method === "POST") || (id === "analytics-data" && method === "DELETE")) {
+        const q = event.queryStringParameters || {};
+        const workspaceId = q.workspace_id || body?.workspace_id || null;
+        if (workspaceId) {
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
+        const olderThan = q.older_than_days !== undefined ? q.older_than_days : body?.older_than_days;
+        const purgeAll = q.purge_all === "true" || q.purge_all === "1" || body?.purge_all === true || olderThan === 0 || olderThan === "0";
+        const result = await store.purgeAnalyticsData(userId, {
+          workspaceId,
+          auditId: q.audit_id || body?.audit_id || null,
+          olderThanDays: olderThan,
+          purgeAll,
+        });
+        return json(200, result);
+      }
+
+      // 10. /sxo/conversion-goals
+      if (id === "conversion-goals") {
+        if (method === "POST") {
+          const workspaceId = body.workspace_id || null;
+          if (workspaceId) {
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
+            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          }
+          if (!body.name || !body.outcome_type) {
+            return bad("`name` and `outcome_type` are required for conversion goals.");
+          }
+          const saved = await store.saveConversionGoal(userId, {
+            name: body.name,
+            outcomeType: body.outcome_type,
+            targetUrl: body.target_url || null,
+            targetSelector: body.target_selector || null,
+            targetEvent: body.target_event || null,
+            valueCents: Number(body.value_cents) || 0,
+            auditId: body.audit_id || null,
+            subjectId: body.subject_id || null,
+            workspaceId,
+          });
+          return json(200, saved);
+        }
+
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          const workspaceId = q.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const goals = await store.listConversionGoals(userId, {
+            auditId: q.audit_id || null,
+            workspaceId,
+          });
+          return json(200, { ok: true, goals });
+        }
+      }
+
+      // 11. /sxo/experiments (POST, GET)
+      if (id === "experiments") {
+        if (!sub && method === "POST") {
+          const workspaceId = body.workspace_id || null;
+          const capabilityGate = await gateP2Capability(event, "audit.sxo", workspaceId, "run_analysis");
+          if (!capabilityGate.ok) return capabilityGate.response;
+          if (!body.experiment_name && !body.name) {
+            return bad("`experiment_name` is required for optimization experiments.");
+          }
+          if (body.audit_id) {
+            const audit = await store.getAuditFull(userId, body.audit_id, { workspaceId });
+            if (!audit) return notFound("Audit not found.");
+          }
+          if (body.recommendation_id) {
+            const recommendation = await store.getRecommendation(userId, body.recommendation_id, { workspaceId });
+            if (!recommendation) return notFound("Recommendation not found.");
+          }
+          const expData = createExperimentRecord({
+            auditId: body.audit_id || null,
+            recommendationId: body.recommendation_id || null,
+            experimentName: body.experiment_name || body.name,
+            ticketUrl: body.ticket_url || null,
+            hypothesis: body.hypothesis || null,
+            expectedMetric: body.expected_metric || "sxo_total_score",
+            baselineValue: body.baseline_value ?? null,
+            currentValue: body.current_value ?? null,
+            status: body.status || "active",
+            observationPeriodDays: Number(body.observation_period_days) || 28,
+            results: body.results || {},
+          });
+          const saved = await store.saveOptimizationExperiment(userId, {
+            ...expData,
+            workspaceId,
+          });
+          return saved.ok ? json(200, saved) : json(502, saved);
+        }
+
+        if (!sub && method === "GET") {
+          const q = event.queryStringParameters || {};
+          const experiments = await store.listOptimizationExperiments(userId, {
+            auditId: q.audit_id || null,
+            status: q.status || null,
+            workspaceId: q.workspace_id || null,
+            limit: Number(q.limit) || 50,
+          });
+          return json(200, { ok: true, experiments });
+        }
+
+        if (sub && !subId && method === "GET") {
+          const q = event.queryStringParameters || {};
+          const experiment = await store.getOptimizationExperiment(userId, sub, {
+            workspaceId: q.workspace_id || null,
+          });
+          if (!experiment) return notFound("Experiment not found.");
+          return json(200, { ok: true, experiment });
+        }
+
+        if (sub && subId === "evaluate" && method === "POST") {
+          const workspaceId = body.workspace_id || null;
+          const experiment = await store.getOptimizationExperiment(userId, sub, { workspaceId });
+          if (!experiment) return notFound("Experiment not found.");
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          if (!body.baseline_audit_id || !body.current_audit_id) {
+            return bad("`baseline_audit_id` and `current_audit_id` are required.");
+          }
+          const baselineFull = await store.getAuditFull(userId, body.baseline_audit_id, { workspaceId });
+          if (!baselineFull) return notFound("Baseline audit not found.");
+          const currentFull = await store.getAuditFull(userId, body.current_audit_id, { workspaceId });
+          if (!currentFull) return notFound("Current audit not found.");
+          const [baselineSxo, currentSxo] = await Promise.all([
+            store.getSxoForAudit(userId, body.baseline_audit_id, { workspaceId }),
+            store.getSxoForAudit(userId, body.current_audit_id, { workspaceId }),
+          ]);
+          const baselineAudit = { ...rehydrate(baselineFull), sxo_total_score: baselineSxo?.sxo_total_score ?? null };
+          const currentAudit = { ...rehydrate(currentFull), sxo_total_score: currentSxo?.sxo_total_score ?? null };
+          const impact = evaluateExperimentImpact({
+            baselineAudit,
+            currentAudit,
+            targetMetric: body.target_metric || experiment.expected_metric || "sxo_total_score",
+          });
+          const updated = await store.updateOptimizationExperiment(userId, sub, {
+            results: impact,
+            status: body.complete ? "completed" : "active",
+            current_value: impact.current_value,
+          }, { workspaceId });
+          return updated.ok ? json(200, { ok: true, impact, experiment: updated.experiment }) : json(502, updated);
+        }
+      }
+
+      // 12. /sxo/portfolio/rollups (GET, POST)
+      if (id === "portfolio" && sub === "rollups") {
+        if (method === "GET") {
+          const q = event.queryStringParameters || {};
+          const rollups = await store.listPortfolioRollups(userId, {
+            rollupAxis: q.axis || null,
+            workspaceId: q.workspace_id || null,
+            limit: Number(q.limit) || 100,
+          });
+          return json(200, { ok: true, rollups });
+        }
+
+        if (method === "POST") {
+          const workspaceId = body.workspace_id || null;
+          if (workspaceId) {
+            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
+            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          }
+          const axis = body.axis || body.rollup_axis;
+          if (!axis || !PORTFOLIO_ROLLUP_AXES.includes(axis)) {
+            return bad(`Invalid axis "${axis}". Must be one of: ${PORTFOLIO_ROLLUP_AXES.join(", ")}.`);
+          }
+          const storedInputs = await store.listPortfolioAuditInputs(userId, { workspaceId });
+          const scoredInputs = storedInputs.map((item) => {
+            const master = computeMasterScore({
+              seo: item.result?.seo_score ?? null,
+              aeo: item.result?.aeo_score ?? null,
+              geo: item.result?.geo_score ?? null,
+              sxo: item.sxo?.sxo_total_score ?? null,
+            });
+            return {
+              ...item,
+              template: item.template || item.page_type || "unknown",
+              final_score: item.result?.final_score ?? null,
+              master_score: master.score,
+              coverage: master.coverage,
+              framework_scores: {
+                seo: { score: item.result?.seo_score ?? null },
+                aeo: { score: item.result?.aeo_score ?? null },
+                geo: { score: item.result?.geo_score ?? null },
+                sxo: { score: item.sxo?.sxo_total_score ?? null },
+              },
+            };
+          });
+          const calculated = calculatePortfolioRollup(scoredInputs, axis);
+          const persisted = await Promise.all(calculated.rollups.map((rollup) =>
+            store.savePortfolioRollup(userId, {
+              rollupAxis: rollup.axis,
+              axisValue: rollup.axis_label || rollup.axis_key,
+              auditCount: rollup.audit_count,
+              masterScore: rollup.master_score,
+              layerScores: {},
+              frameworkScores: rollup.framework_scores,
+              coverage: rollup.coverage,
+              workspaceId,
+            })));
+          if (persisted.some((result) => !result.ok)) {
+            return json(502, { ok: false, error: "One or more portfolio rollups could not be saved." });
+          }
+          return json(200, {
+            ok: true,
+            axis: calculated.axis,
+            total_audits: calculated.total_audits,
+            unaudited_count: calculated.unaudited_count,
+            rollups: calculated.rollups,
+          });
+        }
+      }
+
+      // 13. POST /sxo/recommendations/:id/validate
+      if (id === "recommendations" && sub && subId === "validate" && method === "POST") {
+        const workspaceId = body.workspace_id || null;
+        const recommendation = await store.getRecommendation(userId, sub, { workspaceId });
+        if (!recommendation) return notFound("Recommendation not found.");
+        if (workspaceId) {
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+        }
+        if (body.validated_by_audit_id) {
+          const validationAudit = await store.getAuditFull(userId, body.validated_by_audit_id, { workspaceId });
+          if (!validationAudit) return notFound("Validation audit not found.");
+        }
+        const r = await store.setRecommendationStatus(userId, sub, "validated", body.reason || "Validated via SXO", {
+          validatedByAuditId: body.validated_by_audit_id || null,
+          notes: body.notes || null,
+          ...(workspaceId ? { workspaceId } : {}),
+        });
+        if (r.notFound) return notFound("Recommendation not found.");
+        if (!r.ok) return bad(r.error);
+        return json(200, {
+          ok: true,
+          recommendation: r.recommendation,
+          relationship: "correlation",
+          caveats: [
+            "Observed metric movement between baseline and observation periods is correlational.",
+            "Correlation does not establish causation.",
+          ],
+        });
+      }
+
+      return json(405, { error: "Method not allowed." });
+    }
 
     // ── /profiles — static reference data for the UI ────────────────────────
     if (root === "profiles" && method === "GET") return json(200, intakeReference());
@@ -843,7 +1658,8 @@ async function rerunRoute(event, userId, auditId, body) {
     });
   }
 
-  const prior = await store.getAudit(userId, auditId);
+  const workspaceId = body.workspace_id || null;
+  const prior = await store.getAudit(userId, auditId, { workspaceId });
   if (!prior) return notFound("Audit not found.");
 
   const gate = await gateAuditQuota(event, userId, 1, body.workspace_id);
@@ -902,8 +1718,8 @@ async function rerunRoute(event, userId, auditId, body) {
   return json(run.statusCode, run.body);
 }
 
-async function compareRoute(userId, currentFull, baselineId) {
-  const baselineFull = await store.getAuditFull(userId, baselineId);
+async function compareRoute(userId, currentFull, baselineId, workspaceId = null) {
+  const baselineFull = await store.getAuditFull(userId, baselineId, { workspaceId });
   if (!baselineFull) return notFound("Baseline audit not found.");
 
   // 🔴 D7 — REFUSE A COMPARISON BETWEEN TWO DIFFERENT THINGS.
@@ -959,7 +1775,7 @@ async function compareRoute(userId, currentFull, baselineId) {
  * part that matters. And if the cache write fails, the summary is still
  * returned — it just gets regenerated next time.
  */
-async function summaryRoute(userId, auditId, full) {
+async function summaryRoute(userId, auditId, full, workspaceId = null) {
   const audit = rehydrate(full);
   if (!audit) return notFound("Audit not found.");
 
@@ -977,6 +1793,7 @@ async function summaryRoute(userId, auditId, full) {
 
   const saved = await store.saveAuditSummary(userId, auditId, {
     summary: result.summary, model: result.provider,
+    workspaceId, auditOwnerId: full.audit?.user_id || null,
   });
   return json(200, {
     summary: result.summary,
@@ -1064,12 +1881,18 @@ async function gateAuditQuota(event, userId, count, rawWorkspaceId, capability =
  * they already own would be taking away something they were given, which is a
  * different act from declining to create more.
  */
-async function gateP2Capability(event, capability, rawWorkspaceId) {
+async function gateP2Capability(event, capability, rawWorkspaceId, action = "run_analysis") {
   const resolved = await resolveRequestEntitlement(event);
-  const { ctx: workspaceCtx, refusal } = await buildWorkspaceCtx(resolved, rawWorkspaceId);
-  if (refusal) {
-    return { ok: false, response: json(403, { error: refusal.message, code: refusal.code }) };
+  const roleGate = await requireWorkspaceDiscoverabilityAction(
+    resolved.userId, rawWorkspaceId, action,
+  );
+  if (!roleGate.ok) {
+    return {
+      ok: false,
+      response: json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code }),
+    };
   }
+  const workspaceCtx = roleGate.ctx || {};
   if (resolved.degraded) return { ok: true, resolved };
 
   const check = checkCapability(resolved, capability, { ...workspaceCtx });
@@ -1093,8 +1916,11 @@ async function gateP2Capability(event, capability, rawWorkspaceId) {
  * to see it. A refusal has to reach the person who asked.
  */
 async function revalidateRoute(event, userId, recId, body) {
-  const rec = await store.getRecommendation(userId, recId);
+  const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
+  const rec = await store.getRecommendation(userId, recId, { workspaceId });
   if (!rec) return notFound("Recommendation not found.");
+  const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "manage_workflow");
+  if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
 
   // Only something believed FIXED is worth re-checking. Asking to revalidate
   // an open item would spend an audit to confirm what the last one said.
@@ -1121,11 +1947,12 @@ async function revalidateRoute(event, userId, recId, body) {
   }
 
   // 🔴 THE REAL AUDIT QUOTA, not a feature flag — this spends one.
-  const gate = await gateAuditQuota(event, userId, 1, body.workspace_id, "audit.revalidate");
+  const gate = await gateAuditQuota(event, userId, 1, workspaceId, "audit.revalidate");
   if (!gate.ok) return gate.response;
 
   const claim = await store.claimRevalidation(userId, recId, {
     baselineAuditId: body.baseline_audit_id || rec.audit_id || null,
+    workspaceId,
   });
   if (!claim.ok) {
     return json(503, { error: "Could not record the request.", code: "STORAGE_UNAVAILABLE", detail: claim.error });
@@ -1263,6 +2090,8 @@ const WEBHOOK_EVENT_FOR = Object.freeze({
   done: "recommendation.implemented",   // one state, one event
   validation_scheduled: "recommendation.validation_scheduled",
   validated: "recommendation.validated",
+  no_measurable_change: "recommendation.no_measurable_change",
+  regressed: "recommendation.regressed",
   dismissed: "recommendation.dismissed",
   open: "recommendation.reopened",
 });
@@ -1277,6 +2106,8 @@ const VERB_TO_STATE = Object.freeze({
   implemented: "implemented",
   schedule_validation: "validation_scheduled",
   validate: "validated",
+  no_change: "no_measurable_change",
+  regress: "regressed",
 });
 
 async function promptMonitorRoute(event, userId, method, id, sub, body) {
@@ -1637,16 +2468,16 @@ export function assetFor(rec) {
  * un-reviewed draft would raise findings against facts nobody has agreed are
  * true, which is the exact effect the approval gate exists to prevent.
  */
-async function checkAgainstTruthRecord(userId, auditId, rawUrl, result) {
+async function checkAgainstTruthRecord(userId, auditId, rawUrl, result, workspaceId = null) {
   try {
     const host = normalizeFieldValue("canonical_domain", rawUrl);
     if (!host) return null;
 
-    const records = await store.listTruthRecords(userId);
+    const records = await store.listTruthRecords(userId, { workspaceId });
     const record = records.find((r) => r.canonical_domain === host);
     if (!record?.current_version_id) return null;
 
-    const canonicalVersion = await store.getCanonicalTruthVersion(userId, record.id);
+    const canonicalVersion = await store.getCanonicalTruthVersion(userId, record.id, { workspaceId });
     if (!canonicalVersion) return null;
 
     const node = result?.facts?.organization_node
@@ -1742,11 +2573,16 @@ function describeVersion(row) {
 }
 
 async function businessTruthRoute(userId, method, path, body, event) {
+  const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
   // W14/D9. Writes are gated; reads are not — refusing to show a customer the
   // record they already own is taking away something they were given, which is
   // a different act from declining to create more.
   if (method !== "GET") {
-    const gate = await gateP2Capability(event, "audit.business_truth", body.workspace_id);
+    const approving = path.includes("promote") || path.includes("reject") || path.includes("conflicts");
+    const gate = await gateP2Capability(
+      event, "audit.business_truth", workspaceId,
+      approving ? "approve_changes" : "propose_changes",
+    );
     if (!gate.ok) return gate.response;
   }
   // `path` is the whole parsed sub-path, because a version verb lives at
@@ -1772,6 +2608,8 @@ async function businessTruthRoute(userId, method, path, body, event) {
   if (!id) {
     if (method === "GET") {
       const q = event.queryStringParameters || {};
+      const readGate = await requireWorkspaceDiscoverabilityAction(userId, q.workspace_id, "read");
+      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
       const records = await store.listTruthRecords(userId, { workspaceId: q.workspace_id || null });
       return json(200, { records, count: records.length });
     }
@@ -1815,7 +2653,9 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── One record ───────────────────────────────────────────────────────────
   if (!sub) {
     if (method === "GET") {
-      const full = await store.getTruthRecordFull(userId, id);
+      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const full = await store.getTruthRecordFull(userId, id, { workspaceId });
       if (!full) return notFound("Truth record not found.");
       const canonical = full.versions.find((v) => v.id === full.current_version_id) || null;
       return json(200, {
@@ -1827,7 +2667,7 @@ async function businessTruthRoute(userId, method, path, body, event) {
       });
     }
     if (method === "DELETE") {
-      const r = await store.archiveTruthRecord(userId, id);
+      const r = await store.archiveTruthRecord(userId, id, { workspaceId });
       return r.ok ? json(200, { archived: true }) : notFound("Truth record not found.");
     }
     return notFound("Unknown endpoint.");
@@ -1836,7 +2676,7 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── Versions ─────────────────────────────────────────────────────────────
   if (sub === "versions") {
     if (!subId && method === "POST") {
-      const record = await store.getTruthRecord(userId, id);
+      const record = await store.getTruthRecord(userId, id, { workspaceId });
       if (!record) return notFound("Truth record not found.");
 
       const source = body.source || "declared";
@@ -1869,7 +2709,7 @@ async function businessTruthRoute(userId, method, path, body, event) {
       const created = await store.createTruthVersion(userId, id, {
         fields,
         completeness: completeness.percent,
-        origin: "manual",
+        origin: "manual", workspaceId,
       });
       if (created.conflict) {
         return json(409, {
@@ -1888,19 +2728,23 @@ async function businessTruthRoute(userId, method, path, body, event) {
     }
 
     if (subId && method === "GET") {
-      const row = await store.getTruthVersion(userId, id, subId);
+      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const row = await store.getTruthVersion(userId, id, subId, { workspaceId });
       return row ? json(200, { version: describeVersion(row) }) : notFound("Version not found.");
     }
 
     // Verbs on one version.
     if (subId && method === "POST" && verb) {
-      const row = await store.getTruthVersion(userId, id, subId);
+      const row = await store.getTruthVersion(userId, id, subId, { workspaceId });
       if (!row) return notFound("Version not found.");
 
       if (verb === "promote") {
-        const r = await store.promoteTruthVersion(userId, id, subId, { note: body.note || null });
+        const r = await store.promoteTruthVersion(userId, id, subId, {
+          note: body.note || null, workspaceId,
+        });
         if (r.ok) {
-          const full = await store.getTruthRecordFull(userId, id);
+          const full = await store.getTruthRecordFull(userId, id, { workspaceId });
           return json(200, {
             promoted: true,
             record: full,
@@ -1940,7 +2784,9 @@ async function businessTruthRoute(userId, method, path, body, event) {
           { code: "REASON_REQUIRED" });
       }
 
-      const r = await store.setTruthVersionState(userId, id, subId, next, { note: note || null });
+      const r = await store.setTruthVersionState(userId, id, subId, next, {
+        note: note || null, workspaceId,
+      });
       if (!r.ok) {
         if (r.notFound) return notFound("Version not found.");
         if (r.refused) return json(409, { error: "Approval goes through promote, which carries the interlocks.", code: "USE_PROMOTE" });
@@ -1955,7 +2801,9 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── Diff ─────────────────────────────────────────────────────────────────
   if (sub === "diff" && method === "GET") {
     const q = event.queryStringParameters || {};
-    const full = await store.getTruthRecordFull(userId, id);
+    const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+    if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+    const full = await store.getTruthRecordFull(userId, id, { workspaceId });
     if (!full) return notFound("Truth record not found.");
 
     const byId = new Map(full.versions.map((v) => [v.id, v]));
@@ -1986,7 +2834,9 @@ async function businessTruthRoute(userId, method, path, body, event) {
   // ── Conflicts ────────────────────────────────────────────────────────────
   if (sub === "conflicts") {
     if (!subId && method === "GET") {
-      const full = await store.getTruthRecordFull(userId, id);
+      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const full = await store.getTruthRecordFull(userId, id, { workspaceId });
       if (!full) return notFound("Truth record not found.");
       return json(200, { conflicts: full.conflicts, count: full.conflicts.length });
     }
@@ -1996,7 +2846,7 @@ async function businessTruthRoute(userId, method, path, body, event) {
       if (!ALLOWED.includes(resolution)) {
         return bad(`Resolution must be one of: ${ALLOWED.join(", ")}.`, { code: "INVALID_REQUEST" });
       }
-      const r = await store.resolveTruthConflict(userId, id, subId, resolution);
+      const r = await store.resolveTruthConflict(userId, id, subId, resolution, { workspaceId });
       return r.ok ? json(200, { resolved: true }) : notFound("Conflict not found.");
     }
   }
@@ -2023,11 +2873,16 @@ async function businessTruthRoute(userId, method, path, body, event) {
 // unreviewed nodes is a half-built statement.
 
 async function entityGraphRoute(userId, method, path, body, event) {
+  const workspaceId = body.workspace_id || event.queryStringParameters?.workspace_id || null;
   // W14/D9. Writes are gated; reads are not — refusing to show a customer the
   // record they already own is taking away something they were given, which is
   // a different act from declining to create more.
   if (method !== "GET") {
-    const gate = await gateP2Capability(event, "audit.entity_graph", body.workspace_id);
+    const approving = path.includes("approve") || path.includes("reject") || path.includes("resolve");
+    const gate = await gateP2Capability(
+      event, "audit.entity_graph", workspaceId,
+      approving ? "approve_changes" : "propose_changes",
+    );
     if (!gate.ok) return gate.response;
   }
   const [, section, id, verb] = path;
@@ -2046,11 +2901,13 @@ async function entityGraphRoute(userId, method, path, body, event) {
   // ── The graph ────────────────────────────────────────────────────────────
   if (!section && method === "GET") {
     const q = event.queryStringParameters || {};
+    const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+    if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
     const truthRecordId = q.truth_record_id || null;
     const [entities, relationships, conflicts] = await Promise.all([
-      store.listEntities(userId, { truthRecordId }),
-      store.listRelationships(userId),
-      store.listGraphConflicts(userId, { truthRecordId }),
+      store.listEntities(userId, { truthRecordId, workspaceId }),
+      store.listRelationships(userId, { workspaceId }),
+      store.listGraphConflicts(userId, { truthRecordId, workspaceId }),
     ]);
 
     // Coverage is computed from the rows, in the pure model, so the number the
@@ -2116,7 +2973,7 @@ async function entityGraphRoute(userId, method, path, body, event) {
         return bad("A rejection needs a reason. A rejected entity that keeps being re-proposed is itself a finding, and without the reason nobody can tell a decision from a mis-click.",
           { code: "REASON_REQUIRED" });
       }
-      const r = await store.rejectGraphRow(userId, "entity", id, reason);
+      const r = await store.rejectGraphRow(userId, "entity", id, reason, { workspaceId });
       return r.ok ? json(200, { entity: r.row }) : notFound("Entity not found.");
     }
 
@@ -2148,7 +3005,8 @@ async function entityGraphRoute(userId, method, path, body, event) {
       // supplied. A caller that could name its own endpoint types could declare
       // any edge legal, and the domain/range rules would enforce nothing.
       const [subject, object] = await Promise.all([
-        store.getEntity(userId, subjectId), store.getEntity(userId, objectId),
+        store.getEntity(userId, subjectId, { workspaceId }),
+        store.getEntity(userId, objectId, { workspaceId }),
       ]);
       if (!subject || !object) return notFound("One or both entities were not found.");
 
@@ -2164,7 +3022,7 @@ async function entityGraphRoute(userId, method, path, body, event) {
       }
 
       const created = await store.createRelationship(userId, {
-        subjectId, predicate, objectId, source, note: body.note || null,
+        subjectId, predicate, objectId, source, note: body.note || null, workspaceId,
       });
       if (created.duplicate) {
         // 🔴 THIS SENTENCE USED TO BE FALSE. The route said "re-observing one
@@ -2180,7 +3038,9 @@ async function entityGraphRoute(userId, method, path, body, event) {
         // status code is a public contract `/api/v1` holders read. What
         // changed is that the body now reports what actually happened, so a
         // caller can tell a recorded sighting from a lost one.
-        const existing = await store.findRelationship(userId, { subjectId, predicate, objectId });
+        const criteria = { subjectId, predicate, objectId };
+        if (workspaceId) criteria.workspaceId = workspaceId;
+        const existing = await store.findRelationship(userId, criteria);
         let corroborated = false;
         if (existing) {
           const ev = await store.recordEntityEvidence({
@@ -2204,11 +3064,13 @@ async function entityGraphRoute(userId, method, path, body, event) {
     }
 
     if (id && method === "POST" && verb === "approve") {
-      const r = await store.approveEntityRelationship(userId, id, { note: body.note || null });
+      const r = await store.approveEntityRelationship(userId, id, {
+        note: body.note || null, workspaceId,
+      });
       if (r.ok) {
-        const relationship = await store.getRelationship(userId, id);
+        const relationship = await store.getRelationship(userId, id, { workspaceId });
         // The approved graph just changed, so its conflicts just changed.
-        const sweep = await refreshGraphConflicts(userId, body.truth_record_id || null);
+        const sweep = await refreshGraphConflicts(userId, body.truth_record_id || null, workspaceId);
         return json(200, { approved: true, relationship, conflicts: sweep });
       }
       if (r.notFound) return notFound("Relationship not found.");
@@ -2226,7 +3088,7 @@ async function entityGraphRoute(userId, method, path, body, event) {
     if (id && method === "POST" && verb === "reject") {
       const reason = typeof body.reason === "string" ? body.reason.trim() : "";
       if (!reason) return bad("A rejection needs a reason.", { code: "REASON_REQUIRED" });
-      const r = await store.rejectGraphRow(userId, "relationship", id, reason);
+      const r = await store.rejectGraphRow(userId, "relationship", id, reason, { workspaceId });
       return r.ok ? json(200, { relationship: r.row }) : notFound("Relationship not found.");
     }
 
@@ -2237,7 +3099,11 @@ async function entityGraphRoute(userId, method, path, body, event) {
   if (section === "conflicts") {
     if (!id && method === "GET") {
       const q = event.queryStringParameters || {};
-      const conflicts = await store.listGraphConflicts(userId, { truthRecordId: q.truth_record_id || null });
+      const readGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+      if (!readGate.ok) return json(403, { error: readGate.refusal.message, code: readGate.refusal.code });
+      const conflicts = await store.listGraphConflicts(userId, {
+        truthRecordId: q.truth_record_id || null, workspaceId,
+      });
       return json(200, { conflicts, count: conflicts.length });
     }
     if (id && method === "POST" && verb === "resolve") {
@@ -2245,7 +3111,7 @@ async function entityGraphRoute(userId, method, path, body, event) {
       if (!ALLOWED.includes(body.resolution)) {
         return bad(`Resolution must be one of: ${ALLOWED.join(", ")}.`, { code: "INVALID_REQUEST" });
       }
-      const r = await store.resolveGraphConflict(userId, id, body.resolution);
+      const r = await store.resolveGraphConflict(userId, id, body.resolution, { workspaceId });
       return r.ok ? json(200, { resolved: true }) : notFound("Conflict not found.");
     }
     return notFound("Unknown endpoint.");
@@ -2297,12 +3163,12 @@ function toRelationModels(rows, entities) {
  * ⚠️ AND IT NEVER FAILS THE APPROVAL. The edge was approved; a conflict sweep
  * that cannot write is not a reason to tell the user their approval failed.
  */
-async function refreshGraphConflicts(userId, truthRecordId = null) {
+async function refreshGraphConflicts(userId, truthRecordId = null, workspaceId = null) {
   try {
     const [entities, relationships, open] = await Promise.all([
-      store.listEntities(userId, { truthRecordId }),
-      store.listRelationships(userId),
-      store.listGraphConflicts(userId, { truthRecordId }),
+      store.listEntities(userId, { truthRecordId, workspaceId }),
+      store.listRelationships(userId, { workspaceId }),
+      store.listGraphConflicts(userId, { truthRecordId, workspaceId }),
     ]);
 
     const entityModels = entities.map((e) => ({
@@ -2323,7 +3189,9 @@ async function refreshGraphConflicts(userId, truthRecordId = null) {
         subject_entity_id: byId.has(c.subject_id) ? c.subject_id : null,
       }));
 
-    if (fresh.length) await store.recordGraphConflicts(userId, truthRecordId, null, fresh);
+    if (fresh.length) {
+      await store.recordGraphConflicts(userId, truthRecordId, null, fresh, { workspaceId });
+    }
     return { found: found.length, recorded: fresh.length };
   } catch {
     return null;
@@ -2368,11 +3236,15 @@ async function requireLocalRefs(userId, body) {
   if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
 
   if (body.truth_record_id) {
-    const rec = await store.getTruthRecord(userId, body.truth_record_id);
+    const rec = await (body.workspace_id
+      ? store.getTruthRecord(userId, body.truth_record_id, { workspaceId: body.workspace_id })
+      : store.getTruthRecord(userId, body.truth_record_id));
     if (!rec) return { refusal: notFound("Business truth record not found.") };
   }
   if (body.subject_id) {
-    const subj = await store.getSubject(userId, body.subject_id);
+    const subj = await (body.workspace_id
+      ? store.getSubject(userId, body.subject_id, { workspaceId: body.workspace_id })
+      : store.getSubject(userId, body.subject_id));
     if (!subj) return { refusal: notFound("Subject not found.") };
   }
   return { refusal: null };
@@ -2414,6 +3286,13 @@ async function subjectScoreRoute(userId, method, path, body, event) {
   }
   const [, section] = path;
   const q = event.queryStringParameters || {};
+  const workspaceId = method === "GET" ? q.workspace_id || null : body.workspace_id || null;
+  if (method === "GET" && workspaceId) {
+    const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+    if (!roleGate.ok) {
+      return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+    }
+  }
 
   // The registry, so a client renders the same component names and weights the
   // server scores with rather than keeping a copy that drifts.
@@ -2437,9 +3316,41 @@ async function subjectScoreRoute(userId, method, path, body, event) {
     return json(200, intentCoverage(Array.isArray(body.intents) ? body.intents : []));
   }
 
+  if (section === "subjects" && method === "POST") {
+    if (!body.entity_id || !body.subject_kind) {
+      return bad("`entity_id` and `subject_kind` are required.");
+    }
+    const entity = await store.getEntity(userId, body.entity_id, {
+      workspaceId: body.workspace_id || null,
+    });
+    if (!entity) return notFound("Entity not found.");
+    const allowed = canCreateEntitySubject(entity, body.subject_kind);
+    if (!allowed.ok) {
+      return json(entity.state === "approved" ? 422 : 409, {
+        error: allowed.reason,
+        code: entity.state === "approved" ? "SUBJECT_KIND_MISMATCH" : "ENTITY_NOT_APPROVED",
+      });
+    }
+    const subjectId = await store.ensureSubject(userId, {
+      kind: body.subject_kind,
+      entityId: entity.id,
+      label: entity.name,
+      canonicalDomain: entity.canonical_domain,
+      workspaceId: entity.workspace_id || null,
+    });
+    if (!subjectId) return json(502, { error: "Could not create the subject." });
+    const subject = await store.getSubject(userId, subjectId, {
+      workspaceId: entity.workspace_id || null,
+    });
+    return json(201, { subject });
+  }
+
   if (section === "scores") {
     if (method === "GET") {
-      const rows = await store.listSubjectScores(userId, { subjectId: q.subject_id || null });
+      const rows = await store.listSubjectScores(userId, {
+        subjectId: q.subject_id || null,
+        workspaceId,
+      });
       return json(200, { scores: rows, count: rows.length });
     }
 
@@ -2499,7 +3410,9 @@ async function requireSubjectScoreRefs(userId, body) {
   const { refusal: wsRefusal } = await buildWorkspaceCtx({ userId }, body.workspace_id);
   if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
 
-  const subject = await store.getSubject(userId, body.subject_id);
+  const subject = await (body.workspace_id
+    ? store.getSubject(userId, body.subject_id, { workspaceId: body.workspace_id })
+    : store.getSubject(userId, body.subject_id));
   if (!subject) return { refusal: notFound("Subject not found.") };
 
   if (body.audit_id) {
@@ -2519,6 +3432,13 @@ async function schemaTrustRoute(userId, method, path, body, event) {
   }
   const [, section] = path;
   const q = event.queryStringParameters || {};
+  const workspaceId = method === "GET" ? q.workspace_id || null : body.workspace_id || null;
+  if (method === "GET" && workspaceId) {
+    const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+    if (!roleGate.ok) {
+      return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+    }
+  }
 
   if (section === "schema-registry" && method === "GET") {
     return json(200, {
@@ -2534,7 +3454,10 @@ async function schemaTrustRoute(userId, method, path, body, event) {
   // ── Schema observations ──────────────────────────────────────────────────
   if (section === "schema") {
     if (method === "GET") {
-      const rows = await store.listSchemaEntities(userId, { subjectId: q.subject_id || null });
+      const rows = await store.listSchemaEntities(userId, {
+        subjectId: q.subject_id || null,
+        workspaceId,
+      });
       return json(200, { entities: rows, count: rows.length });
     }
 
@@ -2584,7 +3507,10 @@ async function schemaTrustRoute(userId, method, path, body, event) {
   // ── Trust observations ───────────────────────────────────────────────────
   if (section === "trust") {
     if (method === "GET") {
-      const rows = await store.listTrustObservations(userId, { subjectId: q.subject_id || null });
+      const rows = await store.listTrustObservations(userId, {
+        subjectId: q.subject_id || null,
+        workspaceId,
+      });
       const kind = q.kind || "brand";
       const bySignal = {};
       for (const row of rows) {
@@ -2675,7 +3601,9 @@ async function requireSchemaTrustRefs(userId, body) {
   if (wsRefusal) return { refusal: json(403, { error: wsRefusal.message, code: wsRefusal.code }) };
 
   if (body.subject_id) {
-    const subj = await store.getSubject(userId, body.subject_id);
+    const subj = await (body.workspace_id
+      ? store.getSubject(userId, body.subject_id, { workspaceId: body.workspace_id })
+      : store.getSubject(userId, body.subject_id));
     if (!subj) return { refusal: notFound("Subject not found.") };
   }
   if (body.audit_id) {
@@ -2695,6 +3623,13 @@ async function localDirectoryRoute(userId, method, path, body, event) {
   }
   const [, section, id, verb] = path;
   const q = event.queryStringParameters || {};
+  const workspaceId = method === "GET" ? q.workspace_id || null : body.workspace_id || null;
+  if (method === "GET" && workspaceId) {
+    const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+    if (!roleGate.ok) {
+      return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+    }
+  }
 
   if (section === "schema" && method === "GET") {
     return json(200, {
@@ -2710,7 +3645,10 @@ async function localDirectoryRoute(userId, method, path, body, event) {
   // ── Listings ─────────────────────────────────────────────────────────────
   if (section === "listings") {
     if (method === "GET") {
-      const rows = await store.listDirectoryListings(userId, { truthRecordId: q.truth_record_id || null });
+      const rows = await store.listDirectoryListings(userId, {
+        truthRecordId: q.truth_record_id || null,
+        workspaceId,
+      });
       return json(200, {
         listings: rows,
         count: rows.length,
@@ -2760,7 +3698,9 @@ async function localDirectoryRoute(userId, method, path, body, event) {
     }
 
     if (method === "DELETE" && id) {
-      const r = await store.deleteDirectoryListing(userId, id);
+      const r = await store.deleteDirectoryListing(userId, id, {
+        workspaceId: body.workspace_id || null,
+      });
       if (r.notFound) return notFound("Listing not found.");
       return json(200, { deleted: true });
     }
@@ -2778,7 +3718,10 @@ async function localDirectoryRoute(userId, method, path, body, event) {
     const ref = await requireLocalRefs(userId, body);
     if (ref.refusal) return ref.refusal;
 
-    const listings = await store.listDirectoryListings(userId, { truthRecordId });
+    const listings = await store.listDirectoryListings(userId, {
+      truthRecordId,
+      workspaceId: body.workspace_id || null,
+    });
     const configured = (region ? sourcesForRegion(region) : DIRECTORY_SOURCES).map((src) => src.id);
 
     const matches = listings
@@ -2829,12 +3772,13 @@ async function localDirectoryRoute(userId, method, path, body, event) {
   // ── History ──────────────────────────────────────────────────────────────
   if (section === "checks" && method === "GET") {
     if (id) {
-      const full = await store.getLocalCheckFull(userId, id);
+      const full = await store.getLocalCheckFull(userId, id, { workspaceId });
       if (!full) return notFound("Check not found.");
       return json(200, full);
     }
     const rows = await store.listLocalChecks(userId, {
       truthRecordId: q.truth_record_id || null, subjectId: q.subject_id || null,
+      workspaceId,
     });
     return json(200, { checks: rows, count: rows.length });
   }
@@ -2845,7 +3789,9 @@ async function localDirectoryRoute(userId, method, path, body, event) {
     if (!LOCAL_RESOLUTIONS.includes(resolution)) {
       return bad(`Resolution must be one of: ${LOCAL_RESOLUTIONS.join(", ")}.`);
     }
-    const r = await store.resolveLocalFinding(userId, id, resolution);
+    const r = await store.resolveLocalFinding(userId, id, resolution, {
+      workspaceId: body.workspace_id || null,
+    });
     if (r.notFound) return notFound("Finding not found.");
     if (!r.ok) return json(503, { error: "Could not resolve the finding.", code: "STORAGE_UNAVAILABLE", detail: r.error });
     return json(200, { finding: r.finding });

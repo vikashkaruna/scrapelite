@@ -31,7 +31,9 @@ function when(iso) {
   });
 }
 
-export default function AuditHeader({ audit, diff = null, framework = "overall", onFrameworkChange = null }) {
+export default function AuditHeader({
+  audit, diff = null, framework = "overall", onFrameworkChange = null, workspaceId = null,
+}) {
   // Seeded from the audit itself, so an already-summarised report shows its
   // summary on first paint with no request at all.
   const [summary, setSummary] = useState(audit?.summary || null);
@@ -49,7 +51,7 @@ export default function AuditHeader({ audit, diff = null, framework = "overall",
     if (!auditId || summary) return;
     let alive = true;
     setLoading(true);
-    discoverability.summary(auditId)
+    discoverability.summary(auditId, { workspaceId })
       .then((r) => {
         if (!alive) return;
         if (r?.summary) setSummary(r.summary);
@@ -59,7 +61,7 @@ export default function AuditHeader({ audit, diff = null, framework = "overall",
       .catch(() => { if (alive) setUnavailable(true); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [auditId, summary]);
+  }, [auditId, summary, workspaceId]);
 
   if (!audit) return null;
 

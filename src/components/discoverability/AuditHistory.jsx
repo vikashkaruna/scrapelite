@@ -45,7 +45,7 @@ function whenLabel(iso) {
   return d.toLocaleDateString();
 }
 
-export default function AuditHistory({ onOpen, onClose, currentAuditId = null }) {
+export default function AuditHistory({ onOpen, onClose, currentAuditId = null, workspaceId = null }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -54,10 +54,17 @@ export default function AuditHistory({ onOpen, onClose, currentAuditId = null })
   const [query, setQuery] = useState("");
 
   useEffect(() => {
+    setRows([]);
+    setOffset(0);
+  }, [workspaceId]);
+
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    discoverability.listAudits({ limit: PAGE_SIZE, offset })
+    discoverability.listAudits({
+      limit: PAGE_SIZE, offset, ...(workspaceId ? { workspace_id: workspaceId } : {}),
+    })
       .then((data) => {
         if (cancelled) return;
         const list = data?.audits || [];
@@ -67,7 +74,7 @@ export default function AuditHistory({ onOpen, onClose, currentAuditId = null })
       .catch((err) => { if (!cancelled) setError(err?.message || "Could not load your audit history."); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [offset]);
+  }, [offset, workspaceId]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -81,7 +88,7 @@ export default function AuditHistory({ onOpen, onClose, currentAuditId = null })
         <div>
           <h2>Audit history</h2>
           <p className="dsc-history-page-sub">
-            Every discoverability audit on this account. Open one to see its full report,
+            Every discoverability audit {workspaceId ? "in this workspace" : "on this account"}. Open one to see its full report,
             or re-run it to measure a fix.
           </p>
         </div>

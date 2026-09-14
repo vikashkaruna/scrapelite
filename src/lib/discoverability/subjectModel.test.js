@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   SUBJECT_KINDS, SUBJECT_KIND_IDS, SUBJECT_REFS,
+  SCORABLE_ENTITY_TYPES, canCreateEntitySubject,
   makeSubject, refOf, scoreIdFor, sameSubject, subjectMismatchReason, describeSubject,
 } from "./subjectModel.js";
 
@@ -37,6 +38,22 @@ describe("SUBJECT_KINDS — the vocabulary", () => {
     expect(scoreIdFor("page")).toBeNull();
     expect(scoreIdFor("domain")).toBeNull();
     expect(scoreIdFor("location")).toBeNull();
+  });
+});
+
+describe("approved entity → score subject", () => {
+  it("maps organization/brand, product and service without inventing a fourth score", () => {
+    expect(SCORABLE_ENTITY_TYPES).toEqual({
+      brand: ["organization", "brand"], product: ["product"], service: ["service"],
+    });
+  });
+
+  it("requires approval and a compatible stored entity type", () => {
+    expect(canCreateEntitySubject({ state: "approved", entity_type: "brand" }, "brand").ok).toBe(true);
+    expect(canCreateEntitySubject({ state: "approved", entity_type: "organization" }, "brand").ok).toBe(true);
+    expect(canCreateEntitySubject({ state: "proposed", entity_type: "product" }, "product").reason).toMatch(/approved/);
+    expect(canCreateEntitySubject({ state: "approved", entity_type: "service" }, "product").reason).toMatch(/cannot be backed/);
+    expect(canCreateEntitySubject({ state: "approved", entity_type: "location" }, "location").ok).toBe(false);
   });
 });
 

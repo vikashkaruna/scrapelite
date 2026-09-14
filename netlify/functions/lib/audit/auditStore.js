@@ -3,8 +3,9 @@
 // Talks to Supabase over PostgREST with the SERVICE key, for the same reason
 // requireEntitlement.js does: it is immune to RLS policy drift, and a user
 // cannot make themselves look unrestricted by arranging for their own rows to
-// be unreadable. Every read is still scoped by user_id in the query itself, so
-// the service key never widens what a caller can see.
+// be unreadable. Personal reads are scoped by user_id; workspace reads are
+// scoped by workspace_id only after the route has verified membership and the
+// requested Discoverability action.
 //
 // ── QUOTA IS COUNTED FROM THE AUDITS THEMSELVES ────────────────────────────
 // There is deliberately no counter column. `usage_records` is session-keyed and
@@ -14,11 +15,18 @@
 // we did, and our own failures are free.
 
 import { getServiceDb } from "../requireEntitlement.js";
+import { encryptSecret } from "../integrationSecrets.js";
 import { SCORING_MODEL_VERSION } from "../../../../src/lib/discoverability/scoringModel.js";
 import { isWorkflowState, requirementsFor } from "../../../../src/lib/discoverability/workflowLifecycle.js";
 import { makeSubject } from "../../../../src/lib/discoverability/subjectModel.js";
 
 const SELECT_ALL = "select=*";
+
+function ownerOrWorkspace(userId, workspaceId = null) {
+  return workspaceId
+    ? `workspace_id=eq.${encodeURIComponent(workspaceId)}`
+    : `user_id=eq.${encodeURIComponent(userId)}`;
+}
 
 /**
  * Past this, a still-`running` audit is abandoned rather than in flight.
@@ -640,18 +648,21 @@ export async function deletePromptMonitor(userId, monitorId) {
 
 // ── Reads ──────────────────────────────────────────────────────────────────
 
-export async function getAudit(userId, auditId) {
+export async function getAudit(userId, auditId, { workspaceId = null } = {}) {
   const r = await rest(
-    `audits?id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`,
+    `audits?id=eq.${encodeURIComponent(auditId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`,
   );
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 /** An audit plus every child. The `/results` endpoint's payload. */
-export async function getAuditFull(userId, auditId) {
-  const audit = await getAudit(userId, auditId);
+export async function getAuditFull(userId, auditId, { workspaceId = null } = {}) {
+  const audit = await getAudit(userId, auditId, { workspaceId });
   if (!audit) return null;
-  const scope = `audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`;
+  // Child rows keep the audit creator as user_id. Once the workspace-scoped
+  // parent has been authorized, use that stored owner id rather than the
+  // viewer's id so another workspace member can read the complete audit.
+  const scope = `audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(audit.user_id || userId)}`;
   const [results, signals, issues, recs, runs] = await Promise.all([
     rest(`audit_results?${scope}&${SELECT_ALL}&limit=1`),
     rest(`audit_signals?${scope}&${SELECT_ALL}&order=pillar.asc,signal_code.asc`),
@@ -679,10 +690,14 @@ export async function getAuditFull(userId, auditId) {
  * Never throws: a summary that could not be cached is a summary that gets
  * regenerated next time, not a report that fails to load.
  */
-export async function saveAuditSummary(userId, auditId, { summary, model }) {
+export async function saveAuditSummary(userId, auditId, { summary, model, workspaceId = null, auditOwnerId = null }) {
   if (!userId || !auditId || !summary) return { ok: false };
+  // A workspace member may be the first person to open a shared report. The
+  // parent audit has already been scoped and authorized by the route, so cache
+  // against the audit creator stored on that parent rather than the viewer.
+  const storedOwner = workspaceId && auditOwnerId ? auditOwnerId : userId;
   const r = await rest(
-    `audit_results?audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_results?audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(storedOwner)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=minimal" },
@@ -696,9 +711,11 @@ export async function saveAuditSummary(userId, auditId, { summary, model }) {
   return { ok: Boolean(r.ok) };
 }
 
-export async function listAudits(userId, { limit = 25, offset = 0, targetId = null, status = null } = {}) {
+export async function listAudits(userId, {
+  limit = 25, offset = 0, targetId = null, status = null, workspaceId = null,
+} = {}) {
   const params = [
-    `user_id=eq.${encodeURIComponent(userId)}`,
+    ownerOrWorkspace(userId, workspaceId),
     "select=*,audit_results(final_score,seo_score,aeo_score,geo_score,coverage,issue_count,critical_count)",
     "order=created_at.desc",
     `limit=${Math.max(1, Math.min(100, limit))}`,
@@ -710,7 +727,25 @@ export async function listAudits(userId, { limit = 25, offset = 0, targetId = nu
   return r.ok ? r.data || [] : [];
 }
 
-export async function listTargets(userId, { limit = 50 } = {}) {
+export async function listTargets(userId, { limit = 50, workspaceId = null } = {}) {
+  if (workspaceId) {
+    // Targets predate workspaces and intentionally remain account-owned. A
+    // shared target is therefore derived from the workspace's audits, then
+    // hydrated without applying the viewer's user_id (which would hide rows
+    // created by another member).
+    const scoped = await rest(
+      `audits?workspace_id=eq.${encodeURIComponent(workspaceId)}`
+      + `&select=target_id&order=created_at.desc&limit=${Math.max(1, Math.min(500, limit * 10))}`,
+    );
+    const ids = [...new Set((scoped.ok && Array.isArray(scoped.data) ? scoped.data : [])
+      .map((row) => row.target_id).filter(Boolean))].slice(0, Math.max(1, Math.min(200, limit)));
+    if (!ids.length) return [];
+    const r = await rest(
+      `audit_targets?id=in.(${ids.map(encodeURIComponent).join(",")})`
+      + `&${SELECT_ALL}&order=updated_at.desc&limit=${ids.length}`,
+    );
+    return r.ok ? r.data || [] : [];
+  }
   const r = await rest(
     `audit_targets?user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&order=updated_at.desc&limit=${Math.max(1, Math.min(200, limit))}`,
   );
@@ -718,7 +753,24 @@ export async function listTargets(userId, { limit = 50 } = {}) {
 }
 
 /** Score history for a target — the trend chart, via the migration's function. */
-export async function getTargetTrend(userId, targetId, limit = 30) {
+export async function getTargetTrend(userId, targetId, limit = 30, { workspaceId = null } = {}) {
+  if (workspaceId) {
+    // The legacy SECURITY DEFINER RPC is target-scoped, not workspace-scoped.
+    // Calling it after merely finding one shared audit could mix the creator's
+    // personal runs into the workspace graph. Read the exact scoped rows and
+    // flatten the embedded result instead.
+    const r = await rest(
+      `audits?target_id=eq.${encodeURIComponent(targetId)}`
+      + `&workspace_id=eq.${encodeURIComponent(workspaceId)}&status=eq.completed`
+      + `&select=id,created_at,audit_results(final_score,seo_score,aeo_score,geo_score,answer_clarity_score,entity_authority_score,structural_hierarchy_score,technical_accessibility_score,coverage,issue_count,critical_count)`
+      + `&order=created_at.desc&limit=${Math.max(1, Math.min(365, limit))}`,
+    );
+    if (!r.ok || !Array.isArray(r.data)) return [];
+    return r.data.map((row) => {
+      const result = Array.isArray(row.audit_results) ? row.audit_results[0] : row.audit_results;
+      return { audit_id: row.id, created_at: row.created_at, ...(result || {}) };
+    });
+  }
   const conn = db();
   if (!conn) return [];
   // Ownership is checked here rather than relying on the SECURITY DEFINER
@@ -762,7 +814,7 @@ export async function setRecommendationStatus(userId, recId, status, reason = nu
   if (!req.ok) return { ok: false, error: req.missing[0] };
 
   const r = await rest(
-    `audit_recommendations?id=eq.${encodeURIComponent(recId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_recommendations?id=eq.${encodeURIComponent(recId)}&${ownerOrWorkspace(userId, extra.workspaceId || null)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
@@ -797,14 +849,18 @@ export async function setRecommendationStatus(userId, recId, status, reason = nu
  * `not_found` covers both "no such recommendation" and "not yours", so an id
  * space cannot be enumerated by comparing the two.
  */
-export async function setRecommendationAssignee(userId, recId, assigneeId) {
+export async function setRecommendationAssignee(userId, recId, assigneeId, { workspaceId = null } = {}) {
   const conn = db();
   if (!conn) return { ok: false, error: "Audit storage is unavailable." };
   try {
-    const res = await fetch(`${conn.base}/rpc/assign_recommendation`, {
+    const rpc = workspaceId ? "assign_discoverability_recommendation" : "assign_recommendation";
+    const res = await fetch(`${conn.base}/rpc/${rpc}`, {
       method: "POST",
       headers: conn.headers,
-      body: JSON.stringify({ p_user_id: userId, p_rec_id: recId, p_assignee: assigneeId || null }),
+      body: JSON.stringify({
+        p_user_id: userId, p_rec_id: recId, p_assignee: assigneeId || null,
+        ...(workspaceId ? { p_workspace_id: workspaceId } : {}),
+      }),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
@@ -818,7 +874,8 @@ export async function setRecommendationAssignee(userId, recId, assigneeId) {
     if (verdict !== "ok") return { ok: false, error: "Assignment was refused." };
 
     const row = await rest(
-      `audit_recommendations?id=eq.${encodeURIComponent(recId)}&user_id=eq.${encodeURIComponent(userId)}&select=id,audit_id,code,assigned_to,assigned_at`,
+      `audit_recommendations?id=eq.${encodeURIComponent(recId)}&${ownerOrWorkspace(userId, workspaceId)}`
+      + `&select=id,user_id,workspace_id,audit_id,code,assigned_to,assigned_at`,
     );
     const rec = Array.isArray(row.data) ? row.data[0] : row.data;
     return { ok: true, recommendation: rec || { id: recId, assigned_to: assigneeId || null } };
@@ -827,9 +884,9 @@ export async function setRecommendationAssignee(userId, recId, assigneeId) {
   }
 }
 
-export async function deleteAudit(userId, auditId) {
+export async function deleteAudit(userId, auditId, { workspaceId = null } = {}) {
   const r = await rest(
-    `audits?id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audits?id=eq.${encodeURIComponent(auditId)}&${ownerOrWorkspace(userId, workspaceId)}`,
     { method: "DELETE", headers: { Prefer: "return=representation" } },
   );
   if (!r.ok) return { ok: false, error: r.error };
@@ -1120,23 +1177,22 @@ export async function createTruthRecord(userId, { canonicalDomain, displayName =
 }
 
 export async function listTruthRecords(userId, { workspaceId = null, limit = 50 } = {}) {
-  const ws = workspaceId ? `&workspace_id=eq.${encodeURIComponent(workspaceId)}` : "";
   const r = await rest(
-    `audit_business_truth_records?user_id=eq.${encodeURIComponent(userId)}&status=eq.active${ws}`
+    `audit_business_truth_records?${ownerOrWorkspace(userId, workspaceId)}&status=eq.active`
     + `&${SELECT_ALL}&order=updated_at.desc&limit=${Number(limit) || 50}`);
   return r.ok ? r.data || [] : [];
 }
 
-export async function getTruthRecord(userId, recordId) {
+export async function getTruthRecord(userId, recordId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_business_truth_records?id=eq.${encodeURIComponent(recordId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 /** The record plus its versions, newest first, and its open conflicts. */
-export async function getTruthRecordFull(userId, recordId) {
-  const record = await getTruthRecord(userId, recordId);
+export async function getTruthRecordFull(userId, recordId, { workspaceId = null } = {}) {
+  const record = await getTruthRecord(userId, recordId, { workspaceId });
   if (!record) return null;
   const [versions, conflicts] = await Promise.all([
     rest(`audit_business_truth_versions?record_id=eq.${encodeURIComponent(recordId)}`
@@ -1151,8 +1207,8 @@ export async function getTruthRecordFull(userId, recordId) {
   };
 }
 
-export async function getTruthVersion(userId, recordId, versionId) {
-  const owned = await getTruthRecord(userId, recordId);
+export async function getTruthVersion(userId, recordId, versionId, { workspaceId = null } = {}) {
+  const owned = await getTruthRecord(userId, recordId, { workspaceId });
   if (!owned) return null;
   const r = await rest(
     `audit_business_truth_versions?id=eq.${encodeURIComponent(versionId)}`
@@ -1161,10 +1217,10 @@ export async function getTruthVersion(userId, recordId, versionId) {
 }
 
 /** The canonical version, or null when nothing has been approved yet. */
-export async function getCanonicalTruthVersion(userId, recordId) {
-  const record = await getTruthRecord(userId, recordId);
+export async function getCanonicalTruthVersion(userId, recordId, { workspaceId = null } = {}) {
+  const record = await getTruthRecord(userId, recordId, { workspaceId });
   if (!record?.current_version_id) return null;
-  return getTruthVersion(userId, recordId, record.current_version_id);
+  return getTruthVersion(userId, recordId, record.current_version_id, { workspaceId });
 }
 
 /**
@@ -1179,8 +1235,9 @@ export async function getCanonicalTruthVersion(userId, recordId) {
  */
 export async function createTruthVersion(userId, recordId, {
   fields, completeness = null, origin = "manual", sourceAuditId = null, state = "draft",
+  workspaceId = null,
 }) {
-  const record = await getTruthRecord(userId, recordId);
+  const record = await getTruthRecord(userId, recordId, { workspaceId });
   if (!record) return { ok: false, notFound: true };
 
   const last = await rest(
@@ -1213,9 +1270,11 @@ export async function createTruthVersion(userId, recordId, {
  * that could set `state='approved'` would be a second promotion path with none
  * of the interlocks, and the second path is always the one that forgets.
  */
-export async function setTruthVersionState(userId, recordId, versionId, state, { note = null, reviewerId = null } = {}) {
+export async function setTruthVersionState(userId, recordId, versionId, state, {
+  note = null, reviewerId = null, workspaceId = null,
+} = {}) {
   if (state === "approved") return { ok: false, refused: "approval_requires_promotion" };
-  const current = await getTruthVersion(userId, recordId, versionId);
+  const current = await getTruthVersion(userId, recordId, versionId, { workspaceId });
   if (!current) return { ok: false, notFound: true };
 
   const patch = { state };
@@ -1241,8 +1300,8 @@ export async function setTruthVersionState(userId, recordId, versionId, state, {
  * function, atomically, and its verdict string is returned unchanged so the
  * route can map it to a status code without re-deriving anything.
  */
-export async function promoteTruthVersion(userId, recordId, versionId, { note = null } = {}) {
-  const owned = await getTruthVersion(userId, recordId, versionId);
+export async function promoteTruthVersion(userId, recordId, versionId, { note = null, workspaceId = null } = {}) {
+  const owned = await getTruthVersion(userId, recordId, versionId, { workspaceId });
   if (!owned) return { ok: false, notFound: true };
 
   const conn = db();
@@ -1258,10 +1317,10 @@ export async function promoteTruthVersion(userId, recordId, versionId, { note = 
   return verdict === "ok" ? { ok: true } : { ok: false, verdict };
 }
 
-export async function archiveTruthRecord(userId, recordId) {
+export async function archiveTruthRecord(userId, recordId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_business_truth_records?id=eq.${encodeURIComponent(recordId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}`,
+    + `&${ownerOrWorkspace(userId, workspaceId)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
@@ -1296,8 +1355,8 @@ export async function recordTruthConflicts(recordId, auditId, versionId, conflic
   return r.ok ? { ok: true, count: rows.length } : { ok: false, error: r.error };
 }
 
-export async function resolveTruthConflict(userId, recordId, conflictId, resolution) {
-  const owned = await getTruthRecord(userId, recordId);
+export async function resolveTruthConflict(userId, recordId, conflictId, resolution, { workspaceId = null } = {}) {
+  const owned = await getTruthRecord(userId, recordId, { workspaceId });
   if (!owned) return { ok: false, notFound: true };
   const r = await rest(
     `audit_business_truth_conflicts?id=eq.${encodeURIComponent(conflictId)}`
@@ -1342,23 +1401,26 @@ export async function createEntity(userId, {
   return { ok: true, entity: Array.isArray(r.data) ? r.data[0] : r.data };
 }
 
-export async function listEntities(userId, { truthRecordId = null, state = null, limit = 500 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listEntities(userId, {
+  truthRecordId = null, state = null, workspaceId = null, limit = 500,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
   if (state) parts.push(`state=eq.${encodeURIComponent(state)}`);
   const r = await rest(`audit_entities?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 500}`);
   return r.ok ? r.data || [] : [];
 }
 
-export async function getEntity(userId, entityId) {
+export async function getEntity(userId, entityId, { workspaceId = null } = {}) {
   const r = await rest(
-    `audit_entities?id=eq.${encodeURIComponent(entityId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    `audit_entities?id=eq.${encodeURIComponent(entityId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 export async function createRelationship(userId, {
   subjectId, predicate, objectId, source = "declared",
   evidence = null, confidence = null, note = null, sourceAuditId = null,
+  workspaceId = null,
 }) {
   const r = await insert("audit_entity_relationships", [{
     user_id: userId,
@@ -1370,6 +1432,7 @@ export async function createRelationship(userId, {
     confidence,
     note,
     source_audit_id: sourceAuditId,
+    workspace_id: workspaceId,
     proposed_by: userId,
   }]);
   if (!r.ok) {
@@ -1389,17 +1452,21 @@ export async function createRelationship(userId, {
  * than retry blindly — but corroboration has to attach to a row id, and the
  * refused insert never returned one. This finds it.
  */
-export async function findRelationship(userId, { subjectId, predicate, objectId }) {
+export async function findRelationship(userId, {
+  subjectId, predicate, objectId, workspaceId = null,
+}) {
   const r = await rest(
-    `audit_entity_relationships?user_id=eq.${encodeURIComponent(userId)}`
+    `audit_entity_relationships?${ownerOrWorkspace(userId, workspaceId)}`
     + `&subject_id=eq.${encodeURIComponent(subjectId)}`
     + `&predicate=eq.${encodeURIComponent(predicate)}`
     + `&object_id=eq.${encodeURIComponent(objectId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
-export async function listRelationships(userId, { state = null, entityId = null, limit = 1000 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listRelationships(userId, {
+  state = null, entityId = null, workspaceId = null, limit = 1000,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (state) parts.push(`state=eq.${encodeURIComponent(state)}`);
   if (entityId) {
     parts.push(`or=(subject_id.eq.${encodeURIComponent(entityId)},object_id.eq.${encodeURIComponent(entityId)})`);
@@ -1409,16 +1476,18 @@ export async function listRelationships(userId, { state = null, entityId = null,
   return r.ok ? r.data || [] : [];
 }
 
-export async function getRelationship(userId, relationshipId) {
+export async function getRelationship(userId, relationshipId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_entity_relationships?id=eq.${encodeURIComponent(relationshipId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 /** Approve an edge and its endpoints, atomically. Verdict returned unchanged. */
-export async function approveEntityRelationship(userId, relationshipId, { note = null } = {}) {
-  const owned = await getRelationship(userId, relationshipId);
+export async function approveEntityRelationship(userId, relationshipId, {
+  note = null, workspaceId = null,
+} = {}) {
+  const owned = await getRelationship(userId, relationshipId, { workspaceId });
   if (!owned) return { ok: false, notFound: true };
 
   const conn = db();
@@ -1440,10 +1509,10 @@ export async function approveEntityRelationship(userId, relationshipId, { note =
  * edge that keeps being re-proposed is itself a finding, and without the reason
  * nobody can tell a considered decision from a mis-click.
  */
-export async function rejectGraphRow(userId, table, id, reason) {
+export async function rejectGraphRow(userId, table, id, reason, { workspaceId = null } = {}) {
   const t = table === "entity" ? "audit_entities" : "audit_entity_relationships";
   const r = await rest(
-    `${t}?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `${t}?id=eq.${encodeURIComponent(id)}&${ownerOrWorkspace(userId, workspaceId)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
@@ -1468,11 +1537,14 @@ export async function recordEntityEvidence({ entityId = null, relationshipId = n
   return r.ok ? { ok: true } : { ok: false, error: r.error };
 }
 
-export async function recordGraphConflicts(userId, truthRecordId, auditId, conflicts = []) {
+export async function recordGraphConflicts(
+  userId, truthRecordId, auditId, conflicts = [], { workspaceId = null } = {},
+) {
   const rows = (Array.isArray(conflicts) ? conflicts : [])
     .filter((c) => c && typeof c.code === "string")
     .map((c) => ({
       user_id: userId,
+      workspace_id: workspaceId,
       truth_record_id: truthRecordId || null,
       audit_id: auditId || null,
       code: c.code,
@@ -1490,17 +1562,19 @@ export async function recordGraphConflicts(userId, truthRecordId, auditId, confl
   return r.ok ? { ok: true, count: rows.length } : { ok: false, error: r.error };
 }
 
-export async function listGraphConflicts(userId, { truthRecordId = null, limit = 200 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`, "resolved_at=is.null"];
+export async function listGraphConflicts(userId, {
+  truthRecordId = null, workspaceId = null, limit = 200,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), "resolved_at=is.null"];
   if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
   const r = await rest(
     `audit_entity_conflicts?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 200}`);
   return r.ok ? r.data || [] : [];
 }
 
-export async function resolveGraphConflict(userId, conflictId, resolution) {
+export async function resolveGraphConflict(userId, conflictId, resolution, { workspaceId = null } = {}) {
   const r = await rest(
-    `audit_entity_conflicts?id=eq.${encodeURIComponent(conflictId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_entity_conflicts?id=eq.${encodeURIComponent(conflictId)}&${ownerOrWorkspace(userId, workspaceId)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
@@ -1553,16 +1627,18 @@ export async function upsertDirectoryListing(userId, {
   return r.ok ? { ok: true, listing: Array.isArray(r.data) ? r.data[0] : r.data } : { ok: false, error: r.error };
 }
 
-export async function listDirectoryListings(userId, { truthRecordId = null, limit = 200 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listDirectoryListings(userId, {
+  truthRecordId = null, workspaceId = null, limit = 200,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
   const r = await rest(`audit_directory_listings?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${Number(limit) || 200}`);
   return r.ok ? r.data || [] : [];
 }
 
-export async function deleteDirectoryListing(userId, listingId) {
+export async function deleteDirectoryListing(userId, listingId, { workspaceId = null } = {}) {
   const r = await rest(
-    `audit_directory_listings?id=eq.${encodeURIComponent(listingId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_directory_listings?id=eq.${encodeURIComponent(listingId)}&${ownerOrWorkspace(userId, workspaceId)}`,
     { method: "DELETE", headers: { Prefer: "return=representation" } },
   );
   const row = Array.isArray(r.data) ? r.data[0] : r.data;
@@ -1633,8 +1709,10 @@ export async function saveLocalCheck(userId, {
   return { ok: true, check };
 }
 
-export async function listLocalChecks(userId, { truthRecordId = null, subjectId = null, limit = 30 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listLocalChecks(userId, {
+  truthRecordId = null, subjectId = null, workspaceId = null, limit = 30,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
   if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
   const r = await rest(`audit_local_checks?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 30}`);
@@ -1650,10 +1728,10 @@ export async function listLocalChecks(userId, { truthRecordId = null, subjectId 
 // ── W14 · Revalidation ─────────────────────────────────────────────────────
 
 /** One recommendation, scoped to its owner. */
-export async function getRecommendation(userId, recId) {
+export async function getRecommendation(userId, recId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_recommendations?id=eq.${encodeURIComponent(recId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
@@ -1667,10 +1745,12 @@ export async function getRecommendation(userId, recId) {
  * `payment-webhook.js:49-59`'s dedup does, and the cost of losing that race
  * here is a second paid audit.
  */
-export async function claimRevalidation(userId, recId, { baselineAuditId = null } = {}) {
+export async function claimRevalidation(userId, recId, {
+  baselineAuditId = null, workspaceId = null,
+} = {}) {
   const r = await rest(
     `audit_recommendations?id=eq.${encodeURIComponent(recId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}`
+    + `&${ownerOrWorkspace(userId, workspaceId)}`
     + `&revalidation_requested_at=is.null`,
     {
       method: "PATCH",
@@ -1760,8 +1840,10 @@ export async function saveTrustObservation(userId, {
 }
 
 /** Every schema observation for a subject, scoped to its owner. */
-export async function listSchemaEntities(userId, { subjectId = null, limit = 100 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listSchemaEntities(userId, {
+  subjectId = null, workspaceId = null, limit = 100,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
   const r = await rest(
     `audit_schema_entities?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${rowCap(limit, 100)}`);
@@ -1769,8 +1851,10 @@ export async function listSchemaEntities(userId, { subjectId = null, limit = 100
 }
 
 /** Every trust observation for a subject, scoped to its owner. */
-export async function listTrustObservations(userId, { subjectId = null, limit = 200 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listTrustObservations(userId, {
+  subjectId = null, workspaceId = null, limit = 200,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
   const r = await rest(
     `audit_trust_evidence?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${rowCap(limit, 200)}`);
@@ -1831,24 +1915,26 @@ export async function saveSubjectScore(userId, {
  * ⚠️ Owner-scoped at the query, like every other read here. The subject id
  * alone is not authorisation.
  */
-export async function listSubjectScores(userId, { subjectId = null, limit = 50 } = {}) {
-  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+export async function listSubjectScores(userId, {
+  subjectId = null, workspaceId = null, limit = 50,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
   if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
   const r = await rest(
     `audit_subject_scores?${parts.join("&")}&${SELECT_ALL}&order=scored_at.desc&limit=${rowCap(limit, 50)}`);
   return r.ok ? r.data || [] : [];
 }
 
-export async function getSubject(userId, subjectId) {
+export async function getSubject(userId, subjectId, { workspaceId = null } = {}) {
   const r = await rest(
     `audit_subjects?id=eq.${encodeURIComponent(subjectId)}`
-    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
-export async function getLocalCheckFull(userId, checkId) {
+export async function getLocalCheckFull(userId, checkId, { workspaceId = null } = {}) {
   const check = await rest(
-    `audit_local_checks?id=eq.${encodeURIComponent(checkId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`);
+    `audit_local_checks?id=eq.${encodeURIComponent(checkId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
   const row = check.ok && Array.isArray(check.data) ? check.data[0] : null;
   if (!row) return null;
   const [matches, findings] = await Promise.all([
@@ -1862,11 +1948,11 @@ export async function getLocalCheckFull(userId, checkId) {
   };
 }
 
-export async function resolveLocalFinding(userId, findingId, resolution) {
+export async function resolveLocalFinding(userId, findingId, resolution, { workspaceId = null } = {}) {
   // Paired, because the CHECK constraint refuses half a record — a resolution
   // with no timestamp shows as open while a reader believes it closed.
   const r = await rest(
-    `audit_local_findings?id=eq.${encodeURIComponent(findingId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_local_findings?id=eq.${encodeURIComponent(findingId)}&${ownerOrWorkspace(userId, workspaceId)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
@@ -1876,4 +1962,571 @@ export async function resolveLocalFinding(userId, findingId, resolution) {
   const row = Array.isArray(r.data) ? r.data[0] : r.data;
   if (!r.ok) return { ok: false, error: r.error };
   return row ? { ok: true, finding: row } : { ok: false, notFound: true };
+}
+
+export async function claimConnectorDispatch(userId, {
+  provider, idempotencyKey, truthRecordId = null, entityId = null,
+  workspaceId = null, payload = {},
+}) {
+  const conn = db();
+  if (!conn) return { ok: false, error: "Audit storage is unavailable." };
+  try {
+    const res = await fetch(`${conn.base}/rpc/claim_discoverability_connector_dispatch`, {
+      method: "POST",
+      headers: conn.headers,
+      body: JSON.stringify({
+        p_user_id: userId,
+        p_provider: provider,
+        p_idempotency_key: idempotencyKey,
+        p_truth_record_id: truthRecordId || null,
+        p_entity_id: entityId || null,
+        p_workspace_id: workspaceId || null,
+        p_payload: payload || {},
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return { ok: false, error: `claim dispatch failed: ${res.status} ${detail}`.trim() };
+    }
+    const verdict = await res.json();
+    return verdict;
+  } catch (err) {
+    return { ok: false, error: err?.message || "claim dispatch failed" };
+  }
+}
+
+export async function saveSxoRun(userId, {
+  auditId, subjectId = null, targetId = null, workspaceId = null,
+  sxoTotalScore = null, coverage = 100, layerScores = {}, layerResults = {},
+  findings = [], weightSetId = "sxo_default_v1", modelVersion = "s1",
+}) {
+  const r = await rest("audit_sxo_runs", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId || null,
+      target_id: targetId || null,
+      sxo_total_score: sxoTotalScore,
+      coverage,
+      layer_scores: layerScores,
+      layer_results: layerResults,
+      findings,
+      weight_set_id: weightSetId,
+      model_version: modelVersion,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, run: row } : { ok: false, error: r.error || "Could not save SXO run." };
+}
+
+export async function getSxoRun(userId, id, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_sxo_runs?id=eq.${encodeURIComponent(id)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function listSxoRuns(userId, {
+  auditId = null, subjectId = null, workspaceId = null, limit = 50,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(
+    `audit_sxo_runs?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${rowCap(limit, 50)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getSxoForAudit(userId, auditId, { workspaceId = null } = {}) {
+  const runs = await listSxoRuns(userId, { auditId, workspaceId, limit: 1 });
+  return runs.length > 0 ? runs[0] : null;
+}
+
+export async function saveIntentMapping(userId, {
+  subjectId = null, intentClass, targetUrl, mappedPromptKinds = [], workspaceId = null,
+}) {
+  const r = await rest("audit_intent_mappings", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      subject_id: subjectId || null,
+      intent_class: intentClass,
+      target_url: targetUrl,
+      mapped_prompt_kinds: mappedPromptKinds,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, mapping: row } : { ok: false, error: r.error || "Could not save intent mapping." };
+}
+
+export async function listIntentMappings(userId, { subjectId = null, workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(`audit_intent_mappings?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc`);
+  return r.ok ? r.data || [] : [];
+}
+
+// ── STAGE 3 (P3B) ANALYTICS, FUNNELS, FORMS & GOALS ─────────────────────────
+
+function maskTokenFingerprint(token) {
+  if (!token) return "none";
+  const str = String(token);
+  return str.length <= 8 ? `${str.slice(0, 2)}…` : `${str.slice(0, 4)}…${str.slice(-4)} (${str.length} chars)`;
+}
+
+export async function saveAnalyticsConnection(userId, {
+  provider, providerAccountId = null, token = null, settings = {}, workspaceId = null,
+}) {
+  let encryptedToken = null;
+  if (token) {
+    try {
+      encryptedToken = encryptSecret(token);
+    } catch (error) {
+      return {
+        ok: false,
+        code: "ENCRYPTION_UNAVAILABLE",
+        error: error?.message || "Analytics credentials cannot be encrypted.",
+      };
+    }
+  }
+
+  const tokenFingerprint = maskTokenFingerprint(token);
+
+  const r = await rest("audit_analytics_connections", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      provider,
+      provider_account_id: providerAccountId,
+      encrypted_token: encryptedToken,
+      token_fingerprint: tokenFingerprint,
+      // Credential storage is not provider verification. A connector may move
+      // to `connected` only after a real provider request or sync succeeds.
+      status: "configured",
+      settings,
+      last_sync_at: null,
+    }),
+  });
+
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (r.ok && row) {
+    const sanitized = { ...row };
+    delete sanitized.encrypted_token;
+    return { ok: true, connection: sanitized };
+  }
+  return { ok: false, error: r.error || "Could not save analytics connection." };
+}
+
+export async function listAnalyticsConnections(userId, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  const r = await rest(`audit_analytics_connections?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc`);
+  if (!r.ok || !Array.isArray(r.data)) return [];
+  // 🔴 NEVER return encrypted_token on GET!
+  return r.data.map((row) => {
+    const clean = { ...row };
+    delete clean.encrypted_token;
+    return clean;
+  });
+}
+
+export async function deleteAnalyticsConnection(userId, provider, { workspaceId = null, purgeData = false } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `provider=eq.${encodeURIComponent(provider)}`];
+  const r = await rest(`audit_analytics_connections?${parts.join("&")}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=representation" },
+  });
+  if (purgeData) {
+    await purgeAnalyticsData(userId, { workspaceId, purgeAll: true });
+  }
+  return r.ok ? { ok: true, purged_data: !!purgeData } : { ok: false, error: r.error || "Could not delete connection." };
+}
+
+/**
+ * D16 / §13 — Early retention purge for analytics data.
+ * Allows users and operators to delete analytics data earlier than the 90-day retention window.
+ *
+ * @param {string} userId - Tenant user ID
+ * @param {object} opts - { workspaceId, auditId, olderThanDays, purgeAll }
+ */
+export async function purgeAnalyticsData(userId, {
+  workspaceId = null, auditId = null, olderThanDays = null, purgeAll = false,
+} = {}) {
+  const scope = ownerOrWorkspace(userId, workspaceId);
+  const filterParts = [scope];
+  if (auditId) {
+    filterParts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  }
+  if (!purgeAll && olderThanDays !== null && olderThanDays !== undefined && Number(olderThanDays) > 0) {
+    const cutoffDate = new Date(Date.now() - Number(olderThanDays) * 86400000).toISOString();
+    filterParts.push(`created_at=lt.${encodeURIComponent(cutoffDate)}`);
+  }
+
+  const query = filterParts.join("&");
+  const [delAgg, delFunnels, delForms] = await Promise.all([
+    rest(`audit_analytics_aggregates?${query}`, { method: "DELETE", headers: { Prefer: "return=representation" } }),
+    rest(`audit_journey_funnels?${query}`, { method: "DELETE", headers: { Prefer: "return=representation" } }),
+    rest(`audit_form_diagnostics?${query}`, { method: "DELETE", headers: { Prefer: "return=representation" } }),
+  ]);
+
+  const aggCount = Array.isArray(delAgg?.data) ? delAgg.data.length : 0;
+  const funnelCount = Array.isArray(delFunnels?.data) ? delFunnels.data.length : 0;
+  const formCount = Array.isArray(delForms?.data) ? delForms.data.length : 0;
+
+  return {
+    ok: true,
+    purged: true,
+    deleted: {
+      aggregates: aggCount,
+      funnels: funnelCount,
+      form_diagnostics: formCount,
+      total: aggCount + funnelCount + formCount,
+    },
+  };
+}
+
+export async function saveConversionGoal(userId, {
+  name, outcomeType, targetUrl = null, targetSelector = null, targetEvent = null,
+  valueCents = 0, auditId = null, subjectId = null, workspaceId = null,
+}) {
+  const r = await rest("audit_conversion_goals", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId,
+      name,
+      outcome_type: outcomeType,
+      target_url: targetUrl,
+      target_selector: targetSelector,
+      target_event: targetEvent,
+      value_cents: valueCents,
+      active: true,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, goal: row } : { ok: false, error: r.error || "Could not save conversion goal." };
+}
+
+export async function listConversionGoals(userId, { auditId = null, workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  const r = await rest(`audit_conversion_goals?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function saveAnalyticsAggregates(userId, {
+  auditId = null, subjectId = null, dateBucket = null, landingPage = "/",
+  sourceChannel = "direct", device = "all", region = "global", visitorType = "all",
+  conversionGoalId = null, eventCounts = {}, metrics = {}, workspaceId = null,
+  importJobId = null,
+}) {
+  const path = importJobId
+    ? "audit_analytics_aggregates?on_conflict=import_job_id"
+    : "audit_analytics_aggregates";
+  const r = await rest(path, {
+    method: "POST",
+    headers: { Prefer: importJobId ? "resolution=merge-duplicates,return=representation" : "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId,
+      date_bucket: dateBucket || new Date().toISOString().split("T")[0],
+      landing_page: landingPage,
+      source_channel: sourceChannel,
+      device,
+      region,
+      visitor_type: visitorType,
+      conversion_goal_id: conversionGoalId,
+      event_counts: eventCounts,
+      metrics,
+      import_job_id: importJobId || null,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, aggregate: row } : { ok: false, error: r.error || "Could not save aggregates." };
+}
+
+export async function findAnalyticsImportJob(userId, provider, idempotencyKey) {
+  const r = await rest(
+    `audit_analytics_import_jobs?user_id=eq.${encodeURIComponent(userId)}`
+      + `&provider=eq.${encodeURIComponent(provider)}`
+      + `&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&${SELECT_ALL}&limit=1`,
+  );
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function enqueueAnalyticsImport(userId, {
+  provider, idempotencyKey, payloadHash, aggregatePayload, workspaceId = null,
+}) {
+  const existing = await findAnalyticsImportJob(userId, provider, idempotencyKey);
+  if (existing) return { ok: true, replay: true, job: existing };
+
+  const r = await insert("audit_analytics_import_jobs", [{
+    user_id: userId,
+    workspace_id: workspaceId || null,
+    provider,
+    idempotency_key: idempotencyKey,
+    payload_hash: payloadHash,
+    aggregate_payload: aggregatePayload,
+  }]);
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (r.ok && row) return { ok: true, replay: false, job: row };
+
+  // A concurrent replay can win the unique insert after our initial read.
+  if (r.status === 409) {
+    const raced = await findAnalyticsImportJob(userId, provider, idempotencyKey);
+    if (raced) return { ok: true, replay: true, job: raced };
+  }
+  return { ok: false, error: r.error || "Could not queue analytics import." };
+}
+
+export async function claimAnalyticsImportJobs(limit = 20) {
+  const r = await rest("rpc/claim_audit_analytics_import_jobs", {
+    method: "POST",
+    body: JSON.stringify({ p_limit: rowCap(limit, 20) }),
+  });
+  return r.ok && Array.isArray(r.data) ? r.data : [];
+}
+
+export async function completeAnalyticsImportJob(id, result) {
+  const r = await rest(`audit_analytics_import_jobs?id=eq.${encodeURIComponent(id)}&state=eq.processing`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      state: "completed",
+      result_json: result || {},
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_error: null,
+    }),
+  });
+  return { ok: r.ok && Array.isArray(r.data) && r.data.length > 0 };
+}
+
+export async function failAnalyticsImportJob(job, error, now = Date.now()) {
+  const exhausted = Number(job.attempts || 0) >= Number(job.max_attempts || 5);
+  const backoffMinutes = Math.min(60, 5 * (2 ** Math.max(0, Number(job.attempts || 1) - 1)));
+  const patch = {
+    state: exhausted ? "failed" : "retrying",
+    last_error: String(error || "Analytics import failed").slice(0, 1000),
+    updated_at: new Date(now).toISOString(),
+    next_attempt_at: new Date(now + backoffMinutes * 60_000).toISOString(),
+  };
+  const r = await rest(`audit_analytics_import_jobs?id=eq.${encodeURIComponent(job.id)}&state=eq.processing`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify(patch),
+  });
+  return { ok: r.ok && Array.isArray(r.data) && r.data.length > 0, state: patch.state };
+}
+
+export async function listAnalyticsAggregates(userId, {
+  auditId = null, subjectId = null, workspaceId = null, limit = 100,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(`audit_analytics_aggregates?${parts.join("&")}&${SELECT_ALL}&order=date_bucket.desc&limit=${rowCap(limit, 100)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function saveJourneyFunnel(userId, {
+  auditId, subjectId = null, funnelName = "standard_9_stage", stageResults = [],
+  overallConversionRate = null, miScore = null, miCaveats = [], workspaceId = null,
+}) {
+  const r = await rest("audit_journey_funnels", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId,
+      funnel_name: funnelName,
+      stage_results: stageResults,
+      overall_conversion_rate: overallConversionRate,
+      mi_score: miScore,
+      mi_caveats: miCaveats,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, funnel: row } : { ok: false, error: r.error || "Could not save funnel." };
+}
+
+export async function getJourneyFunnel(userId, auditId, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `audit_id=eq.${encodeURIComponent(auditId)}`];
+  const r = await rest(`audit_journey_funnels?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function saveFormDiagnostics(userId, {
+  auditId, formId, formName = null, pageUrl = "/", metrics = {},
+  fieldDiagnostics = [], recommendations = [], workspaceId = null,
+}) {
+  const r = await rest("audit_form_diagnostics", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      form_id: formId,
+      form_name: formName,
+      page_url: pageUrl,
+      metrics,
+      field_diagnostics: fieldDiagnostics,
+      recommendations,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, diagnostics: row } : { ok: false, error: r.error || "Could not save form diagnostics." };
+}
+
+export async function getFormDiagnostics(userId, auditId, { formId = null, workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `audit_id=eq.${encodeURIComponent(auditId)}`];
+  if (formId) parts.push(`form_id=eq.${encodeURIComponent(formId)}`);
+  const r = await rest(`audit_form_diagnostics?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+// ── STAGE 4 (P3C) PORTFOLIO ROLLUPS & EXPERIMENTS ───────────────────────────
+
+export async function saveOptimizationExperiment(userId, {
+  auditId = null, recommendationId = null, experimentName, ticketUrl = null,
+  hypothesis = null, expectedMetric = "sxo_total_score", baselineValue = null,
+  currentValue = null, status = "active", observationPeriodDays = 28,
+  results = {}, workspaceId = null,
+}) {
+  const r = await rest("audit_optimization_experiments", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      recommendation_id: recommendationId,
+      experiment_name: experimentName,
+      ticket_url: ticketUrl,
+      hypothesis,
+      expected_metric: expectedMetric,
+      baseline_value: baselineValue,
+      current_value: currentValue,
+      status,
+      observation_period_days: observationPeriodDays,
+      start_date: new Date().toISOString(),
+      relationship: "correlation",
+      caveats: [
+        "Observed metric movement between baseline and observation periods is correlational.",
+        "Correlation does not establish causation.",
+      ],
+      results,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, experiment: row } : { ok: false, error: r.error || "Could not save experiment." };
+}
+
+export async function listOptimizationExperiments(userId, {
+  auditId = null, status = null, workspaceId = null, limit = 50,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  if (status) parts.push(`status=eq.${encodeURIComponent(status)}`);
+  const r = await rest(`audit_optimization_experiments?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${rowCap(limit, 50)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getOptimizationExperiment(userId, id, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `id=eq.${encodeURIComponent(id)}`];
+  const r = await rest(`audit_optimization_experiments?${parts.join("&")}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function updateOptimizationExperiment(userId, id, fields = {}, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `id=eq.${encodeURIComponent(id)}`];
+  const r = await rest(`audit_optimization_experiments?${parts.join("&")}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      ...fields,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, experiment: row } : { ok: false, error: r.error || "Could not update experiment." };
+}
+
+export async function savePortfolioRollup(userId, {
+  rollupAxis, axisValue, auditCount = 0, masterScore = null,
+  layerScores = {}, frameworkScores = {}, coverage = 0, workspaceId = null,
+}) {
+  const r = await rest("audit_portfolio_rollups", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      rollup_axis: rollupAxis,
+      axis_value: axisValue,
+      audit_count: auditCount,
+      master_score: masterScore,
+      layer_scores: layerScores,
+      framework_scores: frameworkScores,
+      coverage,
+      calculated_at: new Date().toISOString(),
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, rollup: row } : { ok: false, error: r.error || "Could not save portfolio rollup." };
+}
+
+export async function listPortfolioRollups(userId, {
+  rollupAxis = null, workspaceId = null, limit = 100,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (rollupAxis) parts.push(`rollup_axis=eq.${encodeURIComponent(rollupAxis)}`);
+  const r = await rest(`audit_portfolio_rollups?${parts.join("&")}&${SELECT_ALL}&order=calculated_at.desc&limit=${rowCap(limit, 100)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+/**
+ * Read the authorized, persisted inputs used to calculate portfolio rollups.
+ * Client-supplied scores are never accepted: audit ids come from the scoped
+ * parent query, then service-role child reads are restricted to those ids.
+ */
+export async function listPortfolioAuditInputs(userId, { workspaceId = null, limit = 500 } = {}) {
+  const auditsResult = await rest(
+    `audits?${ownerOrWorkspace(userId, workspaceId)}&status=eq.completed`
+    + `&select=id,user_id,workspace_id,target_id,subject_id,page_type,target_geography,tags,created_at`
+    + `&order=created_at.desc&limit=${rowCap(limit, 500)}`,
+  );
+  const audits = auditsResult.ok && Array.isArray(auditsResult.data) ? auditsResult.data : [];
+  if (audits.length === 0) return [];
+
+  const idFilter = `audit_id=in.(${audits.map((row) => encodeURIComponent(row.id)).join(",")})`;
+  const [resultsResult, sxoResult] = await Promise.all([
+    rest(`audit_results?${idFilter}&select=audit_id,final_score,seo_score,aeo_score,geo_score,coverage`),
+    rest(`audit_sxo_runs?${idFilter}&select=audit_id,sxo_total_score,coverage,created_at&order=created_at.desc`),
+  ]);
+  const resultsByAudit = new Map((resultsResult.data || []).map((row) => [row.audit_id, row]));
+  const sxoByAudit = new Map();
+  for (const row of sxoResult.data || []) {
+    if (!sxoByAudit.has(row.audit_id)) sxoByAudit.set(row.audit_id, row);
+  }
+
+  return audits.map((audit) => ({
+    ...audit,
+    template: audit.page_type || "unknown",
+    result: resultsByAudit.get(audit.id) || null,
+    sxo: sxoByAudit.get(audit.id) || null,
+  }));
 }

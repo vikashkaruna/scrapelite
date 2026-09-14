@@ -73,6 +73,12 @@ test("the help guide for it is published", async ({ page }) => {
   await expect(page.getByText(/not measured/i).first()).toBeVisible();
 });
 
+test("legacy workspace query links redirect to their dedicated route", async ({ page }) => {
+  await page.goto("/discoverability?view=truth&audit=audit-123");
+  await expect(page).toHaveURL(/\/discoverability\/truth\?audit=audit-123$/);
+  await expect(page.getByRole("heading", { name: /Your workspace, once you sign in/i })).toBeVisible();
+});
+
 // ── The Discover door on the Home composer ─────────────────────────────────
 // A DOOR, not a second implementation. It hands the pasted URL to
 // /discoverability rather than auditing anything itself — duplicating even a

@@ -43,6 +43,38 @@ const REQUIRED_PATHS = [
   "/benchmarks/{id}",
 ];
 
+const P2_PATHS = [
+  "/discoverability/business-truth",
+  "/discoverability/business-truth/{id}",
+  "/discoverability/business-truth/{id}/versions",
+  "/discoverability/business-truth/{id}/versions/{version}/promote",
+  "/discoverability/entity-graph",
+  "/discoverability/entity-graph/entities",
+  "/discoverability/entity-graph/relationships",
+  "/discoverability/subject-score/subjects",
+  "/discoverability/subject-score/scores",
+  "/discoverability/local-directory/listings",
+  "/discoverability/local-directory/checks",
+  "/discoverability/schema-trust/schema",
+  "/discoverability/schema-trust/trust",
+];
+
+const P3_PATHS = [
+  "/discoverability/sxo/audits",
+  "/discoverability/sxo/audits/{id}",
+  "/discoverability/sxo/audits/{id}/results",
+  "/discoverability/sxo/audits/{id}/intent-match",
+  "/discoverability/sxo/audits/{id}/first-screen",
+  "/discoverability/sxo/audits/{id}/journey",
+  "/discoverability/sxo/audits/{id}/form-diagnostics",
+  "/discoverability/sxo/events/import",
+  "/discoverability/sxo/integrations/{provider}/connect",
+  "/discoverability/sxo/conversion-goals",
+  "/discoverability/sxo/experiments",
+  "/discoverability/sxo/portfolio/rollups",
+  "/discoverability/sxo/recommendations/{id}/validate",
+];
+
 describe("api-v1 OpenAPI contract", () => {
   it("is a v3 public contract for the deployed Netlify route", () => {
     expect(spec.openapi).toMatch(/^3\.1\./);
@@ -66,6 +98,24 @@ describe("api-v1 OpenAPI contract", () => {
   it("keeps health public and protects the rest of the contract by default", () => {
     expect(spec.security).toEqual([{ bearerAuth: [] }]);
     expect(spec.paths["/_health"].get.security).toEqual([]);
+  });
+
+  it("publishes the 13 P2 resource paths and all 14 P3 operations under the canonical namespace", () => {
+    expect(Object.keys(spec.paths)).toEqual(expect.arrayContaining([...P2_PATHS, ...P3_PATHS]));
+    const p3Operations = P3_PATHS.flatMap((path) => Object.keys(spec.paths[path])
+      .filter((key) => ["get", "post", "patch", "delete"].includes(key)));
+    expect(P2_PATHS).toHaveLength(13);
+    expect(p3Operations).toHaveLength(14);
+  });
+
+  it("documents entitlements on every P2/P3 write operation", () => {
+    for (const path of [...P2_PATHS, ...P3_PATHS]) {
+      for (const [method, operation] of Object.entries(spec.paths[path])) {
+        if (!["post", "patch", "delete"].includes(method)) continue;
+        expect(operation["x-datiq-entitlement"], `${method.toUpperCase()} ${path} needs an entitlement`)
+          .toMatch(/^audit\./);
+      }
+    }
   });
 
   it("uses the same supported extraction intent vocabulary as the router", () => {

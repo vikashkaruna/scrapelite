@@ -163,6 +163,19 @@ export async function setWorkspaceMemberPaused(workspaceId, targetUserId, paused
   }
 }
 
+export async function setWorkspaceDiscoverabilityRole(workspaceId, targetUserId, role) {
+  try {
+    await apiClient.setWorkspaceDiscoverabilityRole(workspaceId, targetUserId, role);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err?.reason || null,
+      error: err?.message || "Couldn't change that Discoverability role.",
+    };
+  }
+}
+
 export async function revokeWorkspaceInvite(workspaceId, inviteId) {
   try {
     await apiClient.revokeWorkspaceInvite(workspaceId, inviteId);

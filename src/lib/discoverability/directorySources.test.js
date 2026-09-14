@@ -11,16 +11,19 @@ describe("the tier model", () => {
     expect(TIER_IDS.map((t) => SOURCE_TIERS[t].rank)).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("weights descend with rank, so tier 1 always outweighs tier 5", () => {
+  it("pins §9.6's 5x/4x/4x/3x/1–2x tier contract", () => {
+    expect(TIER_IDS.map((t) => SOURCE_TIERS[t].multiplier)).toEqual([5, 4, 4, 3, 1]);
+    expect(SOURCE_TIERS.social_review.multiplierRange).toEqual([1, 2]);
     const w = TIER_IDS.map((t) => SOURCE_TIERS[t].weight);
-    for (let i = 1; i < w.length; i += 1) expect(w[i]).toBeLessThan(w[i - 1]);
+    for (let i = 1; i < w.length; i += 1) expect(w[i]).toBeLessThanOrEqual(w[i - 1]);
   });
 
-  it("🔴 ranks a registry BELOW a major aggregator — reach, not trust", () => {
+  it("keeps registry remediation below aggregators without contradicting the two published 4x weights", () => {
     // A statutory filing is the most trustworthy record a business has and one
     // of the least read. Ranking by trust would send a customer to amend an MCA
     // filing while their Google profile stays wrong.
-    expect(SOURCE_TIERS.registry.weight).toBeLessThan(SOURCE_TIERS.major_aggregator.weight);
+    expect(SOURCE_TIERS.registry.rank).toBeGreaterThan(SOURCE_TIERS.major_aggregator.rank);
+    expect(SOURCE_TIERS.registry.weight).toBe(SOURCE_TIERS.major_aggregator.weight);
   });
 });
 

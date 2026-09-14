@@ -115,7 +115,7 @@ describe("jobEnabledMap (J-02)", () => {
       // W6.5. Sorted here by the .sort() above, not by registry order.
       "prompt-monitor",
       "reengagement",
-      "scheduled-runner", "signal-retry", "watchlist-monitor",
+      "scheduled-runner", "signal-retry", "sxo-analytics-import-worker", "watchlist-monitor",
       // The v2 dispatch loop's cron half, registered 2026-09-06. Sorted last
       // by the .sort() above, not by registry order.
       "workflow-orchestrator-cron",

@@ -99,21 +99,16 @@ describe("IssueList — observed and inferred are not the same claim", () => {
     // Advertising a module that does not exist yet is selling a referral to
     // nothing.
     //
-    // ⚠️ THE MODULE HERE IS DELIBERATELY SYNTHETIC, AND THAT IS ITSELF A FACT
-    // WORTH KNOWING. As of W10, NO issue in `issueCatalog` maps to an unbuilt
-    // module — W9 and W10 shipped the last two that did (business_truth_record
-    // and entity_graph). So this badge is currently unreachable from real P1
-    // data, and it stays covered because W11-W14 will map findings onto
-    // brand_discoverability, local_directory and trust_and_proof, which are
-    // declared and unbuilt today. Pointing the fixture at a catalogue issue
-    // instead would make this test go green-then-silently-dead the moment the
-    // next workstream ships, which is exactly what just happened to it.
+    // ⚠️ THE MODULE HERE IS DELIBERATELY SYNTHETIC. The real issue catalog is
+    // guarded separately by moduleAvailabilityParity.test.js, while this
+    // component test keeps the rendering branch alive with service_radius — a
+    // declared destination whose implementation has not shipped yet.
     render(<IssueList issues={[{
       code: "XX-01", pillar: "entity_authority", severity: "medium",
       title: "A finding only a P2 module can answer", frameworks: ["geo"],
-      rootCause: "entity_ambiguity", module: "local_directory", owner: "brand",
+      rootCause: "location_radius_mismatch", module: "service_radius", owner: "brand",
     }]} />);
-    expect(screen.getByText(new RegExp(MODULES.local_directory.label))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(MODULES.service_radius.label))).toBeInTheDocument();
     expect(screen.getByText(/\(coming\)/)).toBeInTheDocument();
   });
 

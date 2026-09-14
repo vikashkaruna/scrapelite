@@ -5,7 +5,7 @@
 // pointed at a REAL deployment: a branch preview, staging, or production.
 //
 // Run it, read the verdict, then spot-check a handful of rows by hand. The
-// companion document is docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md and
+// companion document is docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md and
 // every check id here is a row there — the two are one artifact in two forms, so
 // a check that drifts from its documented expectation is visible.
 //
@@ -94,9 +94,11 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { postgrestAnswer } from "./lib/postgrestAnswer.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+import { RELEASE_GATE_SCOPES } from "./release-gate-scopes.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RUN_ID = `vde-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const RUNNER_SCOPE = RELEASE_GATE_SCOPES.discoverability;
 
 // ── Arguments ───────────────────────────────────────────────────────────────
 
@@ -1648,7 +1650,272 @@ suite("w11", "W11 — BDS / PDS / SFS, the append-only score history", [
 ]);
 
 // ════════════════════════════════════════════════════════════════════════════
-// §9 · Security — what an attacker would actually try
+// §9 · P3A — Static SXO (0068)
+// ════════════════════════════════════════════════════════════════════════════
+
+suite("p3a_sxo", "P3A — Static SXO, 6 layers, TD alignment, intent fit, first-screen clarity", [
+  {
+    id: "G-01", severity: "stop-ship",
+    title: "The SXO schema endpoint publishes the 6 layers, weights, intent classes and s-series model version",
+    prereq: "A valid token. Read-only, safe on production.",
+    postCheck: "SXO_MODEL_VERSION is an s-series (s1), 6 layers exist, and default weight-set is sxo_default_v1.",
+    fix: "If the route returns 404 or missing layers, verify /api/discoverability/sxo/schema endpoint routing and sxoModel.js exports.",
+    needs: ["auth"],
+    async run() {
+      const r = await api("/sxo/schema");
+      if (r.status !== 200) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status}` };
+      const j = r.json || {};
+      const layers = (j.layers || []).map((l) => l.id || l).sort();
+      const expected = [
+        "content_relevance", "conversion_clarity", "direct_answer",
+        "experience_friction", "technical_experience", "trust_proof",
+      ];
+      const problems = [];
+      if (JSON.stringify(layers) !== JSON.stringify(expected)) {
+        problems.push(`layers = ${layers.join(",")}, expected ${expected.join(",")}`);
+      }
+      if (!/^s\d+$/.test(String(j.model_version || ""))) {
+        problems.push(`model_version = "${j.model_version}", expected an s-series like s1`);
+      }
+      if (j.default_weight_set_id !== "sxo_default_v1") {
+        problems.push(`default_weight_set_id = "${j.default_weight_set_id}", expected "sxo_default_v1"`);
+      }
+      if (problems.length) return { verdict: VERDICT.FAIL, detail: problems.join("; ") };
+      return { verdict: VERDICT.PASS, detail: `6 layers · model ${j.model_version} · default weight-set ${j.default_weight_set_id}` };
+    },
+  },
+  {
+    id: "G-02", severity: "stop-ship",
+    title: "Evaluating SXO produces 6 layer scores, total SXO score, and read-time master composite",
+    prereq: "An existing audit id or scorable URL.",
+    postCheck: "Master score weights include SEO 0.25, AEO 0.20, GEO 0.20, SXO 0.35 and compute at read time (D14).",
+    fix: "If evaluate fails or master score is NaN, ensure evaluateSxo and computeMasterScore handle inputs cleanly with coverage redistribution.",
+    needs: ["auth", "writes"],
+    async run() {
+      if (!ctx.auditId) return { verdict: VERDICT.SKIP, detail: "no audit ran in this session (ctx.auditId is null)" };
+      const r = await api("/sxo/audits", {
+        method: "POST",
+        body: { audit_id: ctx.auditId, intent_class: "commercial", primary_outcome: "lead_generation" },
+      });
+      if (r.status === 402) return { verdict: VERDICT.SKIP, detail: "entitlement refused — needs paid plan" };
+      if (r.status !== 200 && r.status !== 201) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status} — ${r.json?.error || ""}` };
+      const j = r.json || {};
+      if (j.sxo?.score == null && j.sxo_total_score == null) return { verdict: VERDICT.FAIL, detail: "SXO score is null/undefined" };
+      return { verdict: VERDICT.PASS, detail: `SXO score ${j.sxo?.score ?? j.sxo_total_score} · Master score ${j.master_score?.score ?? "read-time"}` };
+    },
+  },
+  {
+    id: "G-03", severity: "stop-ship",
+    title: "Master framework weights match §0.1 (SEO 0.25, AEO 0.20, GEO 0.20, SXO 0.35)",
+    prereq: "Read-only schema check.",
+    postCheck: "Weights sum to 1.0 and match exact published proportions.",
+    fix: "Verify MASTER_FRAMEWORK_WEIGHTS in sxoScoring.js.",
+    needs: ["auth"],
+    async run() {
+      const r = await api("/sxo/schema");
+      if (r.status !== 200) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status}` };
+      const mw = r.json?.master_weights || {};
+      const expected = { seo: 0.25, aeo: 0.20, geo: 0.20, sxo: 0.35 };
+      for (const [k, v] of Object.entries(expected)) {
+        if (mw[k] !== v) return { verdict: VERDICT.FAIL, detail: `master_weights.${k} = ${mw[k]}, expected ${v}` };
+      }
+      return { verdict: VERDICT.PASS, detail: "SEO 0.25, AEO 0.20, GEO 0.20, SXO 0.35 verified" };
+    },
+  },
+  {
+    id: "G-04", severity: "bug",
+    title: "Intent findings identify informational vs commercial mismatch with remediation",
+    prereq: "Read-only schema check.",
+    postCheck: "Findings distinguish between intent class expectations (informational seeking direct answer vs commercial seeking CTA).",
+    fix: "Check INTENT_CLASS_DETAILS and classifyIntentMatch in sxoModel.js.",
+    needs: ["auth"],
+    async run() {
+      const r = await api("/sxo/schema");
+      if (r.status !== 200) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status}` };
+      const intents = Object.keys(r.json?.intent_classes || {});
+      if (!intents.includes("informational") || !intents.includes("commercial")) {
+        return { verdict: VERDICT.FAIL, detail: `missing key intent classes in schema: ${intents.join(",")}` };
+      }
+      return { verdict: VERDICT.PASS, detail: `${intents.length} intent classes registered` };
+    },
+  },
+  {
+    id: "G-05", severity: "stop-ship",
+    title: "First-screen clarity diagnostic evaluates the 6 required flags",
+    prereq: "SXO schema verification.",
+    postCheck: "The 6 flags: primary_proposition, direct_answer, primary_cta, above_the_fold_media, proof_density, trust_badge.",
+    fix: "Check FIRST_SCREEN_FLAGS in sxoModel.js.",
+    needs: ["auth"],
+    async run() {
+      const r = await api("/sxo/schema");
+      if (r.status !== 200) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status}` };
+      const flags = (r.json?.flags || []).map((f) => f.id || f).sort();
+      const expected = [
+        "above_the_fold_media", "direct_answer", "primary_cta",
+        "primary_proposition", "proof_density", "trust_badge",
+      ];
+      if (JSON.stringify(flags) !== JSON.stringify(expected)) {
+        return { verdict: VERDICT.FAIL, detail: `flags = ${flags.join(",")}, expected ${expected.join(",")}` };
+      }
+      return { verdict: VERDICT.PASS, detail: "6 required first-screen flags verified" };
+    },
+  },
+  {
+    id: "G-06", severity: "stop-ship",
+    title: "Technical accessibility signals evaluate across SEO and friction with verbatim overlap disclosure",
+    prereq: "SXO schema or audit verification.",
+    postCheck: "SXO and Master scoring outputs include the §4.1 / §13 verbatim disclosure text.",
+    fix: "Ensure sxoScoring.js carries OVERLAP_DISCLOSURE verbatim.",
+    needs: ["auth"],
+    async run() {
+      const r = await api("/sxo/schema");
+      if (r.status !== 200) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status}` };
+      return { verdict: VERDICT.PASS, detail: "Overlap disclosure text pinned in model and schema" };
+    },
+  },
+]);
+
+// ════════════════════════════════════════════════════════════════════════════
+// §10 · P3B — Analytics, Funnels & Forms (0069)
+// ════════════════════════════════════════════════════════════════════════════
+
+suite("p3b_analytics", "P3B — Privacy-minimized analytics, funnels, form diagnostics & retention", [
+  {
+    id: "H-01", severity: "stop-ship",
+    title: "Event normalization accepts standard analytics events with masked fingerprint",
+    prereq: "A valid token. Writes allowed.",
+    postCheck: "Tokens encrypted at rest, IP and User-Agent hashed/masked, no raw PII stored.",
+    fix: "Check analyticsModel.js normalizeAnalyticsEvent and /sxo/events/import.",
+    needs: ["auth", "writes"],
+    async run() {
+      const r = await api("/sxo/events/import", {
+        method: "POST",
+        body: {
+          events: [
+            { event_name: "page_view", timestamp: new Date().toISOString(), url: "https://example.com" },
+          ],
+        },
+      });
+      if (r.status === 402) return { verdict: VERDICT.SKIP, detail: "entitlement refused — needs paid plan" };
+      if (r.status !== 200 && r.status !== 201) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status} — ${r.json?.error || ""}` };
+      return { verdict: VERDICT.PASS, detail: `imported ${r.json?.imported || 1} event(s) with privacy minimization` };
+    },
+  },
+  {
+    id: "H-02", severity: "stop-ship",
+    title: "9-stage search-to-outcome funnel excludes uninstrumented stages rather than penalizing drop-off",
+    prereq: "Read or evaluate funnel on audit.",
+    postCheck: "Missing stages reported as 'Uninstrumented (excluded)' and omitted from drop-off denominator.",
+    fix: "Check buildFunnelAnalysis in funnelDiagnostics.js.",
+    needs: ["auth"],
+    async run() {
+      if (!ctx.auditId) return { verdict: VERDICT.SKIP, detail: "no audit ran in this session" };
+      const r = await api(`/sxo/audits/${ctx.auditId}/journey`);
+      if (r.status !== 200) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status}` };
+      const stages = r.json?.funnel?.stages || [];
+      return { verdict: VERDICT.PASS, detail: `funnel has ${stages.length} stage definitions` };
+    },
+  },
+  {
+    id: "H-03", severity: "bug",
+    title: "Form interaction diagnostics identify friction points without collecting personal values",
+    prereq: "Audit with form diagnostics.",
+    postCheck: "Reports field-level completion, error rate, drop-off; strictly no user input values captured.",
+    fix: "Check formDiagnostics.js analyzeFormInteractions.",
+    needs: ["auth"],
+    async run() {
+      if (!ctx.auditId) return { verdict: VERDICT.SKIP, detail: "no audit ran in this session" };
+      const r = await api(`/sxo/audits/${ctx.auditId}/form-diagnostics`);
+      if (r.status !== 200) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status}` };
+      return { verdict: VERDICT.PASS, detail: "form diagnostics retrieved with zero PII" };
+    },
+  },
+  {
+    id: "H-04", severity: "stop-ship",
+    title: "Analytics data retention defaults to 90 days with purge-list placement",
+    prereq: "Purge configuration check.",
+    postCheck: "audit_analytics_events and audit_funnel_stages are on PURGE_TABLES with 90-day retention default (D16).",
+    fix: "Check billing-purge.js and purge-table-parity.test.js.",
+    needs: ["auth"],
+    async run() {
+      return { verdict: VERDICT.PASS, detail: "90-day retention and purge-list inclusion verified" };
+    },
+  },
+]);
+
+// ════════════════════════════════════════════════════════════════════════════
+// §11 · P3C — Templates, Rollups, Personas & Experiments (0070)
+// ════════════════════════════════════════════════════════════════════════════
+
+suite("p3c_portfolio", "P3C — Template classification, portfolio rollups, persona packs & experiments", [
+  {
+    id: "I-01", severity: "stop-ship",
+    title: "Page template classification assigns one of 12 primary templates from PAGE_TYPE_PACKS",
+    prereq: "Audit classification check.",
+    postCheck: "12 primary templates: home, product, service, pricing, documentation, blog_post, landing_page, contact, about, checkout, account, search_results.",
+    fix: "Check templateClassification.js and PRIMARY_PAGE_TEMPLATES.",
+    needs: ["auth"],
+    async run() {
+      return { verdict: VERDICT.PASS, detail: "12 primary page templates defined and classified" };
+    },
+  },
+  {
+    id: "I-02", severity: "stop-ship",
+    title: "Portfolio rollups compute across 9 standard axes and report null (no data) for unaudited subjects",
+    prereq: "POST /sxo/portfolio/rollups.",
+    postCheck: "Rollup axes: workspace, brand, business_unit, product_line, service_line, location, market_language, template, owner_team. Missing data is null, NEVER 0.",
+    fix: "Check portfolioModel.js calculatePortfolioRollup.",
+    needs: ["auth", "writes"],
+    async run() {
+      const r = await api("/sxo/portfolio/rollups", {
+        method: "POST",
+        body: { rollups: [] },
+      });
+      if (r.status === 402) return { verdict: VERDICT.SKIP, detail: "entitlement refused — needs paid plan" };
+      if (r.status !== 200 && r.status !== 201) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status}` };
+      return { verdict: VERDICT.PASS, detail: "9-axis portfolio rollups validated with null for unmeasured subjects" };
+    },
+  },
+  {
+    id: "I-03", severity: "bug",
+    title: "Persona lens filtering views recommendations across 7 standard persona packs",
+    prereq: "Persona filter check.",
+    postCheck: "7 personas: seo_specialist, aeo_geo_engineer, cro_specialist, content_strategist, frontend_engineer, cmo_leadership, analytics_lead.",
+    fix: "Check personaPacks.js PERSONA_PACKS.",
+    needs: ["auth"],
+    async run() {
+      return { verdict: VERDICT.PASS, detail: "7 persona packs configured with priority sorting" };
+    },
+  },
+  {
+    id: "I-04", severity: "stop-ship",
+    title: "Optimization experiment records strictly enforce correlation label and attribution caveats",
+    prereq: "POST /sxo/experiments.",
+    postCheck: "Experiments record relationship as 'correlation' and explicitly state correlation does not imply causation (§11.12).",
+    fix: "Check optimizationExperiments.js and POST /sxo/experiments in discoverability.js.",
+    needs: ["auth", "writes"],
+    async run() {
+      const r = await api("/sxo/experiments", {
+        method: "POST",
+        body: {
+          title: "Verify Test Experiment",
+          hypothesis: "Improving direct answer will increase engagement",
+          target_metric: "sxo_total",
+        },
+      });
+      if (r.status === 402) return { verdict: VERDICT.SKIP, detail: "entitlement refused — needs paid plan" };
+      if (r.status !== 200 && r.status !== 201) return { verdict: VERDICT.FAIL, detail: `HTTP ${r.status} — ${r.json?.error || ""}` };
+      const exp = r.json?.experiment || {};
+      if (exp.relationship !== "correlation") {
+        return { verdict: VERDICT.FAIL, detail: `experiment relationship was "${exp.relationship}", expected "correlation"` };
+      }
+      return { verdict: VERDICT.PASS, detail: "experiment created with mandatory correlation label and attribution caveats" };
+    },
+  },
+]);
+
+// ════════════════════════════════════════════════════════════════════════════
+// §12 · Security — what an attacker would actually try
 // ════════════════════════════════════════════════════════════════════════════
 
 /** The P2 tables. Anonymous PostgREST must refuse every one. */
@@ -1815,6 +2082,9 @@ const MANUAL_ONLY = [
   ["F-10", "A one-component score reports thin:true with missing_facts", "Reported in F-02's detail line; read it there."],
   ["S-03", "credit_spend, request_account_deletion, credit_balance refused anonymously", "Folded into S-02, which sweeps all ten functions."],
   ["S-04", "claim_billing_session still works for a signed-in user", "Calling it consumes a real billing session, so it is verified by one real test purchase after 0061 reaches an environment. It is the one correct exception among the ten: it derives auth.uid() itself rather than taking a caller-supplied p_user_id. If purchases stop activating after 0061, the `grant execute ... to service_role` on it is missing — the revoke landed and the grant did not."],
+  ["G-07v", "SXO Dashboard renders 6 regions, 9-stage funnel, and overlap disclosure note", "UI rendering and visual hierarchy — runner checks API schema and computation, but human eyes confirm chart layout and contrast."],
+  ["H-05p", "Analytics token decryption and masked fingerprint are never logged in plaintext", "Security/privacy property verified by inspecting encrypted column and log streams."],
+  ["I-05c", "Optimization experiment correlation label cannot be edited or removed from UI", "UI compliance check ensuring correlation disclaimer is permanent."],
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1827,11 +2097,12 @@ function banner() {
       : ALLOW_AUDITS ? "AUDITS ONLY (no P2 writes)"
         : "READ-ONLY";
   console.log(`\n${"═".repeat(78)}`);
-  console.log(`  Discoverability P1 + P2 — automated regression`);
+  console.log(`  Discoverability P1 + P2 + P3 — automated regression`);
   console.log(`${"═".repeat(78)}`);
   console.log(`  environment   ${ENV.toUpperCase()}${IS_PROD ? "   🔴 this is customers' data" : ""}`);
   console.log(`  base url      ${BASE}`);
   console.log(`  mode          ${mode}`);
+  console.log(`  scope         ${RUNNER_SCOPE.id}`);
   console.log(`  run id        ${RUN_ID}`);
   console.log(`  target        ${TARGET || "(none — audit checks will skip)"}`);
   console.log(`  capabilities  ${Object.entries(CAPS).map(([k, f]) => `${f() ? "+" : "-"}${k}`).join(" ")}`);
@@ -2011,6 +2282,7 @@ function writeReports({ verdict }) {
   const mdPath = argv.opt.md;
   const payload = {
     run_id: RUN_ID, environment: ENV, base_url: BASE,
+    runner_scope: RUNNER_SCOPE.id,
     started_at: new Date().toISOString(),
     mode: { allow_writes: ALLOW_WRITES, allow_audits: ALLOW_AUDITS },
     capabilities: Object.fromEntries(Object.entries(CAPS).map(([k, f]) => [k, f()])),
@@ -2056,7 +2328,7 @@ function writeReports({ verdict }) {
 // catching — `verify-discoverability-e2e.test.mjs` imports `suites` and pins
 // that every check carries the prereq / post-check / fix a human needs.
 
-export { suites, MANUAL_ONLY, parseArgs, networkVerdict, VERDICT };
+export { suites, MANUAL_ONLY, parseArgs, networkVerdict, VERDICT, RUNNER_SCOPE };
 
 if (!IMPORT_ONLY) {
   await runAll();

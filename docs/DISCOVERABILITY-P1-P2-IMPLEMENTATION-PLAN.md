@@ -14,7 +14,7 @@ See [DB-MIGRATION-RUNBOOK.md §4d + §4e](DB-MIGRATION-RUNBOOK.md).
 **The next migration number is `0065`.**
 
 📋 **The pass before any promotion is now automated.**
-[AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md](AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md)
+[AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md](AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md)
 (renamed from `MANUAL-TEST-…`; P3 extends it rather than replacing it) drives
 `npm run verify:discoverability` — **61 checks across branch → staging →
 production, in that order**, because each environment answers a different

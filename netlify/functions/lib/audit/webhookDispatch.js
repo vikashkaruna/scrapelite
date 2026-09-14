@@ -39,6 +39,8 @@ export const WEBHOOK_EVENTS = Object.freeze([
   "recommendation.implemented",
   "recommendation.validation_scheduled",
   "recommendation.validated",
+  "recommendation.no_measurable_change",
+  "recommendation.regressed",
   "recommendation.dismissed",
   "recommendation.reopened",
 ]);

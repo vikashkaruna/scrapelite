@@ -252,6 +252,28 @@ export const PAGE_TYPE_PACKS = Object.freeze({
     // date are part of standing behind that, so nothing is suppressed here.
     suppress: [],
   },
+  // ── Templates 10–12 (§11.10) ───────────────────────────────────────────
+  category_listing: {
+    id: "category_listing", label: "Category / listing page",
+    expectSchema: ["CollectionPage", "ItemList", "Organization"],
+    notApplicable: [],
+    critical: ["SH-04", "AC-01"],
+    suppress: ["EA-04", "EA-05"],
+  },
+  case_study: {
+    id: "case_study", label: "Case study",
+    expectSchema: ["Article", "Organization"],
+    notApplicable: [],
+    critical: ["AC-01", "EA-06", "EA-10"],
+    suppress: [],
+  },
+  landing_page: {
+    id: "landing_page", label: "Landing page",
+    expectSchema: ["WebPage", "Organization"],
+    notApplicable: [],
+    critical: ["AC-01", "EA-10"],
+    suppress: ["EA-04", "EA-05"],
+  },
   unknown: {
     id: "unknown", label: "Unknown",
     expectSchema: [], notApplicable: [], critical: [], suppress: [],

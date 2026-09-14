@@ -1,8 +1,8 @@
-# Automated + manual test — Discoverability P1 + P2 (W1–W14)
+# Automated + manual test — Discoverability P1 + P2 + P3
 
-> **Rewritten 2026-09-12** against `Discoverability-P1-P3-implementation`.
+> **Rewritten 2026-09-12; extended for P3 2026-09-13** against `discoverability-P3`.
 > Supersedes `MANUAL-TEST-DISCOVERABILITY-P1-P2.md`, which was 76 rows of
-> hand-driven curl. **P3 extends this document rather than replacing it.**
+> hand-driven curl. **P3 extends this document with SXO, analytics and portfolio suites.**
 >
 > Most of that sheet is now one command:
 >
@@ -10,7 +10,7 @@
 > npm run verify:discoverability -- --base-url=<host> --target=<a url you may audit>
 > ```
 >
-> What remains for a human is **13 rows the runner cannot see** (§11) and a short
+> What remains for a human is **16 rows the runner cannot see** (§14) and a short
 > **confirm-by-eye** list the runner prints for you at the end of every run.
 >
 > **Companions.** [`DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md`](DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md)
@@ -18,6 +18,16 @@
 > [`DB-MIGRATION-RUNBOOK.md`](DB-MIGRATION-RUNBOOK.md) §4b–§4e — the apply
 > procedures · [`POST-DEPLOYMENT-MANUAL-TEST.md`](POST-DEPLOYMENT-MANUAL-TEST.md)
 > — the workflow pipeline, a separate subsystem.
+
+**D22 runner boundary.** `npm run test:release` owns deployment smoke, public
+route contracts, deployed Chromium checks, anonymous RLS posture, and at most
+one disposable P1 audit lifecycle. This sheet and its stable check ids belong
+only to `npm run verify:discoverability`, which owns the exhaustive P1/P2 API,
+schema, tenancy, entitlement, and evidence checks. Neither command invokes the
+other: their write opt-ins differ, and hiding the conformance runner inside a
+general release gate could spend audit quota or leave append-only test rows.
+The division is executable in `scripts/release-gate-scopes.mjs` and guarded by
+`scripts/release-gate-scopes.test.mjs`.
 
 ---
 
@@ -691,9 +701,154 @@ build.
 - **Confirm by eye:** 🔴 The unrecoverable one. Read it yourself: `select score, coverage from audit_subject_scores order by scored_at desc limit 5;`. A 0 where a NULL belongs cannot be distinguished later from a subject that genuinely scored zero.
 - **If it fails:** saveSubjectScore must send null, and the column must stay NULLABLE (P-03).
 
+### 11. P3A — Static SXO (0068)
+
+#### G-01 — The SXO schema endpoint publishes the 6 layers, weights, intent classes and s-series model version
+
+🔴 **Stop-ship.** Needs: a valid token.
+
+- **Before it can run:** A valid token. Read-only, safe on production.
+- **Confirm by eye:** SXO_MODEL_VERSION is an s-series (s1), 6 layers exist, and default weight-set is sxo_default_v1.
+- **If it fails:** If the route returns 404 or missing layers, verify /api/discoverability/sxo/schema endpoint routing and sxoModel.js exports.
+
+#### G-02 — Evaluating SXO produces 6 layer scores, total SXO score, and read-time master composite
+
+🔴 **Stop-ship.** Needs: an existing audit id or scorable URL.
+
+- **Before it can run:** An existing audit id or scorable URL.
+- **Confirm by eye:** Master score weights include SEO 0.25, AEO 0.20, GEO 0.20, SXO 0.35 and compute at read time (D14).
+- **If it fails:** If evaluate fails or master score is NaN, ensure evaluateSxo and computeMasterScore handle inputs cleanly with coverage redistribution.
+
+#### G-03 — Master framework weights match §0.1 (SEO 0.25, AEO 0.20, GEO 0.20, SXO 0.35)
+
+🔴 **Stop-ship.** Needs: read-only schema check.
+
+- **Before it can run:** Read-only schema check.
+- **Confirm by eye:** Weights sum to 1.0 and match exact published proportions.
+- **If it fails:** Verify MASTER_FRAMEWORK_WEIGHTS in sxoScoring.js.
+
+#### G-04 — Intent findings identify informational vs commercial mismatch with remediation
+
+🟡 **Bug.** Needs: read-only schema check.
+
+- **Before it can run:** Read-only schema check.
+- **Confirm by eye:** Findings distinguish between intent class expectations (informational seeking direct answer vs commercial seeking CTA).
+- **If it fails:** Check INTENT_CLASS_DETAILS and classifyIntentMatch in sxoModel.js.
+
+#### G-05 — First-screen clarity diagnostic evaluates the 6 required flags
+
+🔴 **Stop-ship.** Needs: SXO schema verification.
+
+- **Before it can run:** SXO schema verification.
+- **Confirm by eye:** The 6 flags: primary_proposition, direct_answer, primary_cta, above_the_fold_media, proof_density, trust_badge.
+- **If it fails:** Check FIRST_SCREEN_FLAGS in sxoModel.js.
+
+#### G-06 — Technical accessibility signals evaluate across SEO and friction with verbatim overlap disclosure
+
+🔴 **Stop-ship.** Needs: SXO schema or audit verification.
+
+- **Before it can run:** SXO schema or audit verification.
+- **Confirm by eye:** SXO and Master scoring outputs include the §4.1 / §13 verbatim disclosure text.
+- **If it fails:** Ensure sxoScoring.js carries OVERLAP_DISCLOSURE verbatim.
+
+### 12. P3B — Analytics, Funnels & Forms (0069)
+
+#### H-01 — Event normalization accepts standard analytics aggregates; connector credentials expose only a masked fingerprint
+
+🔴 **Stop-ship.** Needs: a valid token. Writes allowed.
+
+- **Before it can run:** A valid token. Writes allowed.
+- **Confirm by eye:** Tokens are encrypted at rest and omitted from reads. Imports accept counts only;
+  raw sessions, IP addresses, user agents and visitor identifiers have no storage columns.
+- **If it fails:** Check `eventTaxonomy.js`, `auditStore.saveAnalyticsConnection`, and `/sxo/events/import`.
+
+#### H-02 — 9-stage search-to-outcome funnel excludes uninstrumented stages rather than penalizing drop-off
+
+🔴 **Stop-ship.** Needs: read or evaluate funnel on audit.
+
+- **Before it can run:** Read or evaluate funnel on audit.
+- **Confirm by eye:** Missing stages reported as 'Uninstrumented (excluded)' and omitted from drop-off denominator.
+- **If it fails:** Check buildFunnelAnalysis in funnelDiagnostics.js.
+
+#### H-03 — Form interaction diagnostics identify friction points without collecting personal values
+
+🟡 **Bug.** Needs: audit with form diagnostics.
+
+- **Before it can run:** Audit with form diagnostics.
+- **Confirm by eye:** Reports field-level completion, error rate, drop-off; strictly no user input values captured.
+- **If it fails:** Check formDiagnostics.js analyzeFormInteractions.
+
+#### H-04 — Analytics data retention defaults to 90 days with purge-list placement
+
+🔴 **Stop-ship.** Needs: purge configuration check.
+
+- **Before it can run:** Purge configuration check.
+- **Confirm by eye:** `audit_analytics_aggregates`, import jobs, funnels and form diagnostics are on
+  the declared purge inventory with the 90-day retention default (D16).
+- **If it fails:** Check billing-purge.js and purge-table-parity.test.js.
+
+#### H-05 — Aggregate import is durable, idempotent, bounded and observable
+
+🔴 **Stop-ship.** Needs: migration and worker contract tests.
+
+- **Confirm by eye:** A request returns `202` with a job id; replaying the same key cannot create a
+  second aggregate; reusing the key for different content returns `409`; attempts stop at the stored maximum.
+- **If it fails:** Check migration `0071`, `sxo-analytics-import-worker.js`, its cron registration,
+  and the monitoring registry.
+
+#### H-06 — The SXO screen exposes connector, aggregate-import and goal workflows honestly
+
+🔴 **Stop-ship.** Needs: component/API tests and an audit id.
+
+- **Confirm by eye:** Credential save says `configured`, never `connected`, until a provider sync is
+  verified; aggregate fields accept whole-number counts; created goals appear in the list.
+- **If it fails:** Check `SxoDashboard.jsx`, migration `0072`, and the six production client methods.
+
+### 13. P3C — Templates, Rollups, Personas & Experiments (0070)
+
+#### I-01 — Page template classification assigns one of 12 primary templates from PAGE_TYPE_PACKS
+
+🔴 **Stop-ship.** Needs: audit classification check.
+
+- **Before it can run:** Audit classification check.
+- **Confirm by eye:** 12 primary templates: home, product, service, pricing, documentation, blog_post, landing_page, contact, about, checkout, account, search_results.
+- **If it fails:** Check templateClassification.js and PRIMARY_PAGE_TEMPLATES.
+
+#### I-02 — Portfolio rollups compute across 9 standard axes and report null (no data) for unaudited subjects
+
+🔴 **Stop-ship.** Needs: POST /sxo/portfolio/rollups.
+
+- **Before it can run:** POST /sxo/portfolio/rollups.
+- **Confirm by eye:** Rollup axes: workspace, brand, business_unit, product_line, service_line, location, market_language, template, owner_team. Missing data is null, NEVER 0.
+- **If it fails:** Check portfolioModel.js calculatePortfolioRollup.
+
+#### I-03 — Persona lens filtering views recommendations across 7 standard persona packs
+
+🟡 **Bug.** Needs: persona filter check.
+
+- **Before it can run:** Persona filter check.
+- **Confirm by eye:** 7 personas: seo_specialist, aeo_geo_engineer, cro_specialist, content_strategist, frontend_engineer, cmo_leadership, analytics_lead.
+- **If it fails:** Check personaPacks.js PERSONA_PACKS.
+
+#### I-04 — Optimization experiment records strictly enforce correlation label and attribution caveats
+
+🔴 **Stop-ship.** Needs: POST /sxo/experiments.
+
+- **Before it can run:** POST /sxo/experiments.
+- **Confirm by eye:** Experiments record relationship as 'correlation' and explicitly state correlation does not imply causation (§11.12).
+- **If it fails:** Check optimizationExperiments.js and POST /sxo/experiments in discoverability.js.
+
+#### I-05 — Scheduled monitoring re-evaluates comparable SXO and alerts on material movement
+
+🔴 **Stop-ship.** Needs: monitor unit/contract tests.
+
+- **Confirm by eye:** The monitor persists a new SXO run in the schedule's workspace, compares only
+  matching model/weight-set ids, and includes SXO regression/improvement in the alert threshold.
+- **If it fails:** Check `discoverability-monitor.js`, `diffSxoRuns`, and `shouldAlert`.
+
 ---
 
-## 11. What the runner cannot do
+## 14. What the runner cannot do
 
 Listed rather than quietly omitted — a coverage claim that leaves out what
 it does not cover is the same defect as `coverageClaim()`s forbidden flat
@@ -715,3 +870,6 @@ sentence, one level up.
 | F-10 | A one-component score reports thin:true with missing_facts | Reported in F-02's detail line; read it there. |
 | S-03 | credit_spend, request_account_deletion, credit_balance refused anonymously | Folded into S-02, which sweeps all ten functions. |
 | S-04 | claim_billing_session still works for a signed-in user | Calling it consumes a real billing session, so it is verified by one real test purchase after 0061 reaches an environment. It is the one correct exception among the ten: it derives auth.uid() itself rather than taking a caller-supplied p_user_id. If purchases stop activating after 0061, the `grant execute ... to service_role` on it is missing — the revoke landed and the grant did not. |
+| G-07v | SXO Dashboard renders the six specified result regions plus analytics setup/governance, the 9-stage funnel, and overlap disclosure | UI rendering and visual hierarchy — component tests verify content and actions; human eyes still confirm responsive layout and contrast on a deployed build. |
+| H-05p | Analytics token decryption and masked fingerprint are never logged in plaintext | Security/privacy property verified by inspecting encrypted column and log streams. |
+| I-05c | Optimization experiment correlation label cannot be edited or removed from UI | UI compliance check ensuring correlation disclaimer is permanent. |

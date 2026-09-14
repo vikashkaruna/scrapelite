@@ -2,7 +2,65 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-13 — Homepage offer and module-hierarchy refinement is merged to staging (`e39ca53`) and ready for its automatic Netlify branch deployment. P1 and P2 are complete; `0060`–`0064` are applied and re-verified on dev/stage, with the manual plan covering branch → staging → production. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
+> **Last updated: 2026-09-14 — DISCOVERABILITY P3 STAGES 0–5 COMPLETE, RECONCILED, VERIFIED, COMMITTED, AND PUSHED ON `discoverability-P3` @ `e4873d1`. REQUIRED PRE-PUSH GATE GREEN; 72 MIGRATIONS / 821 DB ASSERTIONS GREEN. OWNER INSTRUCTION: DO NOT MERGE OR DELETE THIS BRANCH. PRODUCTION DEPLOYMENT AND MIGRATIONS 0065–0072 REMAIN OPERATOR ACTIONS.**
+>
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> **the plan:** [docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md).
+>
+> 🔴 **READ §2 OF THE PLAN BEFORE §6.** §2 is the reuse map and the core of the document; §6 is the
+> stage list. **`TD` (0.20 of SXO) is a re-weighting of the Technical Accessibility pillar, not a new
+> measurement**, and **half of `UX`'s weight** — `CWV` 0.30 and `Mobile` 0.20 — already arrives through
+> `fetchWebVitals` and the mobile-parity penalty. `IC` and `IA` extend Answer Clarity and Structural
+> Hierarchy. And **`gapTaxonomy.js` already reserves the `conversion_friction` root cause with ZERO
+> issues referring to it** — a socket placed in P1 and deliberately left unused, which `CD` activates.
+> ⚠️ **AI Visibility is BUILT AND SHIPPED, not roadmap** — `aiVisibility.js` carries
+> `WAVI = 0.20M + 0.30C + 0.30R + 0.10P + 0.10A`, matching the document exactly and already asserted
+> by test. Building Stage 2 without §2 rebuilds a third of the engine from scratch.
+>
+> ✅ **EVERY FORMULA IS SETTLED — D13 AND D18 ARE RESOLVED.** The markdown BRD/PRD carries all six SXO
+> component weights, the executive master, and all seven §13 roles as text. 🔴 **The PDF is NOT a
+> usable source and must not be decoded again:** its formulas are vector outlines. A full hand-written
+> decoder (3 955 objects, 19 ToUnicode CMaps, 36 content streams, 47 653 characters of prose) returns
+> **zero** matches for `0\.[0-9]{2}`, with no images and no XObjects to OCR. ⚠️ **Neither source
+> document is committed — this repository is public.** The plan cites every clause by section number.
+>
+> 🔴 **`Analysis-2/` IS NOT A SCOPE SOURCE.** Its R0–R5 map contains **no SXO at all**, schedules
+> **AI Visibility — shipped here — for months 7–9** as a $99/mo add-on, and puts the **entity graph**
+> (shipped, `0056`) in **Year 2**; its "already live" list never mentions the discoverability engine.
+> Owner decision: the BRD/PRD governs. Removed from `staging` because the repo is public and the
+> pricing/revenue model would have gone public on the next promotion — `git revert 000c008` restores it.
+>
+> ✅ **THE SIX STALE “(COMING)” REFERRALS ARE FIXED AND CANNOT QUIETLY RETURN.**
+> `ai_visibility`, `trust_and_proof` and `local_directory` now advertise their shipped state;
+> `moduleAvailabilityParity.test.js` reads the real issue catalogue and public platform registry.
+> The badge's component test uses the genuinely unbuilt `service_radius` module.
+>
+> ✅ **M1–M13 IS RECONCILED WITHOUT INVENTING SEVEN FALSE MAPPINGS.** §5's M-codes are architectural
+> modules; `gapTaxonomy.js`'s are recommendation destinations. Six real correspondences are populated
+> (`M5`, `M6`, `M7`, `M9`, `M10`, `M11`); seven remain null with a required reason, and tests pin both
+> sets.
+>
+> ⚠️ **D12 IS THE ONE REMAINING DECISION BEFORE STAGE 1:** how a scorable subject is created. D21 is
+> resolved in favour of §9.6's published `5x/4x/4x/3x/1–2x`; D22 assigns deployment/browser/RLS to
+> `test:release` and stable-id API/schema/tenancy conformance to `verify:discoverability`.
+>
+> **Stage 0 verification:** the complete ten-suite `test:all` matrix is green — readiness, unit,
+> contract, integration, system, db/referral/workflow, production build, prerender integrity, security,
+> and Chromium smoke. db-verify applied **65 migrations / 801 assertions**; the focused new model/parity
+> set is 77/77. The live directory exercise is green through robots and fetch (`HTTP 200`). The operator
+> confirms production migrations `0050`–`0064` were manually applied; public posture is green (15/15
+> table reads and all ten definer RPCs refused anonymously). Exact inventory remains unproved without
+> direct DB access, and the owner explicitly deferred the pre-W2 production bundle until release. The
+> updated local and linked Netlify production Gemini values still receive `API key not valid` from Google;
+> this is recorded as an external deviation and cannot be called grounded.
+> ⚠️ **The next migration number is `0066`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
+> **Last updated: 2026-09-12 — Guest-trial status alignment is merged to staging (`a5b0b6c`) and Netlify deploy `6aa58d4b1c115400081e2848` is ready at https://staging.datiq.app. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
+> **Last updated: 2026-09-12 (VERIFIED + APPLIED) — P1 AND P2 ARE COMPLETE, AND `0060`–`0064` ARE NOW ON DEV/STAGE. RE-VERIFIED GREEN END TO END AFTER THE APPLY. MANUAL TEST PLAN WRITTEN FOR BRANCH → STAGING → PRODUCTION. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+ > **Last updated: 2026-09-13 — Homepage offer and module-hierarchy refinement is merged to staging (`e39ca53`) and ready for its automatic Netlify branch deployment. P1 and P2 are complete; `0060`–`0064` are applied and re-verified on dev/stage, with the manual plan covering branch → staging → production. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
 >
 > ✅ **`0062`, `0063` AND `0064` ARE APPLIED TO DEV/STAGE** (owner-confirmed, 2026-09-12), joining
 > `0059`–`0061` from the prior pass. **Every migration through `0064` has now met a real Postgres.**
@@ -15,7 +73,7 @@
 > `npm run verify:discoverability -- --base-url=<host> --target=<url>` runs **61 checks** against a
 > real deployment, a real session and a real database
 > ([scripts/verify-discoverability-e2e.mjs](scripts/verify-discoverability-e2e.mjs); the sheet is
-> [docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md](docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P2.md),
+> [docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md](docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md),
 > renamed from `MANUAL-TEST-…`). **Run in that order because each environment answers a different
 > question**; passing on one does not answer for the next. **13 rows genuinely cannot be automated**
 > and are listed rather than quietly omitted. ⚠️ **Exit 2 means INCONCLUSIVE, not pass** — a run that
@@ -513,10 +571,11 @@
 > cover that path passed against the broken code**, because it asserted only that an EG-05 existed,
 > not that nothing spurious did. It now asserts the exact subject ids, confirmed RED.
 >
-> ⚠️ **THE "(coming)" BADGE IS NOW UNREACHABLE FROM REAL DATA** — no issue in `issueCatalog` maps to
-> an unbuilt module any more; W9 and W10 shipped the last two. Its test uses a deliberately
-> synthetic module and says why, because pointing it at a catalogue issue makes it go
-> green-then-silently-dead the moment the next workstream ships. W11–W14 will make it live again.
+> ⚠️ **HISTORICAL W10 CHECKPOINT — SUPERSEDED BY P3 STAGE 0.2.** The badge was unreachable from
+> real catalogue data when W9/W10 landed, but later workstreams shipped AI Visibility, Local &
+> Directory, and Trust & Proof without updating their three `available` flags. P3 Stage 0.2 fixes
+> those flags and adds a parity test over the real `issueCatalog`, the complete shipped-module
+> set, and the public `platformModules.js` Discover pillar so this drift cannot recur silently.
 >
 > **Verified:** **366 files / 5986 passed / 14 skipped / 0 failed** (+90) · db-verify **56
 > migrations / 664 assertions / 0 failed** (+46) · referral 17 · workflows 56 · build clean ·
@@ -1275,8 +1334,8 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-11, **re-verified with `git branch -r` + `git rev-parse` again this session, not carried forward**: `origin/main` = **`2042348`**, `origin/staging` = **`4922c04`** — both **UNTOUCHED** and unchanged all session. All P1+P2 work is now on the ONE long-lived branch **`Discoverability-P1-P3-implementation`** (`04e8df3` before this commit), which absorbed `claude/p2-w9-work-streams-o4gvmq` by **fast-forward** (no merge commit; containment confirmed with `git merge-base --is-ancestor`). 🔴 **`origin/claude/p2-w9-work-streams-o4gvmq` STILL EXISTS and could not be deleted** — `git push origin --delete` fails `send-pack: unexpected disconnect`, and the GitHub MCP set has **no delete-branch tool**. Delete it from the branches page. The older `discoverability-p1-to-p3` local branch this row used to name is **superseded**. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. **Do not trust this row without re-checking `git branch -r`.** |
-| **Latest commit** | `Discoverability-P1-P3-implementation` — **D7** (`0057_audit_subjects.sql`, the subject registry) + P2/**W12** (`0058_local_directory.sql`, `directorySources.js`, `napModel.js`, `/local-directory/*`). Under it `04e8df3` (**W11** subject scoring), `b7a1c52` (14 Stripe tests un-skipped, the D7 recommendation, runbook §4b), `beefffa` (**W10** entity graph, `0056`), `026c0cf` (**W9** business truth record, `0055`). Run `git log --oneline staging..Discoverability-P1-P3-implementation`. |
+| **Branches** | As of **2026-09-13**, re-verified with `git rev-parse` + `git merge-base --is-ancestor` this session, not carried forward: `origin/main` = **`2042348`** (UNTOUCHED all session) · `origin/staging` = **`000c008`** · `origin/Discoverability-P1-P3-implementation` = **`0705eb6`** · `origin/discoverability-P3` = **`218955b`**. 🔴 **Containment is now a chain, and it is checked, not inferred from identical files:** `staging` ⊂ the base branch ⊂ `discoverability-P3`. **P3 work happens on `discoverability-P3`**; the base branch is the integration line and is held behind `staging` on purpose while P1/P2 is still in build phase. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. 🔴 `origin/claude/p2-w9-work-streams-o4gvmq` still exists, is fully merged, and **cannot be deleted from here** (`send-pack: unexpected disconnect`; the GitHub MCP set has no delete-branch tool) — delete it from the branches page. **Do not trust this row without re-checking `git branch -r`.** |
+| **Latest commit** | `discoverability-P3` @ **`218955b`** — the P3 plan rewritten from the supplied BRD/PRD (`16bcf79`) on top of a tree carrying **both** lines of work: `d4bb180` merged `staging` in, `218955b` merged the updated base branch so the history agrees with the tree (0 file changes). ⚠️ **The plan was written three times as better sources arrived — only `16bcf79` is current.** `0d39895` decoded the BRD/PRD **PDF** and concluded no weight was obtainable; that is true of the PDF (vector outlines) and **wrong about the project**, because the markdown sources carry every formula as text. Run `git log --oneline origin/Discoverability-P1-P3-implementation..discoverability-P3`. |
 | **Verify the schema locally** | `npm run test:db` — applies all **64** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**791 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~12s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 

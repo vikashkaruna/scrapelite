@@ -21,6 +21,9 @@ vi.mock("../functions/discoverability.js", () => rehydrateMock);
 const entitlementMock = vi.hoisted(() => ({ requireCapability: vi.fn() }));
 vi.mock("../functions/lib/requireEntitlement.js", () => entitlementMock);
 
+const workspaceMock = vi.hoisted(() => ({ requireWorkspaceDiscoverabilityAction: vi.fn() }));
+vi.mock("../functions/lib/workspaceContext.js", () => workspaceMock);
+
 let handler;
 
 function post(body, { authorized = true } = {}) {
@@ -47,6 +50,7 @@ beforeEach(() => {
   storeMock.getAuditFull.mockResolvedValue({ audit: {}, result: {}, signals: [] });
   rehydrateMock.rehydrate.mockReturnValue({ target: { url: "https://lumio.io" }, finalScore: 78 });
   entitlementMock.requireCapability.mockResolvedValue({ check: { allowed: true } });
+  workspaceMock.requireWorkspaceDiscoverabilityAction.mockResolvedValue({ ok: true });
 });
 
 afterEach(() => {
@@ -189,9 +193,28 @@ describe("report-email — discoverability send", () => {
     const h = await loadHandler();
     const r = await h(post({ kind: "discoverability", auditId: "a1" }));
     expect(r.statusCode).toBe(200);
-    expect(storeMock.getAuditFull).toHaveBeenCalledWith("u1", "a1");
+    expect(storeMock.getAuditFull).toHaveBeenCalledWith("u1", "a1", { workspaceId: null });
     expect(sendMock.sendReportEmail).toHaveBeenCalledWith(expect.objectContaining({
       kind: "discoverability", audit: { target: { url: "https://lumio.io" }, finalScore: 78 },
     }));
+  });
+
+  it("scopes a shared report to its workspace and requires read access", async () => {
+    const h = await loadHandler();
+    const r = await h(post({ kind: "discoverability", auditId: "a1", workspace_id: "ws-1" }));
+    expect(r.statusCode).toBe(200);
+    expect(storeMock.getAuditFull).toHaveBeenCalledWith("u1", "a1", { workspaceId: "ws-1" });
+    expect(workspaceMock.requireWorkspaceDiscoverabilityAction).toHaveBeenCalledWith("u1", "ws-1", "read");
+  });
+
+  it("does not send a shared report when the caller lacks workspace read access", async () => {
+    workspaceMock.requireWorkspaceDiscoverabilityAction.mockResolvedValue({
+      ok: false,
+      refusal: { code: "WORKSPACE_NOT_MEMBER", message: "You are not a member of this workspace." },
+    });
+    const h = await loadHandler();
+    const r = await h(post({ kind: "discoverability", auditId: "a1", workspace_id: "ws-1" }));
+    expect(r.statusCode).toBe(403);
+    expect(sendMock.sendReportEmail).not.toHaveBeenCalled();
   });
 });

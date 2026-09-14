@@ -48,6 +48,7 @@ export default function AuditComposer({
   onRun, running, defaultUrl = "", remaining, signedIn = true,
   defaultProfile = "", defaultDevice = "mobile", defaultPageType = "",
   defaultGoal = "", defaultGeography = null, defaultCompetitors = [],
+  subjects = [], defaultSubjectId = "",
 }) {
   const [url, setUrl] = useState(defaultUrl);
   const [advanced, setAdvanced] = useState(false);
@@ -55,6 +56,7 @@ export default function AuditComposer({
   const [profile, setProfile] = useState(defaultProfile);
   const [device, setDevice] = useState(defaultDevice);
   const [pageType, setPageType] = useState(defaultPageType);
+  const [subjectId, setSubjectId] = useState(defaultSubjectId);
   const [country, setCountry] = useState(defaultGeography?.country || "");
   const [region, setRegion] = useState(defaultGeography?.region || "");
   const [city, setCity] = useState(defaultGeography?.city || "");
@@ -99,6 +101,7 @@ export default function AuditComposer({
       // page settle it.
       ...(profile ? { audit_profile: profile } : {}),
       ...(goal ? { primary_goal: goal } : {}),
+      ...(subjectId ? { subject_id: subjectId } : {}),
       ...(geography ? { target_geography: geography } : {}),
       ...(competitorList.length ? { competitor_urls: competitorList } : {}),
       device_profile: device,
@@ -107,7 +110,7 @@ export default function AuditComposer({
       // returns the original rather than spending a second credit. The goal is
       // part of the key because two audits of the same URL under different
       // goals are two different commissions, not a retry of one.
-      idempotency_key: `${withScheme}|${profile}|${goal}|${device}|${Math.floor(Date.now() / 30000)}`,
+      idempotency_key: `${withScheme}|${profile}|${goal}|${device}|${subjectId}|${Math.floor(Date.now() / 30000)}`,
     });
   }
 
@@ -234,6 +237,23 @@ export default function AuditComposer({
                 describe, so it is never asked for HowTo markup.
               </small>
             </label>
+
+            {subjects && subjects.length > 0 && (
+              <label className="dsc-field">
+                <span>Associated subject</span>
+                <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+                  <option value="">Auto-mint or detect from page</option>
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label || s.canonical_domain || s.id} ({s.subject_kind || s.kind || "entity"})
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  Link this audit directly to an existing Brand, Product, Service or Page subject.
+                </small>
+              </label>
+            )}
           </div>
 
           <fieldset className="dsc-fieldset">

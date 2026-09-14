@@ -9612,6 +9612,7 @@ html.dark .dsc-page {
 .dsc-sub { color: var(--text-2); max-width: 62ch; margin: 0; font-size: 14px; }
 .dsc-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dsc-export { display: flex; gap: 2px; border: 1px solid var(--border); border-radius: var(--r-md); padding: 2px; }
+.dsc-tab-label { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ── Composer ───────────────────────────────────────────────────────────── */
 .dsc-composer { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; margin-bottom: 20px; }

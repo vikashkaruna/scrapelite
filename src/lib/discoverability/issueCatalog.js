@@ -21,7 +21,11 @@
 export const SEVERITIES = Object.freeze(["critical", "high", "medium", "low"]);
 
 /** Who is actually able to fix a thing. Drives queue filtering and assignment. */
-export const OWNERS = Object.freeze(["content", "seo", "engineering", "brand", "product"]);
+export const OWNERS = Object.freeze([
+  "content", "seo", "engineering", "brand", "product",
+  "growth_cro", "product_marketing", "analytics", "local_ops", "design",
+  "customer_success", "sales", "agency",
+]);
 
 export const FRAMEWORK_SCOPES = Object.freeze(["seo", "aeo", "geo", "common"]);
 
