@@ -92,6 +92,16 @@
 [functions."workflow-orchestrator-cron"]
   schedule = "*/5 * * * *"
 
+# Stage 3 SXO analytics ingestion. HTTP requests queue privacy-minimized
+# aggregates; this worker claims them atomically and applies bounded retries.
+[functions."sxo-analytics-import-worker"]
+  schedule = "*/5 * * * *"
+
+# W6.5 — the answer-engine sample. Deliberately NOT folded into
+# discoverability-monitor: an engine outage must not pause page auditing.
+[functions."prompt-monitor"]
+  schedule = "@daily"
+
 [build.environment]
   # The Netlify secret scanner does substring matching on values against
   # known env-var names. Operator-facing docs that LEGITIMATELY name env
@@ -545,6 +555,10 @@
     X-Robots-Tag = "noindex, nofollow"
 [[headers]]
   for = "/discoverability"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+[[headers]]
+  for = "/discoverability/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
 [[headers]]

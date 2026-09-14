@@ -37,6 +37,9 @@ async function throwFromResponse(res, method, path) {
   // `overridable` distinguishes a robots.txt refusal — which a signed-in owner
   // may attest past — from the operator's host allowlist, which they may not.
   if (data.overridable !== undefined) e.overridable = data.overridable;
+  // A duplicate relationship answers 409 and says whether the sighting was
+  // recorded; the panel must not claim corroboration that did not happen.
+  if (data.corroborated !== undefined) e.corroborated = data.corroborated;
   if (data.upgradeTo) e.upgradeTo = data.upgradeTo;
   if (data.remaining !== undefined) e.remaining = data.remaining;
   if (data.capability) e.capability = data.capability;
@@ -66,6 +69,17 @@ async function reqText(path) {
   return res.text();
 }
 
+function withQuery(path, params = {}) {
+  const q = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+  );
+  return `${path}${q.toString() ? `?${q}` : ""}`;
+}
+
+function withWorkspace(body, workspaceId) {
+  return workspaceId ? { ...body, workspace_id: workspaceId } : body;
+}
+
 export const discoverability = {
   // ── Audits ───────────────────────────────────────────────────────────────
   /**
@@ -84,27 +98,44 @@ export const discoverability = {
     return req(`/audits${q.toString() ? `?${q}` : ""}`);
   },
 
-  getAudit: (id) => req(`/audits/${encodeURIComponent(id)}`),
-  getResults: (id) => req(`/audits/${encodeURIComponent(id)}/results`),
-  rerun: (id, payload = {}) => req(`/audits/${encodeURIComponent(id)}/rerun`, "POST", payload),
-  deleteAudit: (id) => req(`/audits/${encodeURIComponent(id)}`, "DELETE"),
-  compare: (id, baselineId) =>
-    req(`/audits/${encodeURIComponent(id)}/compare/${encodeURIComponent(baselineId)}`),
+  getAudit: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}`, { workspace_id: workspaceId })),
+  getResults: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/results`, { workspace_id: workspaceId })),
+  rerun: (id, payload = {}, { workspaceId = null } = {}) =>
+    req(`/audits/${encodeURIComponent(id)}/rerun`, "POST", withWorkspace(payload, workspaceId)),
+  deleteAudit: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}`, { workspace_id: workspaceId }), "DELETE"),
+  compare: (id, baselineId, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/compare/${encodeURIComponent(baselineId)}`,
+      { workspace_id: workspaceId })),
 
   // ── Evidence panels ──────────────────────────────────────────────────────
-  headings: (id) => req(`/audits/${encodeURIComponent(id)}/headings`),
-  schema: (id) => req(`/audits/${encodeURIComponent(id)}/schema`),
-  answers: (id) => req(`/audits/${encodeURIComponent(id)}/answers`),
-  entities: (id) => req(`/audits/${encodeURIComponent(id)}/entities`),
-  technical: (id) => req(`/audits/${encodeURIComponent(id)}/technical`),
+  headings: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/headings`, { workspace_id: workspaceId })),
+  schema: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/schema`, { workspace_id: workspaceId })),
+  answers: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/answers`, { workspace_id: workspaceId })),
+  entities: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/entities`, { workspace_id: workspaceId })),
+  technical: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/technical`, { workspace_id: workspaceId })),
 
   // ── Reports ──────────────────────────────────────────────────────────────
-  reportMarkdown: (id, { constructs = false } = {}) =>
-    reqText(`/audits/${encodeURIComponent(id)}/report?format=markdown${constructs ? "&constructs=1" : ""}`),
+  reportMarkdown: (id, { constructs = false, workspaceId = null } = {}) =>
+    reqText(withQuery(`/audits/${encodeURIComponent(id)}/report`, {
+      format: "markdown", constructs: constructs ? "1" : null, workspace_id: workspaceId,
+    })),
   /** rows: "all" | "scores" | "signals" | "issues" | "recommendations". */
-  reportCsv: (id, rows = "all") =>
-    reqText(`/audits/${encodeURIComponent(id)}/report?format=csv&rows=${encodeURIComponent(rows)}`),
-  reportJson: (id) => req(`/audits/${encodeURIComponent(id)}/report?format=json`),
+  reportCsv: (id, rows = "all", { workspaceId = null } = {}) =>
+    reqText(withQuery(`/audits/${encodeURIComponent(id)}/report`, {
+      format: "csv", rows, workspace_id: workspaceId,
+    })),
+  reportJson: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/report`, {
+      format: "json", workspace_id: workspaceId,
+    })),
 
   /**
    * The audit's executive summary. Generated on first call and cached, so this
@@ -112,20 +143,40 @@ export const discoverability = {
    * Resolves with `summary: null` when the model is unavailable; the header
    * degrades to the deterministic facts rather than showing an error.
    */
-  summary: (id) => req(`/audits/${encodeURIComponent(id)}/summary`, "POST", {}),
+  summary: (id, { workspaceId = null } = {}) =>
+    req(`/audits/${encodeURIComponent(id)}/summary`, "POST", withWorkspace({}, workspaceId)),
 
   // ── Recommendations ──────────────────────────────────────────────────────
-  recommendations: (id) => req(`/audits/${encodeURIComponent(id)}/recommendations`),
-  accept: (recId) => req(`/recommendations/${encodeURIComponent(recId)}/accept`, "POST", {}),
+  recommendations: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/audits/${encodeURIComponent(id)}/recommendations`, { workspace_id: workspaceId })),
+  accept: (recId, { workspaceId = null } = {}) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/accept`, "POST", withWorkspace({}, workspaceId)),
   /** A reason is REQUIRED; the server refuses a dismissal without one. */
-  dismiss: (recId, reason) => req(`/recommendations/${encodeURIComponent(recId)}/dismiss`, "POST", { reason }),
-  markDone: (recId) => req(`/recommendations/${encodeURIComponent(recId)}/done`, "POST", {}),
-  reopen: (recId) => req(`/recommendations/${encodeURIComponent(recId)}/reopen`, "POST", {}),
+  dismiss: (recId, reason, { workspaceId = null } = {}) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/dismiss`, "POST", withWorkspace({ reason }, workspaceId)),
+  markDone: (recId, { workspaceId = null } = {}) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/done`, "POST", withWorkspace({}, workspaceId)),
+  reopen: (recId, { workspaceId = null } = {}) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/reopen`, "POST", withWorkspace({}, workspaceId)),
+  /**
+   * Hand a recommendation to someone, or put it down with `null`.
+   *
+   * The server checks that the assignee shares a workspace with you; there is
+   * deliberately no client-side membership list to bypass.
+   */
+  assign: (recId, assignee, { workspaceId = null } = {}) =>
+    req(`/recommendations/${encodeURIComponent(recId)}/assign`, "POST",
+      withWorkspace({ assignee: assignee ?? null }, workspaceId)),
 
   // ── Targets and trends ───────────────────────────────────────────────────
-  listTargets: () => req("/targets"),
-  history: (targetId) => req(`/targets/${encodeURIComponent(targetId)}/history`),
-  trends: (targetId, limit = 30) => req(`/targets/${encodeURIComponent(targetId)}/trends?limit=${limit}`),
+  listTargets: ({ workspaceId = null } = {}) =>
+    req(withQuery("/targets", { workspace_id: workspaceId })),
+  history: (targetId, { workspaceId = null } = {}) =>
+    req(withQuery(`/targets/${encodeURIComponent(targetId)}/history`, { workspace_id: workspaceId })),
+  trends: (targetId, limit = 30, { workspaceId = null } = {}) =>
+    req(withQuery(`/targets/${encodeURIComponent(targetId)}/trends`, {
+      limit, workspace_id: workspaceId,
+    })),
 
   // ── Benchmarks ───────────────────────────────────────────────────────────
   createBenchmark: (payload) => req("/benchmarks", "POST", payload),
@@ -160,8 +211,275 @@ export const discoverability = {
    * the signed-in account's own email, resolved server-side, never something
    * this call can specify.
    */
-  emailReport: (auditId, { format = "pdf", brandKit = null } = {}) =>
-    emailReport({ kind: "discoverability", auditId, format, brandKit }),
+  emailReport: (auditId, { format = "pdf", brandKit = null, workspaceId = null } = {}) =>
+    emailReport({ kind: "discoverability", auditId, format, brandKit,
+      ...(workspaceId ? { workspace_id: workspaceId } : {}) }),
+
+  // ── Canonical Business Truth Record (W9) ─────────────────────────────────
+  //
+  // ⚠️ THERE IS NO `approveVersion` HERE, AND THERE MUST NOT BE.
+  // Promotion is the only way a fact becomes canonical, because it is the only
+  // path carrying the interlocks — a reviewer who is not the proposer, the two
+  // identifying facts, and the three writes that must not separate. A second
+  // client method that reached `approved` any other way would be the one that
+  // forgets.
+  truthFields: () => req("/business-truth/fields"),
+  listTruthRecords: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/business-truth${q.toString() ? `?${q}` : ""}`);
+  },
+  createTruthRecord: (payload) => req("/business-truth", "POST", payload),
+  getTruthRecord: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/business-truth/${encodeURIComponent(id)}`, { workspace_id: workspaceId })),
+  archiveTruthRecord: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/business-truth/${encodeURIComponent(id)}`, { workspace_id: workspaceId }), "DELETE"),
+
+  /**
+   * Propose a version.
+   *
+   * `source` may only be `declared` or `inferred`. The server refuses
+   * `observed` and `imported` from a client: those carry a warranty that
+   * somebody could go and check, and this path has no evidence to attach.
+   */
+  proposeTruthVersion: (recordId, {
+    fields, source = "declared", statedBy = null, workspaceId = null, workspace_id = null,
+  }) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions`, "POST",
+      withWorkspace({ fields, source, stated_by: statedBy }, workspaceId || workspace_id)),
+
+  getTruthVersion: (recordId, versionId, { workspaceId = null } = {}) =>
+    req(withQuery(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}`,
+      { workspace_id: workspaceId })),
+
+  submitTruthVersion: (recordId, versionId, { workspaceId = null } = {}) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/submit`, "POST",
+      withWorkspace({}, workspaceId)),
+  withdrawTruthVersion: (recordId, versionId, { workspaceId = null } = {}) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/withdraw`, "POST",
+      withWorkspace({}, workspaceId)),
+  /** `note` is REQUIRED — the server refuses a rejection without a reason. */
+  rejectTruthVersion: (recordId, versionId, note, { workspaceId = null } = {}) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/reject`, "POST",
+      withWorkspace({ note }, workspaceId)),
+  promoteTruthVersion: (recordId, versionId, note = null, { workspaceId = null } = {}) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/promote`, "POST",
+      withWorkspace({ note }, workspaceId)),
+
+  truthDiff: (recordId, { from = null, to = null, workspaceId = null, workspace_id = null } = {}) => {
+    const q = new URLSearchParams(
+      Object.entries({ from, to, workspace_id: workspaceId || workspace_id }).filter(([, v]) => v),
+    );
+    return req(`/business-truth/${encodeURIComponent(recordId)}/diff${q.toString() ? `?${q}` : ""}`);
+  },
+
+  truthConflicts: (recordId, { workspaceId = null } = {}) =>
+    req(withQuery(`/business-truth/${encodeURIComponent(recordId)}/conflicts`, { workspace_id: workspaceId })),
+  /** resolution: "record_updated" | "page_updated" | "not_a_conflict". */
+  resolveTruthConflict: (recordId, conflictId, resolution, { workspaceId = null } = {}) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/conflicts/${encodeURIComponent(conflictId)}`,
+      "POST", withWorkspace({ resolution }, workspaceId)),
+
+  // ── Entity graph (W10) ───────────────────────────────────────────────────
+  //
+  // ⚠️ THERE IS NO METHOD THAT CREATES AN APPROVED ROW, and no PATCH that
+  // reaches `approved`. `approveRelationship` is the only way in, because
+  // approving an edge also approves its endpoints — an approved edge between
+  // two unreviewed nodes is a half-built statement, and a second path would be
+  // the one that forgets.
+  graphSchema: () => req("/entity-graph/schema"),
+  getGraph: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/entity-graph${q.toString() ? `?${q}` : ""}`);
+  },
+
+  /** `source` may only be `declared` or `inferred`; the server writes observed. */
+  proposeEntity: (payload) => req("/entity-graph/entities", "POST", payload),
+  /** `reason` is REQUIRED — the server refuses a rejection without one. */
+  rejectEntity: (id, reason, { workspaceId = null } = {}) =>
+    req(`/entity-graph/entities/${encodeURIComponent(id)}/reject`, "POST", withWorkspace({ reason }, workspaceId)),
+
+  proposeRelationship: ({
+    subjectId, predicate, objectId, source = "declared", note = null, workspaceId = null,
+  }) =>
+    req("/entity-graph/relationships", "POST",
+      withWorkspace({ subject_id: subjectId, predicate, object_id: objectId, source, note }, workspaceId)),
+  approveRelationship: (id, { note = null, truthRecordId = null, workspaceId = null } = {}) =>
+    req(`/entity-graph/relationships/${encodeURIComponent(id)}/approve`, "POST",
+      withWorkspace({ note, truth_record_id: truthRecordId }, workspaceId)),
+  rejectRelationship: (id, reason, { workspaceId = null } = {}) =>
+    req(`/entity-graph/relationships/${encodeURIComponent(id)}/reject`, "POST",
+      withWorkspace({ reason }, workspaceId)),
+
+  graphConflicts: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/entity-graph/conflicts${q.toString() ? `?${q}` : ""}`);
+  },
+  /** resolution: "relationship_removed" | "relationship_corrected" | "entity_merged" | "not_a_conflict". */
+  resolveGraphConflict: (conflictId, resolution, { workspaceId = null } = {}) =>
+    req(`/entity-graph/conflicts/${encodeURIComponent(conflictId)}/resolve`, "POST",
+      withWorkspace({ resolution }, workspaceId)),
+
+  // ── Subject scores (W11 / CP-1.1) ─────────────────────────────────────────
+  subjectScoreSchema: () => req("/subject-score/schema"),
+  listSubjects: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/subject-score/subjects${q.toString() ? `?${q}` : ""}`);
+  },
+  getSubject: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/subject-score/subjects/${encodeURIComponent(id)}`, { workspace_id: workspaceId })),
+  createEntitySubject: ({ subjectKind, entityId, workspaceId = null }) =>
+    req("/subject-score/subjects", "POST", {
+      subject_kind: subjectKind,
+      entity_id: entityId,
+      ...(workspaceId ? { workspace_id: workspaceId } : {}),
+    }),
+  listSubjectScores: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/subject-score/scores${q.toString() ? `?${q}` : ""}`);
+  },
+  getSubjectScore: (id, { workspaceId = null } = {}) =>
+    req(withQuery(`/subject-score/scores/${encodeURIComponent(id)}`, { workspace_id: workspaceId })),
+  scoreSubject: (payload) => req("/subject-score/scores", "POST", payload),
+
+  // ── Local and directory intelligence (W12) ────────────────────────────────
+  localDirectorySchema: () => req("/local-directory/schema"),
+  listDirectoryListings: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/local-directory/listings${q.toString() ? `?${q}` : ""}`);
+  },
+  upsertDirectoryListing: (payload) => req("/local-directory/listings", "POST", payload),
+  deleteDirectoryListing: (id, payload = {}) =>
+    req(`/local-directory/listings/${encodeURIComponent(id)}`, "DELETE", payload),
+  runLocalCheck: (payload) => req("/local-directory/check", "POST", payload),
+  listLocalChecks: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/local-directory/checks${q.toString() ? `?${q}` : ""}`);
+  },
+  getLocalCheck: (id, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/local-directory/checks/${encodeURIComponent(id)}${q.toString() ? `?${q}` : ""}`);
+  },
+  resolveLocalFinding: (id, resolution, payload = {}) =>
+    req(`/local-directory/findings/${encodeURIComponent(id)}/resolve`, "POST", { resolution, ...payload }),
+
+  // ── Schema intelligence & Trust proof (W13) ──────────────────────────────
+  schemaRegistry: () => req("/schema-trust/schema-registry"),
+  listSchemaEntities: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/schema-trust/schema${q.toString() ? `?${q}` : ""}`);
+  },
+  saveSchemaEntity: (payload) => req("/schema-trust/schema", "POST", payload),
+  deleteSchemaEntity: (id, payload = {}) =>
+    req(`/schema-trust/schema/${encodeURIComponent(id)}`, "DELETE", payload),
+  listTrustObservations: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/schema-trust/trust${q.toString() ? `?${q}` : ""}`);
+  },
+  saveTrustObservation: (payload) => req("/schema-trust/trust", "POST", payload),
+
+  // ── Connector dispatches (CP-1.2) ─────────────────────────────────────────
+  claimConnectorDispatch: (payload) => req("/connectors/dispatch", "POST", payload),
+
+  // ── Search Experience Optimization (SXO) (P3A / Stage 2) ────────────────
+  sxoSchema: () => req("/sxo/schema"),
+  evaluateSxo: (payload) => req("/sxo/evaluate", "POST", payload),
+  listSxoRuns: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/runs${q.toString() ? `?${q}` : ""}`);
+  },
+  getSxoRun: (id, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/runs/${encodeURIComponent(id)}${q.toString() ? `?${q}` : ""}`);
+  },
+  getSxoComposite: (auditId, { workspaceId = null } = {}) =>
+    req(withQuery(`/sxo/composite/${encodeURIComponent(auditId)}`, { workspace_id: workspaceId })),
+
+  // ── Analytics, Funnels, Forms & Goals (Stage 3 / P3B) ───────────────────
+  sxoJourney: (auditId, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/audits/${encodeURIComponent(auditId)}/journey${q.toString() ? `?${q}` : ""}`);
+  },
+  sxoFormDiagnostics: (auditId, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/audits/${encodeURIComponent(auditId)}/form-diagnostics${q.toString() ? `?${q}` : ""}`);
+  },
+  importSxoEvents: (payload) => req("/sxo/events/import", "POST", payload),
+  connectSxoIntegration: (provider, payload) =>
+    req(`/sxo/integrations/${encodeURIComponent(provider)}/connect`, "POST", payload),
+  listSxoIntegrations: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/integrations${q.toString() ? `?${q}` : ""}`);
+  },
+  disconnectSxoIntegration: (provider, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/integrations/${encodeURIComponent(provider)}${q.toString() ? `?${q}` : ""}`, "DELETE");
+  },
+  purgeSxoAnalyticsData: (payload = {}) => req("/sxo/analytics/purge", "POST", payload),
+  saveSxoConversionGoal: (payload) => req("/sxo/conversion-goals", "POST", payload),
+  listSxoConversionGoals: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/conversion-goals${q.toString() ? `?${q}` : ""}`);
+  },
+
+  // ── Portfolio Rollups, Personas & Experiments (P3C / Stage 4) ─────────────
+  createSxoExperiment: (payload) => req("/sxo/experiments", "POST", payload),
+  listSxoExperiments: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/experiments${q.toString() ? `?${q}` : ""}`);
+  },
+  getSxoExperiment: (id, params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/experiments/${encodeURIComponent(id)}${q.toString() ? `?${q}` : ""}`);
+  },
+  evaluateSxoExperiment: (id, payload) =>
+    req(`/sxo/experiments/${encodeURIComponent(id)}/evaluate`, "POST", payload),
+  getSxoPortfolioRollups: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return req(`/sxo/portfolio/rollups${q.toString() ? `?${q}` : ""}`);
+  },
+  saveSxoPortfolioRollup: (payload) => req("/sxo/portfolio/rollups", "POST", payload),
+  validateSxoRecommendation: (id, payload = {}) =>
+    req(`/sxo/recommendations/${encodeURIComponent(id)}/validate`, "POST", payload),
 };
 
 async function emailReport(payload) {

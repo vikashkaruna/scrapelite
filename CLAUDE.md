@@ -2,9 +2,905 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-13 — Homepage offer and module hierarchy refinement is merged to staging (`e39ca53`) and ready to push for its automatic Netlify branch deployment. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
+> **Last updated: 2026-09-15 — DISCOVERABILITY AUDIT 504 TIMEOUT RESOLVED, COMPETITOR LIMIT 20 WITH SMART INTAKE, CLOSED-LOOP OPERATING RIBBON, ACCOUNT 2-COLUMN OVERHAUL & WORKFLOW FIXES MERGED TO `staging`. 432 test files / 6,919 tests 100% green; db-verify 74 migrations / 833 assertions green; prerender 28 pages verified. Detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) and [docs/sessions/SESSION-HANDOFF-2026-09-14-DISCOVERABILITY-AUDIT-BUGS-AND-ACCOUNT-UX.md](docs/sessions/SESSION-HANDOFF-2026-09-14-DISCOVERABILITY-AUDIT-BUGS-AND-ACCOUNT-UX.md).**
+>
+> Prior (merged in from `staging` @ `0ec1df9`): 2026-09-14 — Staging auth-signup error handling is pushed at `a0b274d`. The deployed client points to the correct staging Supabase project; a remaining “Database error saving new user” must be resolved in the staging Supabase Auth trigger/hook configuration.
+>
+> Prior: 2026-09-14 — DISCOVERABILITY P3 STAGES 0–5 COMPLETE, RECONCILED, VERIFIED, COMMITTED, AND PUSHED ON `discoverability-P3` @ `e4873d1`. REQUIRED PRE-PUSH GATE GREEN; 72 MIGRATIONS / 821 DB ASSERTIONS GREEN. OWNER INSTRUCTION: DO NOT MERGE OR DELETE THIS BRANCH. PRODUCTION DEPLOYMENT AND MIGRATIONS 0065–0072 REMAIN OPERATOR ACTIONS.**
+>
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> **the plan:** [docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P3-IMPLEMENTATION-PLAN.md).
+>
+> 🔴 **READ §2 OF THE PLAN BEFORE §6.** §2 is the reuse map and the core of the document; §6 is the
+> stage list. **`TD` (0.20 of SXO) is a re-weighting of the Technical Accessibility pillar, not a new
+> measurement**, and **half of `UX`'s weight** — `CWV` 0.30 and `Mobile` 0.20 — already arrives through
+> `fetchWebVitals` and the mobile-parity penalty. `IC` and `IA` extend Answer Clarity and Structural
+> Hierarchy. And **`gapTaxonomy.js` already reserves the `conversion_friction` root cause with ZERO
+> issues referring to it** — a socket placed in P1 and deliberately left unused, which `CD` activates.
+> ⚠️ **AI Visibility is BUILT AND SHIPPED, not roadmap** — `aiVisibility.js` carries
+> `WAVI = 0.20M + 0.30C + 0.30R + 0.10P + 0.10A`, matching the document exactly and already asserted
+> by test. Building Stage 2 without §2 rebuilds a third of the engine from scratch.
+>
+> ✅ **EVERY FORMULA IS SETTLED — D13 AND D18 ARE RESOLVED.** The markdown BRD/PRD carries all six SXO
+> component weights, the executive master, and all seven §13 roles as text. 🔴 **The PDF is NOT a
+> usable source and must not be decoded again:** its formulas are vector outlines. A full hand-written
+> decoder (3 955 objects, 19 ToUnicode CMaps, 36 content streams, 47 653 characters of prose) returns
+> **zero** matches for `0\.[0-9]{2}`, with no images and no XObjects to OCR. ⚠️ **Neither source
+> document is committed — this repository is public.** The plan cites every clause by section number.
+>
+> 🔴 **`Analysis-2/` IS NOT A SCOPE SOURCE.** Its R0–R5 map contains **no SXO at all**, schedules
+> **AI Visibility — shipped here — for months 7–9** as a $99/mo add-on, and puts the **entity graph**
+> (shipped, `0056`) in **Year 2**; its "already live" list never mentions the discoverability engine.
+> Owner decision: the BRD/PRD governs. Removed from `staging` because the repo is public and the
+> pricing/revenue model would have gone public on the next promotion — `git revert 000c008` restores it.
+>
+> ✅ **THE SIX STALE “(COMING)” REFERRALS ARE FIXED AND CANNOT QUIETLY RETURN.**
+> `ai_visibility`, `trust_and_proof` and `local_directory` now advertise their shipped state;
+> `moduleAvailabilityParity.test.js` reads the real issue catalogue and public platform registry.
+> The badge's component test uses the genuinely unbuilt `service_radius` module.
+>
+> ✅ **M1–M13 IS RECONCILED WITHOUT INVENTING SEVEN FALSE MAPPINGS.** §5's M-codes are architectural
+> modules; `gapTaxonomy.js`'s are recommendation destinations. Six real correspondences are populated
+> (`M5`, `M6`, `M7`, `M9`, `M10`, `M11`); seven remain null with a required reason, and tests pin both
+> sets.
+>
+> ⚠️ **D12 IS THE ONE REMAINING DECISION BEFORE STAGE 1:** how a scorable subject is created. D21 is
+> resolved in favour of §9.6's published `5x/4x/4x/3x/1–2x`; D22 assigns deployment/browser/RLS to
+> `test:release` and stable-id API/schema/tenancy conformance to `verify:discoverability`.
+>
+> **Stage 0 verification:** the complete ten-suite `test:all` matrix is green — readiness, unit,
+> contract, integration, system, db/referral/workflow, production build, prerender integrity, security,
+> and Chromium smoke. db-verify applied **65 migrations / 801 assertions**; the focused new model/parity
+> set is 77/77. The live directory exercise is green through robots and fetch (`HTTP 200`). The operator
+> confirms production migrations `0050`–`0064` were manually applied; public posture is green (15/15
+> table reads and all ten definer RPCs refused anonymously). Exact inventory remains unproved without
+> direct DB access, and the owner explicitly deferred the pre-W2 production bundle until release. The
+> updated local and linked Netlify production Gemini values still receive `API key not valid` from Google;
+> this is recorded as an external deviation and cannot be called grounded.
+> ⚠️ **The next migration number is `0066`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
+> **Last updated: 2026-09-12 — Guest-trial status alignment is merged to staging (`a5b0b6c`) and Netlify deploy `6aa58d4b1c115400081e2848` is ready at https://staging.datiq.app. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
+> **Last updated: 2026-09-12 (VERIFIED + APPLIED) — P1 AND P2 ARE COMPLETE, AND `0060`–`0064` ARE NOW ON DEV/STAGE. RE-VERIFIED GREEN END TO END AFTER THE APPLY. MANUAL TEST PLAN WRITTEN FOR BRANCH → STAGING → PRODUCTION. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+ > **Last updated: 2026-09-13 — Homepage offer and module-hierarchy refinement is merged to staging (`e39ca53`) and ready for its automatic Netlify branch deployment. P1 and P2 are complete; `0060`–`0064` are applied and re-verified on dev/stage, with the manual plan covering branch → staging → production. External staging regression remains blocked by Netlify Edge Access HTTP 401 until its approved release-test path is configured.**
+>
+> ✅ **`0062`, `0063` AND `0064` ARE APPLIED TO DEV/STAGE** (owner-confirmed, 2026-09-12), joining
+> `0059`–`0061` from the prior pass. **Every migration through `0064` has now met a real Postgres.**
+> 🔴 **PRODUCTION HAS NONE OF THEM AND IS FIFTEEN MIGRATIONS BEHIND (`0050`–`0064`).** Every P2
+> endpoint reads a table that does not exist there, so **a deploy without the apply turns a feature
+> that tested clean twice into a 500** — [docs/DB-MIGRATION-RUNBOOK.md §4d + §4e](docs/DB-MIGRATION-RUNBOOK.md).
+> ⚠️ **`0061` is the RPC lockdown and should not wait on a feature release to carry it.**
+>
+> 📋 **THE BRANCH → STAGING → PRODUCTION PASS IS NOW ONE COMMAND.**
+> `npm run verify:discoverability -- --base-url=<host> --target=<url>` runs **61 checks** against a
+> real deployment, a real session and a real database
+> ([scripts/verify-discoverability-e2e.mjs](scripts/verify-discoverability-e2e.mjs); the sheet is
+> [docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md](docs/AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md),
+> renamed from `MANUAL-TEST-…`). **Run in that order because each environment answers a different
+> question**; passing on one does not answer for the next. **13 rows genuinely cannot be automated**
+> and are listed rather than quietly omitted. ⚠️ **Exit 2 means INCONCLUSIVE, not pass** — a run that
+> exercised nothing must never print READY. 🔴 **Production is READ-ONLY by default**: a full pass
+> creates real rows and spends real audit quota, and `audit_subject_scores` **appends by design**, so
+> that residue cannot be tidied away; `--allow-writes` / `--allow-audits` must be passed by hand.
+>
+> 🔴 **THE RUNNER FOUND A REAL GAP ON ITS FIRST DESIGN PASS, AND IT IS THE SAME CLASS THIS PHASE
+> CLOSED TWICE.** `POST /subject-score/scores` is **unreachable for any API caller**:
+> `audit_subjects` rows are minted by exactly one caller — `ensureSubject`, always with
+> `kind: "page"` — and `0057`'s `kind_matches_ref` CHECK requires `entity_id` for
+> `brand`/`product`/`service`, which **nothing in the API creates**. Model, store, route, migration
+> and tests are each complete in isolation; the chain from *"I have a brand"* to *"here is its BDS"*
+> has **no first link**. Recorded as **DEV-01** rather than patched, because the fix is a design
+> decision (auto-mint a subject per entity, or make it an explicit act?) that belongs to the owner.
+>
+> 🔴 **AND `npm run verify:rls` COULD REPORT "0044 IS APPLIED" FROM A MACHINE THAT NEVER REACHED THE
+> PROJECT.** Behind an egress proxy that allow-lists hosts, every anonymous probe is answered **403
+> by the proxy** before it reaches Supabase, and the loop counted each as an RLS refusal. It handled
+> a *thrown* network error and missed the case where something in the middle **answers on the host's
+> behalf** — which does not throw and looks exactly like a real response. **Reproduced, then fixed**:
+> `scripts/lib/postgrestAnswer.mjs` is now the one predicate both verifiers use (PostgREST answers in
+> JSON, always, including errors; a proxy answers in its own prose), and anything else is
+> **INCONCLUSIVE**, exit 2. ⚠️ **A security gate that reports "locked down" when it could not reach
+> the host is worse than no gate: it is a green light nobody looks behind.**
+>
+> ✅ **RE-VERIFIED AFTER THE APPLY, NOT CARRIED FORWARD:** `npx vitest run` **391 files / 6530 passed
+> / 0 skipped / 0 failed** · db-verify **64 migrations / 791 assertions / 0 failed** · referral 17 ·
+> workflows 56 · build clean · prerender 28 pages / 112 refs · security clean · `run-all.sql` up to
+> date. ⚠️ **The `✗` marks in the vitest log are probes inside a readiness smoke test against a
+> non-running server** — that file passes; they are not failures.
+>
+> ⚠️ **A VITE WARNING ON `subjectScoring.test.js` WAS CHECKED RATHER THAN ASSUMED COSMETIC.** The
+> built-flag parity test resolves its module by template literal, which Vite cannot analyse
+> statically, and its `try/catch` swallows a failure into `null` — the exact shape of a guard that
+> passes for the wrong reason. **Re-confirmed RED** by pointing a source at a module that does not
+> exist: it fails with `truth_record.built=true but doesNotExist.js IS ABSENT`. The warning is
+> build-time analysis noise; the guard is live.
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
+> **Last updated: 2026-09-12 (W11 CLOSE-OUT) — P1 AND P2 ARE COMPLETE. THE LAST GAP WAS W11's OWN: A SCORING MODEL THAT HAD BEEN IMPORTED BY NOTHING FOR THREE WORKSTREAMS, BEHIND A DEFERRAL WHOSE TWO BLOCKERS HAD BOTH SHIPPED. `0064`. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md) ·
+> [docs/DB-MIGRATION-RUNBOOK.md §4e](docs/DB-MIGRATION-RUNBOOK.md).
+>
+> 🔴 **`subjectScoring.js` WAS COMPLETE, TESTED, AND CALLED BY NOTHING SINCE W11.** The
+> withholding was deliberate and written down: persisting a subject score needed a subject model
+> (D7) and two components that did not exist (TC, TP). **D7 shipped as `0057` and TC/TP as `0062`** —
+> and nothing ever connected those two facts to the row that was waiting on them. **This is the same
+> declared-vs-actual drift W13 itself caught** in `local_directory.built`, which stayed `false` for a
+> session after W12 went live. ⚠️ **A MODULE WHOSE ONLY READER IS ITS OWN TEST IS NOT WIRED** — its
+> suite passes exactly as the four declared-and-never-written columns' readers returned `null`.
+> `subject-score-parity.test.js` now asserts a **non-test importer exists**, which is the guard the
+> gap actually needed.
+>
+> ⚠️ **AND W14 HAD ALREADY ADDED `audit.subject_score` FOR A ROUTE THAT DID NOT EXIST** — a
+> capability with no caller, introduced by the very session that was closing this class of defect
+> elsewhere. It has a caller now.
+>
+> 🔴 **THIS TABLE APPENDS. EVERY SIBLING UPSERTS, AND THE DIFFERENCE IS WHAT EACH IS FOR.**
+> `audit_schema_entities` answers *"what does this page declare NOW"* — a second opinion is not
+> wanted. `audit_subject_scores` answers *"what did this brand score on the 12th"*, which **is** the
+> product. An arbiter here would silently collapse a subject's whole history into one row on every
+> re-score, leaving one row claiming to be the trend. ⚠️ **Two scorings on the same day are two
+> MEASUREMENTS**; refusing the second to prevent a duplicate would be refusing a re-measure.
+>
+> 🔴 **`score` IS NULLABLE AND `coverage` IS NOT NULL.** A stored `0` would be indistinguishable,
+> for ever, from a subject that genuinely scored zero. And a score without its coverage is not a
+> smaller score, it is a **different** one — 72 at 80% with TC excluded and 72 at 100% are not the
+> same measurement, so a trend drawn through scores whose coverage was dropped shows a phantom jump
+> the day an excluded component starts being measured. That is `weightedMean`'s own failure mode,
+> re-created at the storage layer.
+>
+> ⚠️ **`SUBJECT_MODEL_VERSION` IS AN `s`-SERIES, NEVER THE PAGE MODEL'S `v`.**
+> `SCORING_MODEL_VERSION` is `v3` and describes the penalty and pillar maths; BDS/PDS/SFS is a
+> different formula moving for different reasons, and one number for both would make **both**
+> comparability claims false. ⚠️ **Bump it when a WEIGHT moves, never when a component's SOURCE
+> arrives** — TC becoming measurable is coverage rising under the same formula, which `coverage` and
+> `blockedBy` already record. ⚠️ **The model stamps its own version; a caller never supplies one** —
+> the `0048` rule, one layer up.
+>
+> ⚠️ **THE KIND COMES FROM THE STORED SUBJECT, NEVER THE REQUEST BODY**, and the CHECK allows only
+> the three scorable kinds: `audit_subjects` also holds `page`, `domain` and `location`, for which
+> `scoreIdFor()` returns `null` because they have no single-number formula. A row claiming a page has
+> a BDS is a category error, refused in **both** layers so they cannot disagree about who decides.
+> **The score is computed server-side and never accepted from a client** — a supplied score is not a
+> measurement, it is a number somebody typed.
+>
+> ✅ **TWO COMPLETION SWEEPS RUN ACROSS P1 AND P2, AND BOTH ARE NOW CLEAN.** Every one of the 32
+> `src/lib/discoverability/*` modules has a production importer (`subjectScoring.js` was the only
+> orphan). Every `audit_*` table across `0030`–`0064` has a writer. ⚠️ `report_access_log`,
+> `canonical_entities`, `credit_ledger`, `extracted_fields` and `field_provenance` look unwritten to
+> a JS-only grep and are **not** defects — the first is written by a SQL function in `0039`, the rest
+> belong to other phases.
+>
+> **Verified:** `npx vitest run` **391 files / 6530 passed / 0 skipped / 0 failed** · db-verify **64
+> migrations / 791 assertions / 0 failed** · referral 17 · workflows 56 · build clean · prerender 28
+> pages / 112 refs · security clean. **10 guards confirmed RED first** (6 route breaks, 4 structural).
+> 🔴 **`0062`, `0063` AND `0064` HAVE ONLY MET WASM POSTGRES.** ⚠️ **The next migration number is
+> `0065`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
+> **Last updated: 2026-09-12 (W14) — THE P2 INTELLIGENCE LAYER HAD NO ENTITLEMENT CHECK AT ALL (`0063` + six capabilities). AND THE LIFECYCLE FIX THE PLAN ASKED FOR WOULD HAVE BEEN DEAD CODE OVERRIDING A WRITTEN DECISION. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+> 🔴 **W9 THROUGH W13 SHIPPED UNGATED.** Every truth record, graph edge, directory listing and trust
+> observation was writable on **any plan including Free** — nothing checked. The same gap Phases 4-6
+> had, where three cost-bearing operations went unmetered and three of the BRD's own upgrade triggers
+> were unenforceable, and **a green gate proved nothing about it because nothing checked**. Six
+> capabilities added on the `audit.benchmark` precedent D9 names: reuse the audit allowance that
+> already exists rather than invent a plan axis nobody bought. ⚠️ **WRITES ARE GATED, READS ARE NOT** —
+> refusing to show a customer the record they already own is taking away something they were given.
+> ⚠️ **Fails open on infrastructure**, the same asymmetry `requireEntitlement` holds.
+>
+> ✅ **REVALIDATION IS A REQUEST, NOT A BUTTON THAT SPENDS MONEY.** A re-audit is several fetches, a
+> PageSpeed lookup, a citation sample and an AI call — **an "is this fixed yet?" control that silently
+> spends one is the shape of thing a customer discovers on an invoice.** `0063` records the request;
+> the run happens on the monitor's tick. ⚠️ **IDEMPOTENT BY THE `is.null` FILTER, NOT A
+> READ-THEN-WRITE** — the PATCH only matches a row whose `revalidation_requested_at` is still null, so
+> two concurrent clicks produce one claim; a check-then-set would race exactly as
+> `payment-webhook.js:49-59`'s dedup does, and losing that race costs a second paid audit.
+> ⚠️ **Idempotency is checked BEFORE the quota**: a second click is not a new request, so refusing it
+> for quota would refuse something nobody asked for.
+>
+> 🔴 **THE LIFECYCLE FIX THE PLAN ASKED FOR WAS A FALSE PREMISE, AND THE CODE STOPPED IT.** W14's step
+> 2 asks that every transition validate the prior state. I found `canTransition` exported,
+> unit-tested and **called by nothing**, concluded the state machine was unenforced, and wrote the
+> enforcement. Its own header stopped it: *"ALWAYS TRUE FOR A KNOWN STATE, AND THAT IS THE DESIGN.
+> `next` is what the UI should OFFER; it is not a gate. A state machine that refuses a legitimate jump
+> teaches people to work around the tool."* It returns `{allowed, suggested}`, so
+> `!canTransition(...)` is **always false — dead code that reads as enforcement** — and the integrity
+> that matters was never missing: `requirementsFor` has always refused `validated` without the audit
+> that re-measured the signal, *"otherwise it is a claim, not a measurement"*. **Reverted in full**;
+> both halves pinned by test. ⚠️ **A function called by nothing is usually a defect here — four times
+> over — but not always, and the code said which this was.**
+>
+> ⚠️ **STILL OPEN IN W14:** the fourteen-endpoint `/api/v1/discoverability/*` inventory, connector
+> approval-gating, and **D6's seven discoverability roles**, which need the signed role matrix rather
+> than a guess.
+>
+> **Verified:** `npx vitest run` **389 files / 6508 passed / 0 skipped / 0 failed** · db-verify **63
+> migrations / 779 assertions / 0 failed** · build clean · prerender 28 pages / 112 refs · security
+> clean. **7 guards confirmed RED first.** 🔴 **`0062` AND `0063` HAVE ONLY MET WASM POSTGRES.**
+> ⚠️ **The next migration number is `0064`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
+> **Last updated: 2026-09-12 (W13) — SCHEMA INTELLIGENCE + TRUST & PROOF (`0062`). THE TRUST MODEL EXISTS TO STOP A COUNTER — TEN TESTIMONIALS MUST NEVER OUTSCORE ONE VERIFIABLE RECORD. AND W12's OWN `built` FLAG HAD BEEN STALE FOR A SESSION, WITH A TEST THAT AGREED WITH IT. ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+> 🔴 **EVIDENCE QUALITY, NEVER EVIDENCE VOLUME.** Ten unattributed testimonials on a page the
+> business controls must never outscore one verifiable third-party record. **A counting model is
+> trivially gamed by the party being measured — and worse, it REWARDS the behaviour**, so the number
+> rises while the thing it measures falls. `trustProof.js` scores every signal by `INDEPENDENCE ×
+> VERIFIABILITY`, saturating: one independent verified record (**60**) beats any quantity of
+> self-published material (**capped at 25 by the weight table**).
+>
+> ⚠️ **AND THE CAP IS A DERIVED FACT, NOT A SECOND GUARD.** A first draft applied `Math.min(best,
+> 40)` — a ceiling that **could never fire**, because `self_published`'s 0.25 weight already bounds
+> the score at 25. **A redundant guard that reads as load-bearing invites a test pinned to the guard
+> rather than the mechanism** — exactly how W12's "ignores a stored listing whose source is no longer
+> in the registry" passed against a deliberately broken model. ⚠️ **`trustGaps` also used to INFER
+> provenance from the score** (`value < 40`), a guess about how a number was produced that would start
+> lying the moment a weight moved; `signalProvenance()` reads it from the observations.
+>
+> 🔴 **W12's OWN FLAG WAS STILL `false`, AND THE TEST AGREED WITH IT.** `local_directory.built` stayed
+> `false` for a whole session after W12 shipped `napModel.js` and `/local-directory/*` — so
+> `geographic_availability`, **15% of every service score**, kept reading `null` and kept telling the
+> customer it was *"waiting on W12"* for a module that was already live. ⚠️ **The old test restated
+> the stale list and passed**: `expect([...UNBUILT_SOURCES].sort()).toEqual(["local_directory",
+> "trust_proof"])`. **A LIST THAT RESTATES THE THING IT CHECKS CANNOT CATCH IT DRIFTING** — the same
+> defect as the hand-written `STORE_EXPORTS` array. `COMPONENT_SOURCES` now carries `module` per
+> source and the parity test **imports it**, so `built` is checked rather than trusted.
+>
+> 🔴 **THE PRD EXPANDS NEITHER FORMULA'S INITIALS ANYWHERE IN THIS REPOSITORY** — the fourth time,
+> after W4's "M1–M13", W10's fourteen types and W11's component ids. **Every WEIGHT is verbatim and
+> asserted** (`TC = 0.25D + 0.20R + 0.20P + 0.15M + 0.10C + 0.10X`, `Schema = 0.30O + 0.30L + 0.20S +
+> 0.10F + 0.10G`); only the names are derived, under W11's constraint that each binds to something
+> already extracted, recorded as `binding` + `derivedFrom`. ⚠️ **If the PRD differs, change the
+> `label` and `binding` — NEVER the weight and never the id**, which travels in stored rows and
+> every historical diff.
+>
+> ⚠️ **`fidelity` IS THE ONE SCORE WHERE MORE MARKUP MEANS A LOWER NUMBER.** A declared `FAQPage`
+> with no visible questions scores **0 — below having none.** It is a machine-readable false
+> statement, it is what gets rich results revoked, and `constructTemplates` already refuses to
+> generate one for that reason, so rewarding its presence would recommend the defect we elsewhere
+> report. `schemaGaps` puts a **contradiction ahead of an absence** whatever the weights say.
+>
+> ⚠️ **TC, TP AND TR ASK DIFFERENT QUESTIONS**, and W11's own `describes` strings are the
+> specification. Marking a service down for having no product reviews reports a **category error as a
+> failing** and sends the customer to collect something that would not help them.
+>
+> 🔴 **TWO ASSERTIONS OF MINE WERE WRONG AND THE CODE WAS RIGHT.** I asserted the evidence envelope
+> in camelCase (it is the **snake_case** wire shape W1 stores), and I asserted an empty page scores
+> `null` (**it scores 0 at 20% coverage, correctly**) — "the page carries none of the types it should"
+> is a MEASUREMENT, not a failure to measure, which is exactly what EA-01 reports.
+>
+> **Verified:** db-verify **62 migrations / 778 assertions / 0 failed** · discoverability + audit
+> **46 files / 1229 passed**. **18 guards confirmed RED first**, including the quality-over-volume
+> property against a counting model and the expression index as an upsert arbiter (0058's defect,
+> which crashes db-verify outright). 🔴 **`0062` HAS ONLY MET WASM POSTGRES.** ⚠️ **The next migration
+> number is `0063`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
+> **Last updated: 2026-09-12 (later) — SECURITY REVIEW THROUGH P2/W12. TEN `SECURITY DEFINER` FUNCTIONS WERE EXECUTABLE BY `anon` WITH A CALLER-SUPPLIED `p_user_id` — THE 0044 DEFECT ONE LAYER DOWN. PLUS A D7 GET-OR-CREATE RACE, A FOURTH DECLARED-AND-NEVER-WRITTEN TABLE, AND W12 TRUSTING PARENT IDS FROM A REQUEST BODY. ALL FIXED (`0059`–`0061`). ON `Discoverability-P1-P3-implementation`. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+>
+> ✅ **`0059`, `0060` AND `0061` ARE APPLIED TO DEV/STAGE** (owner-confirmed, 2026-09-12).
+> 🔴 **PRODUCTION STILL NEEDS ALL THREE**, and `0061` is a SECURITY fix that should not wait on a
+> feature release to carry it — [docs/DB-MIGRATION-RUNBOOK.md §4d](docs/DB-MIGRATION-RUNBOOK.md).
+>
+> 🔴 **`0061` — THE HEADLINE. `0044` LOCKED FIFTEEN TABLES AND NOBODY CHECKED FUNCTIONS.** PostgreSQL
+> grants `EXECUTE` on a new function to **PUBLIC** by default, so every migration that created one and
+> did not revoke left it callable by `anon` through PostgREST's `/rpc/<name>` — and **`SECURITY
+> DEFINER` bypasses RLS.** Ten functions took a caller-supplied `p_user_id` and never consulted
+> `auth.uid()`, which makes each an **impersonation primitive**, not a loose grant: freeze **any**
+> account (`set_account_frozen`), schedule **any** account for deletion (`request_account_deletion`),
+> drain **any** user's credits (`credit_spend`), read **any** balance (`credit_balance`), plus
+> `cancel_account_deletion`, `redeem_admin_coupon`, `create_admin_coupon_assignment`,
+> `issue_referral_code`, `accept_workspace_invite` and `upsert_audit_target`.
+>
+> ⚠️ **NOTHING LEGITIMATE CALLS THESE FROM A BROWSER — that is what makes the revoke safe rather than
+> a behaviour change.** The only direct `supabase.rpc()` in `src/` is `claim_billing_session`; every
+> caller of all ten lives in `netlify/functions/` with the service key, and `service_role` keeps
+> `EXECUTE` throughout.
+>
+> 🔴 **`revoke ... from public` IS THE LOAD-BEARING CLAUSE, AND `0012` PROVES IT.** That migration
+> wrote `revoke execute on function public.claim_billing_session(text) from anon` and nothing else —
+> **a no-op**, because the default PUBLIC grant remained and anon inherits it (its ACL still read
+> `=X/postgres`). So that function has been anon-reachable since `0012` behind a line that reads as
+> though it were not. ⚠️ **And three definer functions revoke without granting `service_role`**,
+> depending on Supabase's `ALTER DEFAULT PRIVILEGES` — true on a stock project, **false on a restored
+> dump or self-hosted Postgres**, where `assign_recommendation` would simply stop working.
+>
+> ✅ **THE db-verify SWEEP IS DERIVED FROM THE CATALOG, NOT A LIST** — a future migration adding such
+> a function fails on the day it lands, which a hand-written list could not do.
+>
+> 🔴 **`0060` — THE D7 RACE `upsert_audit_target` DOES NOT HAVE.** `0057` shipped
+> `upsert_audit_subject` as SELECT-then-INSERT, claiming the partial unique indexes made it
+> concurrency-safe. **Half true:** they make a second ROW impossible; they do **not** make the losing
+> caller return the winner's id — its insert raises `unique_violation`, which `ensureSubject` swallows
+> into a NULL `subject_id`. Harmless **today** (`sameSubject()` falls back to `target_id`); **not
+> harmless once W13 persists an entity-backed subject**, which has no fallback. ⚠️ **THE GUARD IS
+> STRUCTURAL AND SAYS SO** — PGlite is one connection, and a behavioural test cannot tell the two
+> implementations apart because the select fast-path answers first. **An earlier draft asserted
+> "returns the existing subject rather than raising" and passed against the UNFIXED function.**
+>
+> 🔴 **THE FOURTH DECLARED-AND-NEVER-WRITTEN TABLE.** `audit_entity_evidence` (W10) holds
+> CORROBORATION — `0056`'s header says *"we read this once in 2024"* and *"we have read this on six
+> pages across nine months"* are different warranties. **`recordEntityEvidence` was called by
+> NOTHING.** Worse than silence: the duplicate-edge route returned a 409 reading *"Re-observing one
+> corroborates it"* — **false** — and ⚠️ **its test asserted the CLAIM, not the write, so it stayed
+> green.** Now wired; still 409 (nothing was created, and the code is an `/api/v1` contract) but the
+> body carries `corroborated`. **Running count: four** — `audit_signals.raw_value`,
+> `.evidence_json`, `audit_recommendations.issue_id`, and this.
+>
+> 🔴 **W12 TRUSTED PARENT IDS FROM THE REQUEST BODY.** W9 checks a truth record before creating one;
+> W10 checks **both** entities before drawing an edge. W12 did neither, so a caller could attach a
+> listing — or file a whole local check — against **another tenant's** row. New `requireLocalRefs()`
+> checks `truth_record_id` and `subject_id` against owned rows and `workspace_id` through
+> `buildWorkspaceCtx`. ⚠️ **404, NEVER 403** — a 403 confirms the row exists and makes the endpoint an
+> enumeration oracle over other tenants' uuids.
+>
+> ⚠️ **`0059` (from a concurrent session) — W12'S UPSERT HAD NO USABLE ARBITER.** PostgREST's
+> `on_conflict=` names COLUMNS, and PostgreSQL will not select `0058`'s `coalesce(...)` **expression**
+> index as that arbiter — so every listing save would have been refused. `unique nulls not distinct`
+> expresses the same rule as a column constraint.
+>
+> **Verified:** `npx vitest run` **384 files / 6390 passed / 0 skipped / 0 failed** · db-verify **61
+> migrations / 755 assertions / 0 failed** · referral 17 · workflows 56 · build clean ·
+> check:prerender 28 pages / 112 refs · security clean. **18 guards confirmed RED first.** 🔴 **`0059`,
+> `0060` AND `0061` HAVE ONLY MET WASM POSTGRES** — production is now **FOURTEEN** migrations behind.
+> ⚠️ **The next migration number is `0062`.**
+>
+> ── **Prior, and still current** ─────────────────────────────────────────────────────────────────
+>
+> **Last updated: 2026-09-12 — REVIEWED THROUGH P2/W12 ON `Discoverability-P1-P3-implementation`. `0057` + `0058` ARE OPERATOR-REPORTED APPLIED TO DEV/STAGE; NEW `0059` REPAIRS W12'S POSTGREST LISTING UPSERT AND MUST FOLLOW THEM. W13/W14 NOW HAVE AN IMPLEMENTATION-READY PLAN. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md](docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md) ·
+> [docs/DB-MIGRATION-RUNBOOK.md §4c](docs/DB-MIGRATION-RUNBOOK.md).
+>
+> ✅ **`0055` AND `0056` ARE APPLIED TO DEV/STAGE** (owner-confirmed). ✅ **`claude/p2-w9-work-streams-o4gvmq`
+> IS FULLY MERGED** — `git merge-base --is-ancestor` passes and it is **0 commits ahead**, re-verified
+> this session rather than carried forward. 🔴 **The remote branch still exists and still cannot be
+> deleted from here** — delete it from the branches page.
+>
+> 🔴 **THE BUG D7 FOUND, WHICH ITS OWN DESIGN DOC DID NOT PREDICT.** That doc says comparability
+> "today is same `target_id`". **In the code it was nothing at all**: `compareRoute` compared any two
+> audits the caller owned, so an audit of `/pricing` against one of `/about` returned a confident
+> **"+6.2"** that meant nothing. The UI never exercised it — it passes the audit's own recorded
+> baseline — but **`/api/v1` key holders reach the same handler**, and a number on a report is what
+> gets screenshotted. `sameSubject()` now gates it.
+>
+> ⚠️ **THE FALLBACK IS THE CAREFUL PART, NOT A CONVENIENCE.** Two pre-0057 audits compare on
+> `target_id`, which every audit has had since 0030 — but **two NULL subjects are NEVER treated as a
+> match**, because `null === null` would make every old audit comparable with every other old audit
+> regardless of what page it was about. That is worse than the question being unanswerable.
+>
+> ⚠️ **A SUBJECT MISMATCH WITHHOLDS THE ISSUE LISTS; A VERSION MISMATCH DOES NOT.** Codes survive a
+> model bump on the same page, so "AC-01 was resolved" stays true and is the most actionable thing
+> left. Across two different subjects it credits a fix on one thing to another — the silent
+> mis-attribution `audit_recommendations.issue_id` already had to be fixed for. `incomparableDiff`
+> now carries a CAUSE; the version path is byte-compatible and its 12 tests passed unchanged.
+>
+> 🔴 **`audits.target_id` IS KEPT AND MUST NEVER BE DROPPED**, and `subject_id` is NULLABLE ON
+> PURPOSE. Every pre-0057 audit has none and keeps working; `ensureSubject` returning null does not
+> fail the audit, because that lands it in a state the readers already handle. **The backfill is
+> proven re-runnable** — db-verify applies it twice and asserts the row count does not move, since a
+> migration that is only correct once cannot be re-applied after a partial failure.
+>
+> ── **P2 · W12 — LOCAL & DIRECTORY INTELLIGENCE** ────────────────────────────────────────────────
+>
+> 🔴 **NORMALISATION IS MOST OF `napModel.js`, AND THAT IS THE POINT.** "Pvt Ltd" against "Private
+> Limited" is the SAME NAME. "Rd" against "Road" is the SAME STREET. `+91 80 4718 2200` against
+> `08047182200` is the SAME PHONE. **A checker that reports those three as mismatches produces a list
+> nobody reads, and then the one real mismatch in it goes unfixed.** Every equivalence is a declared,
+> tested rule, never a fuzzy ratio.
+>
+> ⚠️ **`LD-05` EXISTS BECAUSE THE OBVIOUS CHECK IS WRONG ON REGISTRIES.** A registered office is
+> routinely not a shopfront. Reporting an MCA difference as a NAP mismatch sends a customer to amend
+> a **statutory filing** to match a shopfront — expensive, slow, and the wrong fix — so it gets its
+> own low-severity code that says what it actually means.
+>
+> ⚠️ **THE FIVE TIERS RANK BY REACH, NOT BY TRUST.** A statutory registry is the most trustworthy
+> record a business has and one of the least READ, which is why `registry` sits **below**
+> `major_aggregator`. Ranking by trust tells a customer to fix a filing almost nothing reads while
+> their Google profile says the wrong thing.
+>
+> ⚠️ **AN UNCHECKED SOURCE IS EXCLUDED AND NAMED, NEVER SCORED 0.** Under D5 most customers authorise
+> nothing, so zero-for-unchecked would open every local report near zero — a number about our
+> connectors, not their business — then show a phantom jump the day they connect one. Same for a
+> field a source never publishes: **G2 shows a name and nothing else**, and scoring its three absent
+> fields as 0 would report a perfectly correct G2 listing at 30. ⚠️ **`not_published` and `absent` are
+> still DIFFERENT states** — one is our knowledge of the format, the other is the source leaving a
+> field blank, and only the second is actionable.
+>
+> ⚠️ **`coverageClaim()` IS THE ONE PLACE THE COVERAGE SENTENCE IS BUILT**, and a test sweeps every
+> input for the forbidden flat **"N directories audited"**. That claim is false for every customer who
+> has authorised nothing — D5's copy rule, enforced rather than remembered.
+>
+> ⚠️ **`acquisition: "authorized_api"` IS REFUSED FROM A REQUEST BODY.** Fidelity is a claim about HOW
+> an observation was obtained, and a claim a client can set is not a claim — it is `?consented=true`
+> wearing a third hat. ⚠️ **Source ids are deliberately NOT enumerated in a SQL CHECK** (departing
+> from 0056): a new market is a dozen new sources, and each would otherwise be a migration. The TIER
+> is constrained instead, and `local-directory-parity.test.js` **parses the CHECK out of the
+> migration** rather than restating it — a copy drifts exactly as `EVENT_TO_SOURCE` did.
+>
+> ✅ **THE W12 TABLES ARE ACTUALLY WRITTEN.** This schema's own headline pattern is three columns
+> declared, reviewed, merged and written by nothing. `saveLocalCheck` is called by the route and the
+> contract test asserts the CALL, confirmed RED first.
+>
+> ── **TWO TEST DEFECTS FOUND AND FIXED** ─────────────────────────────────────────────────────────
+>
+> 🔴 **A TEST OF MINE WAS GREEN FOR THE WRONG REASON.** "ignores a stored listing whose source is no
+> longer in the registry" passed against a deliberately broken model, because THREE guards implemented
+> it — a `SOURCE_BY_ID` pre-filter, `matchDirectory`'s own refusal, and `.filter(Boolean)` — and the
+> assertion was pinned to the redundant one. Removed the pre-filter; the test now goes red when the
+> real guard does. **Re-checked in both directions.**
+>
+> ✅ **THE HAND-WRITTEN `STORE_EXPORTS` LIST IS GONE.** It went red on W10 and again on W12, and the
+> fix each time was to retype names into an array. `discoverability-api.test.js` now derives the mock
+> from `importActual` like the newer files, and its parity test asserts the **DERIVATION**, not the
+> contents — a contents check passes the day it is written and fails silently the next time the store
+> grows, which is what happened twice.
+>
+> **Verified:** `npm run test:all` — **9 of its 10 gates green** (readiness · unit · contract ·
+> integration · system · db · build · prerender · security). `npx vitest run` reads **384 files /
+> 6383 passed / 0 skipped / 0 failed** (+139) · db-verify **58 migrations / 725 assertions / 0
+> failed** (+61) · referral 17 · workflows 56 · build clean · check:prerender 28 pages / 112 refs ·
+> security clean. **13 behavioural guards confirmed RED first.** ⚠️ **The 10th gate, Playwright smoke,
+> fails on the CONTAINER** — chromium **1194** installed against `@playwright/test`'s **1234**; re-run
+> against the bundled binary (throwaway untracked config, `executablePath: "/opt/pw-browsers/chromium"`,
+> deleted after) gives **142 passed / 1 skipped / 0 failed**. 🔴 **`0057` AND `0058` HAVE ONLY MET WASM
+> POSTGRES** — [docs/DB-MIGRATION-RUNBOOK.md §4c](docs/DB-MIGRATION-RUNBOOK.md) is the operator
+> procedure, and production is now **ELEVEN** migrations behind.
+>
+> ── **Prior, and still current — CONSOLIDATION + P2 · W11** ──────────────────────────────────────
+>
+> **Prior: 2026-09-11 — CONSOLIDATION + P2 · W11: SUBJECT SCORING (BDS / PDS / SFS). THE MODULE COULD SCORE A PAGE; IT COULD NOT SCORE THE BRAND, PRODUCT OR SERVICE A BUYER ACTUALLY ASKS AN ENGINE ABOUT. W9 AND W10 ARE NOW MERGED INTO `Discoverability-P1-P3-implementation`, WHICH IS THE ONE LIVE BRANCH. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md](docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md) ·
+> [docs/DB-MIGRATION-RUNBOOK.md §4b](docs/DB-MIGRATION-RUNBOOK.md).
+>
+> ✅ **BRANCH CONSOLIDATION: `claude/p2-w9-work-streams-o4gvmq` FAST-FORWARDED INTO
+> `Discoverability-P1-P3-implementation`** (no merge commit; `git merge-base --is-ancestor`
+> confirmed containment before and after). 🔴 **THE REMOTE FEATURE BRANCH COULD NOT BE DELETED** —
+> `git push origin --delete` fails with `send-pack: unexpected disconnect` on every attempt, and the
+> GitHub MCP set has `create_branch` but **NO delete-branch tool**. Same shape as the
+> `claude/session-w7kxmu` item this file already carries. **Delete it from the branches page.**
+>
+> 🔴 **THE 14 SKIPPED TESTS NEEDED NO CREDENTIALS AND ONE OF THEM WAS AN ANTI-ASSERTION.** They were
+> the Stripe contract suite behind `describe.skip`, carried since the v1.0 Stripe deferral — twelve
+> pure-logic, two env-gated, **zero** requiring a live key. Un-skipping found the real defect:
+> **a test asserting that an UNSIGNED payment webhook returns 200 and upserts a subscription.** The
+> handler had since been hardened to **503**, and the skip is the only reason that stale assertion
+> never went red. ⚠️ **A skipped test is not a neutral one — it is an assertion nobody is checking,
+> and it rots in the direction of whatever the code used to do.** Rewritten to pin the refusal AND
+> that **nothing is written**, plus a second test covering the double-gated dev hatch
+> (`DATIQ_ALLOW_UNSIGNED_WEBHOOKS=1` **and** a dev/test context). **The suite now runs 0 skipped.**
+>
+> ✅ **D7 IS ANSWERED, IN WRITING, AND NOTHING WAS RETROFITTED TO GET THERE.**
+> [docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md](docs/DISCOVERABILITY-D7-SUBJECT-MODEL.md) recommends a
+> **`audit_subjects` JOIN TABLE** — one row per audited thing, an `exactly_one_ref` CHECK across
+> `target_id` / `entity_id` / `truth_record_id`, a `kind_matches_ref` CHECK, and a nullable
+> `audits.subject_id`. 🔴 **The rejected alternative is the obvious one:** a bare
+> `(subject_type, subject_id)` pair on `audit_issues` — a polymorphic FK Postgres cannot enforce,
+> which would let an issue point at a deleted entity for ever and touches every reader of the P1
+> queue, the diff engine and all four exports at once. **The join table keeps referential integrity
+> AND changes no P1 table**, so P1 readers that never ask about subjects keep working unchanged.
+> ⚠️ **It is a RECOMMENDATION, not a migration — no `0057` exists.** It needs the owner's sign-off,
+> and it blocks W11's persistence, API and UI plus all of W12–W14.
+>
+> ⚠️ **W11 SHIPS THE PURE MODEL ONLY, AND THAT IS THE DECISION.** `subjectScoring.js` is complete,
+> tested and imported by nothing yet; persisting a subject score before D7 is settled would be
+> choosing D7 by accident, in the hardest place to reverse it. The three PRD formulas are copied
+> **verbatim** and `subjectScoring.test.js` asserts **every weight**, so an "align the numbers" pass
+> fails the build with the reasoning attached — the same guard `scoringModel.test.js` puts on the
+> penalty model after D1.
+>
+> 🔴 **THE COMPONENT ABBREVIATIONS ARE EXPANDED NOWHERE IN THIS REPOSITORY** (BDS's `EC`, `SD`,
+> `ASOV`, `TC`, `RA` and the twelve others) — the third time, after W4's "M1–M13" and W10's fourteen
+> types. Each id is DERIVED under one hard constraint: **every component binds to something this
+> engine can already measure**, recorded as `source` on the component. ⚠️ **Three components bind to
+> W13, which is NOT BUILT** — `trust_credibility` alone is **20% of BDS**. Scoring it `0` would take
+> every brand score down twenty points for a module we have not shipped and then show a phantom
+> twenty-point "improvement" the day W13 lands. It is **EXCLUDED and redistributed** through the one
+> `weightedMean` in `scoringModel.js`, and `blockedBy` **names the workstream**, so "we cannot
+> measure this yet" and "you are failing at this" never render the same.
+>
+> ⚠️ **`missingFacts()` SPLITS `actionable` FROM `blocked`** for the same reason: telling a customer
+> to improve a component whose engine does not exist is advice they cannot act on. ⚠️ And
+> **`intentCoverage()` EXCLUDES UNCHECKED INTENTS AND NAMES THEM** rather than counting them as
+> gaps — an intent nobody sampled is not an intent you lost.
+>
+> ⚠️ **A TEST OF MINE WAS WRONG AND THE CODE WAS RIGHT.** My "contributions sum to the score"
+> assertion multiplied by the weight a second time; `contribution` is already `value · (weight /
+> coverage)`, i.e. weight-scaled, so contributions sum to the score directly. Fixed the assertion,
+> not the model, and added one pinning that an excluded component contributes **`null`**, never `0`.
+>
+> **Verified, full `npm run test:all` (9 of 10 gates green in this container):** readiness · unit ·
+> contract · integration · system · db · build · prerender · security ALL PASS. `npx vitest run`
+> reads **379 files / 6244 passed / 0 skipped / 0 failed** — **0 skipped is the number that moved**.
+> db-verify **56 migrations / 664 assertions / 0 failed** · referral 17 · workflows 56 · build clean
+> · check:prerender 28 pages / 112 refs · security clean. **6 behavioural guards confirmed RED
+> first.** ⚠️ **The 10th gate, Playwright smoke, fails on the CONTAINER, not the code** — the image
+> ships chromium **1194** while `@playwright/test` wants **1234**, so all 143 specs die in ~4ms on a
+> missing `chrome-headless-shell`. Re-run against the bundled binary (throwaway untracked config
+> setting `executablePath: "/opt/pw-browsers/chromium"`, deleted afterwards): **142 passed / 1
+> skipped / 0 failed**. 🔴 **`0055` AND `0056` STILL HAVE NOT BEEN APPLIED TO ANY REAL DATABASE** —
+> this sandbox holds no Supabase credential and no CLI, so the deliverable is a verified procedure,
+> not an apply: **[docs/DB-MIGRATION-RUNBOOK.md §4b](docs/DB-MIGRATION-RUNBOOK.md)**, with both proven
+> **re-runnable** by double-application under PGlite. Production is **NINE** migrations behind.
+>
+> ── **Prior, and still current — P2 · W10** ──────────────────────────────────────────────────────
+>
+> **Prior: 2026-09-11 — P2 · W10: THE ENTITY GRAPH BUILDER. W9 GAVE THE MODULE FACTS; A FACT IS A VALUE AND SAYS NOTHING ABOUT HOW THINGS RELATE. EDGES ARE WHAT A KNOWLEDGE GRAPH RESOLVES AN ENTITY BY. ON `claude/p2-w9-work-streams-o4gvmq`, PUSHED. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/DISCOVERABILITY-MODULE.md §3f](docs/DISCOVERABILITY-MODULE.md).
+>
+> ⚠️ **D7 IS STILL OPEN AND W10 DID NOT PRE-EMPT IT.** Graph conflicts get their own table, as W9's
+> truth conflicts did, rather than retrofitting `subject_type`/`subject_id` onto `audit_issues` —
+> that retrofit touches every reader of the P1 queue, the diff engine and all four exports, so doing
+> it as a side effect of building the graph would ship the two one bug apart. **W11 is the first
+> workstream that genuinely needs D7 resolved.**
+>
+> ⚠️ **THE PRD ENUMERATES NEITHER THE 14 TYPES NOR THE 9 PREDICATES ANYWHERE VISIBLE HERE** — the
+> same situation W4 hit with "M1–M13". The counts match; the **names are derived from schema.org**,
+> the vocabulary this module already reads and validates. 🔴 **If the PRD's list differs, ADD —
+> never renumber.** ⚠️ **Every predicate declares a DOMAIN and RANGE and they are enforced** —
+> without that a graph is a bag of edges, and "this review employs that topic" is storable,
+> meaningless and impossible to notice later.
+>
+> 🔴 **THREE THINGS THE SCHEMA REFUSES OUTRIGHT.** A **self-edge** ("Acme is part of Acme" is
+> vacuously true and pollutes every traversal). A **duplicate edge** — without the unique index a
+> weekly crawler adds a row per run, every count doubles, and "who do we compete with" answers
+> differently depending on how many audits have happened; re-observation **corroborates**, in
+> `audit_entity_evidence`. A **dangling edge** — both endpoints cascade.
+>
+> 🔴 **APPROVING AN EDGE APPROVES ITS ENDPOINTS IN ONE STATEMENT** — an approved edge between two
+> unreviewed nodes asserts a relationship between things the graph has not agreed exist. ⚠️ The
+> endpoints are approved, **not created**: a node somebody rejected blocks the edge rather than
+> being silently revived. 🔴 **AND THE ENDPOINT TYPES ARE JOINED FROM THE ENTITIES, NEVER STORED ON
+> THE EDGE** — a second copy would drift the first time a node was re-typed, after which `EG-03` and
+> `EG-04` would check against a type nobody holds.
+>
+> ⚠️ **CONFLICTS READ THE APPROVED GRAPH ONLY** — a proposal that contradicts the graph is a
+> proposal, and reporting it as a conflict would make the review queue argue with itself. **`EG-05`
+> fires only on `identifying` types**: a Topic nothing points at is ordinary, an Organization
+> nothing points at resolves nobody.
+>
+> 🔴 **A REAL BUG MY OWN ROUTE TESTS CAUGHT.** `detectGraphConflicts` read its entity argument both
+> ways, and `Object.entries` over an ARRAY yields "0"/"1"/"2" as keys — so every entity registered
+> twice, under its id and its index, and EG-05 fired on phantom nodes. **The unit test written to
+> cover that path passed against the broken code**, because it asserted only that an EG-05 existed,
+> not that nothing spurious did. It now asserts the exact subject ids, confirmed RED.
+>
+> ⚠️ **HISTORICAL W10 CHECKPOINT — SUPERSEDED BY P3 STAGE 0.2.** The badge was unreachable from
+> real catalogue data when W9/W10 landed, but later workstreams shipped AI Visibility, Local &
+> Directory, and Trust & Proof without updating their three `available` flags. P3 Stage 0.2 fixes
+> those flags and adds a parity test over the real `issueCatalog`, the complete shipped-module
+> set, and the public `platformModules.js` Discover pillar so this drift cannot recur silently.
+>
+> **Verified:** **366 files / 5986 passed / 14 skipped / 0 failed** (+90) · db-verify **56
+> migrations / 664 assertions / 0 failed** (+46) · referral 17 · workflows 56 · build clean ·
+> check:prerender 28 pages / 112 refs · security clean. **12 behavioural guards confirmed RED
+> first.** 🔴 **Migration `0056` has only met WASM Postgres and no entity has been created against a
+> live database** — production is now NINE migrations behind.
+>
+> ── **Prior, and still current — P2 · W9** ───────────────────────────────────────────────────────
+>
+> **Prior: 2026-09-11 — P2 BEGINS: W9, THE CANONICAL BUSINESS TRUTH RECORD. THE MODULE COULD SAY WHAT A PAGE CLAIMS; IT COULD NOT SAY WHAT IS TRUE, AND EVERY REMAINING P2 WORKSTREAM WAS WAITING ON THAT. ON `claude/p2-w9-work-streams-o4gvmq`, PUSHED. `main`, `staging` AND EVERY OTHER BRANCH UNTOUCHED.**
+> Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry) ·
+> [docs/DISCOVERABILITY-MODULE.md §3e](docs/DISCOVERABILITY-MODULE.md).
+>
+> 🔴 **`declared` IS NOT AN EVIDENCE METHOD, AND THAT IS THE DESIGN.** The obvious move is to add
+> `customer_declared` to `EVIDENCE_METHODS` and reuse `makeEvidence`. That model answers ONE
+> question — *where on the web did you read this?* — and requires a source URL, a selector and an
+> excerpt. A customer typing their own legal name has none of those, so forcing it through means
+> **inventing a source URL for a fact that was never on a page**. A truth fact carries a `source`
+> from `FACT_SOURCES` instead, and where that source is `observed` it carries a real `makeEvidence`
+> record. ⚠️ **`makeFact` REFUSES an observed fact with no evidence**, and the API refuses
+> `observed`/`imported` from a client — accepting that claim from a request body would make
+> provenance a flag anyone can set, which is the `?consented=true` defect wearing a new hat.
+>
+> 🔴 **THE CONTRADICTION IS THE PRODUCT.** A table that stores what the customer typed is a form.
+> Comparing it to the pages produces *"you told us Acme Technologies Pvt Ltd; your schema says
+> Acme"* — frequently the explanation for why three engines disagree about who they are.
+> **`BT-01` (contradicted) and `BT-02` (absent) are DIFFERENT CODES** because they have opposite
+> remedies; collapsing them tells a customer their address is wrong when their contact page simply
+> never mentions it. ⚠️ **The check is SCOPED to fields a page could have stated** — unscoped, one
+> audit of a blog post raises twenty absences — and runs **only against an APPROVED version**,
+> because findings against an un-reviewed draft are what the approval gate exists to prevent.
+>
+> 🔴 **SELF-APPROVAL IS REFUSED IN THREE PLACES** — `canPromote()`, the `audit_btv_no_self_approval`
+> CHECK, and `promote_business_truth_version()`. 🔴 **AND PROMOTION IS ONE SQL FUNCTION BECAUSE IT
+> IS THREE WRITES THAT MUST NOT SEPARATE**: supersede the outgoing version, approve the incoming
+> one, repoint the record. As three PostgREST calls there are windows where the record points at a
+> superseded version, at nothing, or at two that both believe they are current. **`setTruthVersionState`
+> refuses `approved` outright** — do not add a second path in.
+>
+> ⚠️ **TWO REQUIRED FIELDS, NOT FIFTEEN.** A gate blocking on fifteen fields is one people type
+> placeholders past, leaving the record LESS true than if it had never asked. `legal_name` +
+> `canonical_domain` block promotion; everything else is reported per-module by `readinessFor()`,
+> which NAMES the missing fields. ⚠️ **`canonical_domain` is the bridge key to
+> `public.canonical_entities`** (0041) — bare host, lower-case, no `www.`, both sides spelling it
+> identically or the same company gets resolved twice.
+>
+> ✅ **THE CONFLICT TABLE IS ACTUALLY WRITTEN.** This file's own headline pattern is three columns
+> declared, reviewed, merged and never written. `audit_business_truth_conflicts` is not the fourth:
+> `checkAgainstTruthRecord()` runs on every audit whose domain has an approved record, and the
+> contract test asserting the WRITE was confirmed RED first. ⚠️ **It never fails an audit** — the
+> audit ran and was charged for, so a truth record that is unreadable is not a reason to lose it.
+>
+> **Verified:** **364 files / 5896 passed / 14 skipped / 0 failed** (+117) · db-verify **55
+> migrations / 618 assertions / 0 failed** (+47) · referral 17 · workflows 56 · build clean ·
+> check:prerender 28 pages / 112 refs · security clean. **13 behavioural guards confirmed RED
+> first.** 🔴 **Migration `0055` has only met WASM Postgres and no truth record has been created
+> against a live database** — production is now EIGHT migrations behind.
+>
+> ── **Prior, and still current — P1 (W1–W8)** ────────────────────────────────────────────────────
+>
+> **Prior: 2026-09-11 — DISCOVERABILITY P1: W1 (EVIDENCE) + W2 (INTAKE) + W3 (PENALTIES, `v2`) + W4 (GAP ANALYSIS). A THIRD COLUMN IN THIS SCHEMA WAS DECLARED AND NEVER WRITTEN — `audit_recommendations.issue_id`, SO EVERY RECOMMENDATION WAS AN ORPHAN. ON `discoverability-p1-to-p3` @ `63de394`, **PUSHED** TO `Discoverability-P1-P3-implementation`, TREE CLEAN.**
 > Full detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).
+> Plan and clause-by-clause gap analysis: [docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md](docs/DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md).
 > Post-deploy manual pass: [docs/POST-DEPLOYMENT-MANUAL-TEST.md](docs/POST-DEPLOYMENT-MANUAL-TEST.md).
+>
+> 🔴 **`audit_recommendations.issue_id` WAS DECLARED IN MIGRATION 0030 AND WRITTEN BY NOTHING** —
+> NULL on every row for the life of the module. **THE THIRD SUCH COLUMN IN THIS SCHEMA**; W1 found
+> `audit_signals.raw_value` and `.evidence_json` in the same table set. Every recommendation was an
+> ORPHAN, so "which finding produced this task" had no answer and the validation loop could not
+> close: a re-audit reporting AC-01 resolved could only match on `code`, which works while that
+> mapping is one-to-one and **SILENTLY MIS-ATTRIBUTES** the moment it is not — the worst failure
+> shape available, because the wrong recommendation is marked done and nobody sees an error.
+> ⚠️ **`persistResult` NO LONGER WRITES ALL FOUR CHILDREN CONCURRENTLY** — issues go FIRST and ALONE
+> with `return=representation`, and the ids thread onto the rec rows. **Do not "optimise" that back
+> into one `Promise.all`**; the ids do not exist until the first insert returns. The ordering
+> guarantee is unchanged: every child before the parent is marked `completed`. `auditStore.test.js`
+> — the FIRST test file this store has ever had — pins it, and the assertion was confirmed RED.
+>
+> **The pattern worth naming:** three columns across two migrations were declared, reviewed, merged
+> and never written. A column nothing writes is invisible, because the read path returns `null`
+> exactly as it would for "not applicable".
+>
+> ⚠️ **THE BRD's "M1-M13" MODULE NUMBERING IS NOT IN THIS REPOSITORY, AND I DID NOT GUESS IT.**
+> The PRD names thirteen modules and enumerates which is which nowhere visible here. Storing a
+> guessed `M7` and renumbering later would break the rule that matters most — codes are a public
+> contract, never renumber one. **The SLUG is the stored identifier**, derived from the PRD's own
+> §7/§9 section names; `MODULES[].mCode` is a nullable display alias and **nothing keys off it**.
+> 🔴 **This is the one W4 deliverable that is deliberately incomplete** — it needs the PRD's list.
+>
+> ⚠️ **A LIST IS NOT A DIAGNOSIS.** 46 codes is more than anyone reads, and grouping by PILLAR does
+> not help — a pillar is a scoring construct, so "entity authority is 42" says where points went,
+> not what to do. Eight root causes now classify all 46 codes. **`groupByRootCause` orders by
+> TAXONOMY, NOT BY COUNT**, deliberately: the commonest cause on a broken page is usually
+> `weak_page_structure` (more structural codes exist to trip), and leading with it on an unreachable
+> page tells the reader to restructure headings nobody will ever see. ⚠️ Two causes
+> (`location_radius_mismatch`, `conversion_friction`) are declared for P2 and **must stay unused in
+> P1** or a customer is shown a referral to nothing. Ordinary CWV is `ux_friction` (the page IS
+> reachable, just unpleasant); **TA-17 is `technical_access`**, which is the whole basis of the W3
+> blocker.
+>
+> ⚠️ **`observed` AND `inference` ARE TWO COLUMNS BECAUSE THEY CARRY DIFFERENT WARRANTIES.**
+> "The page has two H1 elements" is MEASURED; "this dilutes the topical signal" is REASONED. Both
+> values already existed — the per-audit sentence and the catalogue's `why` — but arrived as one
+> paragraph, which gives the second the authority of the first. `observed` is per-AUDIT,
+> `inference` is per-CODE. ⚠️ **`evidence` is KEPT**, and `observed` falls back to it on a pre-W4
+> row (the sentence IS the observed fact, just unlabelled) while `inference` does **NOT** fall back
+> to the catalogue — back-filling one would put a diagnosis in front of a customer that no run
+> produced.
+>
+> ✅ **W1's EVIDENCE ENVELOPE FINALLY RENDERS.** It reached the pipeline, the store and the API in
+> W1 and **no screen**. Now inline and collapsed on the signal it supports, because the question is
+> always "why is THIS number what it is". Renders nothing when there is no evidence — an empty
+> "Evidence" disclosure would read as "we looked and found none".
+>
+> **Verified:** **305 files / 5288 passed / 14 skipped** · db-verify **50 migrations / 530
+> assertions / 0 failed** · build clean · check:prerender 28 pages / 112 refs. ⚠️ **One PRE-EXISTING
+> failure remains** — `whiteLabelTemplate.test.js` MAX_BYTES boundary, confirmed unrelated in W3 by
+> stashing all branch work and re-running.
+>
+> ── **Prior, and still current — W3 (penalty model)** ────────────────────────────────────────────
+>
+> 🔴 **THE BRD NAMES SEVEN CRITICAL CONDITIONS AND TWO HAD NO DETECTION AT ALL** — *critical
+> entity schema invalid* and *severe CWV failure*. Both are now blockers at the PRD's own **0.10**,
+> taking the set to **NINE**. ⚠️ **DECISION D1 HELD IN FULL: NOT ONE EXISTING FACTOR MOVED.**
+> `AI_CRAWLER_BLOCKED` stays **0.20** (PRD says 0.15) and `CONTENT_HYDRATION_ONLY` stays **0.20**
+> (PRD says 0.15) — a page an engine cannot fetch or render is not a discounted page, it is an
+> absent one. Both DatIQ extensions stay first-class (`AI_CRAWLER_PARTIAL_BLOCK` 0.05,
+> `MOBILE_PARITY_MISSING` 0.10) and priority stays MULTIPLICATIVE, not the PRD's linear form.
+> ⚠️ **`scoringModel.test.js` NOW ASSERTS EVERY FACTOR**, so an "align to the PRD" pass fails the
+> build with the reasoning attached instead of silently re-calibrating every score in the product.
+> Full shipped-vs-PRD mapping: **`DISCOVERABILITY-MODULE.md` §3c**.
+>
+> ⚠️ **BOTH NEW RULES ARE DELIBERATELY NARROWER THAN THEIR NAMES.** The PRD names the conditions and
+> specifies neither rule, and a blocker that fires on ordinary pages teaches its reader to dismiss
+> the ones that matter. **`ENTITY_SCHEMA_INVALID` (EA-11)** fires only when an entity block is
+> PRESENT and cannot identify what it declares — a third state, not a worse version of an existing
+> one: *absent* is EA-01, *thin* is EA-02, **unusable** is this. The third is worse than the first,
+> which is why it earns a multiplier — a half-built node gets merged into the WRONG knowledge-graph
+> entry. 🔴 **`WebSite` IS EXCLUDED ON PURPOSE**: the sitelinks-searchbox pattern is a WebSite block
+> with `url` + `potentialAction` and no name, which is common AND correct; including it would fire
+> this blocker across a large share of the healthy web. A language-tagged `{"@value": …}` name
+> counts as named. **`SEVERE_CWV_FAILURE` (TA-17)** needs TWO metrics past POOR, or ONE at ≥ TWICE
+> poor (LCP ≥ 8s, INP ≥ 1000ms, CLS ≥ 0.5). The 2× clause exists because CrUX returns only LCP for
+> most low-traffic URLs — without it a twelve-second page escapes whenever field data is thin.
+>
+> ⚠️ **`SCORING_MODEL_VERSION` IS NOW `"v2"`, AND `auditDiff` REFUSES TO COMPARE ACROSS VERSIONS.**
+> A caveat under a confident "+4.2" is read as a footnote; the number is what gets screenshotted.
+> `incomparableDiff()` returns the **FULL SHAPE** with every delta refused, never `null` — four
+> consumers read named keys off it. It **still reports the issue list** (codes are a public contract
+> that does not move with the model, and it is the most actionable thing left) and **still refuses
+> penalty cleared/introduced** (the penalty SET is what changed, so "cleared" would credit a fix
+> nobody made). Pre-0048 rows carry no version and read as `v1`, so two of them still compare.
+> ⚠️ **v1 → v2 moves a score ONLY for a page that trips one of the two new conditions** — no weight,
+> no curve, no existing factor changed. Asserted, not claimed.
+>
+> ⚠️ **A TEST OF MINE WAS GREEN FOR THE WRONG REASON.** The first CWV tests passed `webVitals` in
+> the audit options; `runAudit` FETCHES vitals and `baseOpts` sets `skipWebVitals: true`, so the key
+> was silently ignored. **A test that supplies data through a parameter the code never reads is not
+> a weak test, it is a FALSE one** — and it is most likely exactly where a new rule is being bolted
+> onto an existing seam. Retargeted at `analyseTechnical`. Two assertions also hard-coded `"v1"`;
+> they read `SCORING_MODEL_VERSION` now, so a future bump cannot be "fixed" by editing the
+> assertion. ⚠️ **`auditDiff.js` HAD NO TEST FILE AT ALL** before this — the module the whole
+> validation loop rests on. Twelve now, ten on the version guard.
+>
+> 🔴 **STILL UNVERIFIED ANYWHERE REAL, ACROSS ALL THREE WORKSTREAMS.** Migrations **0048 and 0049
+> have only met in-process WASM Postgres** (no GoTrue, no PostgREST, shimmed roles), and **no audit
+> has been run against a live URL** on W1, W2 or W3 — the pipeline suite mocks the network boundary
+> deliberately, so neither new penalty has ever fired on a real page. Both gates stand before any of
+> this goes near staging.
+>
+> **Verified:** discoverability **23 files / 516 passed** · broader src+netlify **214 files / 2985
+> passed / 14 skipped / 0 failed** · db-verify **49 migrations / 505 assertions / 0 failed**.
+>
+> ── **Prior, and still current — W1 + W2** ───────────────────────────────────────────────────────
+>
+> ✅ **`staging` WAS ALREADY UP TO DATE WITH `main` — NOTHING TO SYNC.**
+> `git rev-list --count --no-merges origin/staging..origin/main` is **0**; the three commits on
+> `main` absent from `staging` (`2042348`, `2c6067c`, `ac9e170`) are all GitHub merge commits from
+> staging PRs #161/#162/#164. `staging` is one commit ahead (`4922c04`). New branch
+> **`discoverability-p1-to-p3`** cut from it, **five commits** (HEAD `c93afa5`), **not pushed**.
+>
+> 🔴 **`$GITHUB_TOKEN` IS STILL AN EXPIRED `ghp_` TOKEN AND STILL BREAKS EVERY PUSH — BUT A WORKING
+> CREDENTIAL EXISTS IN THE `gh` KEYRING.** The branch IS pushed to
+> **`Discoverability-P1-P3-implementation`**; `main` and `staging` are untouched and no PR is open.
+>
+> ⚠️ **`git fetch` SUCCEEDING PROVES NOTHING ABOUT PUSH.** This repo is PUBLIC, so fetch resolves
+> anonymously and returns 0 whatever the credentials are. I read a clean `git fetch` as "auth is
+> fixed", wrote that into this file, and the very next `git push` failed with
+> `Invalid username or token`. **Do not infer push access from a successful fetch on a public repo.**
+>
+> The blocker is PRECEDENCE, not absence. `credential.helper` is hard-coded to
+> `password=$GITHUB_TOKEN`, and that dead 40-char `ghp_` var also shadows the good credential in
+> `gh`'s keyring (`gho_`, scopes `gist, read:org, repo`, account `vikashkaruna`) — `gh auth status`
+> reports the keyring account as **inactive** and `gh auth token` hands back the EXPIRED one.
+> Pushing needs BOTH the var dropped and the helper list RESET before `gh`'s is added, because
+> `-c credential.helper=…` APPENDS and the broken helper still answers first:
+>
+> ```bash
+> env -u GITHUB_TOKEN git -c credential.helper= -c credential.helper='!gh auth git-credential' \
+>   push -u origin discoverability-p1-to-p3:Discoverability-P1-P3-implementation
+> ```
+>
+> The permanent fix is to unset `GITHUB_TOKEN` in the shell profile, or replace it with a
+> fine-grained PAT carrying `contents: read/write`.
+>
+> 🔴 **`audit_signals.raw_value` AND `.evidence_json` HAVE EXISTED SINCE MIGRATION 0030 AND NOTHING
+> HAD EVER WRITTEN THEM** — NULL on every row for the whole life of the module — while an issue's
+> only provenance was a sentence in a `text` column with no source, no selector, no timestamp and no
+> confidence. Both readable, neither checkable, so *"where exactly did you see that?"* had no answer,
+> which is the question a customer asks the moment a finding surprises them. The BRD requires
+> evidence on **every signal and every issue** and explainability on every score; the engine could
+> satisfy neither. **W1 is the write path**, and it goes first because every other workstream in P1
+> and P2 writes into it.
+>
+> 🔴 **AND INTAKE COULD NOT RECORD WHY THE AUDIT WAS RUN.** BRD §7.1 requires an audit TYPE, a
+> primary GOAL and a target GEOGRAPHY; the `audits` row had the target and a 4-value profile, no goal,
+> no geography, no competitor list, and `source` (`api|ui|schedule|benchmark|rerun`) doing double duty
+> as a type while actually recording provenance. **W2 (`0049`) adds them**, and `primary_goal` /
+> `target_geography` are **nullable BECAUSE they can never be back-filled** — a profile can be
+> re-derived from the page at any time, but if nobody asked what the customer was trying to achieve,
+> that answer is gone. A default would invent an intent nobody stated.
+>
+> ⚠️ **ALL FIVE AUDIT TYPES ARE DECLARED, INCLUDING THE TWO THAT ARE NOT BUILT** (`domain`,
+> `prompt_monitor`), each `available: false` with a reason — the vocabulary is a stored CHECK
+> constraint and widening a live enum later is a migration plus a deploy plus a window where the API
+> and the database disagree about what is legal. **The API REFUSES an unavailable type rather than
+> accepting it and running something else**: a row claiming to be a domain snapshot when one page was
+> fetched is worse than a rejected request, because the rejection is visible now and the mislabel
+> surfaces a quarter later inside a trend line. `benchmark` is `callerSelectable: false` — a benchmark
+> audit with no benchmark behind it belongs to nothing.
+>
+> 🔴 **THE COMPOSER WAS SENDING A PROFILE THE USER NEVER CHOSE, AND A TEST WAS PINNING IT.**
+> `AuditComposer` sent `audit_profile: "balanced"` unconditionally, which on the wire is
+> indistinguishable from a deliberate choice of the neutral lens — so it would have **suppressed
+> inference on every audit run from a browser** and recorded `audit_profile_source: explicit` for a
+> choice nobody made. An **ABSENT** `audit_profile` is now the signal that nobody chose one.
+> `Discoverability.integration.test.jsx` asserted the old contract and went red; **that assertion was
+> wrong, not a regression**, and its replacement pins the omission with the reasoning written down.
+> ⚠️ **Do not "fix" it back.**
+>
+> ⚠️ **EIGHT PROFILES, ONE SET OF MATHS.** `saas`/`services`/`local`/`ecommerce` join the four
+> originals and `homepage`/`service`/`location`/`comparison` join the eight page-type packs — but a
+> profile is still a **LENS**: all four framework views are computed with identical weightings, so the
+> same page scores identically under any of them. ⚠️ **`ecommerce`, not `e-commerce`** — codes are a
+> public contract.
+>
+> ⚠️ **PROVENANCE, RECORDED BECAUSE IT MATTERS TO WHOEVER READS THIS NEXT:** the W2 implementation
+> appeared in the working tree between two turns and was **not authored in that session** — most
+> likely a concurrent session on the same branch, which this repo has a documented history of. It was
+> read, gate-verified, one real regression in it fixed, and committed. Its design comments are
+> authoritative; the review of it was **one pass, not two**.
+>
+> ⚠️ **THE MODULE IS FAR MORE COMPLETE THAN THE PERPLEXITY DECK CLAIMS, AND `DISCOVERABILITY-MODULE.md`
+> WAS MAPPED TO THE WRONG DOCUMENT.** That deck rates the four-pillar scorer at 15% and gap analysis
+> at 20%; both are shipped, and the pillar and framework weights **already match PRD §7.3 exactly**.
+> But the module doc mapped itself onto an OLDER three-phase PRD and marked all three ✅ — that does
+> not transfer, because the new P1 is broader in several places and the new P2 is largely greenfield.
+> **The release-mapping table in that doc is now corrected**; do not read the old one as current.
+>
+> ⚠️ **`scoring_model_version` IS NOT NULL WITH NO DEFAULT, DELIBERATELY.** A default would let a
+> writer that forgets the stamp file a future v3 score as v1 — precisely the mislabelling the version
+> exists to prevent. Existing rows backfill to `'v1'`; they WERE scored, by the only model this repo
+> has shipped, and NULL would read as "unknown model" and make every historical baseline
+> non-comparable overnight. `auditStore.persistResult` falls back to the imported constant so a null
+> can never be sent. ⚠️ **`threshold_json` is usually NULL and that is CORRECT** — most signals are
+> curves, not thresholds, and inventing a boundary so the column looks populated would show a
+> customer a number the scorer never applied.
+>
+> ⚠️ **ONE DECORATOR, TWO PATHS.** `attachEvidenceToPillars()` is called by the pipeline AND by
+> `rehydrate()`, so a fresh audit and one reopened from history are identical BY CONSTRUCTION —
+> the same reasoning `rehydrate`'s own header gives for routing through `scorePillar()`. **Do NOT
+> add a second implementation on either side**; `rehydrate.test.js` went red the moment evidence was
+> attached on the read path only, which is the whole reason that suite exists.
+>
+> 🔴 **A REAL MODELLING ERROR CAUGHT BY A TEST WRITTEN TO CHECK SOMETHING ELSE:** the deterministic
+> pre-screen for `passage_independence` was labelled `model_inference` whenever a model happened to
+> run later, filing a MEASURED heuristic as a judgement and destroying the only independent check on
+> a model that disagrees with the page. The analyser now always records `derived` and the pipeline
+> adds its own record beside it. ⚠️ A sitemap test assertion of mine also contradicted its own
+> comment about leniency — the code was right, the assertion was not.
+>
+> ⚠️ **PENALTIES ARE UNTOUCHED IN W1, BY DECISION.** Per D1 the SHIPPED calibration is retained in
+> full — `AI_CRAWLER_BLOCKED` 0.20 (not the PRD's 0.15), `CONTENT_HYDRATION_ONLY` 0.20 (not 0.15),
+> and both DatIQ extensions `AI_CRAWLER_PARTIAL_BLOCK` 0.05 and `MOBILE_PARITY_MISSING` 0.10 as
+> first-class members — and only the two PRD conditions with no shipped equivalent
+> (`ENTITY_SCHEMA_INVALID` 0.10, `SEVERE_CWV_FAILURE` 0.10) are ADDED, in **W3**. Priority stays
+> multiplicative, not the PRD's linear form. `SCORING_MODEL_VERSION` ships `"v1"` and moves to
+> `"v2"` in W3, not here.
+>
+> **Also closed (BRD §7.2 collection gaps):** the **sitemap indicator**, read from the robots.txt
+> already fetched for crawler access so it costs no extra request against a host we have promised to
+> be polite to; and a **microdata INVENTORY** rather than a bare type list, because "you have Product
+> markup" and "you have forty Product blocks, none of which names a price" call for opposite advice.
+>
+> ⚠️ **`.claude/worktrees/` IS IGNORED ON PURPOSE, AND "JUST COMMIT IT" DOES NOT WORK.** It holds
+> **three full repo checkouts from 2026-08-06/07 — 1.3 GB — each with its own `.git`**, so
+> `git add` records a **GITLINK** to a commit no clone can resolve rather than adding the files. The
+> result would be a repo that appears to carry three undeclared submodules, cannot be cloned intact,
+> and is 1.3 GB heavier for nothing; git warns about it in a hint that is easy to scroll past.
+> ⚠️ **`.claude/` itself stays TRACKED** — the 11 files under `skills/`, `commands/` and
+> `launch.json` are project files; only `worktrees/` is excluded.
+>
+> ⚠️ **NOT YET RUN ANYWHERE REAL.** Migration 0048 has only touched in-process WASM Postgres (no
+> GoTrue, no PostgREST, shimmed roles), and no audit has been run against a live URL with evidence
+> recording on — the pipeline suite mocks the network boundary deliberately. **Evidence also reaches
+> the API and the JSON export but NO SCREEN yet**; `EvidencePanels.jsx` still shows the human
+> sentence only, scheduled with W4.
+>
+> **Verified:** unit+contract **346 files / 5430 passed / 14 skipped** (+89 over the pre-branch
+> baseline) · db-verify **49 migrations / 505 assertions / 0 failed** · build clean · check:prerender
+> 28 pages / 112 refs · security source checks clean · `run-all.sql` regenerated. **4 of the new
+> rehydrate assertions confirmed RED against the pre-fix code first.**
+>
+> ⚠️ **7 tests fail in a full parallel run and NONE is from this branch.** Six (`Account` ×5,
+> `AdminMonitoring` ×1) pass in isolation at **46/46** — machine contention, the trap this file
+> already documents. The seventh, `whiteLabelTemplate > accepts a file exactly at the MAX_BYTES
+> boundary`, **fails identically on `staging`** (proven by checkout) and is a standing red test
+> somebody should own. ⚠️ **The dependency half of `test:security` could not run** — the npm registry
+> audit endpoint returned `ECONNRESET`; source checks pass, re-run on a working network.
+>
+> **Prior: 2026-09-06 — THE V2 DISPATCH LOOP HAD NEVER ONCE RUN ON A CRON, AND SCHEDULING IT WOULD HAVE 404'd n8n. ON `staging`.**
 >
 > ✅ **BRANCHES ARE IN SYNC.** `main` and `staging` were already content-identical (empty tree
 > diff; the 4 commits main led by were all staging→main merge commits). Both fast-forwarded, and
@@ -442,9 +1338,9 @@
 | **Netlify site ID** | `0ac65a7e-bd3f-4cde-a8d3-66c23899c473` |
 | **Netlify** | https://app.netlify.com/projects/scrapelite |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Branches** | As of 2026-09-06: **`main` and `staging` are IN SYNC** — they were already content-identical (empty tree diff; the 4 commits `main` led by were all staging→main merge commits), and `staging` was fast-forwarded onto `main` at `e71b329` before this session's work landed on top. `workflow-implementation-and-optimization` has **ZERO unique commits** and is a pure fast-forward of `staging` — **nothing is stranded there**; all the n8n/v2 work has been on staging since `157df70`. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod` (currently 15/15 at 401 ✅). **Do not trust this row without re-checking `git branch -r`** — `main` has moved mid-session three sessions running. |
-| **Latest commit** | `staging`, 2026-09-06 — split the workflow orchestrator's cron from its HTTP surface (the v2 dispatch loop had never once run on a cron, and scheduling it would have 404'd n8n's callbacks), wired five dead admin Run-now buttons, and fixed a StrictMode `alive`-ref bug that stopped `/admin/automation` and `/admin/revenue` loading under `npm run dev`. Run `git log --oneline origin/main..origin/staging`. |
-| **Verify the schema locally** | `npm run test:db` — applies all **47** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**463 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~10s, no Docker, no network, no credentials. Run it after ANY migration change. |
+| **Branches** | As of **2026-09-13**, re-verified with `git rev-parse` + `git merge-base --is-ancestor` this session, not carried forward: `origin/main` = **`2042348`** (UNTOUCHED all session) · `origin/staging` = **`000c008`** · `origin/Discoverability-P1-P3-implementation` = **`0705eb6`** · `origin/discoverability-P3` = **`218955b`**. 🔴 **Containment is now a chain, and it is checked, not inferred from identical files:** `staging` ⊂ the base branch ⊂ `discoverability-P3`. **P3 work happens on `discoverability-P3`**; the base branch is the integration line and is held behind `staging` on purpose while P1/P2 is still in build phase. ⚠️ **A migration FILE on a branch is not an APPLIED migration** — confirm production with `npm run verify:rls -- --prod`. 🔴 `origin/claude/p2-w9-work-streams-o4gvmq` still exists, is fully merged, and **cannot be deleted from here** (`send-pack: unexpected disconnect`; the GitHub MCP set has no delete-branch tool) — delete it from the branches page. **Do not trust this row without re-checking `git branch -r`.** |
+| **Latest commit** | `discoverability-P3` @ **`218955b`** — the P3 plan rewritten from the supplied BRD/PRD (`16bcf79`) on top of a tree carrying **both** lines of work: `d4bb180` merged `staging` in, `218955b` merged the updated base branch so the history agrees with the tree (0 file changes). ⚠️ **The plan was written three times as better sources arrived — only `16bcf79` is current.** `0d39895` decoded the BRD/PRD **PDF** and concluded no weight was obtainable; that is true of the PDF (vector outlines) and **wrong about the project**, because the markdown sources carry every formula as text. Run `git log --oneline origin/Discoverability-P1-P3-implementation..discoverability-P3`. |
+| **Verify the schema locally** | `npm run test:db` — applies all **64** migrations to in-process WASM Postgres and asserts every function, trigger and RLS policy (**791 assertions**), then runs the referral (17) and workflow (**56**) real-Postgres E2E suites. ~12s, no Docker, no network, no credentials. Run it after ANY migration change. |
 | **Verify a LIVE database's RLS** | `npm run verify:rls` (staging) / `npm run verify:rls -- --prod`. Does what an attacker would: an anonymous PostgREST read of all 15 Phase 4-6 tables with only the public anon key. **401 = locked down, 200 = exposed.** `test:db` proves the migration is correct; only this proves anyone ran it. |
 
 ---
@@ -998,6 +1894,14 @@ ThemeProvider
 | Discoverability scoring | **`unknown` is NEVER `0`.** An unmeasured or not-applicable signal is EXCLUDED from its pillar and its weight redistributed — `weightedMean()` in `scoringModel.js` is the one implementation. Scoring it 0 would subtract points during a third-party outage and then show a phantom improvement when it recovered, making the trend line a fiction. Every score carries `coverage`. `src/lib/discoverability/*` is PURE and imported by BOTH React and `netlify/`, exactly like `entitlementModel.js`, so the score a user sees and the score the server stored cannot be computed by different code. |
 | Discoverability profiles | **A profile is a LENS, not different maths.** All four framework views are always computed with identical weightings; the profile only picks which one leads. Re-weighting per profile would make two audits of the same page incomparable and show movement no page change caused. |
 | Discoverability constructs | Generated assets emit an explicit `TODO:` for anything the audit could not observe. These are pasted into live sites; a block with a hallucinated founder name is worse than no block, because it gets published without being read. FAQ and HowTo markup is built ONLY from visibly-present content — generating it from nothing would manufacture the SH-07 defect the engine exists to report. |
+| SECURITY DEFINER grants | 🔴 **A new `SECURITY DEFINER` function MUST `revoke all ... from public, anon, authenticated` and then `grant execute ... to service_role` explicitly.** Revoking from `anon` alone is a **no-op** — PostgreSQL grants EXECUTE to PUBLIC by default and both roles inherit it, so the narrower revoke reads as though it worked and changes nothing (`0012` did exactly this to `claim_billing_session`, which stayed anon-reachable until `0061`). And `SECURITY DEFINER` **bypasses RLS**, so any such function taking a caller-supplied `p_user_id` without consulting `auth.uid()` is an impersonation primitive reachable with the committed publishable key — that is what `0061` had to remove ten of. ⚠️ **Grant `service_role` explicitly rather than inheriting it** from Supabase's `ALTER DEFAULT PRIVILEGES`: a restored dump or self-hosted Postgres does not carry those, and the server then cannot call its own RPC. `db-verify`'s sweep is DERIVED from `pg_proc`, so a new offender fails on the day it lands. |
+| Upsert arbiters | 🔴 **A unique constraint that backs a PostgREST upsert must name COLUMNS, never an expression.** `on_conflict=` takes a column list and PostgreSQL will not select an expression index as that arbiter — `0058`'s `coalesce(truth_record_id, '000…')` index enforced the invariant correctly AND made every save fail, until `0059` replaced it with `unique nulls not distinct (...)`. Use `NULLS NOT DISTINCT` whenever a nullable column is part of the key. |
+| Get-or-create | 🔴 **`INSERT .. ON CONFLICT`, never SELECT-then-INSERT.** A unique index makes a second row impossible; it does **not** make the losing caller return the winner's id — it raises `unique_violation`, which a non-fatal caller swallows into a null. `upsert_audit_target` was always atomic; `upsert_audit_subject` was not until `0060`. Infer a **partial** index by restating its predicate in the `ON CONFLICT` clause. |
+| Append vs upsert | 🔴 **Ask what the table ANSWERS before giving it a unique arbiter.** `audit_schema_entities` answers *"what does this page declare now"* — a re-observation must UPDATE, or every count doubles (0056/0058's reasoning). `audit_subject_scores` answers *"what did this brand score on the 12th"* — an arbiter there would silently collapse a subject's whole history into one row on every re-score, and **the trend is the product**. Two measurements of the same thing on the same day are two rows. ⚠️ **A score is stored with its `coverage` or not at all**: 72 at 80% coverage and 72 at 100% are different measurements, and a trend drawn through scores that dropped it shows a phantom jump the day an excluded component starts being measured — `weightedMean`'s failure mode re-created in storage. And `score` stays NULLABLE: a stored `0` is indistinguishable, for ever, from a real zero. |
+| A module with no importer | ⚠️ **A pure model whose only reader is its own test is NOT wired, and its green suite proves nothing** — exactly as the four declared-and-never-written columns' readers returned `null`. `subjectScoring.js` sat unused for three workstreams behind a deferral whose two blockers had both shipped. **When you defer wiring, the reason expires when its blocker lands and nobody is watching for that.** `subject-score-parity.test.js` asserts a non-test importer exists; `subjectScoring.js`'s `COMPONENT_SOURCES` carries `module` per source for the same reason, so `built` is checked rather than trusted. 🔴 **But a function called by nothing is not ALWAYS a defect** — `canTransition` is deliberately not a gate and says so in its header. Read the code's own comments before wiring or deleting. |
+| Caller-supplied parent ids | 🔴 **A parent id in a request body is a claim, not a fact.** Check `truth_record_id`, `subject_id`, `entity_id` and every other reference against a row the caller owns **before writing** — W9 and W10 do, W12 shipped without it. ⚠️ **Refuse with 404, never 403**: a 403 confirms the row exists and turns the endpoint into an enumeration oracle over other tenants' uuids, which is why `invoice-pdf.js` makes the same choice. Membership (`workspace_id`) goes through `buildWorkspaceCtx`, not a store read — membership is not ownership. |
+| D7 — the subject model | **`audit_subjects` (0057) is the registry; `audit_issues` was NOT touched.** The polymorphism lives in two CHECK constraints over three REAL foreign keys, never in a bare uuid the database cannot check — this repo has been burned three times by a pointer nothing could verify. 🔴 **`audits.target_id` must NEVER be dropped** (it is the fast path, and every existing query uses it) and **`audits.subject_id` must stay NULLABLE** (every pre-0057 row has none). Comparability is `sameSubject()`: same subject where both have one, falling back to `target_id` otherwise — **and two NULL subjects are never a match**, or every old audit becomes comparable with every other. A subject mismatch WITHHOLDS the issue lists; a version mismatch keeps them, because codes survive a model bump on the same page but mean nothing across two different things. |
+| W12 — NAP and directories | **The hard part is not comparing strings, it is not crying wolf.** "Pvt Ltd" vs "Private Limited", "Rd" vs "Road" and `+91 80 4718 2200` vs `08047182200` are the SAME values; a checker that flags them produces a list nobody reads, and the one real mismatch in it goes unfixed. Every equivalence in `napModel.js` is a declared, tested rule — never a fuzzy ratio. 🔴 **An unchecked source, and a field a source never publishes, are EXCLUDED and redistributed, never scored 0** (D5 means most customers authorise nothing, and G2 shows a name and nothing else). ⚠️ **Tiers rank by REACH, not trust** — a registry is the most trustworthy record and one of the least read. ⚠️ **`LD-05` is the registry carve-out**: a registered office is not a shopfront, so an MCA difference must never be reported as a NAP mismatch. ⚠️ **`coverageClaim()` is the ONE place the coverage sentence is built** and may never produce a flat "N directories audited" — D5's copy rule. ⚠️ **Source ids are deliberately not in a SQL CHECK** (unlike 0056's entity types); the TIER is, and `local-directory-parity.test.js` parses that CHECK out of the migration rather than restating it. |
 | Discoverability codes | Signal codes and issue codes (`AC-01`, `TA-07`, …) are a **PUBLIC CONTRACT**: they appear in JSON payloads, webhook bodies, stored rows and every historical diff. "AC-02 was resolved" is only a true sentence if AC-02 still means what it did when the baseline was taken. Add codes; never repurpose or renumber one. |
 | Prerendered asset refs | **The asset hashes committed inside `public/<route>/index.html` are NOT load-bearing and must never be trusted to match a deploy.** Those pages are rendered by a LOCAL build; Netlify builds with the site's own `VITE_*` values inlined, so content hashes differ — the entry and `supabaseClient` chunks diverge while `index-*.css` and `apiClient-*.js` often do not, which is why three of four refs resolve and the bug hides. `scripts/sync-prerender-assets.mjs` runs after `vite build` and repoints every `/assets/` ref in `dist/` to what that build produced; it FAILS the build on an unresolved ref. Never "fix" a mismatch by re-running `npm run prerender` and committing — that only re-syncs a local build to a local build, which is what made this invisible twice. Never rewrite `public/` at build time either: it is the reviewable source of the prerendered CONTENT. 🔴 **And never read a 200 as proof an asset exists** — the SPA fallback answers a missing `/assets/*.js` with `index.html` at status 200, and the browser silently refuses the HTML module script, so React just never boots. Check `content-type`. |
 | Help page numbering | `public/help/NN-slug.html` is derived from the `## N.` headings in `docs/DatIQ-User-Guide.md`, so inserting a section renumbers everything after it. Resolve help pages by **SLUG, never by number** — the readiness audit hardcoded `11-plans-usage-and-billing.html` and reported "pricing source missing" when only a digit had moved. Every renumbered URL needs a 301 in `scripts/site-routes.mjs` (mirrored into `netlify.toml`); `page-ownership.test.mjs` asserts they match. |

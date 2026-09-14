@@ -253,8 +253,38 @@ function geminiThinkingPlan(model, maxTokens) {
   return { config: null, outputTokens: answer + reserved, reserved };
 }
 
+/**
+ * Which tool name this model family uses for Google Search grounding.
+ *
+ * ⚠️ THE NAME CHANGED BETWEEN FAMILIES AND THE OLD ONE IS REJECTED, NOT
+ * IGNORED. 1.5 takes `google_search_retrieval`; 2.0 and later take
+ * `google_search`. Sending the wrong one 400s every call, which reads as "the
+ * key is bad" rather than "the tool is misnamed" — the same class of misread
+ * that made a wrong PageSpeed key look like a quota problem for months.
+ */
+export function geminiSearchTool(model = "") {
+  return /gemini-1\.5/i.test(String(model)) ? "google_search_retrieval" : "google_search";
+}
+
+/**
+ * Pull the sources a grounded answer actually retrieved.
+ *
+ * These ARE the citations. Without them a grounded call is just a slower
+ * ungrounded one — the point of grounding, here, is learning which pages the
+ * engine read in order to answer.
+ */
+export function geminiGroundingCitations(data) {
+  const chunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  const out = [];
+  for (const c of chunks) {
+    const uri = c?.web?.uri || c?.retrievedContext?.uri;
+    if (uri) out.push({ url: uri, title: c?.web?.title || c?.retrievedContext?.title || null });
+  }
+  return out;
+}
+
 async function callGemini(messages, model, maxTokens, apiKey, opts = {}) {
-  const { signal, schema } = opts;
+  const { signal, schema, grounded } = opts;
   const contents = [];
   let systemText = "";
   for (const m of messages) {
@@ -268,12 +298,18 @@ async function callGemini(messages, model, maxTokens, apiKey, opts = {}) {
   const generationConfig = { maxOutputTokens: plan.outputTokens };
   if (plan.config) generationConfig.thinkingConfig = plan.config;
   let structured = false;
-  if (schema) {
+  // ⚠️ GROUNDING AND A RESPONSE SCHEMA ARE MUTUALLY EXCLUSIVE. Gemini rejects a
+  // request carrying both, so when a caller asks for grounding we drop the
+  // schema rather than send a request we know will 400. Grounding wins because
+  // a caller that asks for it wants CITATIONS, and a grounded answer in prose
+  // is useful where a schema-shaped answer with no sources is not.
+  if (schema && !grounded) {
     generationConfig.responseMimeType = "application/json";
     generationConfig.responseSchema = toGeminiSchema(schema);
     structured = true;
   }
   const body = { contents, generationConfig };
+  if (grounded) body.tools = [{ [geminiSearchTool(model)]: {} }];
   if (systemText) body.systemInstruction = { parts: [{ text: systemText }] };
 
   const res = await fetch(
@@ -299,7 +335,14 @@ async function callGemini(messages, model, maxTokens, apiKey, opts = {}) {
     }
     return { ok: false, status: 200, error: `Gemini returned no text (${reason})` };
   }
-  return { ok: true, status: 200, text, structured };
+  const citations = grounded ? geminiGroundingCitations(data) : [];
+  // 🔴 GROUNDED BUT UNSOURCED IS A REAL STATE, AND IT IS NOT AN ERROR.
+  // Gemini answers from its own weights when Search returns nothing useful, and
+  // signals that only by the ABSENCE of groundingMetadata. Reporting it as a
+  // failure would discard a perfectly good answer; reporting it as grounded
+  // would credit sources that were never read. `grounded` on the result is what
+  // the citation layer branches on to decide whether this counts as live.
+  return { ok: true, status: 200, text, structured, citations, grounded: grounded ? citations.length > 0 : false };
 }
 
 async function callPerplexity(messages, model, maxTokens, apiKey, opts = {}) {
@@ -516,6 +559,92 @@ export async function resolveProvider(provider, pillar, tier) {
     enabled: chain.enabled[provider] !== false,
     apiKey: keyFor(provider),
   };
+}
+
+/**
+ * One grounded Gemini call, for callers that need SOURCES and not just text.
+ *
+ * Deliberately not part of `runChain`: the chain's job is to get an answer from
+ * whichever provider is up, and a grounded answer from one provider is not
+ * interchangeable with an ungrounded answer from another. A citation sample
+ * that silently fell back to a model's own recall would report a brand as
+ * "cited by a live engine" on the strength of its training data.
+ */
+export async function callGeminiGrounded(prompt, { pillar = "citations", tier, signal, maxTokens = 500 } = {}) {
+  const { model, enabled, apiKey } = await resolveProvider("gemini", pillar, tier);
+  if (!enabled) return { ok: false, error: "Gemini is disabled in the provider chain." };
+  if (!apiKey) return { ok: false, error: "GEMINI_API_KEY is not set." };
+  const r = await callGemini(
+    [{ role: "user", content: prompt }], model, maxTokens, apiKey, { signal, grounded: true },
+  );
+  if (!r.ok) return { ok: false, error: r.error, code: r.code || null };
+  return { ok: true, text: r.text, citations: r.citations || [], grounded: Boolean(r.grounded), model };
+}
+
+/**
+ * LIVE check that an answer engine returns SOURCES, not just text.
+ *
+ * 🔴 THIS IS THE CHECK `pingProvider` CANNOT MAKE. A ping proves the key is
+ * valid and the model answers. It says nothing about grounding — a perfectly
+ * good Gemini key returns prose with no `groundingMetadata` whenever the search
+ * tool is misconfigured, the model family takes the other tool name, or the
+ * account lacks grounding entitlement. Every one of those degrades citation
+ * sampling to a model's own recall while the provider card stays green, which
+ * is the exact failure this repo already shipped once with a PageSpeed key that
+ * measured nothing for months.
+ *
+ * Asks something no model could answer from memory alone, so an answer with no
+ * sources is strong evidence grounding did not run rather than evidence the
+ * question was easy.
+ */
+export async function probeAnswerEngine(provider, { signal } = {}) {
+  const PROMPT = "Name two companies that published something about web data extraction in the last month, with links.";
+
+  if (provider === "gemini") {
+    const r = await callGeminiGrounded(PROMPT, { signal, maxTokens: 300 });
+    if (!r.ok) return { ok: false, provider, error: r.error, code: r.code || null };
+    return {
+      ok: true, provider, model: r.model,
+      grounded: r.grounded,
+      citationCount: (r.citations || []).length,
+      sample: (r.citations || []).slice(0, 3).map((c) => c.url),
+      // The distinction the whole citation metric rests on.
+      verdict: r.grounded
+        ? "Grounded — answers are retrieved from the live web and count as live."
+        : "NOT grounded. The key works and the model answered, but no sources came back, so every citation sample through this engine would be the model's own recall labelled live:false. Check that Google Search grounding is enabled for this key and that the model family matches the tool name.",
+    };
+  }
+
+  if (provider === "perplexity") {
+    const key = keyFor("perplexity");
+    if (!key) return { ok: false, provider, error: "PERPLEXITY_API_KEY is not set." };
+    const { model } = await resolveProvider("perplexity", "citations");
+    try {
+      const res = await fetch("https://api.perplexity.ai/chat/completions", {
+        signal, method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ model, messages: [{ role: "user", content: PROMPT }], max_tokens: 300 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, provider, error: data?.error?.message || `Perplexity ${res.status}` };
+      }
+      const citations = data?.citations || data?.search_results || [];
+      return {
+        ok: true, provider, model,
+        grounded: citations.length > 0,
+        citationCount: citations.length,
+        sample: citations.slice(0, 3).map((c) => (typeof c === "string" ? c : c?.url)).filter(Boolean),
+        verdict: citations.length > 0
+          ? "Returning citations — samples through this engine count as live."
+          : "Answered with no citations. Retrieval is what this provider is for, so an empty citation list here usually means the model id is not a search model.",
+      };
+    } catch (err) {
+      return { ok: false, provider, error: err?.message || "Perplexity request failed" };
+    }
+  }
+
+  return { ok: false, provider, error: `${provider} is not an answer engine.` };
 }
 
 export const PING_TOKENS = 64;          // enough for "ok" on any non-reasoning model

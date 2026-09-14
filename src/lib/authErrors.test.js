@@ -51,6 +51,25 @@ describe("classifyAuthError — Supabase auth surface errors (U-48)", () => {
     expect(r.title).toBe("Sign-up is currently closed");
   });
 
+  it("maps the Auth database-save failure to an account-creation prompt", () => {
+    const r = classifyAuthError({
+      code: "unexpected_failure",
+      message: "Database error saving new user",
+    });
+    expect(r.title).toBe("We couldn't create your account");
+    expect(r.message).toMatch(/sign-up service couldn't save/i);
+    expect(r.cta).toBeNull();
+  });
+
+  it("maps invalid email validation responses without offering password reset", () => {
+    const r = classifyAuthError({
+      code: "validation_failed",
+      message: "Unable to validate email address: invalid format",
+    });
+    expect(r.title).toBe("Enter a valid email address");
+    expect(r.cta).toBeNull();
+  });
+
   it("maps network-shape errors to the connectivity prompt", () => {
     const r = classifyAuthError(new Error("TypeError: Failed to fetch"));
     expect(r.title).toBe("Couldn't reach the auth server");
@@ -84,6 +103,13 @@ describe("classifyAuthError — input shapes (U-48)", () => {
     expect(classifyAuthError(new Error("totally novel failure mode")).title).toBe(
       "Authentication failed",
     );
+  });
+
+  it("uses account-creation copy for an unknown sign-up error", () => {
+    const r = classifyAuthError(new Error("novel failure"), { operation: "signup" });
+    expect(r.title).toBe("We couldn't create your account");
+    expect(r.message).toMatch(/creating your account/i);
+    expect(r.cta).toBeUndefined();
   });
 
   it("fallback always includes an actionable CTA (reset password)", () => {

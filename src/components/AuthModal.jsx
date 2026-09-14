@@ -297,7 +297,9 @@ export default function AuthModal() {
         }
       }
     } catch (err) {
-      const friendly = classifyAuthError(err);
+      const friendly = classifyAuthError(err, {
+        operation: tab === "signup" ? "signup" : "signin",
+      });
       setError(friendly.message);
       setErrorCta(friendly.cta);
     } finally {

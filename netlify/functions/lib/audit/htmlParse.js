@@ -287,6 +287,52 @@ export function extractMicrodata(html = "") {
   return [...types];
 }
 
+/**
+ * A microdata INVENTORY, not just the list of types.
+ *
+ * `extractMicrodata` above answers "what types are declared", which is all the
+ * entity analyser needs. The BRD asks for a *"JSON-LD/microdata schema
+ * inventory"*, and an inventory has to say how many of each and which
+ * properties they carry — otherwise "you have Product markup" cannot be
+ * distinguished from "you have forty Product blocks, none of which names a
+ * price", and those call for opposite advice.
+ *
+ * Regex rather than a DOM walk, for the same reason the rest of this file is:
+ * a Netlify function has no DOM, and pulling one in for an inventory would add
+ * seconds to an audit already bounded at 8s. The cost is that properties are
+ * attributed to the document rather than nested under their own item — stated
+ * here so nobody reads the output as a parse tree. It is enough to answer
+ * "is anything describing a price?", which is the question it exists for.
+ */
+export function extractMicrodataInventory(html = "") {
+  const src = String(html);
+  const byType = new Map();
+  const typeRe = /\bitemtype\s*=\s*["']([^"']+)["']/gi;
+  let m;
+  let guard = 0;
+  while ((m = typeRe.exec(src)) !== null) {
+    if (++guard > 500) break;
+    const type = m[1].split("/").filter(Boolean).pop();
+    if (!type) continue;
+    byType.set(type, (byType.get(type) || 0) + 1);
+  }
+  if (byType.size === 0) return [];
+
+  const props = new Set();
+  const propRe = /\bitemprop\s*=\s*["']([^"']+)["']/gi;
+  guard = 0;
+  while ((m = propRe.exec(src)) !== null) {
+    if (++guard > 1000) break;
+    for (const name of m[1].split(/\s+/)) if (name) props.add(name);
+  }
+
+  return [...byType.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([type, count]) => ({ type, count }))
+    .slice(0, 40)
+    .map((entry) => ({ ...entry, properties: [...props].slice(0, 40) }));
+}
+
 // ── Content structures ─────────────────────────────────────────────────────
 
 export function countStructures(html = "") {
@@ -564,6 +610,7 @@ export function parsePage(rawHtml = "", url = "") {
     jsonLd,
     jsonLdErrors,
     schemaTypes: [...new Set([...schemaTypes(jsonLd), ...extractMicrodata(html)])],
+    microdata: extractMicrodataInventory(html),
     headings,
     headingStats: analyseHeadingTree(headings),
     passages: extractPassages(html),

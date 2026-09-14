@@ -274,8 +274,13 @@ describe("verify-payment Razorpay (C-18) — capture + order match", () => {
 });
 
 // ── C-19: Stripe path ────────────────────────────────────────────────────────
-// TODO: VITE_STRIPE_PUBLISHABLE_KEY not set; Stripe tests skipped until payment keys are wired.
-describe.skip("verify-payment Stripe (C-19)", () => {
+// ⚠️ NO CREDENTIAL IS NEEDED HERE AND NEVER WAS. `stripe` is mocked at the
+// module boundary and the key below is the literal string "sk_test"; the old
+// "skipped until payment keys are wired" TODO was simply wrong. Stripe remains
+// DISABLED in the product — this restores the contract coverage that
+// docs/STRIPE-DEFERRAL.md already claims exists, so the deferred path cannot
+// rot unnoticed before v2.0 turns it back on.
+describe("verify-payment Stripe (C-19)", () => {
   it("missing session_id → 400 MISSING_PARAMS", async () => {
     const h = await loadHandler();
     const r = await h({ httpMethod: "GET", queryStringParameters: { provider: "stripe" } });

@@ -182,7 +182,15 @@ describe("payment-webhook (C-21) — payment.failed", () => {
 
 // ── C-22: Stripe webhook signature bypass rejected ───────────────────────────
 // TODO: VITE_STRIPE_PUBLISHABLE_KEY not set; Stripe tests skipped until payment keys are wired.
-describe.skip("payment-webhook Stripe (C-22) — signature bypass rejected", () => {
+// ⚠️ THESE WERE `describe.skip` WITH THE REASON "Stripe tests skipped until
+// payment keys are wired". That reason was never true of THIS suite: `stripe`
+// is mocked at the module boundary and every key here is the literal string
+// "sk_test". They needed no credential, only un-skipping — and while skipped,
+// one of them silently preserved an assertion that an unsigned payment webhook
+// should be accepted. Stripe is still DISABLED in the product (v1.0 is
+// Razorpay-only); what is restored here is the contract coverage
+// `STRIPE-DEFERRAL.md` already claims exists.
+describe("payment-webhook Stripe (C-22) — signature bypass rejected", () => {
   it("STRIPE_WEBHOOK_SECRET set + no signature header → 400 (constructEvent throws)", async () => {
     process.env.SUPABASE_URL = "https://x.supabase.co";
     process.env.SUPABASE_SERVICE_KEY = "sk";
@@ -243,11 +251,20 @@ describe.skip("payment-webhook Stripe (C-22) — signature bypass rejected", () 
     expect(calls.insertEvents).toHaveLength(1);
   });
 
-  it("STRIPE_WEBHOOK_SECRET not set → signature check skipped (warns), still 200", async () => {
+  // 🔴 THIS ASSERTION USED TO SAY THE OPPOSITE, AND THE SKIP IS WHY NOBODY SAW.
+  // It previously read "signature check skipped (warns), still 200" — i.e. a
+  // payment webhook with NO signature and NO configured secret was accepted as
+  // genuine and upserted a subscription. The handler was since hardened to
+  // refuse with 503 unless `DATIQ_ALLOW_UNSIGNED_WEBHOOKS=1` AND the context is
+  // dev or test, but this block was `describe.skip`, so the old assertion never
+  // went red: the suite carried an anti-assertion that anyone un-skipping it
+  // would have "fixed" by weakening the handler back.
+  it("🔴 STRIPE_WEBHOOK_SECRET not set → 503, NOT an unsigned 200", async () => {
     process.env.SUPABASE_URL = "https://x.supabase.co";
     process.env.SUPABASE_SERVICE_KEY = "sk";
     process.env.STRIPE_SECRET_KEY = "sk_test";
-    // intentionally NO STRIPE_WEBHOOK_SECRET
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    delete process.env.DATIQ_ALLOW_UNSIGNED_WEBHOOKS;
     const calls = makeDb();
     const h = await loadHandler();
     const r = await h({
@@ -262,10 +279,40 @@ describe.skip("payment-webhook Stripe (C-22) — signature bypass rejected", () 
       }),
       headers: {},
     });
-    expect(r.statusCode).toBe(200);
-    // Stripe was NOT used for signature check (constructEvent never called)
+    expect(r.statusCode).toBe(503);
     expect(stripeConstructEvent).not.toHaveBeenCalled();
-    // But subscription was still upserted (we parsed the body as JSON)
+    // 🔴 AND NOTHING WAS WRITTEN. A refused webhook that still upserts a
+    // subscription would be the whole vulnerability with a different status code.
+    expect(calls.upsertSub).toHaveLength(0);
+    expect(calls.insertEvents).toHaveLength(0);
+  });
+
+  it("...and the dev-only escape hatch still works, in test context only", async () => {
+    // The hatch exists so local development against a Stripe CLI forward does
+    // not need a secret. It is double-gated — the flag AND the context — so a
+    // production deploy cannot reach it by setting one env var.
+    process.env.SUPABASE_URL = "https://x.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "sk";
+    process.env.STRIPE_SECRET_KEY = "sk_test";
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    process.env.DATIQ_ALLOW_UNSIGNED_WEBHOOKS = "1";
+    const calls = makeDb();
+    const h = await loadHandler();
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        id: "evt_5",
+        type: "checkout.session.completed",
+        data: { object: {
+          metadata: { planId: "select", sessionId: "sess_y" },
+          amount_total: 1900, currency: "usd",
+        } },
+      }),
+      headers: {},
+    });
+    delete process.env.DATIQ_ALLOW_UNSIGNED_WEBHOOKS;
+    expect(r.statusCode).toBe(200);
+    expect(stripeConstructEvent).not.toHaveBeenCalled();
     expect(calls.upsertSub).toHaveLength(1);
     expect(calls.upsertSub[0].plan_id).toBe("select");
   });
@@ -318,7 +365,7 @@ describe("payment-webhook — method / provider", () => {
   });
 
   // TODO: VITE_STRIPE_PUBLISHABLE_KEY not set; Stripe tests skipped until payment keys are wired.
-  it.skip("Stripe path with no STRIPE_SECRET_KEY → 501", async () => {
+  it("Stripe path with no STRIPE_SECRET_KEY → 501", async () => {
     const h = await loadHandler();
     const r = await h({ httpMethod: "POST", body: "{}", queryStringParameters: { provider: "stripe" } });
     expect(r.statusCode).toBe(501);

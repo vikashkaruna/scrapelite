@@ -3,8 +3,9 @@
 // Talks to Supabase over PostgREST with the SERVICE key, for the same reason
 // requireEntitlement.js does: it is immune to RLS policy drift, and a user
 // cannot make themselves look unrestricted by arranging for their own rows to
-// be unreadable. Every read is still scoped by user_id in the query itself, so
-// the service key never widens what a caller can see.
+// be unreadable. Personal reads are scoped by user_id; workspace reads are
+// scoped by workspace_id only after the route has verified membership and the
+// requested Discoverability action.
 //
 // ── QUOTA IS COUNTED FROM THE AUDITS THEMSELVES ────────────────────────────
 // There is deliberately no counter column. `usage_records` is session-keyed and
@@ -14,8 +15,18 @@
 // we did, and our own failures are free.
 
 import { getServiceDb } from "../requireEntitlement.js";
+import { encryptSecret } from "../integrationSecrets.js";
+import { SCORING_MODEL_VERSION } from "../../../../src/lib/discoverability/scoringModel.js";
+import { isWorkflowState, requirementsFor } from "../../../../src/lib/discoverability/workflowLifecycle.js";
+import { makeSubject } from "../../../../src/lib/discoverability/subjectModel.js";
 
 const SELECT_ALL = "select=*";
+
+function ownerOrWorkspace(userId, workspaceId = null) {
+  return workspaceId
+    ? `workspace_id=eq.${encodeURIComponent(workspaceId)}`
+    : `user_id=eq.${encodeURIComponent(userId)}`;
+}
 
 /**
  * Past this, a still-`running` audit is abandoned rather than in flight.
@@ -161,15 +172,112 @@ export async function ensureTarget(userId, canonicalUrl, host, label = null) {
   }
 }
 
-/** Open an audit row before the work starts, so an in-flight run is visible. */
+/**
+ * D7 — get or create the SUBJECT this audit is about.
+ *
+ * Mirrors `ensureTarget` above: the application asks, and gets one back whether
+ * or not it already existed. `upsert_audit_subject` is idempotent by the
+ * partial unique indexes in 0057, so two concurrent audits of the same brand
+ * cannot mint two subjects and scatter the history between them.
+ *
+ * 🔴 RETURNS `null` ON FAILURE, AND THAT IS NOT FATAL. `audits.subject_id` is
+ * nullable by design: a pre-0057 audit has none and works unchanged, so an
+ * audit whose subject lookup failed is in exactly the same, already-supported
+ * state rather than a broken one. Failing the whole audit here would take the
+ * product down for a registry that is additive — the opposite of the trade D7
+ * was chosen to make. The error is logged so the failure is visible, which is
+ * the distinction this repo has had to learn three times: degraded is fine,
+ * SILENTLY degraded is not.
+ */
+export async function ensureSubject(userId, {
+  kind = "page", targetId = null, entityId = null, truthRecordId = null,
+  label = null, canonicalDomain = null, workspaceId = null,
+} = {}) {
+  const conn = db();
+  if (!conn) {
+    console.error("[discoverability] ensureSubject: Supabase is not configured");
+    return null;
+  }
+  const built = makeSubject({
+    kind, targetId, entityId, truthRecordId,
+    label: label || kind, canonicalDomain, workspaceId,
+  });
+  if (!built.ok) {
+    console.error("[discoverability] ensureSubject: refused by the model", { kind, reason: built.reason });
+    return null;
+  }
+  try {
+    const res = await fetch(`${conn.base}/rpc/upsert_audit_subject`, {
+      method: "POST",
+      headers: conn.headers,
+      body: JSON.stringify({
+        p_user_id: userId,
+        p_kind: built.subject.subject_kind,
+        p_target_id: built.subject.target_id,
+        p_entity_id: built.subject.entity_id,
+        p_truth_record_id: built.subject.truth_record_id,
+        p_label: built.subject.label,
+        p_canonical_domain: built.subject.canonical_domain,
+        p_workspace_id: built.subject.workspace_id,
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.error(`[discoverability] ensureSubject: upsert_audit_subject rejected (HTTP ${res.status})`, {
+        kind, status: res.status, detail: detail.slice(0, 500),
+      });
+      return null;
+    }
+    return await res.json();
+  } catch (err) {
+    console.error("[discoverability] ensureSubject: request failed", { kind, message: err?.message });
+    return null;
+  }
+}
+
+/**
+ * Open an audit row before the work starts, so an in-flight run is visible.
+ *
+ * ── THE INTAKE IS WRITTEN HERE, THE RESOLVED PROFILE IS NOT ───────────────
+ * Everything the customer stated — type, goal, geography, competitors — is
+ * known before a byte is fetched and is written now, so an audit that dies
+ * mid-run still records what it was commissioned to do.
+ *
+ * `audit_profile` is the exception. It may still be settled by the page (see
+ * resolveAuditProfile), which has not been fetched yet, so what lands here is
+ * the requested-or-derivable value and `persistResult` corrects it to what was
+ * actually applied — exactly as it already does for `page_type`.
+ */
+/**
+ * D6 — carry the workspace onto the row.
+ *
+ * The columns have existed since 0030 and nothing has ever written them.
+ * Back-filling later costs far more than carrying them now, which is the same
+ * reasoning that made `raw_value` and `audit_recommendations.issue_id` worth
+ * fixing rather than dropping. ⚠️ NULL stays valid and common — most audits are
+ * run by a solo operator with no workspace at all.
+ */
 export async function createAudit(userId, {
   targetId, targetUrl, deviceProfile = "mobile", auditProfile = "balanced",
+  auditProfileSource = "default", auditType = "url", primaryGoal = null,
+  targetGeography = null, competitorUrls = [],
   pageTypeHint = null, baselineAuditId = null, promptSetId = null,
-  idempotencyKey = null, source = "ui", tags = [],
+  idempotencyKey = null, source = "ui", tags = [], workspaceId = null,
+  subjectId = null,
 }) {
   const r = await insert("audits", [{
     user_id: userId, target_id: targetId, target_url: targetUrl,
+    workspace_id: workspaceId || null,
+    // D7. NULL is valid and is what every pre-0057 row carries; target_id
+    // stays authoritative for the page case either way.
+    subject_id: subjectId || null,
     device_profile: deviceProfile, audit_profile: auditProfile,
+    audit_profile_source: auditProfileSource,
+    audit_type: auditType, primary_goal: primaryGoal,
+    // NULL, never {}. The column's comment and normaliseGeography() agree on
+    // one shape for absence; two would mean every reader needs two checks.
+    target_geography: targetGeography || null,
+    competitor_urls: Array.isArray(competitorUrls) ? competitorUrls : [],
     page_type_hint: pageTypeHint, baseline_audit_id: baselineAuditId,
     prompt_set_id: promptSetId, idempotency_key: idempotencyKey,
     source, tags, status: "running", started_at: new Date().toISOString(),
@@ -186,7 +294,7 @@ export async function createAudit(userId, {
  * appearing as a finished audit with a score and no evidence behind it — which
  * is the shape a user would reasonably screenshot and act on.
  */
-export async function persistResult(userId, auditId, result) {
+export async function persistResult(userId, auditId, result, { workspaceId = null } = {}) {
   const conn = db();
   if (!conn) return { ok: false, degraded: true, error: "Supabase is not configured" };
 
@@ -211,6 +319,10 @@ export async function persistResult(userId, auditId, result) {
     estimated_total_lift: result.estimatedTotalLift ?? 0,
     issue_count: (result.issues || []).length,
     critical_count: (result.issues || []).filter((i) => i.severity === "critical").length,
+    // Never null. The result normally carries it; falling back to the imported
+    // constant means the column can be NOT NULL — so a future write that forgets
+    // the version fails loudly instead of silently filing a v3 score as a v1.
+    scoring_model_version: result.scoringModelVersion || SCORING_MODEL_VERSION,
     facts_json: result.facts || {},
     evidence_json: result.evidence || {},
     engine_json: { ...(result.meta?.engine || {}), penalties: result.penalties || [], stageErrors: result.stageErrors || [] },
@@ -224,27 +336,89 @@ export async function persistResult(userId, auditId, result) {
       weight: s.weight,
       measured: s.measured,
       unknown_reason: s.unknownReason,
+      // The workings behind the number. `raw_value` is what was actually read;
+      // `evidence_json` is how and from where. Both columns have existed since
+      // 0030 and neither was ever written — a score nobody could trace back to
+      // an observation, on every row in the table.
+      raw_value: s.rawValue ?? null,
+      evidence_json: s.evidence?.length ? s.evidence : null,
+      threshold_json: s.thresholds ?? null,
     })));
 
   const issueRows = (result.issues || []).map((i) => ({
     audit_id: auditId, user_id: userId, code: i.code, pillar: i.pillar,
     severity: i.severity, framework_scope: i.frameworks || [],
     title: i.title, evidence: i.evidence, details_json: i.details || null,
+    evidence_json: i.evidenceRecords?.length ? i.evidenceRecords : null,
+    // The gap-analysis fields (0050). `observed` and `inference` sit BESIDE
+    // `evidence` rather than replacing it — the sentence is what every export
+    // prints and every historical diff compares.
+    observed: i.observed ?? i.evidence ?? null,
+    inference: i.inference ?? null,
+    root_cause: i.rootCause ?? null,
+    recommended_module: i.module ?? null,
+    owner_role: i.owner ?? null,
+    status: i.status || "open",
   }));
 
-  const recRows = (result.recommendations || []).map((r) => ({
+  const recRow = (r, issueId) => ({
     audit_id: auditId, user_id: userId, code: r.code, pillar: r.pillar,
+    // 🔴 DECLARED IN 0030, WRITTEN BY NOTHING UNTIL NOW. See the block below
+    // for why this could not simply be added to the parallel insert.
+    issue_id: issueId ?? null,
     frameworks: r.frameworks || [], priority: r.priority,
     priority_score: r.priorityScore, impact_score: r.impactScore,
     effort_score: r.effortScore, confidence_score: r.confidenceScore,
     estimated_lift: r.estimatedLift, owner_role: r.owner,
     title: r.title, rationale: r.rationale, evidence: r.evidence,
     implementation_asset_json: r.implementationAsset || null,
-  }));
+    // D6 — denormalised from the audit so the queue filters by workspace
+    // without a join. NULL is valid and common.
+    workspace_id: workspaceId || null,
+  });
+
+  // ── ISSUES ARE WRITTEN FIRST, AND ALONE ──────────────────────────────────
+  //
+  // 🔴 `audit_recommendations.issue_id` has existed since migration 0030 and
+  // NOTHING HAS EVER WRITTEN IT — NULL on every row for the life of the module.
+  // Every recommendation has been an orphan, so "which finding produced this
+  // task" had no answer in the data and the validation loop could not close:
+  // when a re-audit reports AC-01 resolved there was no way to mark the
+  // recommendation it produced as validated except by matching on `code`, which
+  // works only while that mapping stays one-to-one and silently mis-attributes
+  // the moment it does not.
+  //
+  // Fixing it costs a round trip, and it is worth it. The four child writes used
+  // to go out concurrently with `return=minimal`; recommendations now need the
+  // issue ids, so the issue insert is pulled ahead and asks for the rows back.
+  // The other three still go concurrently behind it.
+  //
+  // ⚠️ The ordering guarantee this function has always had is UNCHANGED: every
+  // child is written before the parent is marked `completed`, so a partial
+  // failure leaves the audit visibly `running` rather than appearing as a
+  // finished audit with a score and no evidence behind it — which is the shape
+  // a user would reasonably screenshot and act on.
+  let issueIdByCode = new Map();
+  if (issueRows.length) {
+    const written = await insert("audit_issues", issueRows, "return=representation");
+    if (!written.ok) {
+      await markAuditFailed(auditId, `persist failed: ${written.error}`);
+      return { ok: false, error: written.error, degraded: written.degraded };
+    }
+    issueIdByCode = new Map(
+      (Array.isArray(written.data) ? written.data : []).map((row) => [row.code, row.id]),
+    );
+  }
+
+  // `audit_issues` is UNIQUE on (audit_id, code), so a code identifies exactly
+  // one issue within an audit and this map cannot collide. A recommendation
+  // whose code found no issue keeps a null link rather than guessing at one —
+  // that happens for the unreachable-page path, where the recommendation is
+  // built from a code the issue list may have been packed out of.
+  const recRows = (result.recommendations || []).map((r) => recRow(r, issueIdByCode.get(r.code)));
 
   const writes = [insert("audit_results", [resultRow], "return=minimal")];
   if (signalRows.length) writes.push(insert("audit_signals", signalRows, "return=minimal"));
-  if (issueRows.length) writes.push(insert("audit_issues", issueRows, "return=minimal"));
   if (recRows.length) writes.push(insert("audit_recommendations", recRows, "return=minimal"));
 
   const results = await Promise.all(writes);
@@ -260,6 +434,11 @@ export async function persistResult(userId, auditId, result) {
     body: JSON.stringify({
       status: "completed",
       page_type: result.target?.page_type || null,
+      // The profile the run ACTUALLY applied, which may have been settled by
+      // the page after the row was opened. Same reason page_type is corrected
+      // here: the row must say what happened, not what was requested.
+      ...(result.target?.audit_profile ? { audit_profile: result.target.audit_profile } : {}),
+      ...(result.target?.audit_profile_source ? { audit_profile_source: result.target.audit_profile_source } : {}),
       completed_at: new Date().toISOString(),
     }),
   });
@@ -283,10 +462,24 @@ export async function persistPromptRuns(userId, auditId, sample, promptSetId = n
   if (!sample || !Array.isArray(sample.runs) || sample.runs.length === 0) return { ok: true };
   const rows = sample.runs.slice(0, 20).map((r) => ({
     audit_id: auditId, user_id: userId, prompt_set_id: promptSetId,
-    engine_name: sample.engine, live: Boolean(sample.live),
+    engine_name: sample.engine,
+    // ⚠️ PER-RUN, NOT PER-SAMPLE. A grounded engine falls back to its own
+    // weights whenever search returns nothing useful, so within one sampling
+    // pass some answers are retrieved and others recalled. Stamping the whole
+    // set with the sample-level flag would label recalled answers as live.
+    live: r.live !== undefined ? Boolean(r.live) : Boolean(sample.live),
     prompt: String(r.prompt || "").slice(0, 500),
     mention_detected: r.mention ?? null,
     citation_detected: r.citation ?? null,
+    // W6.3 — the seven states and what they were derived from. `misrepresented`
+    // stays three-valued: null means could-not-check, not checked-and-fine.
+    state: r.state ?? null,
+    prompt_kind: r.kind ?? null,
+    commercial: r.commercial ?? null,
+    kind_confidence: Number.isFinite(r.kindConfidence) ? r.kindConfidence : null,
+    recommended: r.recommended ?? null,
+    misrepresented: r.misrepresented ?? null,
+    competitors_json: r.competitors && r.competitors.length ? r.competitors : null,
     cited_domains_json: r.citedDomains || null,
     sentiment_score: Number.isFinite(r.sentiment) ? r.sentiment : null,
     // Excerpt only. Answer-engine output is volatile and can be
@@ -297,20 +490,179 @@ export async function persistPromptRuns(userId, auditId, sample, promptSetId = n
   return insert("audit_prompt_runs", rows, "return=minimal");
 }
 
+/**
+ * The whole queue across every audit, not one audit's slice of it.
+ *
+ * Exports have been audit-scoped since the module shipped, which is the wrong
+ * unit for somebody working a backlog spread over twenty pages. Ordered by
+ * priority so a CSV opened in a spreadsheet is already in the order the work
+ * should happen.
+ *
+ * ⚠️ ACTIVE ITEMS BY DEFAULT. A queue export that silently includes everything
+ * ever dismissed hands somebody a file that is mostly noise, and they will not
+ * notice until they have worked half of it.
+ */
+/**
+ * A row cap that is always a number.
+ *
+ * ⚠️ Not a style fix. Every other caller-supplied value in this file goes
+ * through `encodeURIComponent`, but a bare `limit=${x}` interpolates straight
+ * into the PostgREST query string — so the day someone wires a `?limit=` query
+ * parameter to one of these readers, `1&user_id=eq.<anyone>` stops being a
+ * limit and starts being a filter. No route passes caller input here today;
+ * this makes sure the one that eventually does cannot.
+ */
+function rowCap(n, fallback, max = 1000) {
+  const v = Number(n);
+  return Number.isFinite(v) && v > 0 ? Math.min(Math.floor(v), max) : fallback;
+}
+
+export async function listRecommendationQueue(userId, { status = null, workspaceId = null, limit = 500 } = {}) {
+  const parts = [`user_id=eq.${encodeURIComponent(userId)}`];
+  if (status) {
+    parts.push(`status=eq.${encodeURIComponent(status)}`);
+  } else {
+    parts.push("status=in.(open,accepted,assigned,in_progress)");
+  }
+  if (workspaceId) parts.push(`workspace_id=eq.${encodeURIComponent(workspaceId)}`);
+  const r = await rest(
+    `audit_recommendations?${parts.join("&")}&${SELECT_ALL}`
+    + `&order=priority_score.desc.nullslast&limit=${rowCap(limit, 500)}`,
+  );
+  return Array.isArray(r.data) ? r.data : [];
+}
+
+// ── Prompt monitors (W6.5) ─────────────────────────────────────────────────
+
+/** Monitors whose clock is up, and that neither the user nor the platform paused. */
+export async function listDuePromptMonitors(now = Date.now(), limit = 25) {
+  const iso = new Date(now).toISOString();
+  const r = await rest(
+    `prompt_monitors?status=eq.active&system_paused=is.false`
+    + `&or=(next_run_at.is.null,next_run_at.lte.${encodeURIComponent(iso)})`
+    + `&${SELECT_ALL}&order=next_run_at.asc.nullsfirst&limit=${rowCap(limit, 25)}`,
+  );
+  const rows = Array.isArray(r.data) ? r.data : [];
+  // `run_until` is filtered here rather than in the query so an expired monitor
+  // is still advanced by the caller and stops appearing, instead of sitting due
+  // for ever and being re-read on every tick.
+  return rows.filter((m) => !m.run_until || Date.parse(m.run_until) >= now);
+}
+
+/** Move a monitor's clock on, whether its run succeeded or not. */
+export async function advancePromptMonitor(monitorId, nextRunAt) {
+  return rest(`prompt_monitors?id=eq.${encodeURIComponent(monitorId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ next_run_at: nextRunAt, last_run_at: new Date().toISOString() }),
+  });
+}
+
+export async function getTargetById(userId, targetId) {
+  const r = await rest(
+    `audit_targets?id=eq.${encodeURIComponent(targetId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`,
+  );
+  return Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+/**
+ * Store one monitor run, and the per-prompt detail beneath it.
+ *
+ * ⚠️ A FAILED RUN IS STILL RECORDED. A gap in a trend line is indistinguishable
+ * from a period of no visibility, and the second is a finding while the first
+ * is an outage. The row carries `error` and a null WAVI so a reader can tell
+ * them apart.
+ */
+export async function recordPromptMonitorRun(monitor, sample, error = null) {
+  const rates = sample?.states || {};
+  const head = {
+    monitor_id: monitor.id, user_id: monitor.user_id,
+    engine_name: sample?.engine || null,
+    live: Boolean(sample?.live),
+    prompt_count: sample?.promptCount || 0,
+    mention_rate: rates.mentionRate ?? null,
+    citation_rate: rates.citationRate ?? null,
+    recommendation_rate: rates.recommendationRate ?? null,
+    wavi_score: sample?.wavi?.score ?? null,
+    wavi_coverage: sample?.wavi?.coverage ?? null,
+    sov_declared: sample?.shareOfVoice?.sovDeclared ?? null,
+    states_json: rates.counts || null,
+    error: error || sample?.error || null,
+  };
+  const r = await insert("prompt_monitor_runs", [head]);
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (!row?.id || !sample?.runs?.length) return { ok: Boolean(row), run: row || null };
+
+  await insert("audit_prompt_runs", sample.runs.slice(0, 50).map((x) => ({
+    // A monitor run has no audit, so audit_id stays null and monitor_run_id
+    // carries the link instead.
+    audit_id: null, user_id: monitor.user_id, monitor_run_id: row.id,
+    engine_name: sample.engine,
+    live: x.live !== undefined ? Boolean(x.live) : Boolean(sample.live),
+    prompt: String(x.prompt || "").slice(0, 500),
+    mention_detected: x.mention ?? null,
+    citation_detected: x.citation ?? null,
+    state: x.state ?? null,
+    prompt_kind: x.kind ?? null,
+    commercial: x.commercial ?? null,
+    kind_confidence: Number.isFinite(x.kindConfidence) ? x.kindConfidence : null,
+    recommended: x.recommended ?? null,
+    misrepresented: x.misrepresented ?? null,
+    competitors_json: x.competitors?.length ? x.competitors : null,
+    raw_response_excerpt: String(x.excerpt || "").slice(0, 300),
+  })), "return=minimal");
+
+  return { ok: true, run: row };
+}
+
+/** A monitor's runs, newest first, for the trend. */
+export async function listPromptMonitorRuns(userId, monitorId, limit = 30) {
+  const r = await rest(
+    `prompt_monitor_runs?monitor_id=eq.${encodeURIComponent(monitorId)}`
+    + `&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}`
+    + `&order=created_at.desc&limit=${rowCap(limit, 30)}`,
+  );
+  return Array.isArray(r.data) ? r.data : [];
+}
+
+export async function listPromptMonitors(userId, limit = 50) {
+  const r = await rest(
+    `prompt_monitors?user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&order=created_at.desc&limit=${rowCap(limit, 50)}`,
+  );
+  return Array.isArray(r.data) ? r.data : [];
+}
+
+export async function createPromptMonitor(userId, fields) {
+  const r = await insert("prompt_monitors", [{ ...fields, user_id: userId }]);
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return row ? { ok: true, monitor: row } : { ok: false, error: r.error || "Could not create the monitor." };
+}
+
+export async function deletePromptMonitor(userId, monitorId) {
+  const r = await rest(
+    `prompt_monitors?id=eq.${encodeURIComponent(monitorId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    { method: "DELETE", headers: { Prefer: "return=representation" } },
+  );
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return row ? { ok: true } : { ok: false, notFound: true };
+}
+
 // ── Reads ──────────────────────────────────────────────────────────────────
 
-export async function getAudit(userId, auditId) {
+export async function getAudit(userId, auditId, { workspaceId = null } = {}) {
   const r = await rest(
-    `audits?id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&limit=1`,
+    `audits?id=eq.${encodeURIComponent(auditId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`,
   );
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
 /** An audit plus every child. The `/results` endpoint's payload. */
-export async function getAuditFull(userId, auditId) {
-  const audit = await getAudit(userId, auditId);
+export async function getAuditFull(userId, auditId, { workspaceId = null } = {}) {
+  const audit = await getAudit(userId, auditId, { workspaceId });
   if (!audit) return null;
-  const scope = `audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`;
+  // Child rows keep the audit creator as user_id. Once the workspace-scoped
+  // parent has been authorized, use that stored owner id rather than the
+  // viewer's id so another workspace member can read the complete audit.
+  const scope = `audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(audit.user_id || userId)}`;
   const [results, signals, issues, recs, runs] = await Promise.all([
     rest(`audit_results?${scope}&${SELECT_ALL}&limit=1`),
     rest(`audit_signals?${scope}&${SELECT_ALL}&order=pillar.asc,signal_code.asc`),
@@ -338,10 +690,14 @@ export async function getAuditFull(userId, auditId) {
  * Never throws: a summary that could not be cached is a summary that gets
  * regenerated next time, not a report that fails to load.
  */
-export async function saveAuditSummary(userId, auditId, { summary, model }) {
+export async function saveAuditSummary(userId, auditId, { summary, model, workspaceId = null, auditOwnerId = null }) {
   if (!userId || !auditId || !summary) return { ok: false };
+  // A workspace member may be the first person to open a shared report. The
+  // parent audit has already been scoped and authorized by the route, so cache
+  // against the audit creator stored on that parent rather than the viewer.
+  const storedOwner = workspaceId && auditOwnerId ? auditOwnerId : userId;
   const r = await rest(
-    `audit_results?audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_results?audit_id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(storedOwner)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=minimal" },
@@ -355,9 +711,11 @@ export async function saveAuditSummary(userId, auditId, { summary, model }) {
   return { ok: Boolean(r.ok) };
 }
 
-export async function listAudits(userId, { limit = 25, offset = 0, targetId = null, status = null } = {}) {
+export async function listAudits(userId, {
+  limit = 25, offset = 0, targetId = null, status = null, workspaceId = null,
+} = {}) {
   const params = [
-    `user_id=eq.${encodeURIComponent(userId)}`,
+    ownerOrWorkspace(userId, workspaceId),
     "select=*,audit_results(final_score,seo_score,aeo_score,geo_score,coverage,issue_count,critical_count)",
     "order=created_at.desc",
     `limit=${Math.max(1, Math.min(100, limit))}`,
@@ -369,7 +727,25 @@ export async function listAudits(userId, { limit = 25, offset = 0, targetId = nu
   return r.ok ? r.data || [] : [];
 }
 
-export async function listTargets(userId, { limit = 50 } = {}) {
+export async function listTargets(userId, { limit = 50, workspaceId = null } = {}) {
+  if (workspaceId) {
+    // Targets predate workspaces and intentionally remain account-owned. A
+    // shared target is therefore derived from the workspace's audits, then
+    // hydrated without applying the viewer's user_id (which would hide rows
+    // created by another member).
+    const scoped = await rest(
+      `audits?workspace_id=eq.${encodeURIComponent(workspaceId)}`
+      + `&select=target_id&order=created_at.desc&limit=${Math.max(1, Math.min(500, limit * 10))}`,
+    );
+    const ids = [...new Set((scoped.ok && Array.isArray(scoped.data) ? scoped.data : [])
+      .map((row) => row.target_id).filter(Boolean))].slice(0, Math.max(1, Math.min(200, limit)));
+    if (!ids.length) return [];
+    const r = await rest(
+      `audit_targets?id=in.(${ids.map(encodeURIComponent).join(",")})`
+      + `&${SELECT_ALL}&order=updated_at.desc&limit=${ids.length}`,
+    );
+    return r.ok ? r.data || [] : [];
+  }
   const r = await rest(
     `audit_targets?user_id=eq.${encodeURIComponent(userId)}&${SELECT_ALL}&order=updated_at.desc&limit=${Math.max(1, Math.min(200, limit))}`,
   );
@@ -377,7 +753,24 @@ export async function listTargets(userId, { limit = 50 } = {}) {
 }
 
 /** Score history for a target — the trend chart, via the migration's function. */
-export async function getTargetTrend(userId, targetId, limit = 30) {
+export async function getTargetTrend(userId, targetId, limit = 30, { workspaceId = null } = {}) {
+  if (workspaceId) {
+    // The legacy SECURITY DEFINER RPC is target-scoped, not workspace-scoped.
+    // Calling it after merely finding one shared audit could mix the creator's
+    // personal runs into the workspace graph. Read the exact scoped rows and
+    // flatten the embedded result instead.
+    const r = await rest(
+      `audits?target_id=eq.${encodeURIComponent(targetId)}`
+      + `&workspace_id=eq.${encodeURIComponent(workspaceId)}&status=eq.completed`
+      + `&select=id,created_at,audit_results(final_score,seo_score,aeo_score,geo_score,answer_clarity_score,entity_authority_score,structural_hierarchy_score,technical_accessibility_score,coverage,issue_count,critical_count)`
+      + `&order=created_at.desc&limit=${Math.max(1, Math.min(365, limit))}`,
+    );
+    if (!r.ok || !Array.isArray(r.data)) return [];
+    return r.data.map((row) => {
+      const result = Array.isArray(row.audit_results) ? row.audit_results[0] : row.audit_results;
+      return { audit_id: row.id, created_at: row.created_at, ...(result || {}) };
+    });
+  }
   const conn = db();
   if (!conn) return [];
   // Ownership is checked here rather than relying on the SECURITY DEFINER
@@ -408,18 +801,31 @@ export async function getTargetTrend(userId, targetId, limit = 30) {
  * dismissal with no reason is indistinguishable from a mis-click three months
  * later, and the recommendation-acceptance metric becomes unreadable.
  */
-export async function setRecommendationStatus(userId, recId, status, reason = null) {
-  const allowed = ["open", "accepted", "dismissed", "done"];
-  if (!allowed.includes(status)) return { ok: false, error: "invalid status" };
-  if (status === "dismissed" && !String(reason || "").trim()) {
-    return { ok: false, error: "A dismissal needs a reason." };
-  }
+export async function setRecommendationStatus(userId, recId, status, reason = null, extra = {}) {
+  // W8 — the full lifecycle. `isWorkflowState` and `requirementsFor` are the
+  // single source for both, so the API, the UI and any future importer cannot
+  // disagree about what a state needs.
+  if (!isWorkflowState(status)) return { ok: false, error: "invalid status" };
+  const req = requirementsFor(status, {
+    reason,
+    validatedByAuditId: extra.validatedByAuditId,
+    assignee: extra.assignee,
+  });
+  if (!req.ok) return { ok: false, error: req.missing[0] };
+
   const r = await rest(
-    `audit_recommendations?id=eq.${encodeURIComponent(recId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audit_recommendations?id=eq.${encodeURIComponent(recId)}&${ownerOrWorkspace(userId, extra.workspaceId || null)}`,
     {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
-      body: JSON.stringify({ status, dismiss_reason: status === "dismissed" ? String(reason).slice(0, 500) : null }),
+      body: JSON.stringify({
+        status,
+        dismiss_reason: status === "dismissed" ? String(reason).slice(0, 500) : null,
+        status_changed_at: new Date().toISOString(),
+        ...(extra.validatedByAuditId ? { validated_by_audit_id: extra.validatedByAuditId } : {}),
+        ...(extra.dueAt !== undefined ? { due_at: extra.dueAt } : {}),
+        ...(extra.notes !== undefined ? { notes: extra.notes === null ? null : String(extra.notes).slice(0, 4000) } : {}),
+      }),
     },
   );
   if (!r.ok) return { ok: false, error: r.error };
@@ -430,9 +836,57 @@ export async function setRecommendationStatus(userId, recId, status, reason = nu
   return { ok: true, recommendation: row };
 }
 
-export async function deleteAudit(userId, auditId) {
+/**
+ * Hand a recommendation to a person, or put it down.
+ *
+ * ⚠️ THE MEMBERSHIP CHECK IS THE DATABASE'S, NOT OURS. `assign_recommendation`
+ * verifies the assignee shares a workspace with the owner, and this function
+ * only translates its verdict. Doing the check here instead would leave the
+ * column settable to any account id by any other path into the table — and
+ * would turn this endpoint into a membership oracle, where a caller assigns to
+ * a guessed uuid and learns from the response whether the account is real.
+ *
+ * `not_found` covers both "no such recommendation" and "not yours", so an id
+ * space cannot be enumerated by comparing the two.
+ */
+export async function setRecommendationAssignee(userId, recId, assigneeId, { workspaceId = null } = {}) {
+  const conn = db();
+  if (!conn) return { ok: false, error: "Audit storage is unavailable." };
+  try {
+    const rpc = workspaceId ? "assign_discoverability_recommendation" : "assign_recommendation";
+    const res = await fetch(`${conn.base}/rpc/${rpc}`, {
+      method: "POST",
+      headers: conn.headers,
+      body: JSON.stringify({
+        p_user_id: userId, p_rec_id: recId, p_assignee: assigneeId || null,
+        ...(workspaceId ? { p_workspace_id: workspaceId } : {}),
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return { ok: false, error: `assign failed: ${res.status} ${detail}`.trim() };
+    }
+    const verdict = await res.json();
+    if (verdict === "not_found") return { ok: false, notFound: true, error: "Recommendation not found." };
+    if (verdict === "not_a_member") {
+      return { ok: false, error: "You can only assign work to someone who shares a workspace with you." };
+    }
+    if (verdict !== "ok") return { ok: false, error: "Assignment was refused." };
+
+    const row = await rest(
+      `audit_recommendations?id=eq.${encodeURIComponent(recId)}&${ownerOrWorkspace(userId, workspaceId)}`
+      + `&select=id,user_id,workspace_id,audit_id,code,assigned_to,assigned_at`,
+    );
+    const rec = Array.isArray(row.data) ? row.data[0] : row.data;
+    return { ok: true, recommendation: rec || { id: recId, assigned_to: assigneeId || null } };
+  } catch (err) {
+    return { ok: false, error: err?.message || "assign failed" };
+  }
+}
+
+export async function deleteAudit(userId, auditId, { workspaceId = null } = {}) {
   const r = await rest(
-    `audits?id=eq.${encodeURIComponent(auditId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    `audits?id=eq.${encodeURIComponent(auditId)}&${ownerOrWorkspace(userId, workspaceId)}`,
     { method: "DELETE", headers: { Prefer: "return=representation" } },
   );
   if (!r.ok) return { ok: false, error: r.error };
@@ -604,10 +1058,18 @@ function scrubWebhook(row) {
 
 export async function createSchedule(userId, {
   targetId, name, cadence, deviceProfile, auditProfile, alertEmail, alertThreshold,
+  primaryGoal = null, pageTypeHint = null, targetGeography = null, competitorUrls = [],
 }) {
   const r = await insert("audit_schedules", [{
     user_id: userId, target_id: targetId, name, cadence,
     device_profile: deviceProfile, audit_profile: auditProfile,
+    // Carried onto every run this schedule creates. A monitor that dropped the
+    // goal would build a trend line whose first point had context and whose
+    // others did not — and the diff would still be drawn, because nothing
+    // downstream knows the context changed.
+    primary_goal: primaryGoal, page_type_hint: pageTypeHint,
+    target_geography: targetGeography || null,
+    competitor_urls: Array.isArray(competitorUrls) ? competitorUrls : [],
     alert_email: alertEmail, alert_threshold: alertThreshold,
     next_run_at: nextRunAt(cadence),
   }]);
@@ -663,7 +1125,7 @@ export async function dueSchedules(now = new Date(), limit = 25) {
   const r = await rest(
     `audit_schedules?status=eq.active&system_paused=is.false` +
     `&next_run_at=lte.${encodeURIComponent(now.toISOString())}` +
-    `&select=*,audit_targets(canonical_url,host,label)&order=next_run_at.asc&limit=${limit}`);
+    `&select=*,audit_targets(canonical_url,host,label)&order=next_run_at.asc&limit=${rowCap(limit, 25)}`);
   if (!r.ok) return [];
   // A schedule past its end date is not due; it is finished.
   return (r.data || []).filter((s) => !s.run_until || new Date(s.run_until) > now);
@@ -686,4 +1148,1411 @@ export function nextRunAt(cadence, from = new Date()) {
   else if (cadence === "monthly") d.setUTCMonth(d.getUTCMonth() + 1);
   else d.setUTCDate(d.getUTCDate() + 7);
   return d.toISOString();
+}
+
+// ── Business truth records (W9) ─────────────────────────────────────────────
+//
+// The record is the identity; versions are proposals. Every write here keeps
+// that split: nothing edits a version in place once it has been reviewed, and
+// nothing sets `current_version_id` except `promoteTruthVersion`, which goes
+// through the SQL function so the three writes promotion needs cannot separate.
+
+export async function createTruthRecord(userId, { canonicalDomain, displayName = null, targetId = null, workspaceId = null, notApplicable = [] }) {
+  const r = await insert("audit_business_truth_records", [{
+    user_id: userId,
+    canonical_domain: canonicalDomain,
+    display_name: displayName,
+    target_id: targetId,
+    workspace_id: workspaceId,
+    not_applicable: notApplicable,
+  }]);
+  if (!r.ok) {
+    // The partial unique index is the whole point of the table — one live
+    // answer per business — so report the collision as a collision rather than
+    // as a generic write failure the caller has to guess at.
+    const duplicate = /duplicate key|audit_btr_owner_domain_uniq/i.test(r.error || "");
+    return { ok: false, duplicate, error: r.error };
+  }
+  return { ok: true, record: Array.isArray(r.data) ? r.data[0] : r.data };
+}
+
+export async function listTruthRecords(userId, { workspaceId = null, limit = 50 } = {}) {
+  const r = await rest(
+    `audit_business_truth_records?${ownerOrWorkspace(userId, workspaceId)}&status=eq.active`
+    + `&${SELECT_ALL}&order=updated_at.desc&limit=${Number(limit) || 50}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getTruthRecord(userId, recordId, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_business_truth_records?id=eq.${encodeURIComponent(recordId)}`
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+/** The record plus its versions, newest first, and its open conflicts. */
+export async function getTruthRecordFull(userId, recordId, { workspaceId = null } = {}) {
+  const record = await getTruthRecord(userId, recordId, { workspaceId });
+  if (!record) return null;
+  const [versions, conflicts] = await Promise.all([
+    rest(`audit_business_truth_versions?record_id=eq.${encodeURIComponent(recordId)}`
+      + `&${SELECT_ALL}&order=version_no.desc&limit=100`),
+    rest(`audit_business_truth_conflicts?record_id=eq.${encodeURIComponent(recordId)}`
+      + `&resolved_at=is.null&${SELECT_ALL}&order=created_at.desc&limit=200`),
+  ]);
+  return {
+    ...record,
+    versions: versions.ok ? versions.data || [] : [],
+    conflicts: conflicts.ok ? conflicts.data || [] : [],
+  };
+}
+
+export async function getTruthVersion(userId, recordId, versionId, { workspaceId = null } = {}) {
+  const owned = await getTruthRecord(userId, recordId, { workspaceId });
+  if (!owned) return null;
+  const r = await rest(
+    `audit_business_truth_versions?id=eq.${encodeURIComponent(versionId)}`
+    + `&record_id=eq.${encodeURIComponent(recordId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+/** The canonical version, or null when nothing has been approved yet. */
+export async function getCanonicalTruthVersion(userId, recordId, { workspaceId = null } = {}) {
+  const record = await getTruthRecord(userId, recordId, { workspaceId });
+  if (!record?.current_version_id) return null;
+  return getTruthVersion(userId, recordId, record.current_version_id, { workspaceId });
+}
+
+/**
+ * Add a version.
+ *
+ * ⚠️ `version_no` IS READ AND INCREMENTED, NOT SUPPLIED BY THE CALLER. Two
+ * concurrent proposals racing to number 4 collide on the unique index rather
+ * than silently overwriting each other — which is the correct outcome, so the
+ * collision is reported as `conflict` and the caller retries against a number
+ * it re-reads. A sequence would gap on rollback and make "version 4 was
+ * rejected" a sentence about a row that does not exist.
+ */
+export async function createTruthVersion(userId, recordId, {
+  fields, completeness = null, origin = "manual", sourceAuditId = null, state = "draft",
+  workspaceId = null,
+}) {
+  const record = await getTruthRecord(userId, recordId, { workspaceId });
+  if (!record) return { ok: false, notFound: true };
+
+  const last = await rest(
+    `audit_business_truth_versions?record_id=eq.${encodeURIComponent(recordId)}`
+    + `&select=version_no&order=version_no.desc&limit=1`);
+  const nextNo = (last.ok && Array.isArray(last.data) && last.data[0]?.version_no || 0) + 1;
+
+  const r = await insert("audit_business_truth_versions", [{
+    record_id: recordId,
+    version_no: nextNo,
+    state,
+    fields_json: fields,
+    completeness,
+    origin,
+    source_audit_id: sourceAuditId,
+    proposed_by: userId,
+  }]);
+  if (!r.ok) {
+    const conflict = /duplicate key|audit_btv_record_version_uniq/i.test(r.error || "");
+    return { ok: false, conflict, error: r.error };
+  }
+  return { ok: true, version: Array.isArray(r.data) ? r.data[0] : r.data };
+}
+
+/**
+ * Move a version between states, short of approval.
+ *
+ * 🔴 `approved` IS NOT REACHABLE FROM HERE, DELIBERATELY. Approval is
+ * promotion, it is three writes, and it goes through the SQL function. A PATCH
+ * that could set `state='approved'` would be a second promotion path with none
+ * of the interlocks, and the second path is always the one that forgets.
+ */
+export async function setTruthVersionState(userId, recordId, versionId, state, {
+  note = null, reviewerId = null, workspaceId = null,
+} = {}) {
+  if (state === "approved") return { ok: false, refused: "approval_requires_promotion" };
+  const current = await getTruthVersion(userId, recordId, versionId, { workspaceId });
+  if (!current) return { ok: false, notFound: true };
+
+  const patch = { state };
+  if (note !== null) patch.review_note = note;
+  if (state === "rejected") {
+    patch.reviewed_by = reviewerId || userId;
+    patch.reviewed_at = new Date().toISOString();
+  }
+
+  const r = await rest(
+    `audit_business_truth_versions?id=eq.${encodeURIComponent(versionId)}`
+    + `&record_id=eq.${encodeURIComponent(recordId)}`,
+    { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(patch) });
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, version: Array.isArray(r.data) ? r.data[0] : r.data };
+}
+
+/**
+ * Approve a version and make it canonical.
+ *
+ * Ownership is checked here; every other rule — reviewable state, a reviewer
+ * who is not the proposer, the two identifying facts — is checked inside the
+ * function, atomically, and its verdict string is returned unchanged so the
+ * route can map it to a status code without re-deriving anything.
+ */
+export async function promoteTruthVersion(userId, recordId, versionId, { note = null, workspaceId = null } = {}) {
+  const owned = await getTruthVersion(userId, recordId, versionId, { workspaceId });
+  if (!owned) return { ok: false, notFound: true };
+
+  const conn = db();
+  if (!conn) return { ok: false, degraded: true, error: "Supabase is not configured" };
+
+  const r = await rest("rpc/promote_business_truth_version", {
+    method: "POST",
+    body: JSON.stringify({ p_version_id: versionId, p_reviewer_id: userId, p_note: note }),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+
+  const verdict = typeof r.data === "string" ? r.data : r.data?.promote_business_truth_version || "unknown";
+  return verdict === "ok" ? { ok: true } : { ok: false, verdict };
+}
+
+export async function archiveTruthRecord(userId, recordId, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_business_truth_records?id=eq.${encodeURIComponent(recordId)}`
+    + `&${ownerOrWorkspace(userId, workspaceId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ status: "archived" }),
+    });
+  return r.ok && Array.isArray(r.data) && r.data.length ? { ok: true } : { ok: false, notFound: true };
+}
+
+/**
+ * Record what an audit found that disagrees with the canonical record.
+ *
+ * Stored rather than recomputed on read: the finding is about a MOMENT — the
+ * page said this on that date — and re-deriving it later against a record that
+ * has since changed would rewrite history.
+ */
+export async function recordTruthConflicts(recordId, auditId, versionId, conflicts = []) {
+  const rows = (Array.isArray(conflicts) ? conflicts : [])
+    .filter((c) => c && typeof c.code === "string" && typeof c.field === "string")
+    .map((c) => ({
+      record_id: recordId,
+      audit_id: auditId || null,
+      version_id: versionId || null,
+      code: c.code,
+      field: c.field,
+      severity: c.severity || "medium",
+      canonical_value: c.canonical_value == null ? null : String(c.canonical_value).slice(0, 1000),
+      observed_value: c.observed_value == null ? null : String(c.observed_value).slice(0, 1000),
+      evidence_json: c.evidence || null,
+    }));
+  if (!rows.length) return { ok: true, count: 0 };
+  const r = await insert("audit_business_truth_conflicts", rows, "return=minimal");
+  return r.ok ? { ok: true, count: rows.length } : { ok: false, error: r.error };
+}
+
+export async function resolveTruthConflict(userId, recordId, conflictId, resolution, { workspaceId = null } = {}) {
+  const owned = await getTruthRecord(userId, recordId, { workspaceId });
+  if (!owned) return { ok: false, notFound: true };
+  const r = await rest(
+    `audit_business_truth_conflicts?id=eq.${encodeURIComponent(conflictId)}`
+    + `&record_id=eq.${encodeURIComponent(recordId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ resolution, resolved_at: new Date().toISOString() }),
+    });
+  return r.ok && Array.isArray(r.data) && r.data.length ? { ok: true } : { ok: false, notFound: true };
+}
+
+// ── Entity graph (W10) ─────────────────────────────────────────────────────
+//
+// Nothing here creates an APPROVED row. Approval is `approveEntityRelationship`,
+// which goes through the SQL function because approving an edge also approves
+// its endpoints — an approved edge between two unreviewed nodes is a half-built
+// statement, and doing that as three PostgREST calls leaves windows where the
+// graph asserts a relationship between things it has not agreed exist.
+
+export async function createEntity(userId, {
+  entityType, name, description = null, canonicalDomain = null, externalIds = null,
+  source = "declared", evidence = null, confidence = null,
+  truthRecordId = null, workspaceId = null, sourceAuditId = null,
+}) {
+  const r = await insert("audit_entities", [{
+    user_id: userId,
+    entity_type: entityType,
+    name,
+    description,
+    canonical_domain: canonicalDomain,
+    external_ids: externalIds || {},
+    source,
+    evidence_json: evidence,
+    confidence,
+    truth_record_id: truthRecordId,
+    workspace_id: workspaceId,
+    source_audit_id: sourceAuditId,
+    proposed_by: userId,
+  }]);
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, entity: Array.isArray(r.data) ? r.data[0] : r.data };
+}
+
+export async function listEntities(userId, {
+  truthRecordId = null, state = null, workspaceId = null, limit = 500,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
+  if (state) parts.push(`state=eq.${encodeURIComponent(state)}`);
+  const r = await rest(`audit_entities?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 500}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getEntity(userId, entityId, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_entities?id=eq.${encodeURIComponent(entityId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function createRelationship(userId, {
+  subjectId, predicate, objectId, source = "declared",
+  evidence = null, confidence = null, note = null, sourceAuditId = null,
+  workspaceId = null,
+}) {
+  const r = await insert("audit_entity_relationships", [{
+    user_id: userId,
+    subject_id: subjectId,
+    predicate,
+    object_id: objectId,
+    source,
+    evidence_json: evidence,
+    confidence,
+    note,
+    source_audit_id: sourceAuditId,
+    workspace_id: workspaceId,
+    proposed_by: userId,
+  }]);
+  if (!r.ok) {
+    // The unique index is the point: re-observing an edge must update the row,
+    // never add one, or a weekly crawler doubles every count. Report the
+    // collision so the caller can corroborate instead of retrying blindly.
+    const duplicate = /duplicate key|audit_rel_unique/i.test(r.error || "");
+    return { ok: false, duplicate, error: r.error };
+  }
+  return { ok: true, relationship: Array.isArray(r.data) ? r.data[0] : r.data };
+}
+
+/**
+ * The existing edge behind a duplicate-key refusal, scoped to its owner.
+ *
+ * `createRelationship` reports `duplicate` so the caller can corroborate rather
+ * than retry blindly — but corroboration has to attach to a row id, and the
+ * refused insert never returned one. This finds it.
+ */
+export async function findRelationship(userId, {
+  subjectId, predicate, objectId, workspaceId = null,
+}) {
+  const r = await rest(
+    `audit_entity_relationships?${ownerOrWorkspace(userId, workspaceId)}`
+    + `&subject_id=eq.${encodeURIComponent(subjectId)}`
+    + `&predicate=eq.${encodeURIComponent(predicate)}`
+    + `&object_id=eq.${encodeURIComponent(objectId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function listRelationships(userId, {
+  state = null, entityId = null, workspaceId = null, limit = 1000,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (state) parts.push(`state=eq.${encodeURIComponent(state)}`);
+  if (entityId) {
+    parts.push(`or=(subject_id.eq.${encodeURIComponent(entityId)},object_id.eq.${encodeURIComponent(entityId)})`);
+  }
+  const r = await rest(
+    `audit_entity_relationships?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 1000}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getRelationship(userId, relationshipId, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_entity_relationships?id=eq.${encodeURIComponent(relationshipId)}`
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+/** Approve an edge and its endpoints, atomically. Verdict returned unchanged. */
+export async function approveEntityRelationship(userId, relationshipId, {
+  note = null, workspaceId = null,
+} = {}) {
+  const owned = await getRelationship(userId, relationshipId, { workspaceId });
+  if (!owned) return { ok: false, notFound: true };
+
+  const conn = db();
+  if (!conn) return { ok: false, degraded: true, error: "Supabase is not configured" };
+
+  const r = await rest("rpc/approve_entity_relationship", {
+    method: "POST",
+    body: JSON.stringify({ p_relationship_id: relationshipId, p_reviewer_id: userId, p_note: note }),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const verdict = typeof r.data === "string" ? r.data : r.data?.approve_entity_relationship || "unknown";
+  return verdict === "ok" ? { ok: true } : { ok: false, verdict };
+}
+
+/**
+ * Reject an entity or a relationship.
+ *
+ * ⚠️ A REASON IS REQUIRED and is enforced by a CHECK constraint too. A rejected
+ * edge that keeps being re-proposed is itself a finding, and without the reason
+ * nobody can tell a considered decision from a mis-click.
+ */
+export async function rejectGraphRow(userId, table, id, reason, { workspaceId = null } = {}) {
+  const t = table === "entity" ? "audit_entities" : "audit_entity_relationships";
+  const r = await rest(
+    `${t}?id=eq.${encodeURIComponent(id)}&${ownerOrWorkspace(userId, workspaceId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        state: "rejected", review_note: reason,
+        reviewed_by: userId, reviewed_at: new Date().toISOString(),
+      }),
+    });
+  if (!r.ok) return { ok: false, error: r.error };
+  return Array.isArray(r.data) && r.data.length
+    ? { ok: true, row: r.data[0] }
+    : { ok: false, notFound: true };
+}
+
+/** Corroboration — a later sighting of something already recorded. */
+export async function recordEntityEvidence({ entityId = null, relationshipId = null, auditId = null, evidence, confidence = null }) {
+  if (!entityId && !relationshipId) return { ok: false, error: "Evidence needs a subject." };
+  const r = await insert("audit_entity_evidence", [{
+    entity_id: entityId, relationship_id: relationshipId, audit_id: auditId,
+    evidence_json: evidence, confidence,
+  }], "return=minimal");
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
+}
+
+export async function recordGraphConflicts(
+  userId, truthRecordId, auditId, conflicts = [], { workspaceId = null } = {},
+) {
+  const rows = (Array.isArray(conflicts) ? conflicts : [])
+    .filter((c) => c && typeof c.code === "string")
+    .map((c) => ({
+      user_id: userId,
+      workspace_id: workspaceId,
+      truth_record_id: truthRecordId || null,
+      audit_id: auditId || null,
+      code: c.code,
+      severity: c.severity || "medium",
+      // The pure model reports the offending subject by id; it is only stored
+      // when that id is a real entity row, so a synthetic id from a dry run
+      // cannot violate the foreign key and lose the whole batch.
+      subject_id: c.subject_entity_id || null,
+      predicate: c.predicate || null,
+      detail_json: { values: c.values || [], evidence: c.evidence || null },
+      message: c.message || null,
+    }));
+  if (!rows.length) return { ok: true, count: 0 };
+  const r = await insert("audit_entity_conflicts", rows, "return=minimal");
+  return r.ok ? { ok: true, count: rows.length } : { ok: false, error: r.error };
+}
+
+export async function listGraphConflicts(userId, {
+  truthRecordId = null, workspaceId = null, limit = 200,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), "resolved_at=is.null"];
+  if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
+  const r = await rest(
+    `audit_entity_conflicts?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 200}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function resolveGraphConflict(userId, conflictId, resolution, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_entity_conflicts?id=eq.${encodeURIComponent(conflictId)}&${ownerOrWorkspace(userId, workspaceId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ resolution, resolved_at: new Date().toISOString() }),
+    });
+  return r.ok && Array.isArray(r.data) && r.data.length ? { ok: true } : { ok: false, notFound: true };
+}
+
+// ── W12 · local and directory intelligence ───────────────────────────────────
+//
+// 🔴 THE POINT OF THIS SECTION IS THAT THE TABLES ARE ACTUALLY WRITTEN.
+// This schema's own recorded history is three columns declared, reviewed,
+// merged and written by nothing — `audit_signals.raw_value`, `.evidence_json`
+// and `audit_recommendations.issue_id`, each invisible because the read path
+// returned `null` exactly as it would for "not applicable". W9's conflict table
+// and W10's broke that pattern on purpose and so does this one: `runLocalCheck`
+// below is called by the route, and its contract test asserts the WRITE.
+
+export async function upsertDirectoryListing(userId, {
+  truthRecordId = null, sourceId, sourceTier, acquisition, listingUrl = null,
+  observedName = null, observedAddress = null, observedPhone = null,
+  observedPostalCode = null, observedLocality = null, observedExtra = null,
+  evidence = null, workspaceId = null,
+}) {
+  // One CURRENT listing per source. A weekly re-read updates what the source
+  // says rather than stacking a second opinion — without that, every count
+  // doubles and "what does Justdial say" answers differently depending on how
+  // many checks have run.
+  const r = await rest("audit_directory_listings?on_conflict=user_id,truth_record_id,source_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify([{
+    user_id: userId,
+    truth_record_id: truthRecordId,
+    source_id: sourceId,
+    source_tier: sourceTier,
+    acquisition,
+    listing_url: listingUrl,
+    observed_name: observedName,
+    observed_address: observedAddress,
+    observed_phone: observedPhone,
+    observed_postal_code: observedPostalCode,
+    observed_locality: observedLocality,
+    observed_extra: observedExtra || {},
+    evidence_json: evidence,
+    observed_at: new Date().toISOString(),
+    workspace_id: workspaceId,
+  }]),
+  });
+  return r.ok ? { ok: true, listing: Array.isArray(r.data) ? r.data[0] : r.data } : { ok: false, error: r.error };
+}
+
+export async function listDirectoryListings(userId, {
+  truthRecordId = null, workspaceId = null, limit = 200,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
+  const r = await rest(`audit_directory_listings?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${Number(limit) || 200}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function deleteDirectoryListing(userId, listingId, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_directory_listings?id=eq.${encodeURIComponent(listingId)}&${ownerOrWorkspace(userId, workspaceId)}`,
+    { method: "DELETE", headers: { Prefer: "return=representation" } },
+  );
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return row ? { ok: true } : { ok: false, notFound: true };
+}
+
+/**
+ * Persist one NAP check: the run, every per-directory match, and the findings.
+ *
+ * ⚠️ THE CHECK ROW GOES FIRST AND ALONE, because the matches and the findings
+ * both reference it. Same ordering rule `persistResult` had to learn for
+ * `audit_recommendations.issue_id`: the ids do not exist until the first insert
+ * returns, so this cannot be collapsed into one `Promise.all`.
+ */
+export async function saveLocalCheck(userId, {
+  truthRecordId = null, subjectId = null, workspaceId = null, region = null,
+  score, matches = [], findings = [],
+}) {
+  const checkRow = await insert("audit_local_checks", [{
+    user_id: userId,
+    truth_record_id: truthRecordId,
+    subject_id: subjectId,
+    workspace_id: workspaceId,
+    // null, not 0 — a run that read nothing is not a business that is wrong.
+    nap_score: score?.score ?? null,
+    coverage: score?.coverage ?? null,
+    checked_count: score?.checkedCount ?? 0,
+    configured_count: score?.configuredCount ?? 0,
+    region,
+    unchecked_sources: score?.unchecked || [],
+    unreadable_sources: score?.unreadable || [],
+  }]);
+  if (!checkRow.ok) return { ok: false, error: checkRow.error };
+  const check = Array.isArray(checkRow.data) ? checkRow.data[0] : checkRow.data;
+
+  if (matches.length) {
+    const r = await insert("audit_directory_matches", matches.map((m) => ({
+      user_id: userId,
+      check_id: check.id,
+      listing_id: m.listingId || null,
+      source_id: m.sourceId,
+      source_tier: m.tier,
+      tier_weight: m.tierWeight,
+      match_score: m.score,
+      coverage: m.coverage,
+      fields_json: m.fields || [],
+      mismatched: m.mismatches || [],
+      absent_fields: m.absent || [],
+    })));
+    if (!r.ok) return { ok: false, error: r.error, checkId: check.id };
+  }
+
+  if (findings.length) {
+    const r = await insert("audit_local_findings", findings.map((f) => ({
+      user_id: userId,
+      check_id: check.id,
+      truth_record_id: truthRecordId,
+      source_id: f.sourceId || null,
+      code: f.code,
+      severity: f.severity,
+      fields: f.fields || [],
+      detail: f.why || null,
+      workspace_id: workspaceId,
+    })));
+    if (!r.ok) return { ok: false, error: r.error, checkId: check.id };
+  }
+
+  return { ok: true, check };
+}
+
+export async function listLocalChecks(userId, {
+  truthRecordId = null, subjectId = null, workspaceId = null, limit = 30,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(`audit_local_checks?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${Number(limit) || 30}`);
+  return r.ok ? r.data || [] : [];
+}
+
+/**
+ * One subject, scoped to its owner. D7's registry has no reader until a caller
+ * supplies a `subject_id` it did not mint — at which point the id has to be
+ * checked against the owner rather than trusted, exactly as `getEntity` is
+ * before an edge is drawn between two nodes.
+ */
+// ── W14 · Revalidation ─────────────────────────────────────────────────────
+
+/** One recommendation, scoped to its owner. */
+export async function getRecommendation(userId, recId, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_recommendations?id=eq.${encodeURIComponent(recId)}`
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+/**
+ * Claim a revalidation request.
+ *
+ * 🔴 IDEMPOTENT BY THE `is.null` FILTER, NOT BY A READ-THEN-WRITE. The PATCH
+ * only matches a row whose `revalidation_requested_at` is still null, so two
+ * concurrent clicks produce one claim and one no-op — the loser gets zero rows
+ * back and reads the existing request. A check-then-set would race exactly as
+ * `payment-webhook.js:49-59`'s dedup does, and the cost of losing that race
+ * here is a second paid audit.
+ */
+export async function claimRevalidation(userId, recId, {
+  baselineAuditId = null, workspaceId = null,
+} = {}) {
+  const r = await rest(
+    `audit_recommendations?id=eq.${encodeURIComponent(recId)}`
+    + `&${ownerOrWorkspace(userId, workspaceId)}`
+    + `&revalidation_requested_at=is.null`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        revalidation_requested_at: new Date().toISOString(),
+        revalidation_baseline_audit_id: baselineAuditId,
+        status: "validation_scheduled",
+      }),
+    });
+  if (!r.ok) return { ok: false, error: r.error };
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  // No row means somebody else claimed it first — which is success, not
+  // failure: the request they wanted already exists.
+  return { ok: true, claimed: Boolean(row), recommendation: row || null };
+}
+
+// ── W13 · Schema intelligence + Trust & Proof ──────────────────────────────
+
+/**
+ * Record one observed schema type for a subject.
+ *
+ * ⚠️ THE CONFLICT TARGET NAMES COLUMNS, and 0062 backs it with a
+ * `NULLS NOT DISTINCT` constraint — because `subject_id` is nullable and an
+ * expression index cannot be a PostgREST arbiter. That combination is exactly
+ * what 0059 had to repair in W12, where every listing save was refused.
+ */
+export async function saveSchemaEntity(userId, {
+  subjectId = null, auditId = null, schemaType, validity = "valid",
+  missingProperties = [], nodeId = null, sameAs = [],
+  componentScores = null, evidence = null, workspaceId = null,
+}) {
+  const r = await rest("audit_schema_entities?on_conflict=user_id,subject_id,schema_type", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify([{
+      user_id: userId,
+      workspace_id: workspaceId,
+      subject_id: subjectId,
+      audit_id: auditId,
+      schema_type: schemaType,
+      validity,
+      missing_properties: Array.isArray(missingProperties) ? missingProperties : [],
+      node_id: nodeId,
+      same_as: Array.isArray(sameAs) ? sameAs : [],
+      component_scores: componentScores || {},
+      evidence_json: evidence,
+      observed_at: new Date().toISOString(),
+    }]),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return { ok: true, entity: row || null };
+}
+
+/**
+ * Record one trust observation.
+ *
+ * 🔴 `independence` IS NOT TAKEN FROM A REQUEST BODY — the route resolves it
+ * from how the observation was obtained. See `schemaTrustRoute`.
+ */
+export async function saveTrustObservation(userId, {
+  subjectId = null, auditId = null, signal, independence,
+  observedCount = 0, verifiable = false, sourceUrl = null,
+  evidence = null, workspaceId = null,
+}) {
+  const r = await rest("audit_trust_evidence?on_conflict=user_id,subject_id,signal,independence", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify([{
+      user_id: userId,
+      workspace_id: workspaceId,
+      subject_id: subjectId,
+      audit_id: auditId,
+      signal,
+      independence,
+      observed_count: Math.max(0, Math.floor(Number(observedCount) || 0)),
+      verifiable: Boolean(verifiable),
+      source_url: sourceUrl,
+      evidence_json: evidence,
+      observed_at: new Date().toISOString(),
+    }]),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return { ok: true, observation: row || null };
+}
+
+/** Every schema observation for a subject, scoped to its owner. */
+export async function listSchemaEntities(userId, {
+  subjectId = null, workspaceId = null, limit = 100,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(
+    `audit_schema_entities?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${rowCap(limit, 100)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+/** Every trust observation for a subject, scoped to its owner. */
+export async function listTrustObservations(userId, {
+  subjectId = null, workspaceId = null, limit = 200,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(
+    `audit_trust_evidence?${parts.join("&")}&${SELECT_ALL}&order=observed_at.desc&limit=${rowCap(limit, 200)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+/**
+ * Record one subject score. P2 · W11, landed as W13's step 5.
+ *
+ * 🔴 THIS APPENDS. There is no `on_conflict` and there must not be one: the
+ * trend is the product. An upsert arbiter would silently collapse a subject's
+ * whole history into one row every time it was re-scored.
+ *
+ * ⚠️ `score` IS SENT AS `null` WHEN NOTHING WAS MEASURED, never coerced to 0 —
+ * and `coverage` always travels with it, because a score without its coverage
+ * is a different measurement, not a smaller one.
+ *
+ * ⚠️ THE VERSION COMES FROM THE RESULT, NOT FROM THE CALLER. `scoreSubject`
+ * stamps `modelVersion`; a writer that supplied its own could file a future
+ * score under the current version, which is the mislabelling the NOT NULL /
+ * no-default column exists to prevent.
+ */
+export async function saveSubjectScore(userId, {
+  subjectId, auditId = null, workspaceId = null, result,
+}) {
+  if (!result || !result.code) return { ok: false, error: "no score to save" };
+
+  const r = await rest("audit_subject_scores", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify([{
+      user_id: userId,
+      workspace_id: workspaceId,
+      subject_id: subjectId,
+      audit_id: auditId,
+      kind: result.kind,
+      code: result.code,
+      // Never `|| 0` — that would turn "we could not measure this" into a
+      // measured zero, permanently and undetectably.
+      score: typeof result.score === "number" ? result.score : null,
+      coverage: result.coverage,
+      model_version: result.modelVersion,
+      components: result.components || [],
+      measured: result.measured || [],
+      unmeasured: result.unmeasured || [],
+      blocked_by: result.blockedBy || [],
+      scored_at: new Date().toISOString(),
+    }]),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return { ok: true, score: row || null };
+}
+
+/**
+ * A subject's score history, newest first — the trend W11 exists for.
+ *
+ * ⚠️ Owner-scoped at the query, like every other read here. The subject id
+ * alone is not authorisation.
+ */
+export async function listSubjectScores(userId, {
+  subjectId = null, workspaceId = null, limit = 50,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(
+    `audit_subject_scores?${parts.join("&")}&${SELECT_ALL}&order=scored_at.desc&limit=${rowCap(limit, 50)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+/**
+ * Subjects a caller may address, newest first.
+ *
+ * Existed as a client method (`listSubjects`) with no reader and no route, so
+ * the Subject Scores screen and the composer's "Associated subject" picker both
+ * rendered an empty list for every account — a 404 swallowed by `.catch`.
+ */
+export async function listSubjects(userId, { workspaceId = null, kinds = null, limit = 100 } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (Array.isArray(kinds) && kinds.length) {
+    parts.push(`subject_kind=in.(${kinds.map((k) => encodeURIComponent(k)).join(",")})`);
+  }
+  const r = await rest(
+    `audit_subjects?${parts.join("&")}&${SELECT_ALL}&order=updated_at.desc&limit=${rowCap(limit, 100, 500)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getSubject(userId, subjectId, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_subjects?id=eq.${encodeURIComponent(subjectId)}`
+    + `&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function getLocalCheckFull(userId, checkId, { workspaceId = null } = {}) {
+  const check = await rest(
+    `audit_local_checks?id=eq.${encodeURIComponent(checkId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
+  const row = check.ok && Array.isArray(check.data) ? check.data[0] : null;
+  if (!row) return null;
+  const [matches, findings] = await Promise.all([
+    rest(`audit_directory_matches?check_id=eq.${encodeURIComponent(checkId)}&${SELECT_ALL}&order=tier_weight.desc`),
+    rest(`audit_local_findings?check_id=eq.${encodeURIComponent(checkId)}&${SELECT_ALL}&order=created_at.asc`),
+  ]);
+  return {
+    check: row,
+    matches: matches.ok ? matches.data || [] : [],
+    findings: findings.ok ? findings.data || [] : [],
+  };
+}
+
+export async function resolveLocalFinding(userId, findingId, resolution, { workspaceId = null } = {}) {
+  // Paired, because the CHECK constraint refuses half a record — a resolution
+  // with no timestamp shows as open while a reader believes it closed.
+  const r = await rest(
+    `audit_local_findings?id=eq.${encodeURIComponent(findingId)}&${ownerOrWorkspace(userId, workspaceId)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ resolution, resolved_at: new Date().toISOString(), resolved_by: userId }),
+    },
+  );
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (!r.ok) return { ok: false, error: r.error };
+  return row ? { ok: true, finding: row } : { ok: false, notFound: true };
+}
+
+export async function claimConnectorDispatch(userId, {
+  provider, idempotencyKey, truthRecordId = null, entityId = null,
+  workspaceId = null, payload = {},
+}) {
+  const conn = db();
+  if (!conn) return { ok: false, error: "Audit storage is unavailable." };
+  try {
+    const res = await fetch(`${conn.base}/rpc/claim_discoverability_connector_dispatch`, {
+      method: "POST",
+      headers: conn.headers,
+      body: JSON.stringify({
+        p_user_id: userId,
+        p_provider: provider,
+        p_idempotency_key: idempotencyKey,
+        p_truth_record_id: truthRecordId || null,
+        p_entity_id: entityId || null,
+        p_workspace_id: workspaceId || null,
+        p_payload: payload || {},
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return { ok: false, error: `claim dispatch failed: ${res.status} ${detail}`.trim() };
+    }
+    const verdict = await res.json();
+    return verdict;
+  } catch (err) {
+    return { ok: false, error: err?.message || "claim dispatch failed" };
+  }
+}
+
+export async function saveSxoRun(userId, {
+  auditId, subjectId = null, targetId = null, workspaceId = null,
+  sxoTotalScore = null, coverage = 100, layerScores = {}, layerResults = {},
+  findings = [], weightSetId = "sxo_default_v1", modelVersion = "s1",
+}) {
+  const r = await rest("audit_sxo_runs", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId || null,
+      target_id: targetId || null,
+      sxo_total_score: sxoTotalScore,
+      coverage,
+      layer_scores: layerScores,
+      layer_results: layerResults,
+      findings,
+      weight_set_id: weightSetId,
+      model_version: modelVersion,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, run: row } : { ok: false, error: r.error || "Could not save SXO run." };
+}
+
+export async function getSxoRun(userId, id, { workspaceId = null } = {}) {
+  const r = await rest(
+    `audit_sxo_runs?id=eq.${encodeURIComponent(id)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function listSxoRuns(userId, {
+  auditId = null, subjectId = null, workspaceId = null, limit = 50,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(
+    `audit_sxo_runs?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${rowCap(limit, 50)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getSxoForAudit(userId, auditId, { workspaceId = null } = {}) {
+  const runs = await listSxoRuns(userId, { auditId, workspaceId, limit: 1 });
+  return runs.length > 0 ? runs[0] : null;
+}
+
+export async function saveIntentMapping(userId, {
+  subjectId = null, intentClass, targetUrl, mappedPromptKinds = [], workspaceId = null,
+}) {
+  const r = await rest("audit_intent_mappings", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      subject_id: subjectId || null,
+      intent_class: intentClass,
+      target_url: targetUrl,
+      mapped_prompt_kinds: mappedPromptKinds,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, mapping: row } : { ok: false, error: r.error || "Could not save intent mapping." };
+}
+
+export async function listIntentMappings(userId, { subjectId = null, workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(`audit_intent_mappings?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc`);
+  return r.ok ? r.data || [] : [];
+}
+
+// ── STAGE 3 (P3B) ANALYTICS, FUNNELS, FORMS & GOALS ─────────────────────────
+
+function maskTokenFingerprint(token) {
+  if (!token) return "none";
+  const str = String(token);
+  return str.length <= 8 ? `${str.slice(0, 2)}…` : `${str.slice(0, 4)}…${str.slice(-4)} (${str.length} chars)`;
+}
+
+export async function saveAnalyticsConnection(userId, {
+  provider, providerAccountId = null, token = null, settings = {}, workspaceId = null,
+}) {
+  let encryptedToken = null;
+  if (token) {
+    try {
+      encryptedToken = encryptSecret(token);
+    } catch (error) {
+      return {
+        ok: false,
+        code: "ENCRYPTION_UNAVAILABLE",
+        error: error?.message || "Analytics credentials cannot be encrypted.",
+      };
+    }
+  }
+
+  const tokenFingerprint = maskTokenFingerprint(token);
+
+  const r = await rest("audit_analytics_connections", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      provider,
+      provider_account_id: providerAccountId,
+      encrypted_token: encryptedToken,
+      token_fingerprint: tokenFingerprint,
+      // Credential storage is not provider verification. A connector may move
+      // to `connected` only after a real provider request or sync succeeds.
+      status: "configured",
+      settings,
+      last_sync_at: null,
+    }),
+  });
+
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (r.ok && row) {
+    const sanitized = { ...row };
+    delete sanitized.encrypted_token;
+    return { ok: true, connection: sanitized };
+  }
+  return { ok: false, error: r.error || "Could not save analytics connection." };
+}
+
+export async function listAnalyticsConnections(userId, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  const r = await rest(`audit_analytics_connections?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc`);
+  if (!r.ok || !Array.isArray(r.data)) return [];
+  // 🔴 NEVER return encrypted_token on GET!
+  return r.data.map((row) => {
+    const clean = { ...row };
+    delete clean.encrypted_token;
+    return clean;
+  });
+}
+
+export async function deleteAnalyticsConnection(userId, provider, { workspaceId = null, purgeData = false } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `provider=eq.${encodeURIComponent(provider)}`];
+  const r = await rest(`audit_analytics_connections?${parts.join("&")}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=representation" },
+  });
+  if (purgeData) {
+    await purgeAnalyticsData(userId, { workspaceId, purgeAll: true });
+  }
+  return r.ok ? { ok: true, purged_data: !!purgeData } : { ok: false, error: r.error || "Could not delete connection." };
+}
+
+/**
+ * D16 / §13 — Early retention purge for analytics data.
+ * Allows users and operators to delete analytics data earlier than the 90-day retention window.
+ *
+ * @param {string} userId - Tenant user ID
+ * @param {object} opts - { workspaceId, auditId, olderThanDays, purgeAll }
+ */
+export async function purgeAnalyticsData(userId, {
+  workspaceId = null, auditId = null, olderThanDays = null, purgeAll = false,
+} = {}) {
+  const scope = ownerOrWorkspace(userId, workspaceId);
+  const filterParts = [scope];
+  if (auditId) {
+    filterParts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  }
+  if (!purgeAll && olderThanDays !== null && olderThanDays !== undefined && Number(olderThanDays) > 0) {
+    const cutoffDate = new Date(Date.now() - Number(olderThanDays) * 86400000).toISOString();
+    filterParts.push(`created_at=lt.${encodeURIComponent(cutoffDate)}`);
+  }
+
+  const query = filterParts.join("&");
+  const [delAgg, delFunnels, delForms] = await Promise.all([
+    rest(`audit_analytics_aggregates?${query}`, { method: "DELETE", headers: { Prefer: "return=representation" } }),
+    rest(`audit_journey_funnels?${query}`, { method: "DELETE", headers: { Prefer: "return=representation" } }),
+    rest(`audit_form_diagnostics?${query}`, { method: "DELETE", headers: { Prefer: "return=representation" } }),
+  ]);
+
+  const aggCount = Array.isArray(delAgg?.data) ? delAgg.data.length : 0;
+  const funnelCount = Array.isArray(delFunnels?.data) ? delFunnels.data.length : 0;
+  const formCount = Array.isArray(delForms?.data) ? delForms.data.length : 0;
+
+  return {
+    ok: true,
+    purged: true,
+    deleted: {
+      aggregates: aggCount,
+      funnels: funnelCount,
+      form_diagnostics: formCount,
+      total: aggCount + funnelCount + formCount,
+    },
+  };
+}
+
+export async function saveConversionGoal(userId, {
+  name, outcomeType, targetUrl = null, targetSelector = null, targetEvent = null,
+  valueCents = 0, auditId = null, subjectId = null, workspaceId = null,
+}) {
+  const r = await rest("audit_conversion_goals", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId,
+      name,
+      outcome_type: outcomeType,
+      target_url: targetUrl,
+      target_selector: targetSelector,
+      target_event: targetEvent,
+      value_cents: valueCents,
+      active: true,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, goal: row } : { ok: false, error: r.error || "Could not save conversion goal." };
+}
+
+/** One conversion goal, scoped exactly like every other reader here. */
+export async function getConversionGoal(userId, goalId, { workspaceId = null } = {}) {
+  if (!goalId) return null;
+  const r = await rest(
+    `audit_conversion_goals?id=eq.${encodeURIComponent(goalId)}&${ownerOrWorkspace(userId, workspaceId)}&${SELECT_ALL}&limit=1`,
+  );
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function listConversionGoals(userId, { auditId = null, workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  const r = await rest(`audit_conversion_goals?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function saveAnalyticsAggregates(userId, {
+  auditId = null, subjectId = null, dateBucket = null, landingPage = "/",
+  sourceChannel = "direct", device = "all", region = "global", visitorType = "all",
+  conversionGoalId = null, eventCounts = {}, metrics = {}, workspaceId = null,
+  importJobId = null,
+}) {
+  const path = importJobId
+    ? "audit_analytics_aggregates?on_conflict=import_job_id"
+    : "audit_analytics_aggregates";
+  const r = await rest(path, {
+    method: "POST",
+    headers: { Prefer: importJobId ? "resolution=merge-duplicates,return=representation" : "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId,
+      date_bucket: dateBucket || new Date().toISOString().split("T")[0],
+      landing_page: landingPage,
+      source_channel: sourceChannel,
+      device,
+      region,
+      visitor_type: visitorType,
+      conversion_goal_id: conversionGoalId,
+      event_counts: eventCounts,
+      metrics,
+      import_job_id: importJobId || null,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, aggregate: row } : { ok: false, error: r.error || "Could not save aggregates." };
+}
+
+export async function findAnalyticsImportJob(userId, provider, idempotencyKey) {
+  const r = await rest(
+    `audit_analytics_import_jobs?user_id=eq.${encodeURIComponent(userId)}`
+      + `&provider=eq.${encodeURIComponent(provider)}`
+      + `&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&${SELECT_ALL}&limit=1`,
+  );
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function enqueueAnalyticsImport(userId, {
+  provider, idempotencyKey, payloadHash, aggregatePayload, workspaceId = null,
+}) {
+  const existing = await findAnalyticsImportJob(userId, provider, idempotencyKey);
+  if (existing) return { ok: true, replay: true, job: existing };
+
+  const r = await insert("audit_analytics_import_jobs", [{
+    user_id: userId,
+    workspace_id: workspaceId || null,
+    provider,
+    idempotency_key: idempotencyKey,
+    payload_hash: payloadHash,
+    aggregate_payload: aggregatePayload,
+  }]);
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (r.ok && row) return { ok: true, replay: false, job: row };
+
+  // A concurrent replay can win the unique insert after our initial read.
+  if (r.status === 409) {
+    const raced = await findAnalyticsImportJob(userId, provider, idempotencyKey);
+    if (raced) return { ok: true, replay: true, job: raced };
+  }
+  return { ok: false, error: r.error || "Could not queue analytics import." };
+}
+
+export async function claimAnalyticsImportJobs(limit = 20) {
+  const r = await rest("rpc/claim_audit_analytics_import_jobs", {
+    method: "POST",
+    body: JSON.stringify({ p_limit: rowCap(limit, 20) }),
+  });
+  return r.ok && Array.isArray(r.data) ? r.data : [];
+}
+
+export async function completeAnalyticsImportJob(id, result) {
+  const r = await rest(`audit_analytics_import_jobs?id=eq.${encodeURIComponent(id)}&state=eq.processing`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      state: "completed",
+      result_json: result || {},
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_error: null,
+    }),
+  });
+  return { ok: r.ok && Array.isArray(r.data) && r.data.length > 0 };
+}
+
+export async function failAnalyticsImportJob(job, error, now = Date.now()) {
+  const exhausted = Number(job.attempts || 0) >= Number(job.max_attempts || 5);
+  const backoffMinutes = Math.min(60, 5 * (2 ** Math.max(0, Number(job.attempts || 1) - 1)));
+  const patch = {
+    state: exhausted ? "failed" : "retrying",
+    last_error: String(error || "Analytics import failed").slice(0, 1000),
+    updated_at: new Date(now).toISOString(),
+    next_attempt_at: new Date(now + backoffMinutes * 60_000).toISOString(),
+  };
+  const r = await rest(`audit_analytics_import_jobs?id=eq.${encodeURIComponent(job.id)}&state=eq.processing`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify(patch),
+  });
+  return { ok: r.ok && Array.isArray(r.data) && r.data.length > 0, state: patch.state };
+}
+
+export async function listAnalyticsAggregates(userId, {
+  auditId = null, subjectId = null, workspaceId = null, limit = 100,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  if (subjectId) parts.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+  const r = await rest(`audit_analytics_aggregates?${parts.join("&")}&${SELECT_ALL}&order=date_bucket.desc&limit=${rowCap(limit, 100)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function saveJourneyFunnel(userId, {
+  auditId, subjectId = null, funnelName = "standard_9_stage", stageResults = [],
+  overallConversionRate = null, miScore = null, miCaveats = [], workspaceId = null,
+}) {
+  const r = await rest("audit_journey_funnels", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      subject_id: subjectId,
+      funnel_name: funnelName,
+      stage_results: stageResults,
+      overall_conversion_rate: overallConversionRate,
+      mi_score: miScore,
+      mi_caveats: miCaveats,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, funnel: row } : { ok: false, error: r.error || "Could not save funnel." };
+}
+
+export async function getJourneyFunnel(userId, auditId, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `audit_id=eq.${encodeURIComponent(auditId)}`];
+  const r = await rest(`audit_journey_funnels?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function saveFormDiagnostics(userId, {
+  auditId, formId, formName = null, pageUrl = "/", metrics = {},
+  fieldDiagnostics = [], recommendations = [], workspaceId = null,
+}) {
+  const r = await rest("audit_form_diagnostics", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      form_id: formId,
+      form_name: formName,
+      page_url: pageUrl,
+      metrics,
+      field_diagnostics: fieldDiagnostics,
+      recommendations,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, diagnostics: row } : { ok: false, error: r.error || "Could not save form diagnostics." };
+}
+
+export async function getFormDiagnostics(userId, auditId, { formId = null, workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `audit_id=eq.${encodeURIComponent(auditId)}`];
+  if (formId) parts.push(`form_id=eq.${encodeURIComponent(formId)}`);
+  const r = await rest(`audit_form_diagnostics?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+// ── STAGE 4 (P3C) PORTFOLIO ROLLUPS & EXPERIMENTS ───────────────────────────
+
+export async function saveOptimizationExperiment(userId, {
+  auditId = null, recommendationId = null, experimentName, ticketUrl = null,
+  hypothesis = null, expectedMetric = "sxo_total_score", baselineValue = null,
+  currentValue = null, status = "active", observationPeriodDays = 28,
+  results = {}, workspaceId = null,
+}) {
+  const r = await rest("audit_optimization_experiments", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      audit_id: auditId,
+      recommendation_id: recommendationId,
+      experiment_name: experimentName,
+      ticket_url: ticketUrl,
+      hypothesis,
+      expected_metric: expectedMetric,
+      baseline_value: baselineValue,
+      current_value: currentValue,
+      status,
+      observation_period_days: observationPeriodDays,
+      start_date: new Date().toISOString(),
+      relationship: "correlation",
+      caveats: [
+        "Observed metric movement between baseline and observation periods is correlational.",
+        "Correlation does not establish causation.",
+      ],
+      results,
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, experiment: row } : { ok: false, error: r.error || "Could not save experiment." };
+}
+
+export async function listOptimizationExperiments(userId, {
+  auditId = null, status = null, workspaceId = null, limit = 50,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (auditId) parts.push(`audit_id=eq.${encodeURIComponent(auditId)}`);
+  if (status) parts.push(`status=eq.${encodeURIComponent(status)}`);
+  const r = await rest(`audit_optimization_experiments?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=${rowCap(limit, 50)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function getOptimizationExperiment(userId, id, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `id=eq.${encodeURIComponent(id)}`];
+  const r = await rest(`audit_optimization_experiments?${parts.join("&")}&${SELECT_ALL}&limit=1`);
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function updateOptimizationExperiment(userId, id, fields = {}, { workspaceId = null } = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId), `id=eq.${encodeURIComponent(id)}`];
+  const r = await rest(`audit_optimization_experiments?${parts.join("&")}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      ...fields,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, experiment: row } : { ok: false, error: r.error || "Could not update experiment." };
+}
+
+export async function savePortfolioRollup(userId, {
+  rollupAxis, axisValue, auditCount = 0, masterScore = null,
+  layerScores = {}, frameworkScores = {}, coverage = 0, workspaceId = null,
+}) {
+  const r = await rest("audit_portfolio_rollups", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      workspace_id: workspaceId || null,
+      rollup_axis: rollupAxis,
+      axis_value: axisValue,
+      audit_count: auditCount,
+      master_score: masterScore,
+      layer_scores: layerScores,
+      framework_scores: frameworkScores,
+      coverage,
+      calculated_at: new Date().toISOString(),
+    }),
+  });
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return r.ok && row ? { ok: true, rollup: row } : { ok: false, error: r.error || "Could not save portfolio rollup." };
+}
+
+export async function listPortfolioRollups(userId, {
+  rollupAxis = null, workspaceId = null, limit = 100,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (rollupAxis) parts.push(`rollup_axis=eq.${encodeURIComponent(rollupAxis)}`);
+  const r = await rest(`audit_portfolio_rollups?${parts.join("&")}&${SELECT_ALL}&order=calculated_at.desc&limit=${rowCap(limit, 100)}`);
+  return r.ok ? r.data || [] : [];
+}
+
+/**
+ * Read the authorized, persisted inputs used to calculate portfolio rollups.
+ * Client-supplied scores are never accepted: audit ids come from the scoped
+ * parent query, then service-role child reads are restricted to those ids.
+ */
+export async function listPortfolioAuditInputs(userId, { workspaceId = null, limit = 500 } = {}) {
+  const auditsResult = await rest(
+    `audits?${ownerOrWorkspace(userId, workspaceId)}&status=eq.completed`
+    + `&select=id,user_id,workspace_id,target_id,subject_id,page_type,target_geography,tags,created_at`
+    + `&order=created_at.desc&limit=${rowCap(limit, 500)}`,
+  );
+  const audits = auditsResult.ok && Array.isArray(auditsResult.data) ? auditsResult.data : [];
+  if (audits.length === 0) return [];
+
+  const idFilter = `audit_id=in.(${audits.map((row) => encodeURIComponent(row.id)).join(",")})`;
+  const [resultsResult, sxoResult] = await Promise.all([
+    rest(`audit_results?${idFilter}&select=audit_id,final_score,seo_score,aeo_score,geo_score,coverage`),
+    rest(`audit_sxo_runs?${idFilter}&select=audit_id,sxo_total_score,coverage,created_at&order=created_at.desc`),
+  ]);
+  const resultsByAudit = new Map((resultsResult.data || []).map((row) => [row.audit_id, row]));
+  const sxoByAudit = new Map();
+  for (const row of sxoResult.data || []) {
+    if (!sxoByAudit.has(row.audit_id)) sxoByAudit.set(row.audit_id, row);
+  }
+
+  return audits.map((audit) => ({
+    ...audit,
+    template: audit.page_type || "unknown",
+    result: resultsByAudit.get(audit.id) || null,
+    sxo: sxoByAudit.get(audit.id) || null,
+  }));
 }

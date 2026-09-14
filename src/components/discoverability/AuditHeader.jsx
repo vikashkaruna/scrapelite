@@ -19,6 +19,8 @@ import Icon from "../Icon.jsx";
 import FaviconDot from "../FaviconDot.jsx";
 import { hostOf } from "../../lib/utils.js";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
+import { AUDIT_PROFILES } from "../../lib/discoverability/auditProfiles.js";
+import { PRIMARY_GOALS } from "../../lib/discoverability/intakeModel.js";
 
 function when(iso) {
   if (!iso) return null;
@@ -29,7 +31,29 @@ function when(iso) {
   });
 }
 
-export default function AuditHeader({ audit }) {
+function FaviconOrLogo({ url, size = 26, schemaLogo = null }) {
+  const [hasError, setHasError] = useState(false);
+  const host = hostOf(url);
+  const iconSrc = schemaLogo || (host ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64` : null);
+
+  if (!hasError && iconSrc) {
+    return (
+      <img
+        src={iconSrc}
+        alt=""
+        width={size}
+        height={size}
+        onError={() => setHasError(true)}
+        style={{ width: size, height: size, borderRadius: "6px", objectFit: "contain", flexShrink: 0 }}
+      />
+    );
+  }
+  return <FaviconDot url={url} size={size} />;
+}
+
+export default function AuditHeader({
+  audit, diff = null, framework = "overall", onFrameworkChange = null, workspaceId = null,
+}) {
   // Seeded from the audit itself, so an already-summarised report shows its
   // summary on first paint with no request at all.
   const [summary, setSummary] = useState(audit?.summary || null);
@@ -47,7 +71,7 @@ export default function AuditHeader({ audit }) {
     if (!auditId || summary) return;
     let alive = true;
     setLoading(true);
-    discoverability.summary(auditId)
+    discoverability.summary(auditId, { workspaceId })
       .then((r) => {
         if (!alive) return;
         if (r?.summary) setSummary(r.summary);
@@ -57,7 +81,7 @@ export default function AuditHeader({ audit }) {
       .catch(() => { if (alive) setUnavailable(true); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [auditId, summary]);
+  }, [auditId, summary, workspaceId]);
 
   if (!audit) return null;
 
@@ -65,17 +89,68 @@ export default function AuditHeader({ audit }) {
   const host = hostOf(url) || url;
   const ran = when(audit.audit?.created_at || audit.meta?.startedAt);
 
+  // ── WHY THE PROFILE IS SHOWN WITH ITS REASON ─────────────────────────────
+  // A reader who disagrees with the lens needs to know whether they chose it,
+  // whether their goal chose it, or whether we guessed it from their markup.
+  // Those are three different claims, and only one of them is ours to defend.
+  // Same rule the evidence envelope enforces one layer down: an observed fact
+  // and an inference must never be presented as the same kind of thing.
+  const profile = audit.target?.audit_profile;
+  const profileLabel = profile && (AUDIT_PROFILES[profile]?.label || profile);
+  const because = {
+    goal: "from your goal",
+    inferred: "read from the page",
+    // 'explicit' needs no gloss — the reader made the choice — and 'default'
+    // is the absence of one, which the goal line already implies.
+    explicit: null,
+    default: null,
+  }[audit.target?.audit_profile_source] || null;
+
+  const goal = audit.intake?.primary_goal;
+  const goalLabel = goal && (PRIMARY_GOALS[goal]?.label || goal);
+
   const facts = [
     ran,
-    audit.target?.audit_profile && `${audit.target.audit_profile} profile`,
+    // Audits that predate migration 0049 carry no goal, and nothing is shown
+    // for them rather than a placeholder claiming one.
+    goalLabel && `for ${goalLabel}`,
+    profileLabel && `${profileLabel} profile${because ? ` (${because})` : ""}`,
     audit.target?.device_profile,
     audit.target?.page_type_label || audit.target?.page_type,
   ].filter(Boolean);
 
+  // ── §7.12 · the baseline delta ───────────────────────────────────────────
+  //
+  // ⚠️ SHOWN ONLY WHEN THE TWO AUDITS ARE COMPARABLE. `auditDiff` refuses a
+  // cross-version comparison outright, and a headline "+4.2" that quietly mixed
+  // two scoring models would be the single most-screenshotted wrong number in
+  // the product. When it refuses, the header says why rather than going blank —
+  // a missing delta with no explanation reads as "nothing changed".
+  const overall = diff?.frameworks?.overall || null;
+  const deltaNode = (() => {
+    if (!diff) return null;
+    if (diff.comparable === false || overall?.comparable === false) {
+      return (
+        <span className="dsc-audit-delta is-unknown" title={diff.reason || overall?.reason || ""}>
+          not comparable to the baseline
+        </span>
+      );
+    }
+    if (!Number.isFinite(overall?.change)) return null;
+    const up = overall.change > 0;
+    const flat = Math.abs(overall.change) < 0.5;
+    return (
+      <span className={`dsc-audit-delta${flat ? "" : up ? " is-up" : " is-down"}`}>
+        <Icon name={flat ? "minus" : up ? "trending-up" : "trending-down"} size={13} />
+        {flat ? "no change" : `${up ? "+" : ""}${overall.change} vs baseline`}
+      </span>
+    );
+  })();
+
   return (
     <section className="dsc-audit-header" aria-label="Audited page">
       <div className="dsc-audit-header-id">
-        <FaviconDot url={url} size={26} />
+        <FaviconOrLogo url={url} size={26} schemaLogo={audit.evidence?.schemaOrg?.logo || audit.evidence?.openGraph?.image || null} />
         <div className="dsc-audit-header-url">
           {/* The full URL, not just the host: two audits of the same site are
               the commonest pair to compare, and the path is the only thing
@@ -86,7 +161,34 @@ export default function AuditHeader({ audit }) {
           </a>
           <div className="dsc-audit-header-facts">{facts.join("  ·  ")}</div>
         </div>
+        {deltaNode}
       </div>
+
+      {/* ── §7.12 · the goal selector ────────────────────────────────────────
+          ⚠️ THIS CHANGES THE LENS, NOT THE MATHS. All four framework views are
+          always computed with identical weightings — the profile only decides
+          which one leads — so switching here re-frames a report that is already
+          complete. It never re-runs anything and never costs an audit, which is
+          exactly why it can live in the header. */}
+      {onFrameworkChange ? (
+        <div className="dsc-audit-lens">
+          <label className="dsc-audit-lens-label" htmlFor="audit-lens">Read as</label>
+          <select
+            id="audit-lens"
+            className="dsc-audit-lens-select"
+            value={framework}
+            onChange={(e) => onFrameworkChange(e.target.value)}
+          >
+            <option value="overall">Overall</option>
+            <option value="seo">SEO</option>
+            <option value="aeo">Answer engines</option>
+            <option value="geo">Generative engines</option>
+          </select>
+          <span className="dsc-audit-lens-note">
+            Switching the lens re-frames this report. It does not re-run the audit.
+          </span>
+        </div>
+      ) : null}
 
       {summary ? (
         <p className="dsc-audit-summary">{summary}</p>

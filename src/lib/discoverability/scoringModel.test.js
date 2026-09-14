@@ -6,6 +6,7 @@ import {
   FRAMEWORK_WEIGHTS, FRAMEWORKS, PENALTIES, PENALTY_CODES,
   scorePillar, scoreAllPillars, scoreFramework, scoreAllFrameworks,
   composePenalty, scoreAudit, weightedMean, clamp100, round1, scoreBand, BANDS,
+  SCORING_MODEL_VERSION,
 } from "./scoringModel.js";
 
 const allSignals = (v) => Object.fromEntries(SIGNAL_CODES.map((c) => [c, v]));
@@ -36,11 +37,17 @@ describe("signal registry integrity", () => {
     }
   });
 
-  it("names the three signals that depend on a model or an external service", () => {
+  it("names the four signals that depend on a model or an external service", () => {
     // If this list grows, an audit can silently lose more coverage than the UI
     // is prepared to explain — so the growth should be a deliberate edit here.
+    //
+    // v3 added `ai_visibility`, and it belongs: WAVI is computed from a live
+    // answer-engine sample, so a missing key or an exhausted budget makes it
+    // unmeasurable exactly as it does `citation_footprint`. Two of entity
+    // authority's six signals now depend on an engine being reachable, which is
+    // why they SPLIT one weight rather than each carrying a full one.
     expect(nonDeterministicSignals().sort()).toEqual(
-      ["citation_footprint", "core_web_vitals", "passage_independence"],
+      ["ai_visibility", "citation_footprint", "core_web_vitals", "passage_independence"],
     );
   });
 });
@@ -286,5 +293,72 @@ describe("presentation helpers", () => {
     expect(clamp100(NaN)).toBe(0);
     expect(round1(77.25)).toBe(77.3);
     expect(round1(null)).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W3 — THE PENALTY SET, AND THE CALIBRATION THAT WAS DELIBERATELY KEPT
+// ═══════════════════════════════════════════════════════════════════════════
+// Decision D1: the shipped calibration is retained in full and only the two PRD
+// conditions with no shipped equivalent are added. These assertions are the
+// executable form of that ruling — if a later session "aligns to the PRD" by
+// moving AI_CRAWLER_BLOCKED to 0.15, this file says why it was 0.20.
+
+describe("the penalty model holds its shipped calibration", () => {
+  it("keeps every factor that shipped, including the two that diverge from the PRD", () => {
+    // AI_CRAWLER_BLOCKED and CONTENT_HYDRATION_ONLY are 0.20, not the PRD's
+    // 0.15, because a page an engine cannot fetch or render is not "a good page
+    // minus a few points" to that engine — it is a blank one.
+    expect(PENALTIES.NOINDEX.factor).toBe(0.20);
+    expect(PENALTIES.AI_CRAWLER_BLOCKED.factor).toBe(0.20);
+    expect(PENALTIES.CONTENT_HYDRATION_ONLY.factor).toBe(0.20);
+    expect(PENALTIES.CANONICAL_TARGET_BROKEN.factor).toBe(0.15);
+    expect(PENALTIES.FAQ_SCHEMA_MISMATCH.factor).toBe(0.10);
+  });
+
+  it("keeps both DatIQ extensions the PRD has no row for", () => {
+    expect(PENALTIES.AI_CRAWLER_PARTIAL_BLOCK.factor).toBe(0.05);
+    expect(PENALTIES.MOBILE_PARITY_MISSING.factor).toBe(0.10);
+  });
+
+  it("adds the two PRD conditions at the PRD's own weights", () => {
+    expect(PENALTIES.ENTITY_SCHEMA_INVALID.factor).toBe(0.10);
+    expect(PENALTIES.SEVERE_CWV_FAILURE.factor).toBe(0.10);
+  });
+
+  it("carries nine blockers and no more", () => {
+    // A count assertion catches an accidental addition that no other test
+    // would notice — every penalty silently scales every framework view.
+    expect(PENALTY_CODES).toHaveLength(9);
+  });
+
+  it("scores a page that trips neither new condition identically to v1", () => {
+    // The claim the version-bump note rests on, and the reason the bump is
+    // narrow rather than a re-calibration.
+    const values = Object.fromEntries(Object.keys(SIGNALS).map((c) => [c, 70]));
+    const clean = scoreAudit({ signalValues: values, penaltyCodes: [] });
+    const v1Blockers = scoreAudit({ signalValues: values, penaltyCodes: ["NOINDEX", "FAQ_SCHEMA_MISMATCH"] });
+    // 1 - 0.20 = 0.80, then 0.80 * (1 - 0.10) = 0.72 — exactly the v1 arithmetic.
+    expect(v1Blockers.penaltyMultiplier).toBeCloseTo(0.72, 5);
+    expect(clean.penaltyMultiplier).toBe(1);
+  });
+
+  it("scales a page that DOES trip a new condition", () => {
+    const values = Object.fromEntries(Object.keys(SIGNALS).map((c) => [c, 70]));
+    const withNew = scoreAudit({ signalValues: values, penaltyCodes: ["SEVERE_CWV_FAILURE"] });
+    expect(withNew.penaltyMultiplier).toBeCloseTo(0.90, 5);
+    expect(withNew.finalScore).toBeLessThan(
+      scoreAudit({ signalValues: values, penaltyCodes: [] }).finalScore,
+    );
+  });
+
+  it("declares v3, and every penalty has a label and a description", () => {
+    expect(SCORING_MODEL_VERSION).toBe("v3");
+    for (const code of PENALTY_CODES) {
+      expect(PENALTIES[code].label, code).toBeTruthy();
+      expect(PENALTIES[code].description, code).toBeTruthy();
+      expect(PENALTIES[code].factor, code).toBeGreaterThan(0);
+      expect(PENALTIES[code].factor, code).toBeLessThan(1);
+    }
   });
 });

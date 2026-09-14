@@ -113,10 +113,10 @@ describe("admin-monitoring GET (AM-02)", () => {
     const b = body(await handler(authed()));
     expect(b.ok).toBe(true);
     expect(b.jobs.map((j) => j.id)).toEqual([
-      "scheduled-runner", "discoverability-monitor",
+      "scheduled-runner", "prompt-monitor", "discoverability-monitor",
       "watchlist-monitor", "bulk-runner", "signal-retry",
       "reengagement", "billing-lifecycle", "billing-purge", "health-monitor",
-      "workflow-orchestrator-cron",
+      "workflow-orchestrator-cron", "sxo-analytics-import-worker",
     ]);
     const lifecycle = b.jobs.find((j) => j.id === "billing-lifecycle");
     expect(lifecycle.state).toBe("healthy");
@@ -154,7 +154,7 @@ describe("admin-monitoring GET (AM-02)", () => {
     wireReads({ runs: [] });
     const b = body(await handler(authed()));
     expect(b.jobs.every((j) => j.state === "never-run")).toBe(true);
-    expect(b.jobSummary.neverRun).toBe(10);
+    expect(b.jobSummary.neverRun).toBe(12);
   });
 
   it("reports a failing job and surfaces it as the worst state", async () => {

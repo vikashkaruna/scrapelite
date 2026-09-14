@@ -30,6 +30,7 @@ import {
   acceptWorkspaceInvite,
   removeWorkspaceMember,
   setWorkspaceMemberPaused,
+  setWorkspaceDiscoverabilityRole,
   listWorkspaceMembers,
   listPendingInvites,
   revokeInvite,
@@ -59,6 +60,7 @@ const REASON_COPY = {
   // reasoning as owner_cannot_leave above.
   cannot_pause_owner: "The workspace owner can't be paused.",
   not_found: "That person isn't a member of this workspace.",
+  invalid_role: "Choose a valid Discoverability role.",
   unavailable: "Workspaces are temporarily unavailable. Please try again shortly.",
 };
 
@@ -184,6 +186,22 @@ export const handler = async (event) => {
       const result = await setWorkspaceMemberPaused(workspaceId, userId, targetUserId, paused);
       if (!result.ok) return refusal(result.reason, result.reason === "unavailable" ? 503 : 409);
       return respond(200, { ok: true, paused: Boolean(paused) });
+    }
+
+    if (action === "set_discoverability_role") {
+      const { workspaceId, targetUserId, role } = body;
+      if (!workspaceId || !targetUserId || !role) {
+        return respond(400, { error: "workspaceId, targetUserId and role are required" });
+      }
+      const result = await setWorkspaceDiscoverabilityRole(
+        workspaceId, userId, targetUserId, role,
+      );
+      if (!result.ok) {
+        const status = result.reason === "not_authorized" ? 403
+          : result.reason === "unavailable" ? 503 : 409;
+        return refusal(result.reason, status);
+      }
+      return respond(200, { ok: true, role });
     }
 
     if (action === "revoke_invite") {

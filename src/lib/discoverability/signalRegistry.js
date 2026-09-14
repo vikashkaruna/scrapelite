@@ -95,10 +95,26 @@ export const SIGNALS = Object.freeze({
     label: "Author & organisation trust",
     measures: "A named author, a reachable bio, and visible credentials rather than an anonymous byline.",
   },
+  // ── WAVI AND THE FOOTPRINT SPLIT ONE WEIGHT, AND THE REASON IS ARITHMETIC ──
+  // WAVI's first two components ARE mention rate and citation rate, so a
+  // pillar carrying both signals at full weight would count the same evidence
+  // twice and hand answer-engine visibility 45% of entity authority. Splitting
+  // the 0.25 the footprint already held leaves the pillar's total exposure to
+  // that evidence exactly where v2 had it — so the v3 delta on any page is the
+  // richer measurement, not a re-weighting nobody asked for.
+  //
+  // The footprint keeps the smaller share and stays because it is the signal
+  // every stored audit was scored on, and because it still measures something
+  // when WAVI cannot be computed at all.
   citation_footprint: {
-    pillar: "entity_authority", weight: 0.25, deterministic: false,
+    pillar: "entity_authority", weight: 0.10, deterministic: false,
     label: "Citation footprint",
     measures: "How often answer engines mention the brand and cite this domain across a sampled prompt set.",
+  },
+  ai_visibility: {
+    pillar: "entity_authority", weight: 0.15, deterministic: false,
+    label: "AI visibility (WAVI)",
+    measures: "Mention, citation and recommendation rates weighted with answer prominence and accuracy — whether engines name you, source you, and advise choosing you.",
   },
   freshness_and_sources: {
     pillar: "entity_authority", weight: 0.15, deterministic: true,

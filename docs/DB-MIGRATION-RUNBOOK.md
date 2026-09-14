@@ -100,6 +100,371 @@ Name as many files as you want, in order. Add `0013`, then `0014`, then
 
 ---
 
+## 4b. Applying `0055` + `0056` (P2 · W9 + W10) to dev / stage
+
+> ✅ **APPLIED to dev / stage, 2026-09-11, by the owner.** Kept here because the
+> same procedure is what production will need, and because §4c's `0057`/`0058`
+> depend on both being present first.
+>
+> ⚠️ **PRODUCTION STILL NEEDS THEM**, along with everything from `0050` up.
+
+### What they add
+
+| Migration | Objects |
+|---|---|
+| `0055_business_truth.sql` | 3 tables (`audit_business_truth_records`, `_versions`, `_conflicts`) · 1 function `promote_business_truth_version` · 2 triggers |
+| `0056_entity_graph.sql` | 4 tables (`audit_entities`, `audit_entity_relationships`, `_evidence`, `_conflicts`) · 1 function `approve_entity_relationship` · 2 triggers |
+
+Together they take a clean build to **96 tables / 49 functions / 24 triggers**,
+which `npm run test:db` asserts.
+
+### ✅ Both are safely RE-RUNNABLE — proven, not assumed
+
+Every `create table`, `create index`, `create policy` and `create trigger` is
+guarded (`if not exists` / `drop … if exists`), both functions are
+`create or replace`, and the one `alter table … add constraint` is preceded by
+its own `drop constraint if exists`. Applying both a **second** time against a
+database that already has them changes nothing:
+
+```
+after 1st apply : {"tables":96,"funcs":49,"trigs":24,"pols":93,"idx":311}
+after 2nd apply : {"tables":96,"funcs":49,"trigs":24,"pols":93,"idx":311}
+```
+
+So a retried or duplicated apply is safe — but see the ordering note below.
+
+### Apply
+
+`0055` **must** run before `0056`: `audit_entities.truth_record_id` and
+`audit_entity_conflicts.truth_record_id` both reference
+`audit_business_truth_records`. Use the subset runner from §4 — a bare
+`npm run migrate:prod` replays **all 56** migrations, which is wrong for a
+database that already has `0001`–`0054`.
+
+```bash
+# DEV / STAGE project ref (see public/runtime-config.js — do NOT use the prod ref)
+PROD_SUPABASE_DB_URL="postgresql://postgres:PASSWORD@db.<dev-ref>.supabase.co:5432/postgres" node -e '
+const fs=require("fs"), {Client}=require("pg");
+(async()=>{
+  const c=new Client({connectionString:process.env.PROD_SUPABASE_DB_URL,ssl:{rejectUnauthorized:false}});
+  await c.connect(); await c.query("SET statement_timeout = 0");
+  const {rows}=await c.query("select current_database() db, current_user u");
+  console.log("target:",rows[0].db,"as",rows[0].u);
+  for(const f of process.argv.slice(1)){
+    try{ await c.query("BEGIN"); await c.query(fs.readFileSync(f,"utf8")); await c.query("COMMIT"); console.log("OK  ",f); }
+    catch(e){ await c.query("ROLLBACK").catch(()=>{}); console.error("FAIL",f,e.message); process.exitCode=1; break; }
+  }
+  await c.end();
+})().catch(e=>{console.error("ERR",e.message);process.exit(1)});
+' supabase/migrations/0055_business_truth.sql supabase/migrations/0056_entity_graph.sql
+```
+
+⚠️ Use the **Direct** connection string (port **5432**), not the pooler, and
+URL-encode special characters in the password.
+
+### Verify after applying
+
+```sql
+-- 1. All seven tables exist. Expect 7 rows.
+select table_name from information_schema.tables
+ where table_schema = 'public'
+   and (table_name like 'audit_business_truth%' or table_name like 'audit_entit%')
+ order by table_name;
+
+-- 2. Both functions exist and are SECURITY DEFINER.
+select p.proname, p.prosecdef
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.proname in ('promote_business_truth_version','approve_entity_relationship');
+-- Expect 2 rows, prosecdef = t for both.
+
+-- 3. 🔴 RLS IS ON AND anon/authenticated HAVE NOTHING. Expect 0 rows.
+select table_name, grantee, privilege_type
+  from information_schema.role_table_grants
+ where table_schema = 'public'
+   and grantee in ('anon','authenticated')
+   and (table_name like 'audit_business_truth%' or table_name like 'audit_entit%');
+
+-- 4. …and RLS is enabled on all seven. Expect every relrowsecurity = true.
+select c.relname, c.relrowsecurity
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public'
+   and (c.relname like 'audit_business_truth%' or c.relname like 'audit_entit%')
+ order by c.relname;
+
+-- 5. The self-approval CHECK is present on both approval paths. Expect 2 rows.
+select conname from pg_constraint
+ where conname in ('audit_btv_no_self_approval','audit_rel_no_self_approval');
+```
+
+### 🔴 The one thing PGlite could not prove
+
+`promote_business_truth_version` and `approve_entity_relationship` are
+**`security definer`** and have only ever run under PGlite, which has **shimmed
+roles** — no real `service_role`, no GoTrue. The first live call is the first
+real test of the `revoke all … grant execute to service_role` pair at the foot
+of each migration. After applying, confirm a non-service role genuinely cannot
+call them:
+
+```sql
+set local role authenticated;
+select public.promote_business_truth_version(
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  '00000000-0000-0000-0000-000000000000'::uuid);
+-- EXPECT: ERROR permission denied for function promote_business_truth_version
+reset role;
+```
+
+A result of `not_found` instead of a permission error means the grant did not
+take, and the function is callable by any signed-in user.
+
+---
+
+## 4c. Applying `0057` + `0058` (D7 + P2 · W12) and `0059` (W12 upsert repair) to dev / stage
+
+> ✅ **`0057` and `0058` were applied to dev/stage offline, owner-reported on
+> 2026-09-12.** This code review found a forward-only W12 repair in `0059`;
+> **`0059` still needs applying** to those environments before the normal
+> PostgREST listing upsert can work. All three still need their first real
+> PostgREST verification; PGlite proves the SQL shape, not a deployed API.
+
+### What they add
+
+| Migration | Objects |
+|---|---|
+| `0057_audit_subjects.sql` | 1 table (`audit_subjects`) · 1 function `upsert_audit_subject` · 1 trigger · 1 column `audits.subject_id` |
+| `0058_local_directory.sql` | 4 tables (`audit_directory_listings`, `audit_local_checks`, `audit_directory_matches`, `audit_local_findings`) · 2 triggers · no new function |
+| `0059_local_directory_listing_upsert.sql` | replaces 0058's expression unique index with a `NULLS NOT DISTINCT` column constraint; no new table/function/trigger |
+
+Together they take a clean build to **101 tables / 50 functions / 27 triggers**,
+which `npm run test:db` asserts (729 assertions).
+
+### Ordering
+
+`0055` and `0056` **must** already be applied: `audit_subjects` carries real
+foreign keys to `audit_business_truth_records` (0055) and `audit_entities`
+(0056), and `0058`'s check table references `audit_subjects`. `0059` must run
+after `0058`. The numbering is the ordering; apply them in it.
+
+### `0057` runs a BACKFILL, and it is re-runnable
+
+Unlike `0055`/`0056`, `0057` writes data as well as schema: one `page` subject
+per existing `audit_targets` row, then `update audits set subject_id = …` for
+every audit that has none.
+
+🔴 **Both statements are written to be safely re-applied** (`on conflict do
+nothing`, plus `where a.subject_id is null`), and `npm run test:db` proves it by
+running them a second time and asserting the row count does not move. A
+migration that is only correct once cannot be re-applied after a partial
+failure, which is exactly when you most need to.
+
+⚠️ **`audits.subject_id` stays NULLABLE and NULL is valid.** Every audit written
+before this migration has none, and the readers fall back to `target_id`. Do not
+"tidy" it to `not null` later — that is the backward-compatibility contract, and
+`audits.target_id` must never be dropped (see the migration header).
+
+### Apply
+
+Same subset path §4b uses — `npm run migrate:prod` has no stop-at-N flag and a
+bare run replays everything from `0001`:
+
+```bash
+PGPASSWORD=... psql "$DEV_SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
+  -f supabase/migrations/0057_audit_subjects.sql \
+  -f supabase/migrations/0058_local_directory.sql \
+  -f supabase/migrations/0059_local_directory_listing_upsert.sql
+```
+
+For a dev/stage project already carrying `0057` and `0058`, run **only** the
+last file above. It is idempotent and preserves the existing unique invariant.
+
+⚠️ Use the **Direct** connection string (port 5432), not the pooler, and
+URL-encode special characters in the password.
+
+### Verify
+
+```sql
+-- 1. The table and the column exist.
+select count(*) from public.audit_subjects;
+select column_name from information_schema.columns
+ where table_schema='public' and table_name='audits' and column_name='subject_id';
+
+-- 2. The backfill adopted every existing audit that had a target.
+select count(*) as orphans
+  from public.audits a
+ where a.target_id is not null and a.subject_id is null;
+-- Expect 0. A non-zero count means the second backfill statement did not run.
+
+-- 3. No subject carries more or fewer than one reference.
+select count(*) as malformed from public.audit_subjects
+ where (target_id is not null)::int
+     + (entity_id is not null)::int
+     + (truth_record_id is not null)::int <> 1;
+-- Expect 0. The CHECK makes this impossible; run it anyway after a backfill.
+
+-- 4. The W12 tables are locked down like every other module table.
+select tablename, rowsecurity from pg_tables
+ where schemaname='public'
+   and tablename in ('audit_subjects','audit_directory_listings',
+                     'audit_local_checks','audit_directory_matches',
+                     'audit_local_findings');
+-- Expect rowsecurity = true on all five.
+
+-- 5. Nothing is granted to anon or authenticated.
+select table_name, grantee from information_schema.role_table_grants
+ where table_schema='public' and grantee in ('anon','authenticated')
+   and table_name like 'audit_%';
+-- Expect zero rows.
+
+-- 6. The column-based upsert arbiter exists. `connullsnotdistinct = true`
+-- means two NULL truth_record_id values conflict, so PostgREST can use
+-- on_conflict=user_id,truth_record_id,source_id.
+select conname, connullsnotdistinct
+  from pg_constraint
+ where conname = 'audit_dir_listing_unique';
+-- Expect one row with connullsnotdistinct = true.
+```
+
+### The SECURITY DEFINER grant
+
+`upsert_audit_subject` is `security definer` and is revoked from `public`,
+`anon` and `authenticated`, granted only to `service_role` — the same posture as
+`promote_business_truth_version` and `approve_entity_relationship`. Confirm:
+
+```sql
+select proname, proacl from pg_proc
+ where proname = 'upsert_audit_subject';
+-- proacl must NOT contain =X/ for anon or authenticated.
+```
+
+🔴 **A `security definer` function reachable by `anon` bypasses RLS by
+definition.** Check this after every apply, not only the first.
+
+## 4d. Applying `0060` + `0061` (D7 atomicity + the RPC lockdown) — **security, apply promptly**
+
+> ✅ **APPLIED TO DEV/STAGE 2026-09-12** (owner-confirmed), together with `0059`
+> and `0060`. 🔴 **PRODUCTION STILL NEEDS ALL THREE.**
+>
+> 🔴 **`0061` IS A SECURITY FIX, NOT A FEATURE.** Until it is applied, ten
+> `SECURITY DEFINER` functions are callable by `anon` through PostgREST with a
+> caller-supplied `p_user_id` and no `auth.uid()` check — and `SECURITY DEFINER`
+> bypasses RLS. Anyone holding the **publishable key** (committed in
+> `public/runtime-config.js` by design) can freeze any account, schedule any
+> account for deletion, drain any user's credits, read any user's balance, mint
+> coupons and referral codes, or write rows attributed to another tenant.
+> **Apply this to production as well as dev/stage, and do not wait on a feature
+> release to carry it.**
+
+| file | what it adds |
+|---|---|
+| `0060_audit_subject_upsert_atomic.sql` | replaces `upsert_audit_subject` with one `INSERT .. ON CONFLICT` per reference. No new table, function or trigger — the function is replaced in place. |
+| `0061_rpc_lockdown.sql` | grants only. Revokes ten `SECURITY DEFINER` functions from `public, anon, authenticated`; repairs `0012`'s no-op revoke on `claim_billing_session`; states three `service_role` grants that were previously inherited from Supabase defaults. |
+
+Both are **forward-only and idempotent** — `0060` is a `create or replace`,
+`0061` is `revoke`/`grant`, so re-running either changes nothing. Neither
+touches data, so there is no backfill to verify.
+
+```bash
+psql "$PROD_SUPABASE_DB_URL" \
+  -v ON_ERROR_STOP=1 \
+  -f supabase/migrations/0060_audit_subject_upsert_atomic.sql \
+  -f supabase/migrations/0061_rpc_lockdown.sql
+```
+
+### Verify — this is the one that matters
+
+```sql
+-- 1. No SECURITY DEFINER function takes a caller-supplied user id AND is
+--    reachable by an untrusted role. Expect ZERO rows.
+select p.proname, pg_get_function_identity_arguments(p.oid) as args
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.prosecdef
+   and (has_function_privilege('anon', p.oid, 'EXECUTE')
+     or has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+   and pg_get_function_identity_arguments(p.oid) ~* 'p_user_?id'
+   and pg_get_functiondef(p.oid) !~* 'auth\.uid\(\)';
+
+-- 2. ...while service_role kept EXECUTE on all of them. Expect ZERO rows.
+select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.prosecdef
+   and p.proname in ('set_account_frozen','request_account_deletion',
+     'cancel_account_deletion','credit_spend','credit_balance',
+     'redeem_admin_coupon','create_admin_coupon_assignment',
+     'issue_referral_code','accept_workspace_invite','upsert_audit_target',
+     'claim_billing_session','assign_recommendation','prune_ops_history',
+     'record_pql_score')
+   and not has_function_privilege('service_role', p.oid, 'EXECUTE');
+
+-- 3. claim_billing_session keeps `authenticated` — the browser calls it.
+--    Expect anon=false, authenticated=true, service_role=true.
+select has_function_privilege('anon', 'public.claim_billing_session(text)', 'EXECUTE')          as anon,
+       has_function_privilege('authenticated', 'public.claim_billing_session(text)', 'EXECUTE') as authenticated,
+       has_function_privilege('service_role', 'public.claim_billing_session(text)', 'EXECUTE')  as service_role;
+
+-- 4. The subject upsert is atomic: three inserts, three ON CONFLICT clauses.
+select (length(lower(src)) - length(replace(lower(src), 'on conflict', ''))) / length('on conflict') as on_conflict_count
+  from (select pg_get_functiondef(p.oid) src from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname='public' and p.proname='upsert_audit_subject') t;
+-- Expect 3.
+```
+
+⚠️ **The end-to-end check that does not need psql** is `npm run verify:rls`,
+which asks PostgREST as an anonymous caller would. It covers **tables**, not
+functions — extending it to `/rpc` is worth doing and has not been done.
+
+
+## 4e. Applying `0062` + `0063` + `0064` (P2 · W13, W14 and W11's close-out)
+
+> ✅ **APPLIED TO DEV / STAGE — owner-confirmed 2026-09-12.**
+> 🔴 **PRODUCTION STILL NEEDS ALL THREE**, and production is now **fifteen**
+> migrations behind (`0050`–`0064`). Verify with §6 before deploying any P2
+> surface there: every P2 endpoint reads a table that does not exist on
+> production yet, so a deploy without this apply turns a feature that tested
+> clean twice into a 500.
+
+Three additive migrations. **No security fix among them**, so unlike §4d these can travel with a
+normal feature release.
+
+```bash
+PROD_SUPABASE_DB_URL='postgresql://...' \
+  npm run migrate:prod -- --include=0062_schema_trust.sql,0063_revalidation_request.sql,0064_subject_scores.sql
+```
+
+| Migration | Adds | Shape |
+|---|---|---|
+| `0062_schema_trust.sql` | `audit_schema_entities`, `audit_trust_evidence` | 2 tables, 2 triggers, no function |
+| `0063_revalidation_request.sql` | `revalidation_requested_at`, `revalidation_baseline_audit_id` on `audit_recommendations` | 2 columns, both nullable |
+| `0064_subject_scores.sql` | `audit_subject_scores` | 1 table, no trigger, no function |
+
+**All three are additive and re-runnable.** `0063` adds nullable columns with `if not exists`; the
+two table migrations use `create table if not exists`. Nothing is backfilled, so there is no
+first-run-only step and no ordering constraint against live traffic.
+
+⚠️ **`0064` deliberately has NO unique constraint.** If a future reviewer "notices the missing
+arbiter" and adds one, it will silently collapse every subject's score history into a single row on
+the next re-score. The table appends because the trend is the product — see the migration header and
+`subject-score-parity.test.js`, which fails if an arbiter appears.
+
+Verify after applying:
+
+```sql
+select count(*) from information_schema.tables
+ where table_schema='public'
+   and table_name in ('audit_schema_entities','audit_trust_evidence','audit_subject_scores');
+-- expect 3
+
+select column_name, is_nullable from information_schema.columns
+ where table_name='audit_subject_scores' and column_name in ('score','coverage','model_version');
+-- expect score=YES, coverage=NO, model_version=NO
+```
+
+The `score`/`coverage` nullability is worth checking by hand: a `score` that came back NOT NULL would
+mean an unmeasurable subject gets stored as a real zero, which is unrecoverable after the fact.
+
+---
+
 ## 5. Database functions — no separate step
 
 There is nothing to run beyond the migrations. All **9 functions and 2 triggers**

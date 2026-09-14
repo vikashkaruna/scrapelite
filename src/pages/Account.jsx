@@ -248,6 +248,38 @@ function PaymentHistorySection({ history, dbSubscription }) {
   );
 }
 
+function AccountDetailsCard({ user }) {
+  const name = user?.user_metadata?.full_name || user?.user_metadata?.name || (user?.email ? user.email.split("@")[0] : "Guest user");
+  const email = user?.email || "Signed out (local session)";
+  const phone = user?.phone || user?.user_metadata?.phone || "Not configured";
+  const memberSince = user?.created_at ? new Date(user.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Today";
+
+  return (
+    <div className="card card-pad account-details-card">
+      <div className="card-section-title">
+        <Icon name="user" size={15} />
+        Account details
+      </div>
+      <div className="astat-row">
+        <span className="astat-label">Full name</span>
+        <span className="astat-val">{name}</span>
+      </div>
+      <div className="astat-row">
+        <span className="astat-label">Email</span>
+        <span className="astat-val">{email}</span>
+      </div>
+      <div className="astat-row">
+        <span className="astat-label">Phone</span>
+        <span className="astat-val">{phone}</span>
+      </div>
+      <div className="astat-row">
+        <span className="astat-label">Member since</span>
+        <span className="astat-val">{memberSince}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Account() {
   useSeo({
     title: "DatIQ Account — plan, billing, invoices, API keys | DatIQ.app",
@@ -490,123 +522,14 @@ export default function Account() {
         <div className="account-grid">
           {/* Left column */}
           <div className="account-main">
-            {/* Current plan card */}
-            <div className="card card-pad account-plan-card">
-              <div className="apc-top">
-                <div>
-                  <div className="apc-label">Current plan</div>
-                  <div className="apc-plan-name">
-                    {plan.name}
-                    {planId === "free" && <span className="apc-free-badge">Free</span>}
-                    {dbSubscription?.provider && (
-                      <span className="apc-provider-badge">
-                        <Icon name={PROVIDER_META[dbSubscription.provider]?.icon || "credit-card"} size={12} />
-                        {PROVIDER_META[dbSubscription.provider]?.name || dbSubscription.provider}
-                      </span>
-                    )}
-                  </div>
-                  {subscription.activatedAt && (
-                    <div className="apc-since">
-                      Active since {new Date(subscription.activatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                    </div>
-                  )}
-                  {subscription.discountPercent > 0 && (
-                    <div className="apc-discount-note">
-                      <Icon name="tag" size={13} />{subscription.discountPercent}% discount applied via coupon
-                    </div>
-                  )}
-                  {dbSubscription?.status && dbSubscription.status !== "active" && (
-                    <div className="apc-status-warn">
-                      <Icon name="alert-circle" size={13} />
-                      Subscription status: <strong>{dbSubscription.status}</strong>
-                    </div>
-                  )}
-                </div>
-                {plan.price_usd > 0 && (
-                  <div className="apc-price">
-                    <span className="appc-amount">
-                      {formatPrice(convertPrice(plan.price_usd, rates, currency), currency)}
-                    </span>
-                    <span className="appc-period">/ mo</span>
-                  </div>
-                )}
-              </div>
-              {nextTier && (
-                <div className="apc-upgrade-hint">
-                  <Icon name="trending-up" size={14} />
-                  <span>
-                    Upgrade to <strong>{nextTier.name}</strong> for{" "}
-                    {nextTier.limits.extractions === Infinity
-                      ? "unlimited extractions"
-                      : `${nextTier.limits.extractions.toLocaleString()} extractions / month`}
-                  </span>
-                  <Button variant="primary" size="sm"
-                    onClick={() => handleUpgrade(nextTier.id)}
-                    disabled={paymentLoading}>
-                    {paymentLoading ? "…" : "Upgrade"}
-                  </Button>
-                </div>
-              )}
-            </div>
+            {/* Account details */}
+            <AccountDetailsCard user={user} />
 
-            {/* Usage meters */}
-            <div className="card card-pad">
-              <div className="card-section-title">
-                <Icon name="bar-chart" size={16} />
-                Usage this month ({usage?.month ?? "—"})
-              </div>
-              <div className="usage-meters">
-                <UsageMeter label="Extractions used"   icon="zap"       used={usage?.extractions ?? 0} limit={totalExtractionLimit} />
-                <UsageMeter label="Enrichments (total)" icon="sparkles"  used={totalEnrichments}        limit={plan.limits.enrichments_per_extraction === Infinity ? Infinity : null} />
-                {hasBatchAccess && (
-                  <div className="usage-meter">
-                    <div className="usage-meter-head">
-                      <div className="usage-meter-label"><Icon name="layers-2" size={15} /><span>Batch mode (URLs per batch)</span></div>
-                      <div className="usage-meter-count">{batchUrlLimit === Infinity ? <span className="usage-unlimited">Unlimited</span> : batchUrlLimit.toLocaleString()}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              {bonus > 0 && (
-                <div className="usage-bonus-note">
-                  <Icon name="zap" size={13} />
-                  <span>+{bonus} bonus extractions from top-up bundle or coupon.</span>
-                </div>
-              )}
-              {!hasBatchAccess && (
-                <div className="usage-bonus-note" style={{ color: "var(--text-2)" }}>
-                  <Icon name="layers-2" size={13} />
-                  <span>Batch mode: not available on your current plan. <a href="/pricing" style={{ color: "var(--accent)" }}>Upgrade →</a></span>
-                </div>
-              )}
-            </div>
-
-            {/* Plan features */}
-            <div className="card card-pad">
-              <div className="card-section-title"><Icon name="check-circle" size={16} />{plan.name} plan includes</div>
-              <div className="plan-features-grid">
-                {plan.features.map((f) => (
-                  <div key={f.label} className={"plan-feat-pill" + (f.included ? "" : " excluded")}>
-                    <Icon name={f.included ? "check" : "x"} size={13} />
-                    <span>{f.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Payment history (only if there are records) */}
-            <InvoiceHistorySection
-              invoices={invoices}
-              loading={invoicesLoading}
-              onOpen={setOpenInvoice}
+            {/* Brand kit & Advanced PDF background */}
+            <WhiteLabelTemplateUploader
+              userId={resolveTemplateUserId({ user })}
+              canManage={canWhiteLabel}
             />
-            <PaymentHistorySection
-              history={paymentHistory}
-              dbSubscription={dbSubscription}
-            />
-
-            {/* Metering alerts */}
-            <AlertsSection />
 
             {/* Integrations */}
             <div id="integrations" className="card card-pad int-section">
@@ -638,11 +561,6 @@ export default function Account() {
                             : "Not connected"}
                         </div>
                         {connected && (
-                          // Per-provider rich status — shows whatever the
-                          // server returned that helps the user confirm
-                          // "yes, this is the right connection". Each
-                          // provider has different fields, so we render
-                          // them inline rather than via a fixed table.
                           <div className="int-row-detail">
                             {p.slug === "hubspot" && conn.token_hint && (
                               <div className="int-row-detail-line">
@@ -807,10 +725,6 @@ export default function Account() {
                   <Icon name="info" size={13} /> Sign in to manage integrations.
                 </div>
               )}
-              {/* Entitlement flag only — no shipping extension yet (see
-                  entitlementModel.js "browser_extension"). Shown only to
-                  plans that carry the flag (Select and up) so it reads as
-                  "coming to your plan", not a generic teaser everyone sees. */}
               {plan?.limits?.browser_extension && (
                 <div className="int-row" style={{ marginTop: 8 }}>
                   <div className="int-row-icon">
@@ -827,35 +741,88 @@ export default function Account() {
               )}
             </div>
 
-            {/* ── Danger zone ──────────────────────────────────────────────
-                Last in the left column, below everything routine, and only for
-                a signed-in account. Its position is the point: the two actions
-                in it are the only ones on this page you cannot casually undo,
-                so nothing should be able to lead you into them on the way to
-                something else. */}
+            {/* Payment history & invoices */}
+            <InvoiceHistorySection
+              invoices={invoices}
+              loading={invoicesLoading}
+              onOpen={setOpenInvoice}
+            />
+            <PaymentHistorySection
+              history={paymentHistory}
+              dbSubscription={dbSubscription}
+            />
+
+            {/* Danger zone */}
             {user && <DangerZone state={accountState} onChange={setAccountState} />}
           </div>
 
           {/* Right column */}
           <div className="account-aside">
-            {/* Explore plans & top-up bundles — moved to the top of the right
-                column (2026-08-11). It's the highest-ROI conversion CTA
-                on this page (users on free / starter plans need a clear
-                upgrade path before they engage with the coupon or white-
-                label features), so it gets prime real estate above both. */}
+            {/* Explore plans & top-up bundles */}
             <Button variant="ghost" size="sm" icon="zap" fullWidth onClick={() => navigate("/pricing")}>
               Explore plans &amp; top-up bundles
             </Button>
 
-            {/* White-label PDF template (Business + Agency, 2026-08-02) */}
-            <WhiteLabelTemplateUploader
-              userId={resolveTemplateUserId({ user })}
-              canManage={canWhiteLabel}
-            />
+            {/* Current plan card */}
+            <div className="card card-pad account-plan-card">
+              <div className="apc-top">
+                <div>
+                  <div className="apc-label">Current plan</div>
+                  <div className="apc-plan-name">
+                    {plan.name}
+                    {planId === "free" && <span className="apc-free-badge">Free</span>}
+                    {dbSubscription?.provider && (
+                      <span className="apc-provider-badge">
+                        <Icon name={PROVIDER_META[dbSubscription.provider]?.icon || "credit-card"} size={12} />
+                        {PROVIDER_META[dbSubscription.provider]?.name || dbSubscription.provider}
+                      </span>
+                    )}
+                  </div>
+                  {subscription.activatedAt && (
+                    <div className="apc-since">
+                      Active since {new Date(subscription.activatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                    </div>
+                  )}
+                  {subscription.discountPercent > 0 && (
+                    <div className="apc-discount-note">
+                      <Icon name="tag" size={13} />{subscription.discountPercent}% discount applied via coupon
+                    </div>
+                  )}
+                  {dbSubscription?.status && dbSubscription.status !== "active" && (
+                    <div className="apc-status-warn">
+                      <Icon name="alert-circle" size={13} />
+                      Subscription status: <strong>{dbSubscription.status}</strong>
+                    </div>
+                  )}
+                </div>
+                {plan.price_usd > 0 && (
+                  <div className="apc-price">
+                    <span className="appc-amount">
+                      {formatPrice(convertPrice(plan.price_usd, rates, currency), currency)}
+                    </span>
+                    <span className="appc-period">/ mo</span>
+                  </div>
+                )}
+              </div>
+              {nextTier && (
+                <div className="apc-upgrade-hint">
+                  <Icon name="trending-up" size={14} />
+                  <span>
+                    Upgrade to <strong>{nextTier.name}</strong> for{" "}
+                    {nextTier.limits.extractions === Infinity
+                      ? "unlimited extractions"
+                      : `${nextTier.limits.extractions.toLocaleString()} extractions / month`}
+                  </span>
+                  <Button variant="primary" size="sm"
+                    onClick={() => handleUpgrade(nextTier.id)}
+                    disabled={paymentLoading}>
+                    {paymentLoading ? "…" : "Upgrade"}
+                  </Button>
+                </div>
+              )}
+            </div>
 
-            {/* Your offers — a user-specific, one-time complimentary plan grant
-                or bonus extractions. Grant state comes from the authenticated
-                server endpoint, never from editable browser metadata. */}
+            {/* Your offers */}
             {(adminGrantCoupon || user?.user_metadata?.bonus_extractions > 0) && (
               <div className="card card-pad">
                 <div className="card-section-title"><Icon name="gift" size={15} />Your offers</div>
@@ -917,15 +884,58 @@ export default function Account() {
               )}
             </div>
 
-            {/* ── Discoverability ─────────────────────────────────────────
-                Its own card because audits have their OWN monthly budget
-                rather than debiting extraction credits — folding them into
-                the extraction counter would misreport both. */}
+            {/* Usage meters */}
+            <div className="card card-pad">
+              <div className="card-section-title">
+                <Icon name="bar-chart" size={16} />
+                Usage this month ({usage?.month ?? "—"})
+              </div>
+              <div className="usage-meters">
+                <UsageMeter label="Extractions used"   icon="zap"       used={usage?.extractions ?? 0} limit={totalExtractionLimit} />
+                <UsageMeter label="Enrichments (total)" icon="sparkles"  used={totalEnrichments}        limit={plan.limits.enrichments_per_extraction === Infinity ? Infinity : null} />
+                {hasBatchAccess && (
+                  <div className="usage-meter">
+                    <div className="usage-meter-head">
+                      <div className="usage-meter-label"><Icon name="layers-2" size={15} /><span>Batch mode (URLs per batch)</span></div>
+                      <div className="usage-meter-count">{batchUrlLimit === Infinity ? <span className="usage-unlimited">Unlimited</span> : batchUrlLimit.toLocaleString()}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {bonus > 0 && (
+                <div className="usage-bonus-note">
+                  <Icon name="zap" size={13} />
+                  <span>+{bonus} bonus extractions from top-up bundle or coupon.</span>
+                </div>
+              )}
+              {!hasBatchAccess && (
+                <div className="usage-bonus-note" style={{ color: "var(--text-2)" }}>
+                  <Icon name="layers-2" size={13} />
+                  <span>Batch mode: not available on your current plan. <a href="/pricing" style={{ color: "var(--accent)" }}>Upgrade →</a></span>
+                </div>
+              )}
+            </div>
+
+            {/* Plan features */}
+            <div className="card card-pad">
+              <div className="card-section-title"><Icon name="check-circle" size={16} />{plan.name} plan includes</div>
+              <div className="plan-features-grid">
+                {plan.features.map((f) => (
+                  <div key={f.label} className={"plan-feat-pill" + (f.included ? "" : " excluded")}>
+                    <Icon name={f.included ? "check" : "x"} size={13} />
+                    <span>{f.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Metering alerts */}
+            <AlertsSection />
+
+            {/* Discoverability */}
             {user && <DiscoverabilityStats auditLimit={plan.limits?.audits ?? 0} />}
 
-            {/* ── Usage by role ───────────────────────────────────────────
-                A breakdown OF the totals below, computed from the same record
-                so the two can never disagree about the month. */}
+            {/* Usage by role */}
             {user && <PersonaUsage usage={usage} />}
 
             {/* Quick stats */}
@@ -983,23 +993,7 @@ export default function Account() {
               )}
             </div>
 
-            {/* Workflow runs — every template execution the user paid credits
-                for. Persisted since 0036 and unreachable from anywhere in the
-                product until now.
-
-                Deliberately placed AFTER quick stats: Account.integration.test
-                pins the order of the four .account-aside children (top-up CTA,
-                white-label, coupon, quick stats) with a dated comment saying a
-                reorder should be caught. Inserting into that run would have
-                been exactly the change it exists to catch, so this goes at the
-                end instead.
-
-                Compact here — counts plus the most recent few; the Dashboard
-                carries the filtered view. */}
-            {/* (marker) — every template execution the user paid credits
-                for. These were persisted from day one and unreachable from
-                anywhere in the product until now. Compact here (counts plus
-                the most recent few); the Dashboard carries the filtered view. */}
+            {/* Workflow runs */}
             <div className="card card-pad">
               <div className="card-section-title"><Icon name="layout-list" size={15} />Workflow runs</div>
               <WorkflowRunHistory compact limit={5} />

@@ -160,13 +160,46 @@ export async function checkAiCrawlerAccess(url, agents = AI_CRAWLERS) {
   }
 
   const robots = await fetchRobotsText(origin);
-  if (robots.error) return { access: null, error: robots.error, robotsFound: false };
+  if (robots.error) {
+    return { access: null, error: robots.error, robotsFound: false, sitemaps: [] };
+  }
   return {
     access: evaluateAgentAccess(robots.text, agents, path),
     error: null,
     // A missing robots.txt is PERMISSIVE, and distinct from an unreadable one.
     robotsFound: robots.text !== null && robots.text !== undefined,
+    // Read from the SAME fetch, so the sitemap indicator the BRD asks for costs
+    // no extra request. A second fetch of robots.txt for this alone would be
+    // a request we already made, against a host we have promised to be polite to.
+    sitemaps: extractSitemapDeclarations(robots.text),
   };
+}
+
+/**
+ * Sitemap declarations in robots.txt.
+ *
+ * `Sitemap:` is a NON-GROUP directive — it belongs to the file, not to any
+ * `User-agent` block — so it is read globally rather than per agent. A file can
+ * legitimately declare several (an index plus per-section maps), and the cap
+ * exists because a robots.txt is attacker-controllable text and an unbounded
+ * list would ride along on every audit row for that host thereafter.
+ */
+export const MAX_SITEMAP_DECLARATIONS = 20;
+
+export function extractSitemapDeclarations(robotsText) {
+  if (!robotsText) return [];
+  const out = [];
+  for (const line of String(robotsText).split(/\r?\n/)) {
+    const m = /^\s*sitemap\s*:\s*(\S+)/i.exec(line);
+    if (!m) continue;
+    // Only absolute HTTP(S). A relative or javascript: value is not a sitemap,
+    // and recording it as one would put a bad URL in front of a customer as
+    // though we had verified it.
+    if (!/^https?:\/\//i.test(m[1])) continue;
+    if (!out.includes(m[1])) out.push(m[1]);
+    if (out.length >= MAX_SITEMAP_DECLARATIONS) break;
+  }
+  return out;
 }
 
 /**
@@ -176,6 +209,119 @@ export async function checkAiCrawlerAccess(url, agents = AI_CRAWLERS) {
  * running them in series would roughly double the wall-clock of the slowest
  * part of the audit for no benefit.
  */
+/** A sitemap fetch is a side quest, not the audit. It gets a short leash. */
+export const SITEMAP_TIMEOUT_MS = 4_000;
+
+/** At most this many documents: one index plus its first children. */
+export const MAX_SITEMAP_DOCS = 4;
+
+/** Enough to characterise a site's shape; far short of enumerating a large one. */
+export const MAX_SITEMAP_URLS = 5_000;
+
+/** Pull every <loc> out of a sitemap or sitemap index. */
+export function extractSitemapLocs(xml = "") {
+  const out = [];
+  const re = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
+  let m;
+  let guard = 0;
+  while ((m = re.exec(xml)) !== null) {
+    if (++guard > MAX_SITEMAP_URLS) break;
+    const raw = m[1].trim()
+      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+    if (/^https?:\/\//i.test(raw)) out.push(raw);
+  }
+  return out;
+}
+
+/** Is this document a sitemap INDEX rather than a list of pages? */
+export function isSitemapIndex(xml = "") {
+  return /<sitemapindex[\s>]/i.test(xml);
+}
+
+/**
+ * Read the URLs a site publishes, from the sitemaps its robots.txt declares.
+ *
+ * 🔴 THE RETURN TYPE IS THE WHOLE POINT. `fetched` and `urls` are SEPARATE, and
+ * a caller must branch on `fetched` before it reads `urls`. An empty list can
+ * mean "this site publishes nothing" or "we ran out of budget", and those are
+ * opposite facts: the first is a finding about the customer, the second is a
+ * fact about us. This codebase has already shipped that confusion once — a
+ * related-page gather skipped for budget returned `[]`, which resolved to
+ * `no_match`, and told customers their page had no pricing without ever opening
+ * the page that carried it.
+ *
+ * So: no sitemap declared, no budget, a 404, a parse failure — all report
+ * `fetched: false` WITH a reason. Only a document we actually read and parsed
+ * reports `fetched: true`.
+ *
+ * Never fetches more than MAX_SITEMAP_DOCS documents, and follows an index only
+ * one level down. A site with 400 child sitemaps is characterised from the
+ * first few, and says so via `truncated`.
+ */
+export async function fetchSitemapUrls(declared = [], opts = {}) {
+  const miss = (reason) => ({ fetched: false, urls: [], reason, truncated: false, documentsRead: 0 });
+
+  const roots = (Array.isArray(declared) ? declared : []).filter((u) => /^https?:\/\//i.test(u));
+  if (!roots.length) return miss("no sitemap declared in robots.txt");
+
+  const deadline = opts.deadline || null;
+  if (deadline && !deadline.allows(SITEMAP_TIMEOUT_MS)) {
+    // Checked BEFORE the fetch, so a budget stop is never mistaken for a site
+    // that publishes nothing.
+    return miss("no budget left for a sitemap fetch");
+  }
+
+  const queue = roots.slice(0, MAX_SITEMAP_DOCS);
+  const urls = [];
+  let documentsRead = 0;
+  let truncated = false;
+  let lastError = null;
+
+  while (queue.length && documentsRead < MAX_SITEMAP_DOCS) {
+    if (deadline && !deadline.allows(SITEMAP_TIMEOUT_MS)) { truncated = true; break; }
+    const next = queue.shift();
+    if (!(await isPublicHttpUrlAsync(next))) { lastError = "sitemap url is not publicly fetchable"; continue; }
+
+    const ctrl = new AbortController();
+    const ms = deadline ? deadline.sliceFor(SITEMAP_TIMEOUT_MS) : SITEMAP_TIMEOUT_MS;
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    let xml = "";
+    try {
+      const res = await fetchPublicUrl(next, {
+        signal: ctrl.signal, redirect: "follow",
+        headers: { "User-Agent": AUDIT_UA, Accept: "application/xml,text/xml" },
+      });
+      clearTimeout(timer);
+      if (!res.ok) { lastError = `sitemap responded ${res.status}`; continue; }
+      xml = await res.text();
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err?.name === "AbortError" ? "sitemap fetch timed out" : (err?.message || "sitemap fetch failed");
+      continue;
+    }
+
+    documentsRead += 1;
+    const locs = extractSitemapLocs(xml);
+    if (isSitemapIndex(xml)) {
+      // One level only. A sitemap index of sitemap indexes is pathological, and
+      // recursing it is how a 4s side quest becomes the whole budget.
+      for (const loc of locs) {
+        if (queue.length + documentsRead >= MAX_SITEMAP_DOCS) { truncated = true; break; }
+        queue.push(loc);
+      }
+    } else {
+      for (const loc of locs) {
+        if (urls.length >= MAX_SITEMAP_URLS) { truncated = true; break; }
+        urls.push(loc);
+      }
+    }
+  }
+
+  if (!documentsRead) return miss(lastError || "no sitemap could be read");
+  if (queue.length) truncated = true;
+  return { fetched: true, urls, reason: null, truncated, documentsRead };
+}
+
 export async function collectPage(url, opts = {}) {
   const env = opts.env || process.env;
   const headless = isHeadlessAvailable(env);
@@ -196,7 +342,7 @@ export async function collectPage(url, opts = {}) {
     runScrapeChain(url, chainOpts).catch((err) => ({
       ok: false, error: err?.message || "scrape chain threw",
     })),
-    checkAiCrawlerAccess(url).catch(() => ({ access: null, error: "crawler check failed", robotsFound: false })),
+    checkAiCrawlerAccess(url).catch(() => ({ access: null, error: "crawler check failed", robotsFound: false, sitemaps: [] })),
   ]);
 
   const rawHtml = raw.ok ? raw.html : "";
@@ -271,6 +417,7 @@ export async function collectPage(url, opts = {}) {
     aiCrawlerAccess: crawler.access,
     robotsError: crawler.error,
     robotsFound: crawler.robotsFound,
+    sitemaps: crawler.sitemaps || [],
     ok: Boolean(primaryHtml),
   };
 }

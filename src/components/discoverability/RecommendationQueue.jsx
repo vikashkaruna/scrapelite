@@ -21,6 +21,47 @@ const OWNER_META = {
 
 const STATUS_LABEL = { open: "Open", accepted: "Accepted", dismissed: "Dismissed", done: "Done" };
 
+/**
+ * Who is holding this fix.
+ *
+ * ⚠️ THE MEMBER LIST IS A CONVENIENCE, NOT THE GATE. The server re-checks that
+ * the assignee shares a workspace with the caller on every request, so an empty
+ * or stale list here cannot grant anything. That is why "Assign to me" is
+ * always offered even when no members loaded: a solo operator has no workspace
+ * rows at all, and refusing them their own queue would be absurd.
+ */
+function AssignControl({ rec, members = [], currentUserId, onAssign }) {
+  const assignee = rec.assigned_to || null;
+  const named = members.find((m) => m.userId === assignee);
+  const label = !assignee
+    ? "Unassigned"
+    : assignee === currentUserId ? "You"
+    : named?.name || named?.email || "Someone in your workspace";
+
+  return (
+    <span className="dsc-rec-assign">
+      <label className="dsc-rec-assign-label" htmlFor={`assign-${rec.id}`}>
+        Owner
+      </label>
+      <select
+        id={`assign-${rec.id}`}
+        className="dsc-rec-assign-select"
+        value={assignee || ""}
+        onChange={(e) => onAssign(rec, e.target.value || null)}
+        aria-label={`Assign ${rec.title || rec.code}. Currently ${label}.`}
+      >
+        <option value="">Unassigned</option>
+        {currentUserId && <option value={currentUserId}>Me</option>}
+        {members
+          .filter((m) => m.userId && m.userId !== currentUserId)
+          .map((m) => (
+            <option key={m.userId} value={m.userId}>{m.name || m.email}</option>
+          ))}
+      </select>
+    </span>
+  );
+}
+
 function ConstructBlock({ asset }) {
   const showToast = useToast();
   const [open, setOpen] = useState(false);
@@ -93,7 +134,7 @@ function DismissDialog({ rec, onCancel, onConfirm }) {
 }
 
 export default function RecommendationQueue({
-  recommendations = [], framework = "overall", onStatusChange, busyId,
+  recommendations = [], framework = "overall", onStatusChange, busyId, onAssign, members = [], currentUserId = null,
 }) {
   const [dismissing, setDismissing] = useState(null);
   const [ownerFilter, setOwnerFilter] = useState(null);
@@ -204,6 +245,14 @@ export default function RecommendationQueue({
                   />
                 ) : (
                   <div className="dsc-rec-actions">
+                    {!resolved && onAssign && (
+                      <AssignControl
+                        rec={r}
+                        members={members}
+                        currentUserId={currentUserId}
+                        onAssign={onAssign}
+                      />
+                    )}
                     {!resolved && (
                       <>
                         <Button size="sm" variant="secondary" loading={busyId === r.id}

@@ -22,7 +22,8 @@
 // API, the scheduled monitor and the test suite without a Supabase in sight.
 
 import { parsePage, findSchema } from "./htmlParse.js";
-import { collectPage, checkCanonicalTarget, CANONICAL_TIMEOUT_MS } from "./fetchLayer.js";
+import { collectPage, checkCanonicalTarget, CANONICAL_TIMEOUT_MS, fetchSitemapUrls } from "./fetchLayer.js";
+import { analyseContentCoverage, describeAbsence, CONTENT_KINDS } from "../../../../src/lib/discoverability/contentCoverage.js";
 import { analyseAnswerClarity } from "./answerAnalysis.js";
 import { analyseStructure } from "./structureAnalysis.js";
 import { analyseEntityAuthority } from "./entityAnalysis.js";
@@ -31,13 +32,18 @@ import { fetchWebVitals, webVitalsAvailable, PSI_TIMEOUT_MS } from "./webVitals.
 import { sampleCitations, resolveEngine } from "./citationSampling.js";
 import { evaluatePassage, aiEvaluationEnabled } from "./aiEvaluator.js";
 import { createDeadline, budgetFromEnv } from "./deadline.js";
-import { scoreAudit } from "../../../../src/lib/discoverability/scoringModel.js";
+import { scoreAudit, SCORING_MODEL_VERSION } from "../../../../src/lib/discoverability/scoringModel.js";
 import { buildRecommendation, rankRecommendations, estimateTotalLift, estimateUnblockedLift, applyDependencies }
   from "../../../../src/lib/discoverability/recommendationModel.js";
 import { buildConstruct } from "../../../../src/lib/discoverability/constructTemplates.js";
+import { BLOCKER_GATES } from "../../../../src/lib/discoverability/recommendationModel.js";
 import { severityTally, ISSUES } from "../../../../src/lib/discoverability/issueCatalog.js";
 import { applyProfile, AUDIT_PROFILES, applyPageTypePack, notApplicableSignals, packFor }
   from "../../../../src/lib/discoverability/auditProfiles.js";
+import { resolveAuditProfile, normaliseGeography, normaliseCompetitorUrls, PRIMARY_GOALS }
+  from "../../../../src/lib/discoverability/intakeModel.js";
+import { createEvidenceCollector } from "./evidenceCollector.js";
+import { attachEvidenceToPillars } from "../../../../src/lib/discoverability/evidenceModel.js";
 
 export const PIPELINE_STAGES = Object.freeze([
   "audit.fetch", "audit.render", "audit.parse",
@@ -45,7 +51,12 @@ export const PIPELINE_STAGES = Object.freeze([
 ]);
 
 /** Facts the construct generators need, gathered from the parsed page. */
-function constructFacts(parsed, url) {
+/** Which content kind each gap issue briefs. One issue per kind, by design. */
+const CONTENT_GAP_KIND = Object.freeze({
+  "AC-09": "comparison", "AC-10": "use_case", "AC-11": "industry", "AC-12": "category",
+});
+
+function constructFacts(parsed, url, extra = {}) {
   const org = findSchema(parsed.jsonLd || [], "Organization");
   const article = findSchema(parsed.jsonLd || [], "Article")
     || findSchema(parsed.jsonLd || [], "BlogPosting");
@@ -84,6 +95,15 @@ function constructFacts(parsed, url) {
       brand: org?.name || "", primaryPhrase: parsed.headingStats?.h1Text || "",
     },
     robots_txt: { sitemapUrl: origin ? `${origin}/sitemap.xml` : "" },
+    internal_links: { links: parsed.links || {}, url },
+    // A FUNCTION, not an object: four content-gap issues share one asset type
+    // and each needs its own kind, so the facts are resolved per recommendation.
+    content_brief: (rec) => ({
+      kind: CONTENT_GAP_KIND[rec?.code] || "category",
+      brand: org?.name || host,
+      competitorUrls: extra.competitorUrls || [],
+      subject: parsed.headingStats?.h1Text || "",
+    }),
     entity_card: {
       brand: org?.name || host,
       description: org?.description || parsed.meta?.description || "",
@@ -99,7 +119,11 @@ function constructFacts(parsed, url) {
  * @param {string} url
  * @param {object} options
  * @param {"mobile"|"desktop"} [options.deviceProfile]
- * @param {string} [options.auditProfile]     balanced | seo | aeo | geo
+ * @param {string} [options.auditProfile]     one of PROFILE_IDS; omit to have one chosen
+ * @param {string} [options.primaryGoal]      one of PRIMARY_GOAL_IDS
+ * @param {object} [options.targetGeography]  {country, region, city, language}
+ * @param {string[]} [options.competitorUrls] recorded context; nothing is fetched
+ * @param {string} [options.auditType]        url | domain | benchmark | prompt_monitor | rerun
  * @param {string} [options.pageTypeHint]
  * @param {string[]} [options.prompts]        prompt set for citation sampling
  * @param {boolean} [options.skipWebVitals]
@@ -111,7 +135,30 @@ export async function runAudit(url, options = {}) {
   const env = options.env || process.env;
   const now = options.now ?? Date.now();
   const deviceProfile = options.deviceProfile === "desktop" ? "desktop" : "mobile";
-  const auditProfile = AUDIT_PROFILES[options.auditProfile] ? options.auditProfile : "balanced";
+
+  // ── The intake, normalised once ─────────────────────────────────────────
+  // Everything the customer said before anything was fetched. It is echoed on
+  // the result rather than re-read from the audit row so a guest run — which
+  // has no row — carries the same shape as a stored one.
+  const requestedProfile = AUDIT_PROFILES[options.auditProfile] ? options.auditProfile : null;
+  const primaryGoal = PRIMARY_GOALS[options.primaryGoal] ? options.primaryGoal : null;
+  const targetGeography = normaliseGeography(options.targetGeography);
+  const competitorUrls = normaliseCompetitorUrls(options.competitorUrls).urls;
+  const auditType = options.auditType || "url";
+
+  // Settled TWICE, and this is the first pass: it can see the choice and the
+  // goal but not the page, and it is what an unreachable URL is reported under
+  // — a fetch that never returned HTML gives inference nothing to read, and a
+  // profile guessed from a page we never saw would be a fabrication.
+  let { profile: auditProfile, source: auditProfileSource } =
+    resolveAuditProfile({ requested: requestedProfile, primaryGoal });
+
+  const intake = {
+    audit_type: auditType,
+    primary_goal: primaryGoal,
+    target_geography: targetGeography,
+    competitor_urls: competitorUrls,
+  };
   const stageErrors = [];
   const startedAt = now;
 
@@ -122,6 +169,13 @@ export async function runAudit(url, options = {}) {
   // killed at 10-26s — which is what produced `POST /audits failed (504)`.
   // See deadline.js for the measurements.
   const deadline = options.deadline || createDeadline(options.budgetMs ?? budgetFromEnv(env));
+
+  // Every observation any analyser makes is recorded here, at the point it is
+  // made, and lands on the signal or issue it supports. `now` rather than a
+  // clock read per record: two observations from the same audit run must carry
+  // the same collection timestamp, or a diff between two audits starts showing
+  // sub-second jitter as though it were change.
+  const evidence = createEvidenceCollector({ url, collectedAt: now });
 
   // ── 1 + 2. fetch and render, concurrently ────────────────────────────────
   const collected = await collectPage(url, { env, deadline });
@@ -134,7 +188,8 @@ export async function runAudit(url, options = {}) {
       url,
       unreachable: true,
       stageErrors: [{ stage: "audit.fetch", error: collected.fetch.error || "no HTML returned" }],
-      ...emptyResultShell({ url, deviceProfile, auditProfile, now, collected }),
+      intake,
+      ...emptyResultShell({ url, deviceProfile, auditProfile, auditProfileSource, now, collected }),
     };
   }
 
@@ -156,6 +211,19 @@ export async function runAudit(url, options = {}) {
     : inferPageType(parsed);
   const pack = packFor(pageType);
 
+  // ── The second pass, now that the page has spoken ───────────────────────
+  // Re-settled rather than patched: `resolveAuditProfile` is ordered, so
+  // handing it the page as well can only ever fill the slot nothing else
+  // claimed. An explicit choice and a stated goal both still outrank whatever
+  // the schema says, and the source travels with the answer so the report can
+  // tell the customer which of the four reasons they are reading this view for.
+  ({ profile: auditProfile, source: auditProfileSource } = resolveAuditProfile({
+    requested: requestedProfile,
+    primaryGoal,
+    pageType,
+    schemaTypes: parsed.schemaTypes || [],
+  }));
+
   // ── external evidence, all optional, all concurrent ──────────────────────
   const org = findSchema(parsed.jsonLd || [], "Organization");
   let host = "";
@@ -171,7 +239,7 @@ export async function runAudit(url, options = {}) {
   // its weight redistributes (rule 1.1) and `coverage` reports the thinness.
   // A thin audit that says it is thin beats a 504 that says nothing.
   const budgetLeft = deadline.remaining();
-  const vitalsSlice = deadline.sliceFor(PSI_TIMEOUT_MS);
+  const vitalsSlice = deadline.sliceFor(Math.min(PSI_TIMEOUT_MS, 3_500));
   const citationBudget = deadline.signalFor(deadline.remaining());
   const aiBudget = deadline.signalFor(deadline.remaining());
   const canonicalSlice = deadline.sliceFor(CANONICAL_TIMEOUT_MS);
@@ -207,6 +275,10 @@ export async function runAudit(url, options = {}) {
     wantCitations
       ? sampleCitations({
           brand, host, topic: parsed.headingStats?.h1Text || parsed.meta?.title || "",
+          // W6.2 — the declared dimensions W2 already collects. Nothing here is
+          // inferred: an absent dimension drops its prompt kinds entirely.
+          competitors: competitorUrls, geography: targetGeography, industries: [],
+          pageText: parsed.text || "",
           prompts: options.prompts, env, engine: options.citationEngine,
           signal: citationBudget.signal, timeoutMs: citationBudget.ms,
         }).catch(() => null).finally(() => citationBudget.clear())
@@ -230,13 +302,17 @@ export async function runAudit(url, options = {}) {
   if (citationResult?.error) stageErrors.push({ stage: "audit.score", signal: "citation_footprint", error: citationResult.error });
 
   // ── 4. analyse and score ─────────────────────────────────────────────────
-  const answer = analyseAnswerClarity(parsed, { aiEvaluated: Boolean(aiResult) });
-  const structure = analyseStructure(parsed, {});
-  const entity = analyseEntityAuthority(parsed, { now, citationSample: citationResult });
+  const answer = analyseAnswerClarity(parsed, { aiEvaluated: Boolean(aiResult), evidence });
+  const structure = analyseStructure(parsed, { evidence });
+  const entity = analyseEntityAuthority(parsed, { now, citationSample: citationResult, evidence });
 
   // The FAQ mismatch penalty belongs to the technical layer but is only
-  // detectable by the structural comparison, so it is threaded across.
+  // detectable by the structural comparison, so it is threaded across. The
+  // entity-schema one is threaded the same way and for the same reason: it is
+  // detected where the markup is read and applied where the multiplicative
+  // layer lives, so there stays exactly one list of reasons a score is scaled.
   const faqMismatch = structure.issues.some((i) => i.code === "SH-07");
+  const entitySchemaInvalid = entity.issues.some((i) => i.code === "EA-11");
   const technical = analyseTechnical(parsed, {
     url,
     fetch: collected.fetch,
@@ -245,9 +321,73 @@ export async function runAudit(url, options = {}) {
     webVitals,
     canonicalStatus,
     faqMismatch,
+    entitySchemaInvalid,
+    sitemaps: collected.sitemaps || [],
+    evidence,
   });
 
-  const analyses = [answer, structure, entity, technical];
+  // ── content coverage ─────────────────────────────────────────────────────
+  // Runs LAST among the network stages and takes whatever budget is left over.
+  // Everything above it scores the page the customer asked about; this is a
+  // side quest about the rest of the site, and it must never be the reason the
+  // audit they requested came back thin.
+  //
+  // 🔴 `usable` GATES EVERY FINDING BELOW. `fetchSitemapUrls` reports
+  // `fetched: false` for a missing robots declaration, a 404, a timeout or an
+  // exhausted budget, and `analyseContentCoverage` returns an EMPTY `missing`
+  // list in every one of those cases. A sitemap we could not read produces no
+  // recommendation at all — never "you publish no comparison page", which is a
+  // statement about the customer built out of a fact about us.
+  const sitemap = await fetchSitemapUrls(collected.sitemaps || [], { deadline });
+  const coverage = analyseContentCoverage(sitemap);
+  const contentIssues = [];
+  const KIND_TO_GAP_CODE = { comparison: "AC-09", use_case: "AC-10", industry: "AC-11", category: "AC-12" };
+  for (const kindId of coverage.missing) {
+    const code = KIND_TO_GAP_CODE[kindId];
+    if (!code) continue;
+    contentIssues.push({
+      code, signalCode: null, measuredScore: null,
+      evidence: describeAbsence(kindId, coverage),
+      details: {
+        kind: kindId,
+        urls_seen: coverage.urlsSeen,
+        documents_read: sitemap.documentsRead,
+        kinds_present: coverage.present,
+      },
+      // Url-shape matching is a heuristic: a site may publish comparisons at a
+      // path we do not recognise, and saying so is cheaper than being wrong.
+      confidenceOverride: 60,
+    });
+  }
+
+  // ── technical sequencing ─────────────────────────────────────────────────
+  // ⚠️ TA-18 EXISTS ONLY WHERE THE ORDER MATTERS. Every technical finding
+  // already carries its own recommendation, so raising a consolidated brief on
+  // any page with two findings would be pure queue noise. It fires only when an
+  // ACTIVE blocker gates at least one other finding — which is exactly when a
+  // developer working top-down would otherwise waste the effort.
+  const activePenalties = technical.penalties || [];
+  const activeGates = activePenalties.map((pen) => BLOCKER_GATES[pen]).filter(Boolean);
+  const gateCodes = activeGates.map((g) => g.code);
+  // ⚠️ THE GATED WORK IS MOSTLY NOT TECHNICAL. A `noindex` blocks answer
+  // clarity, structure and entity authority — the copy work — which is exactly
+  // why the sequencing is worth stating. An earlier version of this condition
+  // looked only for a SECOND technical finding and stayed silent on the most
+  // important case there is: one blocker, and a page full of writing that will
+  // not count until it is cleared.
+  const gatedPillars = new Set(activeGates.flatMap((g) => g.pillars));
+  const allFindings = [answer, structure, entity, technical].flatMap((a) => a.issues || []);
+  const sequencingMatters = gateCodes.length > 0
+    && allFindings.some((i) => !gateCodes.includes(i.code) && gatedPillars.has(ISSUES[i.code]?.pillar));
+  const sequencingIssues = sequencingMatters ? [{
+    code: "TA-18", signalCode: null, measuredScore: null,
+    evidence: `${gateCodes.length} blocking defect${gateCodes.length === 1 ? "" : "s"} (${gateCodes.join(", ")}) make other fixes on this page inert until cleared.`,
+    details: { blockers: gateCodes, penalties: activePenalties, findings: allFindings.length },
+  }] : [];
+
+  const analyses = [answer, structure, entity, technical,
+    { signals: {}, reasons: {}, issues: contentIssues, facts: {} },
+    { signals: {}, reasons: {}, issues: sequencingIssues, facts: {} }];
   const signalValues = Object.assign({}, ...analyses.map((a) => a.signals));
   const unknownReasons = Object.assign({}, ...analyses.map((a) => a.reasons));
 
@@ -264,6 +404,17 @@ export async function runAudit(url, options = {}) {
 
   // The model refines the deterministic pre-screen, bounded and marked down.
   if (aiResult?.passageIndependence !== null && aiResult?.passageIndependence !== undefined) {
+    // Recorded as its own record rather than by editing the analyser's: the
+    // deterministic pre-screen genuinely happened and its reading is still the
+    // reason the model was asked at all. Overwriting it would erase the only
+    // check on a model that disagrees with the page.
+    evidence.signal("passage_independence", {
+      method: "model_inference",
+      section: "Model re-read of the primary answer",
+      observedValue: aiResult.passageIndependence,
+      excerpt: aiResult.notes || "",
+      structured: { provider: aiResult.provider || null, deterministic_prescreen: signalValues.passage_independence ?? null },
+    });
     signalValues.passage_independence = aiResult.passageIndependence;
   }
 
@@ -275,6 +426,14 @@ export async function runAudit(url, options = {}) {
     }),
     auditProfile,
   );
+
+  // ── attach the workings to the numbers ───────────────────────────────────
+  // The scorer is pure and knows nothing about where a value came from, which
+  // is right — but a score without its provenance is exactly what the BRD
+  // forbids. attachEvidenceToPillars() is the SAME function rehydrate() calls
+  // on the way back out of Postgres, so a fresh audit and a stored one carry
+  // identical shapes by construction.
+  scored.pillars = attachEvidenceToPillars(scored.pillars, evidence.signalMap());
 
   // ── 5. recommend ─────────────────────────────────────────────────────────
   const rawIssues = analyses
@@ -295,12 +454,50 @@ export async function runAudit(url, options = {}) {
     issues.push({
       code: i.code, pillar: meta.pillar, severity: meta.severity,
       frameworks: [...meta.frameworks], title: meta.title,
+      // `evidence` stays the human sentence it has always been — it is what the
+      // report prints and what every stored row and diff already contains.
+      // `evidenceRecords` is the structured provenance beside it, inherited
+      // from the signal this finding sits on.
       evidence: i.evidence || "", details: i.details || null,
+      evidenceRecords: evidence.evidenceForIssue(i.code, i.signalCode),
+
+      // ── OBSERVED FACT AND INFERENCE, AS TWO FIELDS ─────────────────────
+      //
+      // The BRD is explicit that these are different sentences, and the reason
+      // is that they have different warranties. "The page has two H1 elements"
+      // is something we MEASURED on this run and will defend; "this dilutes
+      // the page's topical signal" is a REASONED consequence that a reasonable
+      // expert could argue with.
+      //
+      // They were already two values in this codebase — the per-audit
+      // `evidence` sentence and the catalogue's `why` — but they arrived at
+      // the reader blended into one paragraph, which gives the second the
+      // authority of the first. Naming them is the whole fix.
+      //
+      // `observed` is per-AUDIT and `inference` is per-CODE, which is exactly
+      // what you would expect: what we saw varies by page, what it means does
+      // not.
+      observed: i.evidence || null,
+      inference: meta.why || null,
+
+      // Diagnosis and referral. See gapTaxonomy.js for why these are two
+      // registries rather than one.
+      rootCause: meta.rootCause || null,
+      module: meta.module || null,
+      // Denormalised from the catalogue onto the row so the queue can be
+      // filtered by owner without a join against a table that does not exist
+      // — `owner` has always been catalogue-only, and "show me everything
+      // engineering has to do" was therefore a client-side filter over a list
+      // the client had to have already fetched in full.
+      owner: meta.owner || null,
+      // Issues have had no lifecycle at all. `open` is the honest starting
+      // state for every finding; W8 wires the transitions.
+      status: "open",
     });
   }
   const packedIssues = applyPageTypePack(issues, pageType);
 
-  const facts = constructFacts(parsed, url);
+  const facts = constructFacts(parsed, url, { competitorUrls });
   const recommendations = rankRecommendations(
     applyDependencies(rawIssues
       .filter((i, idx) => rawIssues.findIndex((x) => x.code === i.code) === idx)
@@ -318,14 +515,39 @@ export async function runAudit(url, options = {}) {
           activePenalties: technical.penalties || [],
         });
         if (!rec) return null;
+        const assetFacts = typeof facts[rec.assetType] === "function"
+          ? facts[rec.assetType](rec)
+          : facts[rec.assetType];
         rec.implementationAsset = rec.assetType
-          ? buildConstruct(rec.assetType, facts[rec.assetType])
+          ? buildConstruct(rec.assetType, assetFacts)
           : null;
         return rec;
       })
       .filter(Boolean),
     technical.penalties || []),
   );
+
+  // ── the technical brief is built LAST, on purpose ────────────────────────
+  // It is the one construct whose content is the OTHER recommendations —
+  // their titles, their order, and which of them `applyDependencies` marked
+  // as waiting. None of that exists until ranking has finished, so a facts
+  // entry resolved during the map above would necessarily describe a
+  // half-built list. A second pass is the honest way to say "this one depends
+  // on all the others".
+  const sequencingRec = recommendations.find((r) => r.code === "TA-18");
+  if (sequencingRec) {
+    const briefIssues = recommendations
+      .filter((r) => r.code !== "TA-18"
+        && (gateCodes.includes(r.code) || r.blockedBy || r.pillar === "technical_accessibility"))
+      .map((r) => ({
+        code: r.code, title: r.title, fix: r.fix,
+        blockedBy: r.blockedBy || null,
+        isBlocker: gateCodes.includes(r.code),
+      }));
+    sequencingRec.implementationAsset = buildConstruct("technical_brief", {
+      issues: briefIssues, blockers: activePenalties, url,
+    });
+  }
 
   // ── 6. report ────────────────────────────────────────────────────────────
   return {
@@ -342,8 +564,11 @@ export async function runAudit(url, options = {}) {
       language: parsed.meta?.lang || null,
       device_profile: deviceProfile,
       audit_profile: auditProfile,
+      audit_profile_source: auditProfileSource,
     },
+    intake,
     ...scored,
+    scoringModelVersion: SCORING_MODEL_VERSION,
     issues: packedIssues,
     severityTally: severityTally(packedIssues),
     recommendations,
@@ -387,19 +612,61 @@ export async function runAudit(url, options = {}) {
  */
 export const MAX_STORED_RUNS = 10;
 
-/** Best guess at the page type, used to select the rule pack. */
+/**
+ * Best guess at the page type, used to select the rule pack.
+ *
+ * ── ORDER IS THE WHOLE ALGORITHM ──────────────────────────────────────────
+ * Schema first, because that is the page ASSERTING what it is. Then the URL's
+ * own shape, which the author also controls and cannot fake by accident. Then
+ * words in the title and H1, which are the weakest evidence here and the most
+ * easily coincidental. A pack only ever adjusts expectations, so a wrong guess
+ * costs a suppressed or promoted issue rather than a wrong score — but it is
+ * still a claim we make in the UI ("Comparison page"), and the hint overrides
+ * it precisely because the customer knows and we are guessing.
+ */
 export function inferPageType(parsed) {
   const types = (parsed.schemaTypes || []).map((t) => String(t).toLowerCase());
   if (types.includes("faqpage")) return "faq";
   if (types.includes("howto")) return "howto";
   if (types.includes("product")) return "product";
+  // A LocalBusiness SUBTYPE is still a location page. Matching the suffix
+  // rather than enumerating the ~200 subtypes schema.org defines, which is a
+  // list that would be stale the week after it was written.
+  if (types.some((t) => /(?:localbusiness|store|restaurant|clinic|dentist|physician|hotel)$/.test(t))
+      || types.includes("place")) return "location";
+  if (types.includes("service") || types.includes("professionalservice")) return "service";
   if (types.includes("article") || types.includes("blogposting")) return "article";
+
+  // The root of a site is a homepage whatever it says in its title, and the
+  // path is the one piece of evidence here that cannot be a coincidence.
+  // Guarded so a parsed object with no URL — which is how most of the unit
+  // tests call this — cannot match on an empty string.
+  try {
+    if (parsed.url) {
+      const { pathname } = new URL(parsed.url);
+      if (pathname === "/" || pathname === "") return "homepage";
+    }
+  } catch { /* unparseable URL is simply not evidence of a homepage */ }
 
   const h1 = (parsed.headingStats?.h1Text || "").toLowerCase();
   const title = (parsed.meta?.title || "").toLowerCase();
   const both = `${h1} ${title}`;
-  if (/\b(pricing|plans?|cost)\b/.test(both)) return "pricing";
+  // ⚠️ THE ORDER OF THESE THREE CHANGED IN W2, DELIBERATELY.
+  //
+  // "how to" is the strongest intent marker of the set and now runs first: it
+  // used to sit behind the pricing test, so "How to reduce hosting cost" was
+  // filed as a pricing page and asked for Offer markup it has no business
+  // carrying.
+  //
+  // Comparison then runs before pricing, for the same reason in reverse.
+  // "Acme vs Rival pricing" is a comparison that happens to discuss price, and
+  // the two packs differ in exactly the way that matters for it: the
+  // comparison pack promotes AC-08 — comparative content written as prose —
+  // which is that page's defining failure mode and the one the pricing pack
+  // says nothing about.
   if (/\bhow to\b/.test(both)) return "howto";
+  if (/\b(vs\.?|versus)\b|\balternatives?\b|\bcompar(?:e|ed|ison)\b/.test(both)) return "comparison";
+  if (/\b(pricing|plans?|cost)\b/.test(both)) return "pricing";
   if (/\b(faq|frequently asked)\b/.test(both)) return "faq";
   if (/\b(docs?|documentation|reference|api)\b/.test(both)) return "docs";
   if ((parsed.faqPairs || []).length >= 3) return "faq";
@@ -408,26 +675,46 @@ export function inferPageType(parsed) {
 }
 
 /** The shape returned when a page could not be fetched at all. */
-function emptyResultShell({ url, deviceProfile, auditProfile, now, collected }) {
+function emptyResultShell({ url, deviceProfile, auditProfile, auditProfileSource, now, collected }) {
   const scored = scoreAudit({ signalValues: {}, penaltyCodes: [] });
+  // Decorated with an EMPTY evidence map rather than left undecorated. An
+  // unreachable page gathered no observations, but its signals must still carry
+  // the same fields a reachable page's do — a consumer that reads
+  // `signal.evidence.length` should get 0, not a TypeError, and the shape of a
+  // result must not depend on whether the fetch happened to succeed.
+  scored.pillars = attachEvidenceToPillars(scored.pillars, {});
   const issueCode = collected.fetch.status && collected.fetch.status !== 200 ? "TA-04" : "TA-04";
   const rec = buildRecommendation(issueCode, {
     evidence: collected.fetch.status
       ? `The page returned HTTP ${collected.fetch.status}.`
       : `The page could not be fetched: ${collected.fetch.error}.`,
   });
+  const meta = ISSUES[issueCode];
+  // Every field a reachable page's issue carries, for the same reason the
+  // pillars above are decorated with an empty evidence map rather than left
+  // undecorated: the SHAPE of a result must not depend on whether the fetch
+  // happened to succeed. A consumer reading `issue.rootCause` should get a
+  // cause, not undefined, on the one audit where the cause is least ambiguous.
   const issue = {
-    code: issueCode, pillar: ISSUES[issueCode].pillar, severity: ISSUES[issueCode].severity,
-    frameworks: [...ISSUES[issueCode].frameworks], title: ISSUES[issueCode].title,
+    code: issueCode, pillar: meta.pillar, severity: meta.severity,
+    frameworks: [...meta.frameworks], title: meta.title,
     evidence: rec.evidence, details: { status: collected.fetch.status, error: collected.fetch.error },
+    observed: rec.evidence || null,
+    inference: meta.why || null,
+    rootCause: meta.rootCause || null,
+    module: meta.module || null,
+    owner: meta.owner || null,
+    status: "open",
   };
   return {
     target: {
       url, canonical_url: null, final_url: collected.fetch.finalUrl || url,
       page_type: "unknown", language: null,
       device_profile: deviceProfile, audit_profile: auditProfile,
+      audit_profile_source: auditProfileSource || "default",
     },
     ...scored,
+    scoringModelVersion: SCORING_MODEL_VERSION,
     issues: [issue],
     severityTally: severityTally([issue]),
     recommendations: [rec],

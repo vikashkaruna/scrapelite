@@ -25,6 +25,24 @@ export const WEBHOOK_EVENTS = Object.freeze([
   "audit.failed",
   "audit.regressed",
   "recommendation.created",
+  // W8 — the recommendation lifecycle. A queue that can be driven by API but
+  // whose movement nothing can subscribe to forces every integration to poll,
+  // and a poller that runs every minute learns about a state change no faster
+  // than one that runs every hour while costing sixty times as much.
+  //
+  // ⚠️ ONE EVENT PER STATE RATHER THAN A GENERIC `recommendation.updated`.
+  // A subscriber that only cares about validation should not have to receive —
+  // and filter — every assignment and every note edit to find it.
+  "recommendation.accepted",
+  "recommendation.assigned",
+  "recommendation.in_progress",
+  "recommendation.implemented",
+  "recommendation.validation_scheduled",
+  "recommendation.validated",
+  "recommendation.no_measurable_change",
+  "recommendation.regressed",
+  "recommendation.dismissed",
+  "recommendation.reopened",
 ]);
 
 /**

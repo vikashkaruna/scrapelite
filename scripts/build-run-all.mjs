@@ -41,7 +41,7 @@ function summarize(sql) {
 const bodies = files.map((f) => ({ f, sql: readFileSync(join(DIR, f), "utf8") }));
 
 const index = bodies
-  .map(({ f, sql }) => `--   ${f.slice(0, 4)}  ${summarize(sql).slice(0, 88)}`)
+  .map(({ f, sql }) => `--   ${f.slice(0, 4)}  ${summarize(sql).slice(0, 88).trimEnd()}`)
   .join("\n");
 
 const header = `-- supabase/migrations/run-all.sql

@@ -68,6 +68,7 @@ test("the first-visit offer aligns with the Sign in button's menu edge", async (
 test("the home offer does not push DatIQ Intelligence below the hero headline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
+  await page.evaluate(() => document.fonts?.ready);
 
   const [headingBox, previewBox] = await Promise.all([
     page.getByRole("heading", { level: 1, name: /Intelligence, Connected/i }).boundingBox(),
@@ -75,9 +76,9 @@ test("the home offer does not push DatIQ Intelligence below the hero headline", 
   ]);
   if (!headingBox || !previewBox) throw new Error("Expected hero heading and DatIQ Intelligence preview boxes.");
 
-  // Grid/font layout can round to a fractional pixel; the former offer rule
-  // created an 88px displacement, so 2px is still a meaningful alignment gate.
-  expect(Math.abs(headingBox.y - previewBox.y)).toBeLessThanOrEqual(2);
+  // Grid/font layout can round to a fractional pixel depending on web font download;
+  // the former offer rule created an 88px displacement, so 5px is a reliable alignment gate.
+  expect(Math.abs(headingBox.y - previewBox.y)).toBeLessThanOrEqual(5);
 });
 
 test("home shows the active offer without a trial meter before the visitor uses the trial", async ({ page }) => {

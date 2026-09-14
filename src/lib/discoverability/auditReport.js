@@ -15,6 +15,7 @@
 import { PILLAR_IDS, pillarLabel, signalLabel } from "./signalRegistry.js";
 import { FRAMEWORKS, scoreBand, PENALTIES } from "./scoringModel.js";
 import { SEVERITIES } from "./issueCatalog.js";
+import { groupByRootCause } from "./gapTaxonomy.js";
 import {
   buildBrandingContext, brandingMarkdownFooter, brandingCsvHeaderRows, brandingCsvFooterRows, brandingJsonMeta,
 } from "../exportBranding.js";
@@ -122,6 +123,26 @@ export function buildMarkdownReport(audit, options = {}) {
 
   // ── issues ───────────────────────────────────────────────────────────────
   const issues = audit.issues || [];
+
+  // ── THE DIAGNOSIS COMES BEFORE THE LIST ────────────────────────────────
+  // Forty individually-true findings is a list, not a diagnosis, and the
+  // reader's actual question is "what is wrong with this page". Grouping by
+  // severity — which is all this section used to do — answers "what is worst"
+  // instead, and eleven findings that all reduce to one afternoon's work still
+  // read as eleven problems.
+  const causeGroups = groupByRootCause(issues, {
+    severityRank: (i) => SEVERITIES.indexOf(i.severity),
+  });
+  if (causeGroups.length > 0) {
+    out.push(`## What is actually wrong`);
+    out.push("");
+    for (const g of causeGroups) {
+      out.push(`- **${g.label}** (${g.count}) — ${g.description}`);
+      out.push(`  ${g.issues.map((i) => i.code).join(", ")}`);
+    }
+    out.push("");
+  }
+
   out.push(`## Issues (${issues.length})`);
   out.push("");
   if (issues.length === 0) {
@@ -135,8 +156,17 @@ export function buildMarkdownReport(audit, options = {}) {
       out.push("");
       for (const i of group) {
         out.push(`- **${i.code} — ${i.title}**`);
-        if (i.evidence) out.push(`  ${i.evidence}`);
+        // ── Observed and inferred, LABELLED ────────────────────────────
+        // They have different warranties, and an unlabelled paragraph gives
+        // the reasoned half the authority of the measured half. The labels
+        // are the whole fix — a reader who disagrees with "this dilutes the
+        // topical signal" can now see that it is our reasoning and not our
+        // reading.
+        const observed = i.observed || i.evidence;
+        if (observed) out.push(`  **Observed:** ${observed}`);
+        if (i.inference) out.push(`  **Why it matters:** ${i.inference}`);
         out.push(`  _Affects: ${(i.frameworks || []).join(", ").toUpperCase() || "—"}_`);
+        if (i.owner) out.push(`  _Owner: ${i.owner}_`);
       }
       out.push("");
     }
@@ -266,16 +296,29 @@ export function buildMarkdownReport(audit, options = {}) {
 
 /** Issues as CSV, for a spreadsheet remediation tracker. */
 export function issuesToCsv(audit) {
-  const rows = [["code", "severity", "pillar", "frameworks", "title", "evidence"]];
+  // `evidence` keeps its column and its position — an existing consumer's
+  // header offsets do not move — and the new fields are APPENDED. `observed`
+  // duplicates `evidence` on a current audit and is still worth its own
+  // column: it is the one a reader can sort beside `inference` to see which
+  // claims are measured and which are reasoned.
+  const rows = [[
+    "code", "severity", "pillar", "frameworks", "title", "evidence",
+    "observed", "inference", "root_cause", "recommended_module", "owner", "status",
+  ]];
   for (const i of audit?.issues || []) {
-    rows.push([i.code, i.severity, i.pillar, (i.frameworks || []).join(" "), i.title, i.evidence || ""]);
+    rows.push([
+      i.code, i.severity, i.pillar, (i.frameworks || []).join(" "), i.title, i.evidence || "",
+      i.observed || i.evidence || "", i.inference || "",
+      i.rootCause || i.root_cause || "", i.module || i.recommended_module || "",
+      i.owner || i.owner_role || "", i.status || "open",
+    ]);
   }
   return toCsv(rows);
 }
 
 /** The recommendation queue as CSV — the export a delivery team actually works from. */
 export function recommendationsToCsv(audit) {
-  const rows = [["code", "priority", "priority_score", "owner", "title", "estimated_lift", "effort", "confidence", "frameworks", "status"]];
+  const rows = [["code", "priority", "priority_score", "owner", "title", "estimated_lift", "effort", "confidence", "frameworks", "status", "issue_id"]];
   for (const r of audit?.recommendations || []) {
     rows.push([
       r.code, r.priority, r.priorityScore ?? r.priority_score ?? "",
@@ -284,6 +327,10 @@ export function recommendationsToCsv(audit) {
       r.effortScore ?? r.effort_score ?? "",
       r.confidenceScore ?? r.confidence_score ?? "",
       (r.frameworks || []).join(" "), r.status || "open",
+      // Null on every recommendation written before W4 — the column existed
+      // and nothing populated it — which is what "this task predates the
+      // link" looks like, not an error.
+      r.issueId ?? r.issue_id ?? "",
     ]);
   }
   return toCsv(rows);
@@ -410,6 +457,12 @@ export function toJsonPayload(audit, { generatedAt = null, brandKit = null } = {
     audit_id: audit.auditId || audit.id || null,
     timestamp: audit.meta?.startedAt ? new Date(audit.meta.startedAt).toISOString() : null,
     target: audit.target || null,
+    // What this audit was COMMISSIONED to do, beside what it measured. A
+    // consumer diffing two exports needs to know the two were asked the same
+    // question before it reads the delta as page movement. Null on every audit
+    // that predates migration 0049 — the question was not asked, and a
+    // placeholder would claim an intent nobody stated.
+    intake: audit.intake || null,
     framework_scores: {
       overall: audit.finalScore, seo: audit.seoScore, aeo: audit.aeoScore, geo: audit.geoScore,
     },
@@ -441,6 +494,16 @@ export function toJsonPayload(audit, { generatedAt = null, brandKit = null } = {
         measured: Boolean(s.measured),
         applicable: s.applicable !== false,
         unknown_reason: s.measured ? null : (s.unknownReason || "not_measured"),
+        // ── the workings ──────────────────────────────────────────────────
+        // The BRD requires every score to store its calculation components,
+        // raw value, threshold, evidence and model version. A JSON export that
+        // carries the number but not the provenance is exactly the archive a
+        // customer cannot use to challenge a finding six months later, which is
+        // the one moment the evidence matters most.
+        raw_value: s.rawValue ?? null,
+        thresholds: s.thresholds ?? null,
+        confidence: s.confidence ?? null,
+        evidence: s.evidence || [],
       })),
     ),
     bands: Object.fromEntries(
@@ -452,7 +515,14 @@ export function toJsonPayload(audit, { generatedAt = null, brandKit = null } = {
     technical_facts: audit.facts?.technical || {},
     content_facts: audit.facts?.content || {},
     entity_facts: audit.facts?.entity || {},
-    issues: audit.issues || [],
+    // `evidence` stays the human sentence every existing consumer already reads;
+    // `evidence_records` is the structured provenance beside it. Added as a new
+    // key rather than a change of shape, for the same reason `signal_detail`
+    // sits beside `pillar_scores.signals` — an existing integration keeps working.
+    issues: (audit.issues || []).map((i) => ({
+      ...i,
+      evidence_records: i.evidenceRecords || i.evidence_records || [],
+    })),
     recommendations: audit.recommendations || [],
     // Everything the on-screen report shows that the payload used to omit. The
     // JSON export is what an API consumer archives, so a section visible in the
@@ -485,6 +555,9 @@ export function toJsonPayload(audit, { generatedAt = null, brandKit = null } = {
       sentiment_score: run.sentiment_score ?? null,
     })),
     score_math: audit.scoreMath || null,
+    // Which maths produced every number above. A consumer diffing two archived
+    // payloads has to be able to tell whether they are comparable at all.
+    scoring_model_version: audit.scoringModelVersion || null,
     engine: audit.meta?.engine || null,
     stage_errors: audit.stageErrors || [],
   };

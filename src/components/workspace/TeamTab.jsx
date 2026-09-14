@@ -23,8 +23,10 @@ import {
   inviteToWorkspace,
   removeWorkspaceMember,
   setWorkspaceMemberPaused,
+  setWorkspaceDiscoverabilityRole,
   revokeWorkspaceInvite,
 } from "../../lib/workspacesService.js";
+import { DISCOVERABILITY_ROLES } from "../../lib/discoverability/governanceModel.js";
 import { timeAgo } from "../../lib/utils.js";
 
 const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" };
@@ -165,6 +167,16 @@ export default function TeamTab() {
     await loadDetail(selectedId);
   };
 
+  const handleDiscoverabilityRole = async (targetUserId, role) => {
+    const r = await setWorkspaceDiscoverabilityRole(selectedId, targetUserId, role);
+    if (!r.ok) {
+      showToast(r.error || "Couldn't change that role.", "alert-circle");
+      return;
+    }
+    showToast("Discoverability role updated.", "check");
+    await loadDetail(selectedId);
+  };
+
   const handleRevoke = async (inviteId, email) => {
     const r = await revokeWorkspaceInvite(selectedId, inviteId);
     if (!r.ok) { showToast(r.error || "Couldn't revoke that invite.", "alert-circle"); return; }
@@ -271,6 +283,22 @@ export default function TeamTab() {
                         {m.userId === user?.id && <span className="ws-team-you"> (you)</span>}
                       </span>
                       <RoleBadge role={m.role} />
+                      {canManage ? (
+                        <select
+                          className="ws-discoverability-role"
+                          value={m.discoverabilityRole || "viewer"}
+                          onChange={(e) => handleDiscoverabilityRole(m.userId, e.target.value)}
+                          aria-label={`Discoverability role for ${m.email || m.userId}`}
+                        >
+                          {Object.values(DISCOVERABILITY_ROLES).map((role) => (
+                            <option key={role.id} value={role.id}>{role.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="ws-discoverability-role-badge">
+                          {DISCOVERABILITY_ROLES[m.discoverabilityRole]?.label || "Viewer"}
+                        </span>
+                      )}
                       {/* A paused seat is stated, not implied by a greyed-out
                           row: the member is still here and still counted, and
                           somebody looking at the list needs to know why their

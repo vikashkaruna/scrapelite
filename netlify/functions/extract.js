@@ -606,10 +606,15 @@ export const handler = async (event) => {
   // asymmetry is deliberate and must not be "fixed".
   //
   // `respond`, not `reply`: consumeGuestCredit has not run yet, so there is no
-  // cookie to set — and it would return none here anyway, since it short-
-  // circuits for any request carrying an Authorization header.
+  // cookie to set.
+  //
+  // `verifiedUserId` is captured here so the guest charge below exempts only a
+  // caller whose token actually VERIFIED. It used to exempt any request that
+  // merely carried an Authorization header.
+  let verifiedUserId = null;
   try {
     const resolved = await resolveRequestEntitlement(event);
+    verifiedUserId = resolved?.userId || null;
     // A caller acting "as" a workspace names it in the body; a request naming
     // none is unaffected — personal extractions behave exactly as before.
     // See lib/workspaceContext.js for why this can't just be `requireCapability`.
@@ -701,7 +706,7 @@ export const handler = async (event) => {
   // directly under the SSRF guard, which is how a guest pasting three LinkedIn
   // URLs spent three of their ten free extractions on requests that were
   // refused on policy grounds before a provider was ever contacted.
-  const guestUsage = await consumeGuestCredit(event, "single");
+  const guestUsage = await consumeGuestCredit(event, "single", { verifiedUserId });
   const reply = (statusCode, body) => respond(
     statusCode,
     body,

@@ -21,6 +21,7 @@
 //   SUPABASE_URL=… SUPABASE_ANON_KEY=… node scripts/verify-workflow-rls.mjs
 
 import { readFileSync } from "node:fs";
+import { postgrestAnswer } from "./lib/postgrestAnswer.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -68,34 +69,49 @@ let exposed = 0;
 let unreachable = 0;
 
 for (const t of TABLES) {
-  let status = 0;
+  let res = null;
   try {
-    const res = await fetch(`${url}/rest/v1/${t}?select=id&limit=1`, {
+    const r = await fetch(`${url}/rest/v1/${t}?select=id&limit=1`, {
       headers: { apikey: key },
       signal: AbortSignal.timeout(20_000),
     });
-    status = res.status;
+    res = { status: r.status, headers: r.headers, text: await r.text() };
   } catch (e) {
     unreachable += 1;
     console.log(`  ?  ${t.padEnd(22)} network error: ${e.message}`);
     continue;
   }
 
-  if (status === 200) {
+  // 🔴 A REFUSAL IS EVIDENCE ONLY IF POSTGREST WROTE IT. Behind an egress proxy
+  // that allow-lists hosts, every request is answered 403 by the PROXY before it
+  // reaches Supabase — and counting those as refusals printed "0044 is applied"
+  // from a machine that had never contacted the project. See lib/postgrestAnswer.mjs.
+  const { fromPostgrest, reason } = postgrestAnswer(res);
+  if (!fromPostgrest) {
+    unreachable += 1;
+    console.log(`  ?  ${t.padEnd(22)} INCONCLUSIVE — ${reason}`);
+    continue;
+  }
+
+  if (res.status === 200) {
     exposed += 1;
     console.log(`  ✗  ${t.padEnd(22)} HTTP 200 — READABLE BY ANYONE`);
   } else {
-    console.log(`  ✓  ${t.padEnd(22)} HTTP ${status}`);
+    console.log(`  ✓  ${t.padEnd(22)} HTTP ${res.status}`);
   }
 }
 
 console.log("\n" + "─".repeat(62));
 
-if (unreachable === TABLES.length) {
-  // Every request failed at the network layer. That is not evidence of safety —
-  // saying "locked down" here would be the fail-open mistake this whole fix is
-  // about, one level up.
-  console.log("[verify-workflow-rls] INCONCLUSIVE — the project was unreachable.");
+if (unreachable > 0) {
+  // Not evidence of safety. Saying "locked down" on the strength of answers that
+  // never came from the database would be the fail-open mistake this whole fix
+  // is about, one level up — so ANY inconclusive table makes the run
+  // inconclusive, not just all of them.
+  console.log(
+    `[verify-workflow-rls] INCONCLUSIVE — ${unreachable}/${TABLES.length} probe(s) never reached the project.\n` +
+    `Run this from a network that can reach ${url} before concluding anything about RLS.`
+  );
   process.exit(2);
 }
 

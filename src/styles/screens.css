@@ -8470,6 +8470,35 @@ body.has-consent-banner .site-footer-slim { padding-bottom: 100px; }
   box-shadow: 0 0 0 1px var(--accent);
 }
 
+.dsc-active-audit-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-bottom: 20px;
+  background: var(--surface-raised, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: var(--r-md, 8px);
+  font-size: 13px;
+}
+
+.dsc-active-audit-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+}
+
+.dsc-active-audit-info code {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--accent);
+  background: var(--accent-subtle, rgba(20, 184, 166, 0.1));
+  padding: 2px 6px;
+  border-radius: var(--r-sm, 4px);
+}
+
 .automation-mode-radio {
   margin-top: 2px;
 }
@@ -9612,6 +9641,7 @@ html.dark .dsc-page {
 .dsc-sub { color: var(--text-2); max-width: 62ch; margin: 0; font-size: 14px; }
 .dsc-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dsc-export { display: flex; gap: 2px; border: 1px solid var(--border); border-radius: var(--r-md); padding: 2px; }
+.dsc-tab-label { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ── Composer ───────────────────────────────────────────────────────────── */
 .dsc-composer { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; margin-bottom: 20px; }
@@ -9637,6 +9667,56 @@ html.dark .dsc-page {
 .dsc-field > span { font-weight: 600; }
 .dsc-field select { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
 .dsc-field small { color: var(--text-3); font-size: 12px; line-height: 1.45; }
+/* The goal row is the one intake control above the fold — see AuditComposer's
+   header for why. It gets a divider rather than a panel so it reads as part of
+   the URL bar's own row rather than as the first of the advanced options. */
+.dsc-goal-row { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.dsc-goal-row .dsc-fieldset-hint { margin: 8px 0 0; }
+.dsc-field input[type="text"] { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+.dsc-field input[type="text"]:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.dsc-textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; resize: vertical; min-height: 64px; }
+.dsc-textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+
+/* ── Root-cause summary (W4) ──────────────────────────────────────────────
+   Sits above the severity matrix because "what do I have to go and do" is the
+   question a reader arrives with, and neither the grid nor the list answers it. */
+.dsc-cause-summary { margin: 0 0 18px; }
+.dsc-cause-heading { font-size: 14px; font-weight: 600; margin: 0 0 10px; }
+.dsc-cause-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.dsc-cause { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); font: inherit; font-size: 13px; color: var(--text); cursor: pointer; }
+.dsc-cause:hover { border-color: var(--border-strong); }
+.dsc-cause-on { border-color: var(--accent); background: var(--accent-soft); }
+.dsc-cause-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dsc-cause-label { flex: 1; font-weight: 600; }
+.dsc-cause-count { font-variant-numeric: tabular-nums; color: var(--text-2); }
+.dsc-cause-desc { margin: 5px 0 0; font-size: 12px; line-height: 1.45; color: var(--text-3); }
+
+/* ── Observed vs inferred (W4) ────────────────────────────────────────────
+   The two claims carry different warranties; an unlabelled paragraph gives the
+   reasoned half the authority of the measured half. */
+.dsc-claim-tag { display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: var(--r-pill); font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; vertical-align: 1px; }
+.dsc-claim-observed { background: var(--accent-soft); color: var(--accent-on-soft); }
+.dsc-claim-inferred { background: var(--surface-2, var(--bg)); color: var(--text-3); border: 1px solid var(--border); }
+.dsc-issue-inference { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+.dsc-soon { color: var(--text-3); font-style: italic; }
+
+/* ── Evidence drawer (W1's envelope, finally on a screen — W4) ────────────
+   Collapsed by default and rendered on the signal it supports, because the
+   question is always "why is THIS number what it is". */
+.dsc-evidence-drawer { grid-column: 1 / -1; margin-top: 4px; }
+.dsc-evidence-drawer > summary { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-3); cursor: pointer; list-style: none; padding: 2px 0; }
+.dsc-evidence-drawer > summary::-webkit-details-marker { display: none; }
+.dsc-evidence-drawer > summary:hover { color: var(--text-2); }
+.dsc-evidence-confidence { color: var(--text-3); }
+.dsc-evidence-confidence::before { content: "·"; margin: 0 5px; }
+.dsc-evidence-records { list-style: none; margin: 6px 0 0; padding: 0 0 0 4px; display: grid; gap: 8px; border-left: 2px solid var(--border); }
+.dsc-evidence-record { padding-left: 10px; font-size: 12px; line-height: 1.5; }
+.dsc-evidence-method { color: var(--text-2); text-transform: capitalize; }
+.dsc-evidence-section { color: var(--text-3); }
+.dsc-evidence-section::before { content: "·"; margin: 0 5px; }
+.dsc-evidence-selector { display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: var(--r-sm); background: var(--bg); border: 1px solid var(--border); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--text-2); }
+.dsc-evidence-excerpt { margin: 3px 0 0; color: var(--text-2); font-style: italic; }
+.dsc-evidence-time { display: block; margin-top: 2px; font-size: 11px; color: var(--text-3); }
 
 /* ── Score tiles ────────────────────────────────────────────────────────── */
 .dsc-score-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 10px; margin-bottom: 16px; }
@@ -9796,6 +9876,135 @@ html.dark .dsc-page {
 .dsc-rec-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; background: var(--surface-2); border-radius: var(--r-pill); color: var(--text-2); }
 .dsc-rec-fw { font-size: 9.5px; font-weight: 700; letter-spacing: .05em; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text-3); }
 .dsc-rec-status { font-size: 11px; font-weight: 600; color: var(--dsc-success); }
+/* §7.12 — the header's baseline delta and framework lens. */
+.dsc-audit-delta {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+  padding: 3px 9px; border-radius: 999px; margin-left: auto;
+  background: var(--surface-sunk, #f3f4f6); color: var(--text-muted, #6b7280);
+}
+.dsc-audit-delta.is-up { color: var(--success, #3e7a46); background: var(--success-soft, #e6f0e6); }
+.dsc-audit-delta.is-down { color: var(--warning, #9c5a12); background: var(--warning-soft, #f7eddf); }
+.dsc-audit-delta.is-unknown { font-weight: 500; font-style: italic; }
+
+.dsc-audit-lens {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--border-soft, #f1f2f4);
+}
+.dsc-audit-lens-label {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-muted, #6b7280);
+}
+.dsc-audit-lens-select {
+  font: inherit; font-size: 13px; padding: 4px 8px;
+  border: 1px solid var(--border, #e5e7eb); border-radius: 6px;
+  background: var(--surface, #fff); color: var(--text, #111827);
+}
+.dsc-audit-lens-select:focus-visible { outline: 2px solid var(--accent, #4f46e5); outline-offset: 1px; }
+.dsc-audit-lens-note { font-size: 12px; color: var(--text-muted, #6b7280); }
+
+/* W6 — answer-engine configuration on /admin/ai. */
+.prov-engine {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;
+  background: var(--surface, #fff);
+}
+.prov-engine-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.prov-engine-head b { font-size: 15px; }
+.prov-engine-head .prov-key { margin-right: auto; }
+.prov-engine-note { font-size: 13px; color: var(--text-muted, #6b7280); margin: 8px 0 0; }
+.prov-engine-result {
+  margin-top: 12px; padding: 10px 12px; border-radius: 6px;
+  display: flex; flex-direction: column; gap: 4px; font-size: 13px;
+  border-left: 3px solid var(--border, #e5e7eb);
+  background: var(--surface-sunk, #f3f4f6);
+}
+.prov-engine-result.is-good { border-left-color: var(--success, #3e7a46); }
+.prov-engine-result.is-bad { border-left-color: var(--warning, #9c5a12); }
+.prov-engine-sample { list-style: none; margin: 4px 0 0; padding: 0; font-size: 12px; word-break: break-all; }
+.prov-engine-sample li { color: var(--text-muted, #6b7280); }
+.prov-pane-intro, .prov-pane-foot { font-size: 13px; color: var(--text-muted, #6b7280); }
+.prov-pane-foot { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft, #f1f2f4); }
+
+/* W6.5 — the AI visibility panel. Provenance leads, because a citation number
+   whose origin is unclear is worse than no number. */
+.dsc-aiv { display: flex; flex-direction: column; gap: 18px; }
+.dsc-aiv-source {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 13px; color: var(--text-muted, #6b7280);
+  padding: 8px 10px; border-radius: 6px;
+  background: var(--surface-sunk, #f3f4f6);
+}
+.dsc-aiv-score { display: flex; align-items: baseline; gap: 10px; }
+.dsc-aiv-num { font-size: 34px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.dsc-aiv-label { font-size: 13px; color: var(--text-muted, #6b7280); }
+.dsc-aiv-label em { font-style: normal; opacity: .85; }
+
+.dsc-aiv-components { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.dsc-aiv-components li {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 10px;
+  align-items: baseline; font-size: 13px;
+  padding: 4px 0; border-bottom: 1px solid var(--border-soft, #f1f2f4);
+}
+.dsc-aiv-components li.is-unmeasured { opacity: .6; }
+.dsc-aiv-cweight { font-size: 11px; color: var(--text-muted, #6b7280); font-variant-numeric: tabular-nums; }
+.dsc-aiv-cvalue { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+
+.dsc-aiv-h { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+.dsc-aiv-statelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dsc-aiv-statelist li {
+  display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: baseline;
+  font-size: 13px;
+}
+.dsc-aiv-scount { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 22px; }
+.dsc-aiv-sname { font-weight: 600; }
+.dsc-aiv-statelist li.is-good .dsc-aiv-sname { color: var(--success, #3e7a46); }
+.dsc-aiv-statelist li.is-bad .dsc-aiv-sname { color: var(--warning, #9c5a12); }
+.dsc-aiv-sfix { color: var(--text-muted, #6b7280); }
+
+.dsc-aiv-rates { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 12px; font-size: 13px; }
+.dsc-aiv-rates em { font-style: normal; color: var(--text-muted, #6b7280); font-size: 12px; }
+
+.dsc-aiv-dlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.dsc-aiv-dlist li { padding-left: 14px; position: relative; line-height: 1.5; }
+.dsc-aiv-dlist li::before { content: "\2192"; position: absolute; left: 0; color: var(--text-muted, #6b7280); }
+
+@media (max-width: 560px) {
+  .dsc-aiv-statelist li { grid-template-columns: auto 1fr; }
+  .dsc-aiv-sfix { grid-column: 1 / -1; padding-left: 32px; }
+}
+
+/* W5.5 — who is holding a recommendation. Sits with the queue verbs because it
+   is one: assigning is an action on the fix, not metadata about it. */
+.dsc-rec-assign {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+.dsc-rec-assign-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+.dsc-rec-assign-select {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text, #111827);
+  max-width: 180px;
+}
+.dsc-rec-assign-select:focus-visible {
+  outline: 2px solid var(--accent, #4f46e5);
+  outline-offset: 1px;
+}
+
 .dsc-rec-actions { display: flex; gap: 6px; margin-top: 11px; flex-wrap: wrap; }
 
 .dsc-construct { margin-top: 11px; }
@@ -10795,13 +11004,16 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   z-index: 25;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 10px 24px;
+  padding: 10px 0;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+.wrp-bar-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  width: 100%;
 }
 .wrp-bar-left {
   display: flex;
@@ -11100,4 +11312,129 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
 @media (max-width: 760px) {
   .wf-guide { grid-template-columns: 1fr; }
   .wf-issue-side { align-items: stretch; width: 100%; }
+}
+
+/* ── DomainListInput (.dli) ────────────────────────────────────────────────── */
+.dli {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dli textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 140px;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  border-radius: var(--r-md, 8px);
+  border: 1px solid var(--border, #e5e7eb);
+  background: var(--surface, #fff);
+  color: var(--text-1, #111827);
+  resize: vertical;
+}
+.dli textarea:focus {
+  outline: none;
+  border-color: var(--accent, #4f46e5);
+  box-shadow: 0 0 0 2px var(--accent-soft, rgba(79, 70, 229, 0.15));
+}
+.dli-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2, #6b7280);
+}
+.dli-suggest {
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: var(--r-md, 8px);
+  background: var(--surface-2, #f9fafb);
+  border: 1px solid var(--border, #e5e7eb);
+}
+.dli-suggest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.dli-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dli-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.dli-name { font-weight: 500; }
+.dli-domain { color: var(--accent, #4f46e5); font-weight: 600; }
+.dli-conf { font-size: 11px; color: var(--text-3, #9ca3af); }
+
+/* ── Closed-Loop Operating Ribbon ──────────────────────────────── */
+.closed-loop-ribbon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.closed-loop-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-2);
+  text-decoration: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  transition: all 0.15s ease;
+}
+.closed-loop-step:hover {
+  color: var(--text-1);
+  background: var(--surface);
+}
+.closed-loop-step.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.closed-loop-step.is-complete {
+  color: var(--ok, #059669);
+}
+.closed-loop-arrow {
+  color: var(--text-3);
+  font-size: 0.75rem;
+}
+.closed-loop-next-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  color: var(--text-1);
 }

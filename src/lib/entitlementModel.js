@@ -29,6 +29,21 @@ export const CAPS = Object.freeze([
   "audit",
   "audit.benchmark",
   "audit.schedule",
+  "audit.prompt_monitor",
+  // P2 · W14 / D9. The intelligence layer built in W9-W13 shipped with NO
+  // entitlement check of any kind — the same gap Phases 4-6 had, where three
+  // cost-bearing operations went unmetered and three of the BRD's own upgrade
+  // triggers were unenforceable. One capability per action rather than one
+  // family gate, because the plan's D9 requires each to name its own plan,
+  // quota and upgrade copy.
+  "audit.business_truth",
+  "audit.entity_graph",
+  "audit.local_directory",
+  "audit.schema_trust",
+  "audit.subject_score",
+  "audit.revalidate",
+  "audit.sxo",
+  "audit.portfolio",
   "enrich",
   "ai",
   "export.csv",
@@ -465,6 +480,92 @@ export function can(ent, capability, ctx = {}) {
         );
       }
       return ok(L.scheduled_monitoring);
+    }
+
+    case "audit.prompt_monitor": {
+      // W6.5. Follows the `audit.schedule` precedent D9 names: map a new
+      // capability onto the limits that already exist rather than inventing a
+      // plan axis nobody bought.
+      //
+      // ⚠️ GATED BECAUSE IT SPENDS SOMEBODY ELSE'S QUOTA. A monitor makes real
+      // answer-engine calls on a cadence, without a human present to notice
+      // they are happening — which is exactly the shape of thing that should
+      // not be ungated by default.
+      if (!L.audits) {
+        return deny("PLAN_REQUIRED", "Prompt monitoring is not included in your plan.", 0, "go");
+      }
+      if (!L.scheduled_monitoring) {
+        return deny(
+          "PLAN_REQUIRED",
+          "Prompt monitoring needs a plan that includes scheduled monitoring.",
+          0,
+          "select",
+        );
+      }
+      // Shares the scheduled-monitoring allowance rather than holding its own:
+      // a user who may keep five recurring jobs should not get five more by
+      // pointing them at prompts instead of pages.
+      return ok(L.scheduled_monitoring);
+    }
+
+    // ── P2 intelligence (W9-W13) ─────────────────────────────────────────
+    //
+    // ⚠️ ONE THRESHOLD, STATED ONCE, AND IT IS THE ONE PRODUCT DECISION HERE.
+    // These follow `audit.benchmark`'s precedent exactly — reuse the audit
+    // allowance that already exists rather than inventing a plan axis nobody
+    // bought — and sit at the same `L.audits >= 25` boundary benchmarks use,
+    // because P2 is the paid intelligence layer the free taster exists to
+    // advertise rather than to be.
+    //
+    // 🔴 THEY WERE UNGATED ENTIRELY UNTIL W14. A capability that looks gated
+    // and is not is worse than none, so if this threshold is wrong it is a
+    // one-line change per case with the reasoning attached — not a reason to
+    // leave the whole surface open, which is what the last four workstreams
+    // shipped.
+    case "audit.business_truth":
+    case "audit.entity_graph":
+    case "audit.local_directory":
+    case "audit.schema_trust":
+    case "audit.subject_score":
+    case "audit.sxo":
+    case "audit.portfolio": {
+      const names = {
+        "audit.business_truth": "The canonical business truth record",
+        "audit.entity_graph": "The entity graph",
+        "audit.local_directory": "Local and directory intelligence",
+        "audit.schema_trust": "Schema and trust intelligence",
+        "audit.subject_score": "Brand, product and service scoring",
+        "audit.sxo": "Search-to-Outcome Intelligence",
+        "audit.portfolio": "Enterprise Discoverability OS",
+      };
+      const what = names[capability] || "This intelligence module";
+      if (!L.audits) {
+        return deny("PLAN_REQUIRED", `${what} is not included in your plan.`, 0, "go");
+      }
+      if (L.audits !== Infinity && L.audits < 25) {
+        return deny(
+          "PLAN_REQUIRED",
+          `${what} is available from the Select plan upward.`,
+          0,
+          "select",
+        );
+      }
+      // ⚠️ NOT METERED PER CALL, DELIBERATELY. These read and write the
+      // customer's OWN records; they make no provider call, so charging an
+      // audit for one would bill for work nobody did — the same reason the
+      // audit row rather than a counter column is what `audit` charges.
+      return ok(Infinity);
+    }
+
+    // 🔴 REVALIDATION SPENDS A REAL AUDIT, so it is gated on the audit quota
+    // itself rather than on a feature flag. An "is this fixed yet?" button
+    // that silently runs a paid audit is the shape of thing a customer
+    // discovers on an invoice.
+    case "audit.revalidate": {
+      if (!L.audits) {
+        return deny("PLAN_REQUIRED", "Re-auditing is not included in your plan.", 0, "go");
+      }
+      return can(ent, "audit", { ...ctx, auditCount: ctx.auditCount ?? 1 });
     }
 
     case "enrich": {

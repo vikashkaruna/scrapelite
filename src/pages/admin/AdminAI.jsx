@@ -37,6 +37,27 @@ const TABS = [
   { key: "models",    label: "AI models",       icon: "sparkles" },
   { key: "services",  label: "Data services",   icon: "network" },
   { key: "areas",     label: "Where they're used", icon: "layers" },
+  { key: "engines",   label: "Answer engines",  icon: "radio" },
+];
+
+/**
+ * The engines that can read the live web on our behalf.
+ *
+ * Kept as its own surface because the question an operator has here is not
+ * "does the key work" — the models tab answers that — but "is this engine
+ * actually RETRIEVING". A key can be valid, the model can answer, and grounding
+ * can still return nothing, in which case every citation metric silently
+ * becomes a measurement of the model's memory.
+ */
+const ANSWER_ENGINES = [
+  {
+    key: "perplexity",
+    note: "Retrieval with citations is the product here, not a mode of it. Preferred first for that reason.",
+  },
+  {
+    key: "gemini",
+    note: "Needs Google Search grounding enabled for the key. Without it the model still answers — with no sources — and samples degrade to recall.",
+  },
 ];
 
 // Result codes → the operator action. Mirrors PROVIDER_ERROR_COPY server-side;
@@ -151,6 +172,29 @@ export default function AdminAI() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  /**
+   * Grounded probe: does this engine return SOURCES?
+   *
+   * Deliberately separate from the ping. A green ping and an ungrounded engine
+   * is the exact combination that makes a citation score look measured when it
+   * is remembered.
+   */
+  const runEngineTest = useCallback(async (providerKey) => {
+    setBusy((b) => ({ ...b, [`engine:${providerKey}`]: true }));
+    try {
+      const r = await testProvider(providerKey, undefined, { grounded: true });
+      setResults((s) => ({ ...s, [`engine:${providerKey}`]: r }));
+      showToast?.(r.ok
+        ? (r.grounded ? `${providerKey}: grounded, ${r.citationCount} source(s)` : `${providerKey}: answered with NO sources`)
+        : `${providerKey}: ${r.error || "failed"}`);
+    } catch (e) {
+      setResults((s) => ({ ...s, [`engine:${providerKey}`]: { ok: false, error: e.message } }));
+      showToast?.(e.message || "Probe failed");
+    } finally {
+      setBusy((b) => ({ ...b, [`engine:${providerKey}`]: false }));
+    }
+  }, [showToast]);
 
   const runTest = useCallback(async (providerKey, model) => {
     setBusy((b) => ({ ...b, [providerKey]: true }));
@@ -378,6 +422,73 @@ export default function AdminAI() {
           saving={saving} onSave={save} savedLabel={savedLabel}
         />
       ) : null}
+
+      {tab === "engines" ? (
+        <EnginesTab byKey={byKey} results={results} busy={busy} onProbe={runEngineTest} />
+      ) : null}
+    </div>
+  );
+}
+
+// ── Answer engines ───────────────────────────────────────────────────────────
+//
+// The one screen that answers "is citation sampling actually measuring the live
+// web". Everything else on this page answers "does the key work", which is a
+// different and much weaker question.
+function EnginesTab({ byKey, results, busy, onProbe }) {
+  return (
+    <div className="prov-pane">
+      <p className="prov-pane-intro">
+        Citation sampling asks a live engine what it says about a domain. An engine that answers
+        without returning sources has told us what a model <em>remembers</em>, not what the web
+        says — those samples are recorded <code>live: false</code> and are excluded from the live
+        trend. Probe each engine to see which you are actually getting.
+      </p>
+
+      {ANSWER_ENGINES.map(({ key, note }) => {
+        const meta = byKey?.[key] || {};
+        const r = results?.[`engine:${key}`];
+        const probing = busy?.[`engine:${key}`];
+        return (
+          <div key={key} className="prov-engine">
+            <div className="prov-engine-head">
+              <b>{meta.label || key}</b>
+              <span className={`prov-key${meta.hasKey ? " on" : ""}`}>
+                {meta.hasKey ? `key set via ${meta.keyEnv}` : `${meta.keyEnv || "key"} not set`}
+              </span>
+              <Button size="sm" variant="secondary" loading={probing}
+                disabled={!meta.hasKey || probing}
+                onClick={() => onProbe(key)}>
+                Probe grounding
+              </Button>
+            </div>
+            <p className="prov-engine-note">{note}</p>
+
+            {r ? (
+              <div className={`prov-engine-result${r.ok && r.grounded ? " is-good" : " is-bad"}`}>
+                <b>
+                  {!r.ok ? "Probe failed"
+                    : r.grounded ? `Grounded — ${r.citationCount} source${r.citationCount === 1 ? "" : "s"} returned`
+                    : "Answered with NO sources"}
+                </b>
+                <span>{r.verdict || r.error}</span>
+                {r.sample?.length ? (
+                  <ul className="prov-engine-sample">
+                    {r.sample.map((u) => <li key={u}>{u}</li>)}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+
+      <p className="prov-pane-foot">
+        With neither key set, sampling falls back to the AI chain and every run is recorded
+        <code> live: false</code> — honest, but a measurement of model recall rather than of the
+        open web. Set <code>DISABLE_AI_CITATION_SAMPLING=1</code> to stop sampling entirely rather
+        than record recall.
+      </p>
     </div>
   );
 }
