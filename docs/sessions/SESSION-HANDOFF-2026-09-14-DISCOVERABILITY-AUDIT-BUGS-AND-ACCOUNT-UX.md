@@ -23,8 +23,7 @@
 
 ## 2. What Was Accomplished
 
-### Area 1: Discoverability Module
-- **504 Mobile Crawl Timeout**: Capped synthetic PageSpeed Insights (`vitalsSlice`) to 3.5s in `netlify/functions/lib/audit/auditPipeline.js`, ensuring PageSpeed finishes or degrades gracefully so database persistence can complete well within function timeouts. Configured `timeout = 26` under `[functions]` in `netlify.toml`.
+- **504 Mobile Crawl Timeout**: Capped synthetic PageSpeed Insights (`vitalsSlice`) to 3.5s in `netlify/functions/lib/audit/auditPipeline.js`, ensuring PageSpeed finishes or degrades gracefully so database persistence can complete well within function timeouts. Removed invalid `functions.timeout = 26` from `netlify.toml` which caused Netlify configuration parse error.
 - **Competitors Expansion & Smart Intake**:
   - Increased `MAX_COMPETITOR_URLS = 20` in `src/lib/discoverability/intakeModel.js`.
   - Upgraded `src/components/discoverability/AuditComposer.jsx` with smart input supporting CSV paste, commas, semicolons, multiline URLs, and company name conversions (e.g. `Acme Corp` → `https://acmecorp.com`), while reporting invalid URL schemes in `rejected`.
@@ -72,7 +71,7 @@ Reorganized `src/pages/Account.jsx` into the clean 2-column structure requested:
 1. **504 Mobile Crawl Timeout**:
    - **Symptom**: `Discoverability POST /audits failed (504)` on `https://datiq.app` when device profile was set to "mobile crawl".
    - **Root Cause**: Mobile Lighthouse PageSpeed Insights queries can take 8–15s on synthetic emulators. When CrUX field cache missed, PSI exceeded Netlify's 10-second default function execution timeout before DB persistence could finish.
-   - **Resolution**: Clamped `vitalsSlice` to 3,500ms in `auditPipeline.js` and set Netlify function timeout to 26s in `netlify.toml`.
+   - **Resolution**: Clamped `vitalsSlice` to 3,500ms in `auditPipeline.js` (CrUX field data answers in ~1.5s; slow synthetic lab runs degrade to `unmeasured` rather than timing out the function). Removed invalid `functions.timeout = 26` from `netlify.toml` which caused Netlify TOML parse error.
 
 2. **Bulk Enrichment 100% Failure**:
    - **Symptom**: Bulk enriching lists of domains failed 100% of the time.

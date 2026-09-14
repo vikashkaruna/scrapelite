@@ -5,7 +5,6 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  timeout = 26
 # CRITICAL: never commit test files inside netlify/functions/. Netlify's
 # bundler auto-deploys every top-level .js in this directory as a
 # serverless function, and a test file like `reengagement.test.js`
