@@ -35,7 +35,7 @@
 
 ### 1. What was fixed and accomplished
 
-- **Discoverability 504 Mobile Crawl Timeout**: Capped synthetic PageSpeed Insights (`vitalsSlice`) to 3.5s in `auditPipeline.js` (CrUX field data responds in ~1.5s; slow synthetic lab runs degrade to `unmeasured` without timing out the Netlify function). Configured `timeout = 26` under `[functions]` in `netlify.toml`.
+- **Discoverability 504 Mobile Crawl Timeout**: Capped synthetic PageSpeed Insights (`vitalsSlice`) to 3.5s in `auditPipeline.js` (CrUX field data responds in ~1.5s; slow synthetic lab runs degrade to `unmeasured` without timing out the Netlify function). Removed invalid `functions.timeout = 26` from `netlify.toml` which caused Netlify TOML parse error.
 - **Competitors Limit 20 & Smart Parsing**: Raised `MAX_COMPETITOR_URLS = 20` in `intakeModel.js`. Enhanced `AuditComposer.jsx` to parse CSV paste, commas, semicolons, multiline URLs, and auto-convert bare company names to `https://<slug>.com` while retaining invalid schemes in `rejected`.
 - **Navigation & Tab Stability**: Unified `UNIFIED_DISCOVERABILITY_NAV` across `/discoverability` and `/discoverability/*`, eliminating tab jumping and layout shifts while preserving active audit contexts (`?audit=...`).
 - **Closed-Loop Operating Ribbon**: Added `ClosedLoopRibbon.jsx` rendering the 8-step cycle (`Discover → Score → Diagnose → Recommend → Implement → Validate → Benchmark → Expand`) across all discoverability screens.
