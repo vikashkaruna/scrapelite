@@ -18,6 +18,67 @@
 
 ---
 
+## 2026-09-14 18:26 IST — Discoverability P3 Stages 0–5 Completed, Reconciled, Verified, and Pushed; Branch Preserved Without Promotion
+
+> **Branch:** `discoverability-P3` · **Verified implementation HEAD before this handoff record:** `e4873d1999d802adf3f1034429aaf1806011861c` · **Scope:** branch only; no merge, promotion, deployment, or branch deletion performed
+> **Verification:** mandatory `npm run test:prepush` gate green · focused P1/P2/P3 suite **21 files / 259 tests passed** · db-verify **72 migrations / 821 assertions passed** · referral **17 passed** · workflows **56 passed** · production build clean · prerender **28 pages** synchronized and verified
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-14 |
+| **Branch** | `discoverability-P3` |
+| **Verified implementation SHA** | `e4873d1999d802adf3f1034429aaf1806011861c` (the handoff-record commit follows it) |
+| **Status** | Discoverability P3 Stages 0–5 complete, committed, verified, and pushed; worktree clean |
+| **Branch instruction** | Keep work on `discoverability-P3`; do **not** merge it into any other branch and do **not** delete it |
+| **Production status** | Application not deployed; production still serves the older pre-W2 Discoverability function by owner choice |
+| **Database status** | Owner manually applied production migrations `0050`–`0064`; migrations `0065`–`0072` remain operator deployment work |
+| **Secrets status** | Owner updated `GEMINI_API_KEY`; analytics-provider credentials and `INTEGRATION_SECRETS_KEY` remain deployment configuration |
+
+---
+
+### 2. What was completed
+
+- Reconciled the latest remote `discoverability-P3` work from the other implementation model with the local P1/P2/P3 plan and retained the stronger/corrected implementations.
+- Completed the P3 stage sequence in plan order:
+  - **Stage 0:** ground-truth, reuse-map, formula, migration, and decision alignment.
+  - **Stage 1:** workspace-scoped subject, governance-review, pSEO, entity, and directory workflows; fixed audit/workspace identifier handling and route authorization.
+  - **Stage 2:** static SXO scoring and persistence; unmeasured evidence stays null instead of contributing fabricated zero scores; read-time master composite and API aliases validated.
+  - **Stage 3:** GA4/PostHog/Plausible connection governance; durable analytics-import queuing; aggregate, funnel, form-friction, retention, disconnect, and early-purge paths.
+  - **Stage 4:** honest connection lifecycle and credential setup UI, conversion goals, outcome-aware SXO dashboards, portfolio/experiment support, and scheduled same-model monitoring with SXO-delta alerts.
+  - **Stage 5:** P2/P3 OpenAPI and developer API contract, entitlement/release documentation, automated/manual test matrix, and regenerated production artifacts.
+- Important closing commits:
+  - `449b025` — exclude unmeasured SXO evidence.
+  - `e082921` — queue analytics imports durably.
+  - `2f135f2` — complete workspace-scoped audit workflows.
+  - `3481a23` — wire analytics outcomes and SXO monitoring.
+  - `5da5df3` — publish the P2/P3 API contract.
+  - `9a2efa7` — record the verified Stage 5 release state.
+  - `e4873d1` — refresh all 28 prerendered P3 pages.
+
+---
+
+### 3. Verification evidence
+
+- Mandatory repository pre-push gate: **passed**, including readiness, unit, contract, integration, system, database/referral/workflow, build, prerender, security, and Chromium smoke stages.
+- Focused Discoverability P1/P2/P3 verification: **21 files / 259 tests passed**.
+- Database verification: **72 migrations / 821 assertions passed**, plus **17 referral** and **56 workflow** assertions.
+- Build and prerender: production build clean; **28 generated pages** synchronized; `check:prerender` passed.
+- Git verification after push: local `HEAD`, `origin/discoverability-P3`, and `git ls-remote` all returned `e4873d1999d802adf3f1034429aaf1806011861c`.
+- The optional exhaustive all-browser `npm run test:e2e` run is **not** represented as green: **557 passed / 21 skipped / 34 failed**. Failures cluster in pre-existing cross-browser visual snapshots, dark-mode contrast, and auth-gating expectations; Discoverability smoke coverage passed. This is recorded as `P3-DEV-08` and did not fail the required release gate.
+
+---
+
+### 4. Fresh-start entry point and operator actions
+
+1. Work only from the latest `origin/discoverability-P3`; `e4873d1999d802adf3f1034429aaf1806011861c` is the verified implementation commit immediately before this handoff record.
+2. Do **not** merge `discoverability-P3` into `Discoverability-P1-P3-implementation`, `staging`, `main`, or any other branch; do **not** delete it.
+3. Before deployment, apply Supabase migrations `0065`–`0072` in order and run the production database verification/checklist. Production already has `0050`–`0064` per the owner.
+4. Configure `INTEGRATION_SECRETS_KEY` and the selected GA4/PostHog/Plausible account tokens/property or project identifiers. A configured credential begins in `configured`, not falsely `connected`; the first successful import establishes the real connection/sync state.
+5. Deploy only after explicit authorization; production intentionally remains on the older pre-W2 implementation for now.
+6. If full cross-browser baseline cleanup becomes the next goal, start from `P3-DEV-08`; do not reopen completed P3 functionality merely because unrelated snapshot/auth/contrast baselines remain.
+
 ## 2026-09-14 06:20 IST — Discoverability P1, P2, and P3 Revalidation with Remote Changes; Coupon Rollover Fix; 100% Green Across All Gates
 
 > **Branch:** `discoverability-P3` · **Promotion Chain:** `discoverability-P3` → `Discoverability-P1-P3-implementation` → `staging` → `main` · **`main`:** `2042348` (untouched)  
