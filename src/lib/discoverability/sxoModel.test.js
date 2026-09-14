@@ -83,9 +83,20 @@ describe("Intent Match (IC layer §11.4)", () => {
     const res = evaluateIntentMatch(evidence, facts, { intentClass: "informational" });
 
     expect(res.score).toBeGreaterThan(60);
-    expect(res.coverage).toBeGreaterThanOrEqual(80);
+    // Citation and CTA evidence were not collected, so their 25% is excluded.
+    expect(res.coverage).toBe(75);
     expect(res.components.qh).not.toBeNull();
     expect(res.components.af).not.toBeNull();
+  });
+
+  it("does not treat missing answer and citation evidence as a measured failure", () => {
+    const res = evaluateIntentMatch({}, {});
+    expect(res.components).toEqual({
+      qh: null, af: null, pf: null, ev: null, "ic.cta": null,
+    });
+    expect(res.score).toBeNull();
+    expect(res.coverage).toBe(0);
+    expect(res.findings.join(" ")).toMatch(/unmeasured|not measured|detected/i);
   });
 });
 
@@ -98,7 +109,16 @@ describe("First Screen & Information Architecture (IA layer §11.5)", () => {
 
     expect(Object.keys(res.flags)).toEqual(FIRST_SCREEN_FLAGS);
     expect(res.score).toBeGreaterThan(0);
-    expect(res.coverage).toBe(100);
+    // Only orientation and heading hierarchy are evidenced by this fixture.
+    expect(res.coverage).toBe(40);
+  });
+
+  it("excludes every first-screen component when its evidence was not collected", () => {
+    const res = evaluateFirstScreen({}, {});
+    expect(res.components).toEqual({ o: null, a: null, v: null, p: null, n: null });
+    expect(res.score).toBeNull();
+    expect(res.coverage).toBe(0);
+    expect(res.findings.join(" ")).toMatch(/unmeasured|not measured/i);
   });
 });
 
@@ -109,10 +129,20 @@ describe("Fast, Low-Friction Experience (UX layer §11.6)", () => {
 
     const res = evaluateFriction({}, { technical: {}, content: { word_count: 300 } });
     expect(res.components.cwv).toBeNull();
-    // Coverage is 70% because CWV (30%) is unmeasured and excluded
-    expect(res.coverage).toBe(70);
-    // Score is non-null because other UX components are measured
+    // Only readability (15%) is measured; every absent input is excluded.
+    expect(res.coverage).toBe(15);
+    // Score is non-null because readability is measured.
     expect(res.score).toBeGreaterThan(0);
+  });
+
+  it("does not award neutral UX points to evidence the crawler never collected", () => {
+    const res = evaluateFriction({}, {});
+    expect(res.components).toEqual({
+      cwv: null, mobile: null, read: null, nav: null, overlay: null, access: null,
+    });
+    expect(res.score).toBeNull();
+    expect(res.coverage).toBe(0);
+    expect(res.findings.join(" ")).toMatch(/unmeasured|unavailable|absent/i);
   });
 });
 
@@ -130,6 +160,17 @@ describe("Conversion Design (CD layer §11.7)", () => {
     for (const finding of res.findings) {
       expect(finding.rootCause).toBe("conversion_friction");
     }
+  });
+
+  it("does not invent a conversion score when CTA, form, proof, price and flow were unmeasured", () => {
+    const res = evaluateConversionDesign({}, {});
+    expect(res.components).toEqual({
+      "cd.cta": null, form: null, proof: null, price: null, flow: null,
+    });
+    expect(res.score).toBeNull();
+    expect(res.coverage).toBe(0);
+    expect(res.findings.every((finding) => finding.rootCause === "conversion_friction")).toBe(true);
+    expect(res.findings.map((finding) => finding.message).join(" ")).toMatch(/unmeasured|not measured/i);
   });
 });
 

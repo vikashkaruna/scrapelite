@@ -112,8 +112,12 @@ export function scoreQuestionHeadings(outline = []) {
  * Looks for direct answer blocks and immediate answers under headings.
  */
 export function scoreAnswerFirst(evidence = {}) {
-  const answers = evidence.direct_answer_blocks || [];
-  const faqs = evidence.faq_pairs || [];
+  const measured = Array.isArray(evidence.direct_answer_blocks) || Array.isArray(evidence.faq_pairs);
+  if (!measured) {
+    return { score: null, count: null, findings: ["Answer-first content was not measured."] };
+  }
+  const answers = Array.isArray(evidence.direct_answer_blocks) ? evidence.direct_answer_blocks : [];
+  const faqs = Array.isArray(evidence.faq_pairs) ? evidence.faq_pairs : [];
   if (answers.length === 0 && faqs.length === 0) {
     return { score: 35, count: 0, findings: ["No extractable direct answer blocks or FAQ pairs found ATF."] };
   }
@@ -146,8 +150,15 @@ export function scorePrimaryFacts(facts = {}) {
  */
 export function scoreEvidenceCitations(evidence = {}, facts = {}) {
   const technical = facts.technical || {};
-  const outboundLinks = technical.outbound_links_count ?? (evidence.citations?.length || 0);
-  const schemaTypes = evidence.schema_types || [];
+  const hasOutboundMeasurement = Number.isFinite(technical.outbound_links_count)
+    || Array.isArray(evidence.citations);
+  const hasSchemaMeasurement = Array.isArray(evidence.schema_types);
+  if (!hasOutboundMeasurement && !hasSchemaMeasurement) {
+    return { score: null, findings: ["Evidence and citation signals were not measured."] };
+  }
+  const outboundLinks = technical.outbound_links_count
+    ?? (Array.isArray(evidence.citations) ? evidence.citations.length : 0);
+  const schemaTypes = Array.isArray(evidence.schema_types) ? evidence.schema_types : [];
   const hasProofSchema = schemaTypes.some((t) => ["Organization", "Person", "Review", "Rating"].includes(t));
   const score = Math.min(100, (outboundLinks > 0 ? 40 : 10) + (hasProofSchema ? 45 : 15) + (outboundLinks > 3 ? 15 : 0));
   return { score, findings: score < 50 ? ["Page lacks external proof citations or structured author/organization backing."] : [] };

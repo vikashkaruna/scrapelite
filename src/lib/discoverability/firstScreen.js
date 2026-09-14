@@ -15,6 +15,8 @@
 
 import { SXO_LAYERS, weightedMeanMap } from "./sxoModel.js";
 
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+
 export const FIRST_SCREEN_FLAGS = Object.freeze([
   "generic_hero_without_category",
   "audience_not_identified",
@@ -28,16 +30,31 @@ export const FIRST_SCREEN_FLAGS = Object.freeze([
  * Evaluates the 6 required flags from raw evidence and facts.
  */
 export function evaluateFirstScreenFlags(evidence = {}, facts = {}, options = {}) {
-  const headings = evidence.heading_outline || [];
+  const headingsMeasured = Array.isArray(evidence.heading_outline);
+  const headings = headingsMeasured ? evidence.heading_outline : [];
   const technical = facts.technical || {};
   const content = facts.content || {};
 
-  const has_visible_h1 = headings.some((h) => h.level === 1 && (h.text || "").trim().length > 0);
-  const has_direct_answer_atf = (evidence.direct_answer_blocks || []).length > 0 || (evidence.faq_pairs || []).length > 0;
-  const has_primary_action_atf = Boolean(technical.primary_cta_detected || (content.detected_buttons || []).length > 0);
-  const viewport_meta_valid = technical.viewport_meta === true || (technical.meta_tags?.viewport ? true : false) || technical.mobile_friendly === true;
-  const hero_text_substantial = (content.hero_word_count ?? (content.word_count > 150 ? 40 : 10)) >= 20;
-  const media_overflow_absent = technical.horizontal_scroll_absent !== false;
+  const has_visible_h1 = headingsMeasured
+    ? headings.some((h) => h.level === 1 && (h.text || "").trim().length > 0)
+    : null;
+  const answerMeasured = Array.isArray(evidence.direct_answer_blocks) || Array.isArray(evidence.faq_pairs);
+  const has_direct_answer_atf = answerMeasured
+    ? (evidence.direct_answer_blocks || []).length > 0 || (evidence.faq_pairs || []).length > 0
+    : null;
+  const actionMeasured = hasOwn(technical, "primary_cta_detected") || Array.isArray(content.detected_buttons);
+  const has_primary_action_atf = actionMeasured
+    ? Boolean(technical.primary_cta_detected || (content.detected_buttons || []).length > 0)
+    : null;
+  const viewportMeasured = hasOwn(technical, "viewport_meta")
+    || hasOwn(technical, "mobile_friendly") || hasOwn(technical.meta_tags, "viewport");
+  const viewport_meta_valid = viewportMeasured
+    ? technical.viewport_meta === true || Boolean(technical.meta_tags?.viewport) || technical.mobile_friendly === true
+    : null;
+  const hero_text_substantial = Number.isFinite(content.hero_word_count)
+    ? content.hero_word_count >= 20 : null;
+  const media_overflow_absent = hasOwn(technical, "horizontal_scroll_absent")
+    ? technical.horizontal_scroll_absent !== false : null;
 
   const buttons = Array.isArray(content.detected_buttons) ? content.detected_buttons : null;
   const intentClass = options.intentClass || facts.intent_class;
@@ -45,15 +62,19 @@ export function evaluateFirstScreenFlags(evidence = {}, facts = {}, options = {}
     || intentClass === "comparison"
     || intentClass === "transactional";
   return {
-    generic_hero_without_category: content.hero_category_identified === false
-      || (content.hero_category_identified == null && has_visible_h1 && !facts.entity?.name),
-    audience_not_identified: content.audience_identified === false,
-    value_or_proof_buried: content.value_proof_atf === false
-      || (content.value_proof_atf == null && !has_direct_answer_atf && !hero_text_substantial),
+    generic_hero_without_category: hasOwn(content, "hero_category_identified")
+      ? content.hero_category_identified === false : null,
+    audience_not_identified: hasOwn(content, "audience_identified")
+      ? content.audience_identified === false : null,
+    value_or_proof_buried: hasOwn(content, "value_proof_atf")
+      ? content.value_proof_atf === false : null,
     competing_ctas: buttons ? buttons.length > 3 : null,
-    intrusive_overlays: technical.intrusive_interstitial_detected === true || technical.modal_overlay_atf === true,
+    intrusive_overlays: hasOwn(technical, "intrusive_interstitial_detected") || hasOwn(technical, "modal_overlay_atf")
+      ? technical.intrusive_interstitial_detected === true || technical.modal_overlay_atf === true : null,
     no_practical_pricing_path: highCommercialIntent
-      ? !(content.price_detected || content.pricing_link_detected || evidence.schema_types?.some((t) => ["Offer", "PriceSpecification"].includes(t)))
+      ? (hasOwn(content, "price_detected") || hasOwn(content, "pricing_link_detected") || Array.isArray(evidence.schema_types)
+          ? !(content.price_detected || content.pricing_link_detected || evidence.schema_types?.some((t) => ["Offer", "PriceSpecification"].includes(t)))
+          : null)
       : false,
     _measurements: {
       has_visible_h1,
@@ -71,10 +92,14 @@ export function evaluateFirstScreenFlags(evidence = {}, facts = {}, options = {}
  * Does the visitor immediately understand what site they are on and what topic is addressed?
  */
 export function scoreOrientation(evidence = {}, facts = {}, flags = {}) {
-  let score = 50;
-  if (flags.has_visible_h1) score += 30;
-  if (facts.entity?.name || evidence.schema_types?.includes("Organization")) score += 20;
-  return Math.min(100, score);
+  const signals = [];
+  if (flags.has_visible_h1 !== null) signals.push(flags.has_visible_h1 ? 100 : 25);
+  const entityMeasured = hasOwn(facts.entity, "name") || Array.isArray(evidence.schema_types);
+  if (entityMeasured) {
+    signals.push(facts.entity?.name || evidence.schema_types?.includes("Organization") ? 100 : 40);
+  }
+  if (!signals.length) return null;
+  return Math.round(signals.reduce((sum, value) => sum + value, 0) / signals.length);
 }
 
 /**
@@ -82,9 +107,8 @@ export function scoreOrientation(evidence = {}, facts = {}, flags = {}) {
  * Can the visitor read a succinct resolution without scrolling?
  */
 export function scoreAnswerImmediacy(evidence = {}, flags = {}) {
+  if (flags.has_direct_answer_atf === null) return null;
   if (flags.has_direct_answer_atf) return 95;
-  const answers = evidence.direct_answer_blocks || [];
-  if (answers.length > 0) return 80;
   return 40;
 }
 
@@ -93,9 +117,13 @@ export function scoreAnswerImmediacy(evidence = {}, flags = {}) {
  * Is the unique differentiation or summary articulated in the hero section?
  */
 export function scoreValueProp(facts = {}, flags = {}) {
+  const content = facts.content || {};
+  const measured = flags.hero_text_substantial !== null
+    || hasOwn(content, "value_proof_atf") || Number.isFinite(content.subheadings_count);
+  if (!measured) return null;
   let score = 40;
-  if (flags.hero_text_substantial) score += 40;
-  if (facts.content?.subheadings_count > 0) score += 20;
+  if (flags.hero_text_substantial || content.value_proof_atf === true) score += 40;
+  if (content.subheadings_count > 0) score += 20;
   return Math.min(100, score);
 }
 
@@ -104,6 +132,7 @@ export function scoreValueProp(facts = {}, flags = {}) {
  * Is there a visible, singular call to action or next step in the viewport?
  */
 export function scorePrimaryAction(flags = {}) {
+  if (flags.has_primary_action_atf === null) return null;
   return flags.has_primary_action_atf ? 90 : 35;
 }
 
@@ -112,7 +141,8 @@ export function scorePrimaryAction(flags = {}) {
  * Is there clear hierarchical order (H1 -> H2 -> H3) and navigable orientation?
  */
 export function scoreNavigationHierarchy(evidence = {}) {
-  const headings = evidence.heading_outline || [];
+  if (!Array.isArray(evidence.heading_outline)) return null;
+  const headings = evidence.heading_outline;
   if (headings.length === 0) return 30;
 
   let outOfOrder = false;
@@ -151,6 +181,11 @@ export function evaluateFirstScreen(evidence = {}, facts = {}, options = {}) {
   if (flags.competing_ctas) findings.push("Competing calls to action weaken the primary path.");
   if (flags.intrusive_overlays) findings.push("An intrusive overlay obstructs the first screen.");
   if (flags.no_practical_pricing_path) findings.push("This high-commercial-intent page has no practical pricing or evaluation path.");
+  if (o === null) findings.push("First-screen orientation was not measured.");
+  if (a === null) findings.push("Answer immediacy was not measured.");
+  if (v === null) findings.push("Value proposition immediacy was not measured.");
+  if (p === null) findings.push("Primary action prominence was not measured.");
+  if (n === null) findings.push("Navigation hierarchy was not measured.");
 
   const publicFlags = Object.fromEntries(FIRST_SCREEN_FLAGS.map((id) => [id, flags[id]]));
 

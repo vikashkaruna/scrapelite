@@ -17,6 +17,8 @@
 
 import { SXO_LAYERS, weightedMeanMap } from "./sxoModel.js";
 
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+
 /**
  * Score Core Web Vitals (cwv, weight 0.30).
  * Reuses results from fetchWebVitals (LCP in sec, INP in ms, CLS unitless).
@@ -56,6 +58,9 @@ export function scoreCoreWebVitals(webVitals = null) {
  * Assesses mobile viewport responsiveness and content parity.
  */
 export function scoreMobileParity(technical = {}) {
+  const measured = hasOwn(technical, "viewport_meta") || hasOwn(technical, "mobile_friendly")
+    || hasOwn(technical, "mobile_parity_missing") || hasOwn(technical, "horizontal_scroll_absent");
+  if (!measured) return { score: null, findings: ["Mobile parity and viewport behavior were not measured."] };
   let score = 70;
   if (technical.viewport_meta || technical.mobile_friendly) score += 20;
   if (technical.mobile_parity_missing) score -= 30;
@@ -96,6 +101,9 @@ export function scoreReadability(content = {}) {
  * Score Navigation Stability & Interaction (nav, weight 0.15).
  */
 export function scoreNavigationStability(technical = {}, content = {}) {
+  const measured = Number.isFinite(technical.broken_anchors_count)
+    || Number.isFinite(content.internal_links_count);
+  if (!measured) return { score: null, findings: ["Navigation stability was not measured."] };
   let score = 85;
   if (technical.broken_anchors_count > 0) score -= technical.broken_anchors_count * 15;
   if (content.internal_links_count === 0) score -= 25;
@@ -111,6 +119,9 @@ export function scoreNavigationStability(technical = {}, content = {}) {
  * Detects whether popups, modal takeovers, or cookie walls block the initial view.
  */
 export function scoreOverlayAbsence(technical = {}) {
+  const measured = hasOwn(technical, "intrusive_interstitial_detected")
+    || hasOwn(technical, "modal_overlay_atf");
+  if (!measured) return { score: null, findings: ["Overlay obstruction was not measured."] };
   const hasIntrusiveOverlay = Boolean(technical.intrusive_interstitial_detected || technical.modal_overlay_atf);
   const score = hasIntrusiveOverlay ? 30 : 95;
   return {
@@ -123,6 +134,9 @@ export function scoreOverlayAbsence(technical = {}) {
  * Score Accessibility Basics (access, weight 0.10).
  */
 export function scoreAccessibility(technical = {}, content = {}) {
+  const measured = Number.isFinite(content.images_without_alt)
+    || Number.isFinite(technical.inputs_without_labels);
+  if (!measured) return { score: null, findings: ["Accessibility basics were not measured."] };
   let score = 80;
   const missingAlt = content.images_without_alt || 0;
   if (missingAlt > 0) score -= Math.min(30, missingAlt * 5);

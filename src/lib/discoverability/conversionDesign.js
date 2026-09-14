@@ -16,6 +16,8 @@
 
 import { SXO_LAYERS, weightedMeanMap } from "./sxoModel.js";
 
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+
 export const PRIMARY_OUTCOMES = Object.freeze([
   "demo",
   "trial",
@@ -53,8 +55,14 @@ export const PRIMARY_OUTCOME_DETAILS = Object.freeze({
 export function scorePathwayClarity(evidence = {}, facts = {}, outcome = "contact") {
   const technical = facts.technical || {};
   const content = facts.content || {};
-  const buttons = content.detected_buttons || [];
-  const ctaCount = (technical.primary_cta_detected ? 1 : 0) + buttons.length;
+  const measured = hasOwn(technical, "primary_cta_detected")
+    || Array.isArray(content.detected_buttons) || Array.isArray(evidence.detected_actions);
+  if (!measured) {
+    return { score: null, findings: ["Conversion pathway and CTA evidence were not measured."] };
+  }
+  const buttons = Array.isArray(content.detected_buttons) ? content.detected_buttons : [];
+  const actions = Array.isArray(evidence.detected_actions) ? evidence.detected_actions : [];
+  const ctaCount = (technical.primary_cta_detected ? 1 : 0) + buttons.length + actions.length;
 
   if (ctaCount === 0) {
     return { score: 25, findings: ["No clear call to action or conversion path detected."] };
@@ -71,11 +79,13 @@ export function scorePathwayClarity(evidence = {}, facts = {}, outcome = "contac
  */
 export function scoreFormFriction(facts = {}) {
   const technical = facts.technical || {};
-  const forms = technical.detected_forms || [];
+  if (!Array.isArray(technical.detected_forms)) {
+    return { score: null, findings: ["Form friction was not measured."] };
+  }
+  const forms = technical.detected_forms;
 
   if (forms.length === 0) {
-    // If page has no form, neutral-high score (e.g. phone/click destination)
-    return { score: 85, findings: [] };
+    return { score: null, findings: ["No form was detected; form friction is excluded from this score."] };
   }
 
   const primaryForm = forms[0] || {};
@@ -95,11 +105,17 @@ export function scoreFormFriction(facts = {}) {
  * Are ratings, client logos, certifications, or guarantees placed near the CTA?
  */
 export function scoreTrustProximity(evidence = {}, facts = {}) {
-  const schemaTypes = evidence.schema_types || [];
+  const content = facts.content || {};
+  const measured = Array.isArray(evidence.schema_types) || hasOwn(content, "mentions_guarantee")
+    || hasOwn(content, "mentions_security") || hasOwn(content, "trust_proof_near_cta");
+  if (!measured) {
+    return { score: null, findings: ["Trust reinforcement proximity was not measured."] };
+  }
+  const schemaTypes = Array.isArray(evidence.schema_types) ? evidence.schema_types : [];
   const hasReviews = schemaTypes.some((t) => ["AggregateRating", "Review"].includes(t));
   const hasOrg = schemaTypes.includes("Organization");
-  const content = facts.content || {};
-  const mentionsTrust = Boolean(content.mentions_guarantee || content.mentions_security || hasReviews);
+  const mentionsTrust = Boolean(content.mentions_guarantee || content.mentions_security
+    || content.trust_proof_near_cta || hasReviews);
 
   let score = 50;
   if (hasReviews) score += 30;
@@ -118,10 +134,14 @@ export function scoreTrustProximity(evidence = {}, facts = {}) {
  * Are pricing, trial terms, or return policies transparently stated?
  */
 export function scorePriceClarity(evidence = {}, facts = {}) {
-  const schemaTypes = evidence.schema_types || [];
-  const hasOffer = schemaTypes.some((t) => ["Offer", "PriceSpecification"].includes(t));
   const content = facts.content || {};
-  const mentionsPrice = Boolean(hasOffer || content.price_detected || content.mentions_free_tier);
+  const measured = Array.isArray(evidence.schema_types) || hasOwn(content, "price_detected")
+    || hasOwn(content, "mentions_free_tier") || hasOwn(content, "pricing_link_detected");
+  if (!measured) return { score: null, findings: ["Pricing and terms clarity was not measured."] };
+  const schemaTypes = Array.isArray(evidence.schema_types) ? evidence.schema_types : [];
+  const hasOffer = schemaTypes.some((t) => ["Offer", "PriceSpecification"].includes(t));
+  const mentionsPrice = Boolean(hasOffer || content.price_detected || content.mentions_free_tier
+    || content.pricing_link_detected);
 
   const score = mentionsPrice ? 95 : 60;
   return {
@@ -135,9 +155,12 @@ export function scorePriceClarity(evidence = {}, facts = {}) {
  * Does what the visitor receives justify what they are asked to give?
  */
 export function scoreValueExchange(facts = {}, outcome = "contact") {
-  // Fair flow: strong value proposition matched with modest initial commitment
+  const score = facts.content?.value_exchange_score;
+  if (!Number.isFinite(score)) {
+    return { score: null, findings: ["Value exchange fairness was not measured."] };
+  }
   return {
-    score: 80,
+    score: Math.max(0, Math.min(100, score)),
     findings: [],
   };
 }
