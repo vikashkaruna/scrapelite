@@ -62,6 +62,10 @@
 - `npm run build && npm run check:prerender`: Clean build in 1.30s; 28 pages / 112 asset references synced and validated.
 - `npm run test:e2e:smoke`: **159/159 Playwright tests passed (0 failed, 2.5m)**.
 - `npx vitest run scripts/verify-discoverability-e2e.test.mjs`: **23/23 tests passed**.
+- `netlify deploy`: **Live on Netlify** (Deploy ID `6aa744f6f0b721c5443168e2`).
+  - Draft URL: https://discoverability-p3.datiq.app
+  - Branch URL: https://discoverability-p3--datiqapp.netlify.app
+  - Deploy Permalink: https://6aa744f6f0b721c5443168e2--datiqapp.netlify.app
 
 ---
 
