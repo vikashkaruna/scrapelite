@@ -795,7 +795,8 @@ export async function routeApiV1(event, auth) {
     return handleDiscoverability(event, auth, path.slice(1));
   }
   if (path[0] === "audits" || path[0] === "recommendations" || path[0] === "targets"
-      || path[0] === "benchmarks" || path[0] === "monitors" || path[0] === "prompts") {
+      || path[0] === "benchmarks" || path[0] === "monitors" || path[0] === "prompts"
+      || path[0] === "sxo") {
     return handleDiscoverability(event, auth, path);
   }
 
