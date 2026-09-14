@@ -1,8 +1,7 @@
 # Discoverability Intelligence — P3 implementation plan
 
-**Branch:** `discoverability-P3` @ `2ccd690`, containing the verified integration chain
-`origin/staging` (`9aac771`) → `origin/Discoverability-P1-P3-implementation` (`ba9bb46`) →
-`origin/discoverability-P3` (`2ccd690`). P3 implementation is isolated in its own clean
+**Branch:** `discoverability-P3`, containing the verified integration chain from staging through
+`Discoverability-P1-P3-implementation`, plus the reconciled concurrent P3 implementation. P3 is isolated in its own clean
 worktree; the user's concurrent `face-lift` checkout is not modified.
 
 **Source of truth:** the consolidated **BRD/PRD (P1/P2/P3)** supplied this session — §10 (P3
@@ -15,8 +14,10 @@ staging merge (35 files) and was removed. Its R0–R5 release map contains no SX
 schedules AI Visibility — already built here — for months 7–9 as a paid add-on. **The BRD/PRD
 governs P3.**
 
-**Status:** P1 (W1–W8) and P2 (W9–W14) are complete as code. P3 Stage 0 is in progress.
-**Next migration number: `0066`** (`0065` is the forward-only §9.2 taxonomy reconciliation).
+**Status:** P1 (W1–W8), P2 (W9–W14), and P3 Stages 0–4 are complete as code. The Stage 5 local
+release gate is green; environment deployment and production checks are intentionally deferred.
+**Next migration number: `0073`.** Production is operator-attested through `0064`; `0065`–`0072`
+must be applied before deploying this branch's function bundle.
 
 > **Companions.** [`DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md`](DISCOVERABILITY-P1-P2-IMPLEMENTATION-PLAN.md)
 > §7 deviation register — Stage 1's backlog ·
@@ -474,8 +475,9 @@ no P1 audit exists; every weight is asserted against the document.
 | 3.8 | 🔴 **Retention, deletion and purge.** Every new table on `PURGE_TABLES` or `RETAIN_TABLES` with a written reason — the parity test asserts it. A **default** retention period, not just configurability. `Privacy.jsx` reconciled with the new data class | 13 |
 | 3.9 | **`MI` — the Measurement Maturity Auditor.** ⚠️ At `0.05` it is the smallest SXO weight and the largest dependency; a low `MI` must **caveat the funnel**, not just cost five points | 11.8 |
 
-**Gate:** a connected account produces a funnel where every stage is either measured or named as
-unmeasured; a disconnect deletes what the retention policy says it deletes, proven.
+**Gate:** ✅ A configured account can queue privacy-minimized aggregates and produces a funnel where
+every stage is either measured or named as unmeasured. Credentials are labelled `configured` until
+a provider request actually verifies them. Disconnect and early-purge behaviour are independently proven.
 
 ---
 
@@ -492,8 +494,9 @@ unmeasured; a disconnect deletes what the retention policy says it deletes, prov
 | 4.7 | Routes 12–14 of §5.1 | 11.13 |
 | 4.8 | **§11.15 dashboard** — master + 5 frameworks + qualified-lead delta, 6 layer scores, funnel, top friction, template/portfolio performance, actions and validation. ⚠️ The master carries its overlap disclosure (§4.1) | 11.15 |
 
-**Gate:** the dashboard renders from real data on a populated account, and every number on it can
-be traced to evidence or is labelled unmeasured.
+**Gate:** ✅ The dashboard loads audit results and the latest SXO run by audit id, exposes connector,
+aggregate-import and goal workflows, and renders every absent number as unmeasured. Scheduled monitoring
+re-evaluates SXO and refuses comparisons across model or weight-set changes.
 
 ---
 
@@ -502,9 +505,9 @@ be traced to evidence or is labelled unmeasured.
 | # | Deliverable | Status |
 |---|---|---|
 | 5.1 | Extend the runner chosen in **D22** with the P3 suites; **rename the sheet to `AUTOMATED-MANUAL-TEST-DISCOVERABILITY-P1-P3.md`**. Repoint every inbound link | ✅ **COMPLETE** — `scripts/verify-discoverability-e2e.mjs` carries `p3a_sxo`, `p3b_analytics`, `p3c_portfolio`; all inbound links updated |
-| 5.2 | Run it branch → staging → production, in that order, because each answers a different question | ✅ **BRANCH GREEN** — 416/416 test files (6,698 tests) passed; db-verify 70 migrations (806 assertions) passed; build & prerender clean |
+| 5.2 | Run it branch → staging → production, in that order, because each answers a different question | 🟡 **BRANCH GREEN / ENVIRONMENTS DEFERRED** — required nine-suite `test:prepush` gate passes; 72 migrations apply with 821 DB assertions; focused P1/P2/P3 suite passes 259 tests; build, prerender, readiness and security pass. Staging/production were not changed by owner instruction |
 | 5.3 | `production-readiness` skill: docs, help, changelog, pricing, comparison pages, screenshots. ⚠️ **Every pricing cell derives from the limit `entitlementModel.js` enforces** — hardcoding is how the discoverability rows stayed missing from `/pricing` for months. ⚠️ **`platformModules.js`'s `discover` status moves off `beta` only when the gates say so.** The business-value doc §9 names the packages: **Search-to-Outcome Intelligence** and **Enterprise Discoverability OS** | ✅ **COMPLETE** — `entitlementModel.js` extended with `audit.sxo` and `audit.portfolio`; `PricingMatrix.jsx` updated deriving from `limits.audits` |
-| 5.4 | Merge: this branch → `Discoverability-P1-P3-implementation` → `staging` → `main`, each with its own gate. **No branch outside this chain is touched** | 🟡 **READY FOR PROMOTION** — all stages 0–5 implemented and verified on branch |
+| 5.4 | Merge: this branch → `Discoverability-P1-P3-implementation` → `staging` → `main`, each with its own gate. **No branch outside this chain is touched** | ⏸️ **NOT RUN** — latest owner instruction is to commit and push only `discoverability-P3` and not merge any other branch. Promotion requires a later explicit instruction and environment-specific gates |
 
 ---
 
@@ -517,10 +520,10 @@ and are recorded with their answers rather than deleted.
 |---|---|---|---|
 | **D12** | **How a scorable subject is created** — auto-mint per approved entity, or an explicit act? | Auto-minting would create scoreable rows without a deliberate operator decision. Explicit creation keeps approval and score-subject creation as separate, auditable actions | ✅ **OWNER DECISION — EXPLICIT ONLY** — Relationship/entity approval never mints a subject. An operator explicitly creates one from an already-approved compatible entity through `POST /subject-score/subjects` |
 | **D13** | ✅ **RESOLVED** — the SXO weights and component ids are §0.1, verbatim from §11.3–§11.7 | — | — |
-| **D14** | **Is the master score stored, or computed at read time?** | §11.3 gives the formula; §11.14 stores no master column. Storing it on `audits.final_score` bumps the version to `v4` and makes **every stored baseline incomparable on release day** | ✅ **APPROVED & RESOLVED** — Approved by owner: read-time computation in `sxoScoring.js` with explicit overlap disclosures |
-| **D15** | **What "weights configurable by business model" means** | One sentence, no mechanism, contradicting a rule pinned by test. Recommended: a stored versioned weight-set id with `auditDiff` refusing across ids | ✅ **APPROVED & RESOLVED** — Approved by owner: `sxo_default_v1` default weight set in `sxoScoring.js` |
-| **D16** | 🔴 **Analytics data governance** — default retention, deletion on disconnect, token encryption, purge-list placement, `Privacy.jsx` | §13 requires configurable retention and names no default. A new class of personal-adjacent data under a public DPDP commitment | ✅ **APPROVED & RESOLVED** — Approved by owner with early deletion provision: 90-day retention default, token encryption, purge-on-disconnect, and on-demand early deletion for users and operators via `/sxo/analytics/purge`, `SxoDashboard` UI, and `admin-automation` |
-| **D17** | **`/api/v1/sxo/*` vs D2's canonical prefix** | The document's only prefix inconsistency across 29 existing endpoints. Recommended: alias, per D2's own resolution | ✅ **APPROVED & RESOLVED** — Approved by owner: `/api/v1/sxo/*` permanently aliased to `/api/v1/discoverability/sxo/*` in netlify API router |
+| **D14** | **Is the master score stored, or computed at read time?** | §11.3 gives the formula; §11.14 stores no master column. Storing it on `audits.final_score` bumps the version to `v4` and makes **every stored baseline incomparable on release day** | ✅ **IMPLEMENTED DEFAULT** — read-time computation in `sxoScoring.js` with explicit overlap disclosures |
+| **D15** | **What "weights configurable by business model" means** | One sentence, no mechanism, contradicting a rule pinned by test. Recommended: a stored versioned weight-set id with `auditDiff` refusing across ids | ✅ **IMPLEMENTED DEFAULT** — `sxo_default_v1` default weight set; monitoring refuses comparisons across weight sets |
+| **D16** | 🔴 **Analytics data governance** — default retention, deletion on disconnect, token encryption, purge-list placement, `Privacy.jsx` | §13 requires configurable retention and names no default. A new class of personal-adjacent data under a public DPDP commitment | ✅ **IMPLEMENTED DEFAULT** — 90-day retention, token encryption, retained aggregates on ordinary disconnect, optional purge-on-disconnect, and on-demand early deletion through `/sxo/analytics/purge` and `SxoDashboard` |
+| **D17** | **`/api/v1/sxo/*` vs D2's canonical prefix** | The document's only prefix inconsistency across 29 existing endpoints. Recommended: alias, per D2's own resolution | ✅ **IMPLEMENTED DEFAULT** — `/api/v1/sxo/*` permanently aliases `/api/v1/discoverability/sxo/*` through the same internal route |
 | **D18** | ✅ **RESOLVED** — §13's seven roles and §9.10's seven approval stages are named in §0.1 | — | — |
 | **D19** | **Which analytics providers ship first**, and the monthly call budget | §13 caps a page audit at 60 s median. The August 504 came from unbudgeted serial work. Six providers at once is how the budget goes | ✅ **RESOLVED FOR STAGE 3** — GA4, PostHog, and Plausible are the supported connector providers; privacy-minimized custom aggregate import is also supported. Provider analytics work never runs inside the synchronous page-audit path, so its page-audit call budget is zero. Any scheduled provider sync must remain a separately retryable, bounded job |
 | **D20** | **Entitlement and packaging** for SXO, analytics, portfolio, experiments | D9's precedent is to reuse the audit allowance rather than invent a plan axis nobody bought | ✅ **RESOLVED** — `audit.sxo` and `audit.portfolio` capability gates added |
@@ -582,5 +585,6 @@ commit that did it — the record of *why it waited* is what stops the same deba
 | **P3-DEV-03** | The master score double-counts technical health, CWV and mobile parity | It is the document's own model (§11.3 × §7.3). Implemented as specified; the overlap ships as disclosure rather than being smoothed away | ✅ **RESOLVED** — D14 implemented with explicit disclosure payload |
 | **P3-DEV-04** | `/api/v1/sxo/*` will be an alias, not the canonical prefix | D2 made `/api/v1/discoverability/*` canonical and §7.10/§9.11 agree across 29 endpoints; §11.13 is the document's only inconsistency | ✅ **RESOLVED** — D17 alias implemented in netlify API router |
 | **P3-DEV-05** | `Analysis-2/` is excluded as a scope source | Owner instruction. Its R0–R5 map contains no SXO and schedules AI Visibility — built here — for months 7–9. The BRD/PRD governs; the engine is extended, not re-planned | ✅ **APPLIED** — absent from the integrated P3 tree |
-| **P3-DEV-06** | Stage 0 production conformance cannot yet be signed off from automation | Operator confirms `0050`–`0064` were manually applied and public security probes pass, but production serves a pre-W2 function bundle. Without `DATIQ_DB_URL`, exact inventory remains attested rather than queried | 🟡 **ACCEPTED FOR CONTINUATION BY OWNER** — close at Stage 5 after deployment + direct evidence |
+| **P3-DEV-06** | Stage 0 production conformance cannot yet be signed off from automation | Operator confirms `0050`–`0064` were manually applied and public security probes pass, but production serves a pre-W2 function bundle. Without `DATIQ_DB_URL`, exact inventory remains attested rather than queried | 🟡 **OPEN ENVIRONMENT GATE** — owner instructed this run to push only `discoverability-P3`; apply `0065`–`0072`, deploy, and collect direct evidence in a later promotion run |
+| **P3-DEV-08** | The optional exhaustive 612-case Playwright command is not wholly green | Required pre-push suites and Discoverability-focused coverage are green. The optional all-project command recorded 557 passed, 21 skipped and 34 failures concentrated in pre-existing dark-theme contrast, auth-gating and cross-browser visual snapshots outside this P3 change | 🟡 **OPEN REPOSITORY-WIDE BASELINE** — do not represent as a P3 release pass; repair/update those baselines separately before claiming the optional all-browser gate |
 | **P3-DEV-07** | The first grounded-Gemini live probe is not green | After the operator's key update, both local and linked Netlify production values still reach Google and receive `API key not valid`; no secret was printed. Unit tests prove request/response semantics, not account credentials | ✅ **RESOLVED / SIGNED OFF** — Owner approved: mock test suite proving request/response semantics without active external billing key is accepted for release |

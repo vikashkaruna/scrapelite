@@ -5457,6 +5457,64 @@ npm run test:security
 
 ---
 
+## 2026-09-14 18:00 IST — Discoverability P3 stages 0–5 complete on feature branch
+
+> **Branch:** `discoverability-P3` · **Merged to:** not merged (owner explicitly requested branch-only completion) · **`main` / `staging`:** untouched
+
+### 1. Quick orientation
+
+- Reconciled the latest remote P3 history without resetting or disturbing concurrent worktrees.
+- P1/P2/P3 code is complete on `discoverability-P3`; the required local Stage 5 gate is green.
+- Production remains intentionally on its older function bundle. The operator attests migrations
+  `0050`–`0064`; migrations `0065`–`0072` remain deployment prerequisites.
+
+### 2. What was accomplished
+
+- Corrected SXO evidence exclusion so unmeasured evidence cannot enter a score.
+- Added durable, idempotent analytics-import jobs with bounded retries, stuck-job recovery,
+  exactly-once aggregate persistence, cron registration and operator monitoring.
+- Closed personal/workspace scope propagation across audit reads, writes, history, trends,
+  recommendations, reports and scheduled runs.
+- Wired the SXO dashboard to the latest run by `audit_id`, loaded its P1 framework results, removed
+  fabricated lead-uplift copy, and rendered absent metrics as unmeasured.
+- Added production UI for encrypted GA4/PostHog/Plausible credential configuration, manual
+  privacy-minimized aggregate imports, conversion goals, disconnect and early data deletion.
+- Added migration `0072` so stored credentials are `configured` with no fake sync timestamp;
+  `connected` is reserved for a verified provider request or sync.
+- Extended scheduled monitoring to persist workspace-scoped SXO runs, compare only matching
+  model/weight-set contracts, and alert on material comparable SXO movement.
+- Published P2/P3 developer API and OpenAPI inventories with write entitlements and error semantics;
+  repaired the public `/v1/sxo/*` compatibility alias.
+
+### 3. Verification evidence
+
+- `npm run test:prepush`: all 9 required suites passed (readiness, unit, contract, integration,
+  system, database/referral/workflows, build/sync, prerender integrity, security).
+- `npm run test:db`: 72 migrations applied; 821 assertions passed; referral 17/17; workflows 56/56.
+- Focused P1/P2/P3 regression: 21 files / 259 tests passed.
+- API/OpenAPI and monitoring regression: 4 files / 124 tests passed.
+- Production build passed; 28 prerendered pages synchronized.
+- Optional repository-wide `npm run test:e2e`: 557 passed, 21 skipped, 34 failed. Failures are
+  recorded in `P3-DEV-08` and cluster in pre-existing dark-theme contrast, auth-gating and
+  cross-browser visual baselines; this optional suite is not represented as green.
+
+### 4. Environment state after this session
+
+- Only `discoverability-P3` was changed and pushed. No merge, deployment or branch deletion was
+  performed, following the owner's latest instruction.
+- DatIQ Discover remains labelled beta until environment deployment and production checks pass.
+
+### 5. Open items for a later promotion session
+
+- Apply migrations `0065`–`0072` in the destination database.
+- Configure `INTEGRATION_SECRETS_KEY` and provider account credentials/property identifiers for
+  any GA4, PostHog or Plausible connector to be exercised.
+- Deploy the branch function bundle, run `test:release` against that deploy, and complete the
+  confirm-by-eye checklist before promoting to another branch.
+- Repair or deliberately refresh the separate repository-wide dark-theme/visual/auth E2E baseline.
+
+---
+
 ## Entry template (copy this when adding a session)
 
 ```markdown

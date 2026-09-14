@@ -753,13 +753,14 @@ build.
 
 ### 12. P3B — Analytics, Funnels & Forms (0069)
 
-#### H-01 — Event normalization accepts standard analytics events with masked fingerprint
+#### H-01 — Event normalization accepts standard analytics aggregates; connector credentials expose only a masked fingerprint
 
 🔴 **Stop-ship.** Needs: a valid token. Writes allowed.
 
 - **Before it can run:** A valid token. Writes allowed.
-- **Confirm by eye:** Tokens encrypted at rest, IP and User-Agent hashed/masked, no raw PII stored.
-- **If it fails:** Check analyticsModel.js normalizeAnalyticsEvent and /sxo/events/import.
+- **Confirm by eye:** Tokens are encrypted at rest and omitted from reads. Imports accept counts only;
+  raw sessions, IP addresses, user agents and visitor identifiers have no storage columns.
+- **If it fails:** Check `eventTaxonomy.js`, `auditStore.saveAnalyticsConnection`, and `/sxo/events/import`.
 
 #### H-02 — 9-stage search-to-outcome funnel excludes uninstrumented stages rather than penalizing drop-off
 
@@ -782,8 +783,26 @@ build.
 🔴 **Stop-ship.** Needs: purge configuration check.
 
 - **Before it can run:** Purge configuration check.
-- **Confirm by eye:** audit_analytics_events and audit_funnel_stages are on PURGE_TABLES with 90-day retention default (D16).
+- **Confirm by eye:** `audit_analytics_aggregates`, import jobs, funnels and form diagnostics are on
+  the declared purge inventory with the 90-day retention default (D16).
 - **If it fails:** Check billing-purge.js and purge-table-parity.test.js.
+
+#### H-05 — Aggregate import is durable, idempotent, bounded and observable
+
+🔴 **Stop-ship.** Needs: migration and worker contract tests.
+
+- **Confirm by eye:** A request returns `202` with a job id; replaying the same key cannot create a
+  second aggregate; reusing the key for different content returns `409`; attempts stop at the stored maximum.
+- **If it fails:** Check migration `0071`, `sxo-analytics-import-worker.js`, its cron registration,
+  and the monitoring registry.
+
+#### H-06 — The SXO screen exposes connector, aggregate-import and goal workflows honestly
+
+🔴 **Stop-ship.** Needs: component/API tests and an audit id.
+
+- **Confirm by eye:** Credential save says `configured`, never `connected`, until a provider sync is
+  verified; aggregate fields accept whole-number counts; created goals appear in the list.
+- **If it fails:** Check `SxoDashboard.jsx`, migration `0072`, and the six production client methods.
 
 ### 13. P3C — Templates, Rollups, Personas & Experiments (0070)
 
@@ -819,6 +838,14 @@ build.
 - **Confirm by eye:** Experiments record relationship as 'correlation' and explicitly state correlation does not imply causation (§11.12).
 - **If it fails:** Check optimizationExperiments.js and POST /sxo/experiments in discoverability.js.
 
+#### I-05 — Scheduled monitoring re-evaluates comparable SXO and alerts on material movement
+
+🔴 **Stop-ship.** Needs: monitor unit/contract tests.
+
+- **Confirm by eye:** The monitor persists a new SXO run in the schedule's workspace, compares only
+  matching model/weight-set ids, and includes SXO regression/improvement in the alert threshold.
+- **If it fails:** Check `discoverability-monitor.js`, `diffSxoRuns`, and `shouldAlert`.
+
 ---
 
 ## 14. What the runner cannot do
@@ -843,6 +870,6 @@ sentence, one level up.
 | F-10 | A one-component score reports thin:true with missing_facts | Reported in F-02's detail line; read it there. |
 | S-03 | credit_spend, request_account_deletion, credit_balance refused anonymously | Folded into S-02, which sweeps all ten functions. |
 | S-04 | claim_billing_session still works for a signed-in user | Calling it consumes a real billing session, so it is verified by one real test purchase after 0061 reaches an environment. It is the one correct exception among the ten: it derives auth.uid() itself rather than taking a caller-supplied p_user_id. If purchases stop activating after 0061, the `grant execute ... to service_role` on it is missing — the revoke landed and the grant did not. |
-| G-07v | SXO Dashboard renders 6 regions, 9-stage funnel, and overlap disclosure note | UI rendering and visual hierarchy — runner checks API schema and computation, but human eyes confirm chart layout and contrast. |
+| G-07v | SXO Dashboard renders the six specified result regions plus analytics setup/governance, the 9-stage funnel, and overlap disclosure | UI rendering and visual hierarchy — component tests verify content and actions; human eyes still confirm responsive layout and contrast on a deployed build. |
 | H-05p | Analytics token decryption and masked fingerprint are never logged in plaintext | Security/privacy property verified by inspecting encrypted column and log streams. |
 | I-05c | Optimization experiment correlation label cannot be edited or removed from UI | UI compliance check ensuring correlation disclaimer is permanent. |
