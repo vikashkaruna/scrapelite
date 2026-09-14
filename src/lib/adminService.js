@@ -86,7 +86,7 @@ export function clearAdminFailures() { localStorage.removeItem(ADMIN_LOCK_KEY); 
 // ── Coupons ───────────────────────────────────────────────────────────────────
 function seedCoupons() {
   return [
-    { id: "c1", code: "LAUNCH20",  type: "percent", value: 20, maxUses: 100, uses: 0, planId: null, expiresAt: "2026-09-14", active: true, createdAt: "2026-06-14" },
+    { id: "c1", code: "LAUNCH20",  type: "percent", value: 20, maxUses: 100, uses: 0, planId: null, expiresAt: "2026-12-31", active: true, createdAt: "2026-06-14" },
     { id: "c2", code: "INDIE10",   type: "percent", value: 10, maxUses: 50,  uses: 12, planId: "select", expiresAt: "2026-09-30", active: true, createdAt: "2026-03-15" },
     { id: "c3", code: "BONUS50EX", type: "extractions", value: 50, maxUses: 200, uses: 87, planId: null, expiresAt: null, active: true, createdAt: "2026-02-01" },
     { id: "c4", code: "EARLYBIRD", type: "percent", value: 30, maxUses: 30,  uses: 30, planId: null, expiresAt: "2026-04-01", active: false, createdAt: "2025-12-01" },
