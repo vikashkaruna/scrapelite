@@ -1292,8 +1292,11 @@ export const handler = async (event) => {
 
         if (!sub && method === "GET") {
           const q = event.queryStringParameters || {};
+          const workspaceId = q.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
           const connections = await store.listAnalyticsConnections(userId, {
-            workspaceId: q.workspace_id || null,
+            workspaceId,
           });
           return json(200, { ok: true, connections });
         }
@@ -1358,9 +1361,12 @@ export const handler = async (event) => {
 
         if (method === "GET") {
           const q = event.queryStringParameters || {};
+          const workspaceId = q.workspace_id || null;
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "read");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
           const goals = await store.listConversionGoals(userId, {
             auditId: q.audit_id || null,
-            workspaceId: q.workspace_id || null,
+            workspaceId,
           });
           return json(200, { ok: true, goals });
         }

@@ -2106,9 +2106,11 @@ export async function saveAnalyticsConnection(userId, {
       provider_account_id: providerAccountId,
       encrypted_token: encryptedToken,
       token_fingerprint: tokenFingerprint,
-      status: "connected",
+      // Credential storage is not provider verification. A connector may move
+      // to `connected` only after a real provider request or sync succeeds.
+      status: "configured",
       settings,
-      last_sync_at: new Date().toISOString(),
+      last_sync_at: null,
     }),
   });
 

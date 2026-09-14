@@ -5,7 +5,7 @@
 // threshold adherence, and non-comparable refusal.
 
 import { describe, it, expect } from "vitest";
-import { shouldAlert } from "../../functions/discoverability-monitor.js";
+import { shouldAlert, diffSxoRuns } from "../../functions/discoverability-monitor.js";
 
 describe("Scheduled Discoverability & SXO Regression Monitor (§10 / Deliverable 4.5)", () => {
   it("alerts as regression immediately when a new critical issue is introduced", () => {
@@ -76,5 +76,29 @@ describe("Scheduled Discoverability & SXO Regression Monitor (§10 / Deliverable
     const verdict = shouldAlert(diff, 3);
     expect(verdict.alert).toBe(false);
     expect(verdict.reason).toBe("scores are not comparable");
+  });
+
+  it("alerts on a material SXO regression even when the overall score is stable", () => {
+    const verdict = shouldAlert({
+      issues: { introduced: [] },
+      frameworks: {
+        overall: { comparable: true, change: 0.4 },
+        sxo: { comparable: true, before: 81, after: 75, change: -6 },
+      },
+    }, 3);
+    expect(verdict).toEqual(expect.objectContaining({ alert: true, kind: "regression" }));
+    expect(verdict.reason).toContain("SXO score fell 6 points");
+  });
+
+  it("compares SXO only when model and weight set match", () => {
+    expect(diffSxoRuns(
+      { sxo_total_score: 80, model_version: "s1", weight_set_id: "default" },
+      { sxo_total_score: 76.5, model_version: "s1", weight_set_id: "default" },
+    )).toEqual({ before: 80, after: 76.5, change: -3.5, comparable: true });
+
+    expect(diffSxoRuns(
+      { sxo_total_score: 80, model_version: "s1", weight_set_id: "default" },
+      { sxo_total_score: 76.5, model_version: "s2", weight_set_id: "default" },
+    )).toEqual(expect.objectContaining({ comparable: false, change: null }));
   });
 });

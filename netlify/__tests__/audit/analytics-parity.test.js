@@ -20,6 +20,8 @@ const RAW_SQL = readFileSync(join(ROOT, "supabase", "migrations", "0069_analytic
 const SQL = RAW_SQL.replace(/^\s*--.*$/gm, "");
 const IMPORT_SQL = readFileSync(join(ROOT, "supabase", "migrations", "0071_analytics_import_jobs.sql"), "utf8")
   .replace(/^\s*--.*$/gm, "");
+const STATUS_SQL = readFileSync(join(ROOT, "supabase", "migrations", "0072_analytics_connection_status.sql"), "utf8")
+  .replace(/^\s*--.*$/gm, "");
 
 describe("Migration 0069 Guarantees (§11.14 / Stage 3 parity)", () => {
   it("creates all 6 analytics, funnel, and form tables", () => {
@@ -67,6 +69,14 @@ describe("Migration 0071 durable import guarantees", () => {
   });
 });
 
+describe("Migration 0072 connector-state guarantees", () => {
+  it("does not claim a provider connection before verification or sync", () => {
+    expect(STATUS_SQL).toMatch(/set status = 'configured',[\s\S]*last_sync_at = null/i);
+    expect(STATUS_SQL).toMatch(/alter column status set default 'configured'/i);
+    expect(STATUS_SQL).toMatch(/configured[\s\S]*connected[\s\S]*error[\s\S]*disabled/i);
+  });
+});
+
 describe("Analytics Endpoints & Privacy Invariants", () => {
   const userId = "usr-analytics-test-123";
 
@@ -91,7 +101,7 @@ describe("Analytics Endpoints & Privacy Invariants", () => {
         id: "conn-123",
         provider: "ga4",
         token_fingerprint: "ghp_…3210 (43 chars)",
-        status: "connected",
+        status: "configured",
       },
     });
 
@@ -117,7 +127,7 @@ describe("Analytics Endpoints & Privacy Invariants", () => {
         id: "conn-123",
         provider: "ga4",
         token_fingerprint: "ghp_…3210 (43 chars)",
-        status: "connected",
+        status: "configured",
       },
     ]);
 

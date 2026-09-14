@@ -32,15 +32,17 @@ describe("SxoDashboard (§11.15 / Deliverable 4.8)", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(discoverability, "getSxoRun").mockResolvedValue({
-      run: {
+    vi.spyOn(discoverability, "listSxoRuns").mockResolvedValue({
+      runs: [{
         id: "sxo-1",
         sxo_total_score: 80.0,
         coverage: 100,
         layer_scores: { td: 85, ic: 80, ux: 75, ia: 82, cd: 78, mi: 70 },
         findings: [{ message: "Generic hero without category" }],
-      },
+      }],
     });
+    vi.spyOn(discoverability, "listSxoIntegrations").mockResolvedValue({ connections: [] });
+    vi.spyOn(discoverability, "listSxoConversionGoals").mockResolvedValue({ goals: [] });
 
     vi.spyOn(discoverability, "sxoJourney").mockResolvedValue({
       funnel: {
@@ -124,7 +126,7 @@ describe("SxoDashboard (§11.15 / Deliverable 4.8)", () => {
     expect(screen.getByText("Top Friction & Form Diagnostics")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByText("Form Views")).toBeInTheDocument();
-      expect(screen.getByText("5000")).toBeInTheDocument();
+      expect(screen.getByText("5,000")).toBeInTheDocument();
       expect(screen.getByText("65%")).toBeInTheDocument();
       expect(screen.getByText("Generic hero without category")).toBeInTheDocument();
     });
@@ -196,5 +198,39 @@ describe("SxoDashboard (§11.15 / Deliverable 4.8)", () => {
         audit_id: "aud-test-101",
       }));
     });
+  });
+
+  it("does not invent a qualified-lead delta when no measured delta exists", async () => {
+    render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} />);
+    expect(screen.getByText("Lead Delta")).toBeInTheDocument();
+    expect(screen.getByText("Not measured")).toBeInTheDocument();
+    expect(screen.queryByText("Est. +14%")).not.toBeInTheDocument();
+  });
+
+  it("wires analytics credential storage, aggregate import, and conversion goals to production client methods", async () => {
+    const connectSpy = vi.spyOn(discoverability, "connectSxoIntegration").mockResolvedValue({ ok: true });
+    const importSpy = vi.spyOn(discoverability, "importSxoEvents").mockResolvedValue({ ok: true, queued: true });
+    const goalSpy = vi.spyOn(discoverability, "saveSxoConversionGoal").mockResolvedValue({ ok: true });
+    render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} workspaceId="ws-1" />);
+
+    fireEvent.change(screen.getByLabelText("GA4 property ID"), { target: { value: "properties/123" } });
+    fireEvent.change(screen.getByLabelText("API credential"), { target: { value: "secret-token" } });
+    fireEvent.click(screen.getByRole("button", { name: "Encrypt & save" }));
+    await waitFor(() => expect(connectSpy).toHaveBeenCalledWith("ga4", expect.objectContaining({
+      provider_account_id: "properties/123", workspace_id: "ws-1",
+    })));
+
+    fireEvent.change(screen.getByLabelText("Page views"), { target: { value: "42" } });
+    fireEvent.click(screen.getByRole("button", { name: "Queue aggregate import" }));
+    await waitFor(() => expect(importSpy).toHaveBeenCalledWith(expect.objectContaining({
+      audit_id: "aud-test-101", workspace_id: "ws-1",
+      events: [{ event_name: "page_view", count: 42 }],
+    })));
+
+    fireEvent.change(screen.getByLabelText("Goal name"), { target: { value: "Qualified demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add goal" }));
+    await waitFor(() => expect(goalSpy).toHaveBeenCalledWith(expect.objectContaining({
+      audit_id: "aud-test-101", workspace_id: "ws-1", name: "Qualified demo", outcome_type: "lead",
+    })));
   });
 });

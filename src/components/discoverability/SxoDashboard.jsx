@@ -13,7 +13,7 @@ import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
-import { SXO_LAYERS, SXO_LAYER_WEIGHTS, MASTER_FRAMEWORK_WEIGHTS } from "../../lib/discoverability/sxoModel.js";
+import { SXO_LAYERS, SXO_LAYER_WEIGHTS } from "../../lib/discoverability/sxoModel.js";
 import { computeMasterScore } from "../../lib/discoverability/sxoScoring.js";
 import { FUNNEL_STAGES } from "../../lib/discoverability/journeyModel.js";
 import { PORTFOLIO_ROLLUP_AXES } from "../../lib/discoverability/portfolioModel.js";
@@ -24,6 +24,29 @@ const OVERLAP_DISCLOSURE =
 
 const CORRELATION_NOTICE =
   "Observed metric movement between baseline and observation periods is correlational. External factors including search engine algorithm updates, seasonal traffic fluctuations, and unmeasured marketing campaigns contribute to real-world outcomes. Correlation does not establish causation.";
+
+const ANALYTICS_PROVIDERS = Object.freeze([
+  { id: "ga4", label: "Google Analytics 4", accountHint: "GA4 property ID" },
+  { id: "posthog", label: "PostHog", accountHint: "Project ID" },
+  { id: "plausible", label: "Plausible", accountHint: "Site domain" },
+]);
+
+const IMPORT_EVENTS = Object.freeze([
+  ["page_view", "Page views"],
+  ["primary_cta_click", "Primary CTA clicks"],
+  ["form_start", "Form starts"],
+  ["form_submit", "Form submissions"],
+  ["qualified_conversion", "Qualified outcomes"],
+]);
+
+function measured(value, suffix = "") {
+  return Number.isFinite(Number(value)) ? `${Number(value).toLocaleString()}${suffix}` : "—";
+}
+
+function newImportKey(provider, auditId) {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${provider}-${auditId || "portfolio"}-${random}`;
+}
 
 export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, onRunSxo }) {
   const showToast = useToast();
@@ -40,30 +63,50 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
   const [newHypothesis, setNewHypothesis] = useState("");
   const [purgeDays, setPurgeDays] = useState("30");
   const [purging, setPurging] = useState(false);
+  const [auditData, setAuditData] = useState(fullAudit);
+  const [connections, setConnections] = useState([]);
+  const [goals, setGoals] = useState([]);
+  const [provider, setProvider] = useState("ga4");
+  const [providerAccountId, setProviderAccountId] = useState("");
+  const [providerToken, setProviderToken] = useState("");
+  const [connectorBusy, setConnectorBusy] = useState(false);
+  const [importProvider, setImportProvider] = useState("custom");
+  const [importCounts, setImportCounts] = useState({});
+  const [importKey, setImportKey] = useState(() => newImportKey("custom", auditId));
+  const [importBusy, setImportBusy] = useState(false);
+  const [goalName, setGoalName] = useState("");
+  const [goalOutcome, setGoalOutcome] = useState("lead");
+  const [goalBusy, setGoalBusy] = useState(false);
 
   const loadDashboardData = useCallback(async () => {
     if (!auditId) return;
     setLoading(true);
     try {
-      const [runRes, journeyRes, diagRes, expRes, rollRes] = await Promise.all([
-        discoverability.getSxoRun(auditId, { workspace_id: workspaceId }).catch(() => null),
+      const [auditRes, runRes, journeyRes, diagRes, expRes, rollRes, connectionRes, goalRes] = await Promise.all([
+        fullAudit ? Promise.resolve(fullAudit) : discoverability.getResults(auditId, { workspaceId }).catch(() => null),
+        discoverability.listSxoRuns({ audit_id: auditId, workspace_id: workspaceId, limit: 1 }).catch(() => ({ runs: [] })),
         discoverability.sxoJourney(auditId, { workspace_id: workspaceId }).catch(() => null),
         discoverability.sxoFormDiagnostics(auditId, { workspace_id: workspaceId }).catch(() => null),
         discoverability.listSxoExperiments({ audit_id: auditId, workspace_id: workspaceId }).catch(() => ({ experiments: [] })),
         discoverability.getSxoPortfolioRollups({ axis: selectedAxis, workspace_id: workspaceId }).catch(() => ({ rollups: [] })),
+        discoverability.listSxoIntegrations({ workspace_id: workspaceId }).catch(() => ({ connections: [] })),
+        discoverability.listSxoConversionGoals({ audit_id: auditId, workspace_id: workspaceId }).catch(() => ({ goals: [] })),
       ]);
 
-      if (runRes?.run) setSxoRun(runRes.run);
+      if (auditRes) setAuditData(auditRes);
+      setSxoRun(runRes?.runs?.[0] || null);
       if (journeyRes?.funnel) setFunnelData(journeyRes.funnel);
       if (diagRes?.diagnostics) setDiagnosticsData(diagRes.diagnostics);
       if (expRes?.experiments) setExperiments(expRes.experiments);
       if (rollRes?.rollups) setRollups(rollRes.rollups);
+      setConnections(connectionRes?.connections || []);
+      setGoals(goalRes?.goals || []);
     } catch (err) {
       console.warn("[SxoDashboard] Failed to fetch some dashboard data:", err);
     } finally {
       setLoading(false);
     }
-  }, [auditId, workspaceId, selectedAxis]);
+  }, [auditId, workspaceId, selectedAxis, fullAudit]);
 
   useEffect(() => {
     loadDashboardData();
@@ -71,20 +114,111 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
 
   // Read-time master composite calculation
   const master = useMemo(() => {
-    const seo = fullAudit?.result?.framework_scores?.seo?.score ?? null;
-    const aeo = fullAudit?.result?.framework_scores?.aeo?.score ?? null;
-    const geo = fullAudit?.result?.framework_scores?.geo?.score ?? null;
+    const source = fullAudit || auditData;
+    const seo = source?.result?.framework_scores?.seo?.score ?? source?.result?.seo_score ?? null;
+    const aeo = source?.result?.framework_scores?.aeo?.score ?? source?.result?.aeo_score ?? null;
+    const geo = source?.result?.framework_scores?.geo?.score ?? source?.result?.geo_score ?? null;
     const sxo = sxoRun?.sxo_total_score ?? null;
     return computeMasterScore({ seo, aeo, geo, sxo });
-  }, [fullAudit, sxoRun]);
+  }, [fullAudit, auditData, sxoRun]);
 
   // Persona-filtered recommendation queue
   const recommendations = useMemo(() => {
-    const raw = fullAudit?.recommendations || [];
+    const raw = (fullAudit || auditData)?.recommendations || [];
     if (selectedPersona === "all") return raw;
     const filtered = filterPersonaQueue(raw, selectedPersona);
     return filtered.recommendations || [];
-  }, [fullAudit, selectedPersona]);
+  }, [fullAudit, auditData, selectedPersona]);
+
+  const handleConnect = async (e) => {
+    e.preventDefault();
+    if (!providerAccountId.trim() || !providerToken.trim()) {
+      showToast("Account identifier and API credential are required.", "warning");
+      return;
+    }
+    setConnectorBusy(true);
+    try {
+      await discoverability.connectSxoIntegration(provider, {
+        provider_account_id: providerAccountId.trim(),
+        token: providerToken.trim(),
+        workspace_id: workspaceId,
+      });
+      setProviderToken("");
+      showToast("Credentials encrypted and saved. Provider verification is still pending.", "success");
+      await loadDashboardData();
+    } catch (err) {
+      showToast(err.message || "Could not save analytics credentials.", "error");
+    } finally {
+      setConnectorBusy(false);
+    }
+  };
+
+  const handleDisconnect = async (connection) => {
+    if (!window.confirm(`Disconnect ${connection.provider.toUpperCase()}? Imported aggregates are retained unless you purge them separately.`)) return;
+    try {
+      await discoverability.disconnectSxoIntegration(connection.provider, { workspace_id: workspaceId });
+      showToast("Analytics credentials removed. Existing aggregates were retained.", "success");
+      await loadDashboardData();
+    } catch (err) {
+      showToast(err.message || "Could not disconnect analytics provider.", "error");
+    }
+  };
+
+  const handleImport = async (e) => {
+    e.preventDefault();
+    const events = IMPORT_EVENTS.flatMap(([eventName]) => {
+      const raw = importCounts[eventName];
+      if (raw === "" || raw === undefined) return [];
+      return [{ event_name: eventName, count: Number(raw) }];
+    });
+    if (!events.length || events.some((item) => !Number.isSafeInteger(item.count) || item.count < 0)) {
+      showToast("Enter at least one non-negative whole-number event count.", "warning");
+      return;
+    }
+    setImportBusy(true);
+    try {
+      const response = await discoverability.importSxoEvents({
+        audit_id: auditId,
+        workspace_id: workspaceId,
+        provider: importProvider,
+        idempotency_key: importKey,
+        date_bucket: new Date().toISOString().slice(0, 10),
+        events,
+      });
+      setImportCounts({});
+      setImportKey(newImportKey(importProvider, auditId));
+      showToast(response.queued ? "Aggregate import queued for processing." : "Aggregate import completed.", "success");
+      await loadDashboardData();
+    } catch (err) {
+      showToast(err.message || "Could not import analytics aggregates.", "error");
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const handleCreateGoal = async (e) => {
+    e.preventDefault();
+    if (!goalName.trim()) {
+      showToast("Goal name is required.", "warning");
+      return;
+    }
+    setGoalBusy(true);
+    try {
+      await discoverability.saveSxoConversionGoal({
+        audit_id: auditId,
+        workspace_id: workspaceId,
+        name: goalName.trim(),
+        outcome_type: goalOutcome,
+      });
+      setGoalName("");
+      showToast("Conversion goal saved.", "success");
+      await loadDashboardData();
+    } catch (err) {
+      showToast(err.message || "Could not save conversion goal.", "error");
+    } finally {
+      setGoalBusy(false);
+    }
+  };
 
   const handleValidateRec = async (recId) => {
     try {
@@ -159,6 +293,7 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
 
   return (
     <div className="dsc-sxo-dashboard" style={{ display: "grid", gap: "28px" }}>
+      {loading && <div role="status" className="sr-only">Loading SXO and analytics data</div>}
       {/* ── REGION 1: Master Score & 5 Frameworks ── */}
       <section className="dsc-card dsc-master-card" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px", marginBottom: "16px" }}>
@@ -214,15 +349,89 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
           <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
             <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>Lead Delta</div>
             <div style={{ fontSize: "24px", fontWeight: "600", color: "var(--dsc-success)" }}>
-              {funnelData?.overall_conversion_rate ? `+${(funnelData.overall_conversion_rate * 1.2).toFixed(1)}%` : "Est. +14%"}
+              {Number.isFinite(Number(funnelData?.qualified_outcome_delta))
+                ? `${Number(funnelData.qualified_outcome_delta) > 0 ? "+" : ""}${Number(funnelData.qualified_outcome_delta).toFixed(1)}%`
+                : "Not measured"}
             </div>
-            <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Qualified impact</div>
+            <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Measured qualified impact</div>
           </div>
         </div>
 
         {/* Mandatory Overlap Disclosure (§4.1 / §13) */}
         <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px dashed var(--border)", fontSize: "12px", color: "var(--text-2)" }}>
           <strong style={{ color: "var(--text)" }}>Methodology & Overlap Disclosure:</strong> {OVERLAP_DISCLOSURE}
+        </div>
+      </section>
+
+      {/* ── REGION 2: Analytics setup, aggregate import and goals ── */}
+      <section className="dsc-card" aria-labelledby="analytics-setup-heading" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
+        <h3 id="analytics-setup-heading" style={{ margin: "0 0 6px", fontSize: "17px", display: "flex", alignItems: "center", gap: "8px" }}>
+          <Icon name="plug" size={18} /> Analytics Setup & Outcomes
+        </h3>
+        <p style={{ margin: "0 0 16px", fontSize: "13px", color: "var(--text-2)" }}>
+          Save encrypted provider credentials, import aggregate-only event counts, and define the outcome this audit should optimize. Saved credentials are marked configured until a real provider sync verifies them.
+        </p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
+          <form onSubmit={handleConnect} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+            <strong>Provider credentials</strong>
+            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Provider
+              <select value={provider} onChange={(e) => setProvider(e.target.value)} aria-label="Analytics provider">
+                {ANALYTICS_PROVIDERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>{ANALYTICS_PROVIDERS.find((item) => item.id === provider)?.accountHint}
+              <input value={providerAccountId} onChange={(e) => setProviderAccountId(e.target.value)} autoComplete="off" />
+            </label>
+            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>API credential
+              <input type="password" value={providerToken} onChange={(e) => setProviderToken(e.target.value)} autoComplete="new-password" />
+            </label>
+            <Button size="sm" type="submit" disabled={connectorBusy}>{connectorBusy ? "Saving…" : "Encrypt & save"}</Button>
+            <div aria-label="Configured analytics connections" style={{ display: "grid", gap: "6px" }}>
+              {connections.length === 0 && <span style={{ color: "var(--text-3)", fontSize: "12px" }}>No provider credentials configured.</span>}
+              {connections.map((connection) => (
+                <div key={connection.id} style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center", fontSize: "12px" }}>
+                  <span><strong>{connection.provider.toUpperCase()}</strong> · {connection.status || "configured"} · {connection.token_fingerprint}</span>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => handleDisconnect(connection)}>Disconnect</Button>
+                </div>
+              ))}
+            </div>
+          </form>
+
+          <form onSubmit={handleImport} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+            <strong>Aggregate event import</strong>
+            <span style={{ color: "var(--text-3)", fontSize: "12px" }}>No visitor identifiers, IP addresses, or raw sessions are accepted.</span>
+            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Source
+              <select value={importProvider} onChange={(e) => { setImportProvider(e.target.value); setImportKey(newImportKey(e.target.value, auditId)); }} aria-label="Import source">
+                <option value="custom">Manual aggregate</option>
+                {ANALYTICS_PROVIDERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px" }}>
+              {IMPORT_EVENTS.map(([eventName, label]) => (
+                <label key={eventName} style={{ display: "grid", gap: "4px", fontSize: "12px" }}>{label}
+                  <input type="number" min="0" step="1" value={importCounts[eventName] ?? ""} onChange={(e) => setImportCounts((current) => ({ ...current, [eventName]: e.target.value }))} />
+                </label>
+              ))}
+            </div>
+            <Button size="sm" type="submit" disabled={importBusy}>{importBusy ? "Queueing…" : "Queue aggregate import"}</Button>
+          </form>
+
+          <form onSubmit={handleCreateGoal} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+            <strong>Conversion goals</strong>
+            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Goal name
+              <input value={goalName} onChange={(e) => setGoalName(e.target.value)} placeholder="Qualified demo request" />
+            </label>
+            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Outcome type
+              <select value={goalOutcome} onChange={(e) => setGoalOutcome(e.target.value)}>
+                <option value="lead">Lead</option><option value="sale">Sale</option><option value="booking">Booking</option><option value="signup">Signup</option><option value="qualified_outcome">Qualified outcome</option>
+              </select>
+            </label>
+            <Button size="sm" type="submit" disabled={goalBusy}>{goalBusy ? "Saving…" : "Add goal"}</Button>
+            <div style={{ display: "grid", gap: "5px", fontSize: "12px" }}>
+              {goals.length === 0 ? <span style={{ color: "var(--text-3)" }}>No conversion goals defined.</span> : goals.map((goal) => <span key={goal.id}><strong>{goal.name}</strong> · {goal.outcome_type}</span>)}
+            </div>
+          </form>
         </div>
       </section>
 
@@ -336,27 +545,27 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "10px", marginBottom: "16px" }}>
             <div style={{ padding: "10px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
               <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Form Views</div>
-              <div style={{ fontSize: "20px", fontWeight: "600" }}>{diagnosticsData.metrics?.views ?? 0}</div>
+              <div style={{ fontSize: "20px", fontWeight: "600" }}>{measured(diagnosticsData.metrics?.views)}</div>
             </div>
             <div style={{ padding: "10px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
               <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Form Starts</div>
-              <div style={{ fontSize: "20px", fontWeight: "600" }}>{diagnosticsData.metrics?.starts ?? 0}</div>
+              <div style={{ fontSize: "20px", fontWeight: "600" }}>{measured(diagnosticsData.metrics?.starts)}</div>
             </div>
             <div style={{ padding: "10px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
               <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Completion %</div>
               <div style={{ fontSize: "20px", fontWeight: "600", color: "var(--dsc-success)" }}>
-                {diagnosticsData.metrics?.completion_rate ? `${diagnosticsData.metrics.completion_rate}%` : "—"}
+                {measured(diagnosticsData.metrics?.completion_rate, "%")}
               </div>
             </div>
             <div style={{ padding: "10px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
               <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Abandonment %</div>
               <div style={{ fontSize: "20px", fontWeight: "600", color: "var(--dsc-danger)" }}>
-                {diagnosticsData.metrics?.abandonment_rate ? `${diagnosticsData.metrics.abandonment_rate}%` : "—"}
+                {measured(diagnosticsData.metrics?.abandonment_rate, "%")}
               </div>
             </div>
             <div style={{ padding: "10px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
               <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Field Errors</div>
-              <div style={{ fontSize: "20px", fontWeight: "600" }}>{diagnosticsData.metrics?.field_errors ?? 0}</div>
+              <div style={{ fontSize: "20px", fontWeight: "600" }}>{measured(diagnosticsData.metrics?.field_errors)}</div>
             </div>
           </div>
         ) : (
@@ -418,11 +627,11 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
               {rollups.map((r, i) => (
                 <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
                   <td style={{ padding: "8px 6px", fontWeight: "500" }}>{r.axis_value || r.axis_label || r.axis_key}</td>
-                  <td style={{ padding: "8px 6px" }}>{r.audit_count ?? 0}</td>
+                  <td style={{ padding: "8px 6px" }}>{measured(r.audit_count)}</td>
                   <td style={{ padding: "8px 6px", color: r.master_score !== null ? "var(--text)" : "var(--dsc-muted)" }}>
                     {r.master_score !== null ? `${r.master_score}` : "No data"}
                   </td>
-                  <td style={{ padding: "8px 6px" }}>{r.coverage ?? 0}%</td>
+                  <td style={{ padding: "8px 6px" }}>{measured(r.coverage, "%")}</td>
                 </tr>
               ))}
             </tbody>
