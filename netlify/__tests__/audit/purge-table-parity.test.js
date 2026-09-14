@@ -73,16 +73,17 @@ describe("PURGE_TABLES ↔ RETAIN_TABLES parity for 0029-0031", () => {
   });
 });
 
-describe("PURGE_TABLES ↔ RETAIN_TABLES parity for P3 migrations (0068-0070)", () => {
+describe("PURGE_TABLES ↔ RETAIN_TABLES parity for P3 migrations (0068-0071)", () => {
   const P3_MIGRATIONS = [
     "0068_sxo_static_runs.sql",
     "0069_analytics_funnels_forms.sql",
     "0070_portfolio_experiments.sql",
+    "0071_analytics_import_jobs.sql",
   ];
   const p3Tables = P3_MIGRATIONS.flatMap(tablesIn);
 
-  it("identifies all tables in 0068, 0069, and 0070 migrations", () => {
-    expect(p3Tables.length).toBe(11);
+  it("identifies all tables in 0068 through 0071 migrations", () => {
+    expect(p3Tables.length).toBe(12);
     expect(p3Tables).toEqual([
       "audit_sxo_runs",
       "audit_intent_mappings",
@@ -95,10 +96,11 @@ describe("PURGE_TABLES ↔ RETAIN_TABLES parity for P3 migrations (0068-0070)", 
       "audit_form_diagnostics",
       "audit_portfolio_rollups",
       "audit_optimization_experiments",
+      "audit_analytics_import_jobs",
     ]);
   });
 
-  it("every table introduced in 0068-0070 is accounted for in PURGE_TABLES", () => {
+  it("every table introduced in 0068-0071 is accounted for in PURGE_TABLES", () => {
     const purge = new Set(_internal.PURGE_TABLES);
     const retain = new Set(Object.keys(RETAIN_TABLES));
 

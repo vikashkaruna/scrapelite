@@ -180,11 +180,11 @@ grant usage on schema public to anon, authenticated;
 //   changing any stored id: eighteen internal entity types cover §9.2's
 //   fifteen semantic concepts, and thirteen internal predicates cover its
 //   nine relationships. No objects are added; counts are unchanged.
-// P3 migrations 0068 (+5 tables), 0069 (+5 tables), 0070 (+2 tables, +3 functions)
-// Taking these to 116 / 53 / 29.
+// P3 migrations 0068 (+5 tables), 0069 (+5 tables), 0070 (+2 tables, +3 functions),
+// 0071 (+1 table, +1 function). Taking these to 117 / 54 / 29.
 const EXPECT = {
-  tables: 116,
-  functions: 53,
+  tables: 117,
+  functions: 54,
   triggers: 29,
   tablesWithoutRls: 0,
 };
@@ -3454,6 +3454,77 @@ group("W11 score RLS lockdown");
        join pg_class c on c.oid = p.polrelid where c.relname = 'audit_subject_scores'`);
   check("...and its only policy is service_role",
     pol.length === 1 && String(pol[0].roles).includes("service_role"));
+}
+
+// ── 0071 · durable, idempotent analytics imports ──────────────────────────
+group("analytics import queue — durable claims and exactly-once aggregate storage");
+{
+  const owner = (await one(
+    `insert into auth.users (email) values ('analytics-queue-owner@x.com') returning id`)).id;
+  const workspace = (await one(
+    `insert into public.workspaces (owner_id, name) values ($1,'Analytics QA') returning id`, [owner])).id;
+  const payload = JSON.stringify({
+    workspaceId: workspace,
+    auditId: "audit-queue-1",
+    dateBucket: "2026-09-14",
+    landingPage: "/pricing",
+    sourceChannel: "organic",
+    device: "mobile",
+    region: "global",
+    visitorType: "new",
+    eventCounts: { page_view: 12, form_submit: 2 },
+    metrics: { conversion_rate: 16.67 },
+  });
+
+  const job = await one(
+    `insert into public.audit_analytics_import_jobs
+       (user_id, workspace_id, provider, idempotency_key, payload_hash, aggregate_payload)
+     values ($1,$2,'ga4','queue-check-1',repeat('a',64),$3::jsonb)
+     returning id, state, attempts`, [owner, workspace, payload]);
+  eq("a queued import starts pending", job.state, "pending");
+  eq("...with no attempt charged before a worker claim", job.attempts, 0);
+
+  check("the same provider idempotency key cannot enqueue twice", Boolean(await throws(
+    `insert into public.audit_analytics_import_jobs
+       (user_id, workspace_id, provider, idempotency_key, payload_hash, aggregate_payload)
+     values ($1,$2,'ga4','queue-check-1',repeat('b',64),$3::jsonb)`, [owner, workspace, payload])));
+  check("a malformed payload hash is refused", Boolean(await throws(
+    `insert into public.audit_analytics_import_jobs
+       (user_id, provider, idempotency_key, payload_hash, aggregate_payload)
+     values ($1,'custom','bad-hash','short','{}'::jsonb)`, [owner])));
+
+  const claimed = await q(`select id, state, attempts from public.claim_audit_analytics_import_jobs(10)`);
+  const claimedJob = claimed.find((row) => row.id === job.id);
+  check("the due job is claimed", Boolean(claimedJob));
+  eq("...and enters processing", claimedJob?.state, "processing");
+  eq("...with exactly one charged attempt", claimedJob?.attempts, 1);
+  eq("a processing job is not claimed concurrently", (await q(
+    `select id from public.claim_audit_analytics_import_jobs(10) where id=$1`, [job.id])).length, 0);
+
+  check("one aggregate may be attributed to the import job", Boolean(await one(
+    `insert into public.audit_analytics_aggregates
+       (user_id, workspace_id, audit_id, event_counts, metrics, import_job_id)
+     values ($1,$2,'audit-queue-1','{"page_view":12}'::jsonb,'{}'::jsonb,$3)
+     returning id`, [owner, workspace, job.id])));
+  check("🔴 a retry cannot create a second aggregate for the same job", Boolean(await throws(
+    `insert into public.audit_analytics_aggregates
+       (user_id, workspace_id, audit_id, event_counts, metrics, import_job_id)
+     values ($1,$2,'audit-queue-1','{"page_view":12}'::jsonb,'{}'::jsonb,$3)`,
+    [owner, workspace, job.id])));
+
+  const fn = await one(`
+    select has_function_privilege('anon', p.oid, 'EXECUTE') anon_x,
+           has_function_privilege('authenticated', p.oid, 'EXECUTE') auth_x,
+           has_function_privilege('service_role', p.oid, 'EXECUTE') service_x
+      from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+     where n.nspname='public' and p.proname='claim_audit_analytics_import_jobs'`);
+  check("the claim RPC is service-role only", Boolean(fn) && !fn.anon_x && !fn.auth_x && fn.service_x);
+
+  const table = await one(`select relrowsecurity rls from pg_class where relname='audit_analytics_import_jobs'`);
+  check("the queue has RLS enabled", table?.rls === true);
+  eq("...and grants nothing to anon/authenticated", (await q(
+    `select 1 from information_schema.role_table_grants
+      where table_name='audit_analytics_import_jobs' and grantee in ('anon','authenticated')`)).length, 0);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

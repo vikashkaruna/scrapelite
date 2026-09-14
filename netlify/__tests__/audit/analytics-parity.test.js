@@ -18,6 +18,8 @@ import { FORM_METRIC_KEYS, evaluateFormDiagnostics } from "../../../src/lib/disc
 const ROOT = process.cwd();
 const RAW_SQL = readFileSync(join(ROOT, "supabase", "migrations", "0069_analytics_funnels_forms.sql"), "utf8");
 const SQL = RAW_SQL.replace(/^\s*--.*$/gm, "");
+const IMPORT_SQL = readFileSync(join(ROOT, "supabase", "migrations", "0071_analytics_import_jobs.sql"), "utf8")
+  .replace(/^\s*--.*$/gm, "");
 
 describe("Migration 0069 Guarantees (§11.14 / Stage 3 parity)", () => {
   it("creates all 6 analytics, funnel, and form tables", () => {
@@ -47,6 +49,21 @@ describe("Migration 0069 Guarantees (§11.14 / Stage 3 parity)", () => {
     expect(SQL).toMatch(/metrics\s+jsonb\s+not\s+null/i);
     expect(SQL).not.toMatch(/session_id/i);
     expect(SQL).not.toMatch(/ip_address/i);
+  });
+});
+
+describe("Migration 0071 durable import guarantees", () => {
+  it("stores an idempotent bounded-retry queue under service-role-only RLS", () => {
+    expect(IMPORT_SQL).toMatch(/create table if not exists public\.audit_analytics_import_jobs/i);
+    expect(IMPORT_SQL).toMatch(/unique\s*\(user_id,\s*provider,\s*idempotency_key\)/i);
+    expect(IMPORT_SQL).toMatch(/max_attempts\s+integer\s+not null default 5/i);
+    expect(IMPORT_SQL).toMatch(/for update skip locked/i);
+    expect(IMPORT_SQL).toMatch(/revoke all on table public\.audit_analytics_import_jobs from public, anon, authenticated/i);
+  });
+
+  it("prevents a retried job from creating a second aggregate", () => {
+    expect(IMPORT_SQL).toMatch(/add column if not exists import_job_id/i);
+    expect(IMPORT_SQL).toMatch(/unique\s*\(import_job_id\)/i);
   });
 });
 
@@ -132,10 +149,12 @@ describe("Analytics Endpoints & Privacy Invariants", () => {
     expect(body.disconnected).toBe("ga4");
   });
 
-  it("POST /api/sxo/events/import validates 24 events and reports unmapped ones", async () => {
-    vi.spyOn(auditStore, "saveAnalyticsAggregates").mockResolvedValue({
+  it("POST /api/sxo/events/import validates, privacy-minimizes, and queues normalized aggregates", async () => {
+    const saveSpy = vi.spyOn(auditStore, "saveAnalyticsAggregates");
+    vi.spyOn(auditStore, "enqueueAnalyticsImport").mockResolvedValue({
       ok: true,
-      aggregate: { id: "agg-123" },
+      replay: false,
+      job: { id: "import-123", state: "pending", attempts: 0, payload_hash: "expected" },
     });
 
     const res = await handler({
@@ -145,6 +164,7 @@ describe("Analytics Endpoints & Privacy Invariants", () => {
       body: JSON.stringify({
         audit_id: "aud-123",
         provider: "ga4",
+        idempotency_key: "ga4-aud-123-2026-09-14",
         events: [
           { event_name: "page_view", count: 100 },
           { event_name: "click", properties: { is_primary: true }, count: 20 },
@@ -153,13 +173,54 @@ describe("Analytics Endpoints & Privacy Invariants", () => {
       }),
     });
 
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(202);
     const body = JSON.parse(res.body);
-    expect(body.imported_events_count).toBe(2);
+    expect(body.queued).toBe(true);
+    expect(body.imported_events_count).toBe(0);
     expect(body.event_counts.page_view).toBe(100);
     expect(body.event_counts.primary_cta_click).toBe(20);
     expect(body.unmapped.length).toBe(1);
     expect(body.unmapped[0].unmapped_name).toBe("unknown_custom_trigger");
+    expect(auditStore.enqueueAnalyticsImport).toHaveBeenCalledWith(userId, expect.objectContaining({
+      provider: "ga4",
+      idempotencyKey: "ga4-aud-123-2026-09-14",
+      aggregatePayload: expect.objectContaining({
+        auditId: "aud-123",
+        eventCounts: { page_view: 100, primary_cta_click: 20 },
+      }),
+    }));
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  it("requires an idempotency key before accepting an analytics import", async () => {
+    const res = await handler({
+      httpMethod: "POST",
+      path: "/api/sxo/events/import",
+      headers: { authorization: "Bearer valid-token" },
+      body: JSON.stringify({ provider: "custom", events: [{ event_name: "page_view", count: 1 }] }),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/idempotency_key/i);
+  });
+
+  it("refuses reuse of an idempotency key with a different aggregate payload", async () => {
+    vi.spyOn(auditStore, "enqueueAnalyticsImport").mockResolvedValue({
+      ok: true,
+      replay: true,
+      job: { id: "import-123", state: "pending", attempts: 0, payload_hash: "different" },
+    });
+    const res = await handler({
+      httpMethod: "POST",
+      path: "/api/sxo/events/import",
+      headers: { authorization: "Bearer valid-token" },
+      body: JSON.stringify({
+        provider: "custom",
+        idempotency_key: "same-key",
+        events: [{ event_name: "page_view", count: 2 }],
+      }),
+    });
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body).code).toBe("IDEMPOTENCY_CONFLICT");
   });
 
   it("GET /api/sxo/audits/:id/journey returns 9 stages with unmeasured exclusion", async () => {

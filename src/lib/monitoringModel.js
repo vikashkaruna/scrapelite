@@ -210,6 +210,19 @@ export const AUTOMATION_JOBS = [
     // same event twice — it simply finds less work to do.
     manualRunAllowed: true,
   },
+  {
+    id: "sxo-analytics-import-worker",
+    label: "SXO analytics import worker",
+    schedule: "*/5 * * * *",
+    cron: "*/5 * * * *",
+    expectedIntervalMs: 5 * 60 * 1000,
+    category: "extraction",
+    description:
+      "Claims privacy-minimized analytics aggregate imports, persists each idempotently, and " +
+      "retries transient failures with bounded backoff outside the synchronous page-audit path.",
+    destructive: false,
+    manualRunAllowed: true,
+  },
 ];
 
 export const JOB_IDS = AUTOMATION_JOBS.map((j) => j.id);

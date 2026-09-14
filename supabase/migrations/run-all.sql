@@ -78,6 +78,13 @@
 --   0062  0062_schema_trust.sql — P2 · W13: schema intelligence + trust & proof.
 --   0063  0063_revalidation_request.sql — P2 · W14: revalidation is a REQUEST.
 --   0064  0064_subject_scores.sql — P2 · W11's withheld result surface. W13's step 5.
+--   0065  0065_entity_graph_taxonomy.sql — align the stored entity graph with §9.2.
+--   0066  0066_approved_entity_subjects.sql — CP-1.1's explicit entity → subject link.
+--   0067  0067_discoverability_governance.sql — P3 scoped roles, shared review and effects.
+--   0068  0068_sxo_static_runs.sql — Search Experience Optimization (SXO) static audit runs (Stage
+--   0069  0069_analytics_funnels_forms.sql — Analytics, Journey Funnels, Form Diagnostics & Goals
+--   0070  0070_portfolio_experiments.sql — Portfolio rollups and optimization experiments (Stage 4
+--   0071  0071_analytics_import_jobs.sql — durable, idempotent SXO analytics ingestion.
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -8920,6 +8927,808 @@ create policy audit_subject_scores_service on public.audit_subject_scores
   for all to service_role using (true) with check (true);
 
 revoke all on public.audit_subject_scores from anon, authenticated;
+
+
+-- ============================================================
+-- 0065_entity_graph_taxonomy.sql
+-- ============================================================
+-- 0065_entity_graph_taxonomy.sql — align the stored entity graph with §9.2.
+--
+-- Forward-only: 0056 is already deployable history. Its ids remain valid and
+-- four missing entity concepts plus four missing relationships are added here.
+
+alter table public.audit_entities
+  drop constraint if exists audit_entities_entity_type_check;
+
+alter table public.audit_entities
+  add constraint audit_entities_entity_type_check check (entity_type in (
+    'organization','brand','product','service','location','person','offer',
+    'review','credential','event','content_asset','topic','industry','audience',
+    'partner','customer_case_study','directory_listing','competitor'
+  ));
+
+comment on table public.audit_entities is
+  'A node in a business entity graph. Eighteen stable internal types cover all fifteen §9.2 semantic types plus offer, event, and topic implementation extensions.';
+
+alter table public.audit_entity_relationships
+  drop constraint if exists audit_entity_relationships_predicate_check;
+
+alter table public.audit_entity_relationships
+  add constraint audit_entity_relationships_predicate_check check (predicate in (
+    'owns','offers','located_at','employs','part_of','same_as','about','serves','competes_with',
+    'provides','founded_by','validated_by','listed_on'
+  ));
+
+comment on table public.audit_entity_relationships is
+  'One entity-graph edge. Thirteen stable internal predicates cover all nine §9.2 relationships plus owns, part_of, same_as, and about implementation extensions; domains and ranges are enforced by entityGraph.validateRelation.';
+
+
+-- ============================================================
+-- 0066_approved_entity_subjects.sql
+-- ============================================================
+-- 0066_approved_entity_subjects.sql — CP-1.1's explicit entity → subject link.
+-- Approved identity is the source of display facts. No proposed/rejected node
+-- is backfilled merely because this migration was applied.
+
+create unique index if not exists audit_subjects_workspace_entity_idx
+  on public.audit_subjects (workspace_id, subject_kind, entity_id)
+  where workspace_id is not null and entity_id is not null;
+
+create or replace function public.upsert_audit_subject(
+  p_user_id uuid,
+  p_kind text,
+  p_target_id uuid default null,
+  p_entity_id uuid default null,
+  p_truth_record_id uuid default null,
+  p_label text default null,
+  p_canonical_domain text default null,
+  p_workspace_id uuid default null
+) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid;
+  v_entity public.audit_entities%rowtype;
+begin
+  if (p_target_id is not null)::int
+   + (p_entity_id is not null)::int
+   + (p_truth_record_id is not null)::int <> 1 then
+    raise exception 'upsert_audit_subject: exactly one reference is required';
+  end if;
+
+  if p_entity_id is not null then
+    select * into v_entity from public.audit_entities where id = p_entity_id;
+    if v_entity.id is null or v_entity.state <> 'approved' then
+      raise exception 'upsert_audit_subject: entity not found or not approved';
+    end if;
+    if not (
+      (p_kind = 'brand' and v_entity.entity_type in ('organization','brand'))
+      or (p_kind = 'product' and v_entity.entity_type = 'product')
+      or (p_kind = 'service' and v_entity.entity_type = 'service')
+    ) then
+      raise exception 'upsert_audit_subject: subject kind does not match entity type';
+    end if;
+
+    if v_entity.workspace_id is null then
+      if v_entity.user_id <> p_user_id then
+        raise exception 'upsert_audit_subject: entity not found';
+      end if;
+      insert into public.audit_subjects
+        (user_id, workspace_id, subject_kind, entity_id, label, canonical_domain)
+      values
+        (v_entity.user_id, null, p_kind, p_entity_id,
+         v_entity.name, v_entity.canonical_domain)
+      on conflict (user_id, subject_kind, entity_id) where entity_id is not null
+        do update set
+          label = excluded.label,
+          canonical_domain = excluded.canonical_domain,
+          updated_at = now()
+      returning id into v_id;
+    else
+      if p_workspace_id is distinct from v_entity.workspace_id
+         or not exists (
+           select 1 from public.workspace_members m
+            where m.workspace_id = v_entity.workspace_id and m.user_id = p_user_id
+         ) then
+        raise exception 'upsert_audit_subject: entity not found';
+      end if;
+      insert into public.audit_subjects
+        (user_id, workspace_id, subject_kind, entity_id, label, canonical_domain)
+      values
+        (v_entity.user_id, v_entity.workspace_id, p_kind, p_entity_id,
+         v_entity.name, v_entity.canonical_domain)
+      on conflict (workspace_id, subject_kind, entity_id)
+        where workspace_id is not null and entity_id is not null
+        do update set
+          label = excluded.label,
+          canonical_domain = excluded.canonical_domain,
+          updated_at = now()
+      returning id into v_id;
+    end if;
+    return v_id;
+  end if;
+
+  if p_target_id is not null then
+    insert into public.audit_subjects
+      (user_id, workspace_id, subject_kind, target_id, label, canonical_domain)
+    values
+      (p_user_id, p_workspace_id, p_kind, p_target_id,
+       coalesce(nullif(btrim(p_label), ''), p_kind), p_canonical_domain)
+    on conflict (user_id, subject_kind, target_id) where target_id is not null
+      do update set
+        label = coalesce(nullif(btrim(p_label), ''), public.audit_subjects.label),
+        canonical_domain = coalesce(p_canonical_domain, public.audit_subjects.canonical_domain),
+        workspace_id = coalesce(p_workspace_id, public.audit_subjects.workspace_id),
+        updated_at = now()
+    returning id into v_id;
+  else
+    insert into public.audit_subjects
+      (user_id, workspace_id, subject_kind, truth_record_id, label, canonical_domain)
+    values
+      (p_user_id, p_workspace_id, p_kind, p_truth_record_id,
+       coalesce(nullif(btrim(p_label), ''), p_kind), p_canonical_domain)
+    on conflict (user_id, subject_kind, truth_record_id) where truth_record_id is not null
+      do update set
+        label = coalesce(nullif(btrim(p_label), ''), public.audit_subjects.label),
+        canonical_domain = coalesce(p_canonical_domain, public.audit_subjects.canonical_domain),
+        workspace_id = coalesce(p_workspace_id, public.audit_subjects.workspace_id),
+        updated_at = now()
+    returning id into v_id;
+  end if;
+  return v_id;
+end $$;
+
+comment on function public.upsert_audit_subject(uuid, text, uuid, uuid, uuid, text, text, uuid) is
+  'D7/CP-1.1 atomic get-or-create. Entity subjects require approved, type-compatible entities and derive identity from them. Workspace members share one subject; no proposal is backfilled.';
+
+revoke all on function public.upsert_audit_subject(uuid, text, uuid, uuid, uuid, text, text, uuid)
+  from public, anon, authenticated;
+grant execute on function public.upsert_audit_subject(uuid, text, uuid, uuid, uuid, text, text, uuid)
+  to service_role;
+
+
+-- ============================================================
+-- 0067_discoverability_governance.sql
+-- ============================================================
+-- 0067_discoverability_governance.sql — P3 scoped roles, shared review and effects.
+
+alter table public.workspace_members add column if not exists discoverability_role text;
+update public.workspace_members
+   set discoverability_role = case when role in ('owner','admin') then 'admin' else 'viewer' end
+ where discoverability_role is null;
+alter table public.workspace_members
+  alter column discoverability_role set default 'viewer',
+  alter column discoverability_role set not null;
+alter table public.workspace_members drop constraint if exists workspace_members_discoverability_role_check;
+alter table public.workspace_members add constraint workspace_members_discoverability_role_check
+  check (discoverability_role in
+    ('viewer','analyst','editor','manager','admin','agency_admin','client_viewer'));
+
+alter table public.workspace_invites
+  add column if not exists discoverability_role text not null default 'viewer';
+alter table public.workspace_invites drop constraint if exists workspace_invites_discoverability_role_check;
+alter table public.workspace_invites add constraint workspace_invites_discoverability_role_check
+  check (discoverability_role in
+    ('viewer','analyst','editor','manager','admin','agency_admin','client_viewer'));
+
+comment on column public.workspace_members.discoverability_role is
+  'P3 Discoverability-scoped role, independent of workspace billing/ownership authority.';
+
+create or replace function public.create_workspace(p_owner_id uuid, p_name text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid; v_name text := btrim(coalesce(p_name, ''));
+begin
+  if p_owner_id is null then raise exception 'create_workspace requires an owner id'; end if;
+  if v_name = '' then v_name := 'My workspace'; end if;
+  insert into public.workspaces (owner_id, name) values (p_owner_id, v_name) returning id into v_id;
+  insert into public.workspace_members (workspace_id, user_id, role, discoverability_role)
+    values (v_id, p_owner_id, 'owner', 'admin');
+  return v_id;
+end $$;
+revoke all on function public.create_workspace(uuid, text) from public, anon, authenticated;
+grant execute on function public.create_workspace(uuid, text) to service_role;
+
+create or replace function public.set_workspace_discoverability_role(
+  p_workspace_id uuid, p_actor uuid, p_target_user uuid, p_role text
+) returns text
+language plpgsql security definer set search_path = public as $$
+declare v_actor_role text;
+begin
+  if p_role not in ('viewer','analyst','editor','manager','admin','agency_admin','client_viewer') then
+    return 'invalid_role';
+  end if;
+  select role into v_actor_role from public.workspace_members
+   where workspace_id=p_workspace_id and user_id=p_actor;
+  if v_actor_role not in ('owner','admin') then return 'not_authorized'; end if;
+  update public.workspace_members set discoverability_role=p_role
+   where workspace_id=p_workspace_id and user_id=p_target_user;
+  if not found then return 'not_found'; end if;
+  return 'ok';
+end $$;
+revoke all on function public.set_workspace_discoverability_role(uuid, uuid, uuid, text)
+  from public, anon, authenticated;
+grant execute on function public.set_workspace_discoverability_role(uuid, uuid, uuid, text)
+  to service_role;
+
+-- Workspace review must be a real path, not a role label over owner-only rows.
+alter table public.audit_entity_relationships
+  add column if not exists workspace_id uuid references public.workspaces(id) on delete set null;
+update public.audit_entity_relationships r set workspace_id=e.workspace_id
+  from public.audit_entities e
+ where e.id=r.subject_id and r.workspace_id is null and e.workspace_id is not null;
+create index if not exists audit_entity_relationships_workspace_review_idx
+  on public.audit_entity_relationships (workspace_id, state, created_at desc)
+  where workspace_id is not null;
+
+alter table public.audit_entity_conflicts
+  add column if not exists workspace_id uuid references public.workspaces(id) on delete set null;
+update public.audit_entity_conflicts c set workspace_id=r.workspace_id
+  from public.audit_business_truth_records r
+ where r.id=c.truth_record_id and c.workspace_id is null and r.workspace_id is not null;
+update public.audit_entity_conflicts c set workspace_id=e.workspace_id
+  from public.audit_entities e
+ where e.id=c.subject_id and c.workspace_id is null and e.workspace_id is not null;
+create index if not exists audit_entity_conflicts_workspace_open_idx
+  on public.audit_entity_conflicts (workspace_id, created_at desc)
+  where workspace_id is not null and resolved_at is null;
+
+-- §12's measured validation outcomes extend the shared W8 lifecycle.
+alter table public.audit_recommendations drop constraint if exists audit_recommendations_status_check;
+alter table public.audit_recommendations add constraint audit_recommendations_status_check check (status in (
+  'open','accepted','dismissed','done','assigned','in_progress','implemented',
+  'validation_scheduled','validated','no_measurable_change','regressed'
+));
+alter table public.audit_issues drop constraint if exists audit_issues_status_check;
+alter table public.audit_issues add constraint audit_issues_status_check check (status in (
+  'open','accepted','assigned','in_progress','implemented','validation_scheduled',
+  'validated','dismissed','no_measurable_change','regressed'
+));
+alter table public.audit_issues drop constraint if exists audit_issues_owner_role_check;
+alter table public.audit_issues add constraint audit_issues_owner_role_check check (
+  owner_role is null or owner_role in (
+    'content','seo','engineering','brand','product','growth_cro','product_marketing',
+    'analytics','local_ops','design','customer_success','sales','agency'
+  )
+);
+
+-- Connector delivery is an idempotent effect log, not a second workflow.
+create table if not exists public.audit_connector_dispatches (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  truth_record_id uuid references public.audit_business_truth_records(id) on delete cascade,
+  entity_id uuid references public.audit_entities(id) on delete cascade,
+  provider text not null check (provider in ('hubspot','notion','airtable','slack','zapier')),
+  idempotency_key text not null check (length(btrim(idempotency_key)) > 0),
+  payload_json jsonb not null default '{}'::jsonb,
+  status text not null default 'claimed' check (status in ('claimed','delivered','failed')),
+  response_json jsonb,
+  error text,
+  created_at timestamptz not null default now(),
+  attempted_at timestamptz,
+  delivered_at timestamptz,
+  constraint audit_connector_dispatch_one_source check (
+    (truth_record_id is not null)::int + (entity_id is not null)::int = 1
+  ),
+  constraint audit_connector_dispatch_idempotent unique (user_id, provider, idempotency_key)
+);
+-- A workspace dispatch belongs to the workspace, not whichever admin clicked
+-- first. The legacy constraint remains the personal-scope arbiter; this second
+-- index prevents two different workspace admins delivering the same effect.
+create unique index if not exists audit_connector_dispatch_workspace_idempotent
+  on public.audit_connector_dispatches (workspace_id, provider, idempotency_key)
+  where workspace_id is not null;
+alter table public.audit_connector_dispatches enable row level security;
+drop policy if exists audit_connector_dispatches_service on public.audit_connector_dispatches;
+create policy audit_connector_dispatches_service on public.audit_connector_dispatches
+  for all to service_role using (true) with check (true);
+revoke all on public.audit_connector_dispatches from anon, authenticated;
+
+create or replace function public.claim_discoverability_connector_dispatch(
+  p_user_id uuid, p_provider text, p_idempotency_key text,
+  p_truth_record_id uuid default null, p_entity_id uuid default null,
+  p_workspace_id uuid default null, p_payload jsonb default '{}'::jsonb
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_row public.audit_connector_dispatches%rowtype;
+begin
+  if (p_truth_record_id is not null)::int + (p_entity_id is not null)::int <> 1 then
+    return jsonb_build_object('ok', false, 'reason', 'one_source_required');
+  end if;
+  if p_workspace_id is not null and not exists (
+    select 1 from public.workspace_members m
+     where m.workspace_id=p_workspace_id and m.user_id=p_user_id
+       and m.discoverability_role in ('admin','agency_admin')
+  ) then return jsonb_build_object('ok', false, 'reason', 'not_authorized'); end if;
+
+  if p_truth_record_id is not null and not exists (
+    select 1 from public.audit_business_truth_records r
+      join public.audit_business_truth_versions v on v.id=r.current_version_id
+     where r.id=p_truth_record_id and r.status='active' and v.state='approved'
+       and ((p_workspace_id is null and r.user_id=p_user_id)
+         or (p_workspace_id is not null and r.workspace_id=p_workspace_id))
+  ) then return jsonb_build_object('ok', false, 'reason', 'source_not_approved'); end if;
+
+  if p_entity_id is not null and not exists (
+    select 1 from public.audit_entities e
+     where e.id=p_entity_id and e.state='approved'
+       and ((p_workspace_id is null and e.user_id=p_user_id)
+         or (p_workspace_id is not null and e.workspace_id=p_workspace_id))
+  ) then return jsonb_build_object('ok', false, 'reason', 'source_not_approved'); end if;
+
+  insert into public.audit_connector_dispatches
+    (user_id, workspace_id, truth_record_id, entity_id, provider, idempotency_key, payload_json)
+  values (p_user_id,p_workspace_id,p_truth_record_id,p_entity_id,p_provider,
+          btrim(p_idempotency_key),coalesce(p_payload,'{}'::jsonb))
+  on conflict do nothing returning * into v_row;
+  if v_row.id is null then
+    select * into v_row from public.audit_connector_dispatches
+     where provider=p_provider and idempotency_key=btrim(p_idempotency_key)
+       and ((p_workspace_id is null and user_id=p_user_id and workspace_id is null)
+         or (p_workspace_id is not null and workspace_id=p_workspace_id));
+    return jsonb_build_object('ok',true,'replay',true,'id',v_row.id,'status',v_row.status);
+  end if;
+  return jsonb_build_object('ok',true,'replay',false,'id',v_row.id,'status',v_row.status);
+end $$;
+revoke all on function public.claim_discoverability_connector_dispatch(uuid,text,text,uuid,uuid,uuid,jsonb)
+  from public, anon, authenticated;
+grant execute on function public.claim_discoverability_connector_dispatch(uuid,text,text,uuid,uuid,uuid,jsonb)
+  to service_role;
+
+create or replace function public.assign_discoverability_recommendation(
+  p_user_id uuid, p_workspace_id uuid, p_rec_id uuid, p_assignee uuid default null
+) returns text
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (
+    select 1 from public.workspace_members m
+     where m.workspace_id=p_workspace_id and m.user_id=p_user_id
+       and m.discoverability_role in ('manager','admin','agency_admin')
+  ) then return 'not_authorized'; end if;
+  if not exists (
+    select 1 from public.audit_recommendations r
+     where r.id=p_rec_id and r.workspace_id=p_workspace_id
+  ) then return 'not_found'; end if;
+  if p_assignee is not null and not exists (
+    select 1 from public.workspace_members m
+     where m.workspace_id=p_workspace_id and m.user_id=p_assignee and m.paused_at is null
+  ) then return 'not_a_member'; end if;
+  update public.audit_recommendations
+     set assigned_to=p_assignee,
+         assigned_at=case when p_assignee is null then null else now() end
+   where id=p_rec_id and workspace_id=p_workspace_id;
+  return 'ok';
+end $$;
+revoke all on function public.assign_discoverability_recommendation(uuid,uuid,uuid,uuid)
+  from public, anon, authenticated;
+grant execute on function public.assign_discoverability_recommendation(uuid,uuid,uuid,uuid)
+  to service_role;
+
+
+-- ============================================================
+-- 0068_sxo_static_runs.sql
+-- ============================================================
+-- 0068_sxo_static_runs.sql — Search Experience Optimization (SXO) static audit runs (Stage 2 / P3A).
+--
+-- Governed by §11.14 of the P3 PRD:
+-- 1. `sxo_total_score` is NULLABLE — unknown is never 0.
+-- 2. `coverage` is NOT NULL — a score without coverage is a different measurement.
+-- 3. `model_version` has NO DEFAULT — every writer must explicitly declare the version.
+-- 4. RLS enabled, revoked from anon and authenticated, service_role access only.
+
+-- 1. SXO runs table
+create table if not exists public.audit_sxo_runs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  audit_id text not null,
+  subject_id text,
+  target_id uuid references public.audit_targets(id) on delete set null,
+  sxo_total_score numeric(5,1) check (sxo_total_score is null or (sxo_total_score >= 0 and sxo_total_score <= 100)),
+  coverage numeric(5,1) not null check (coverage >= 0 and coverage <= 100),
+  layer_scores jsonb not null default '{}'::jsonb,
+  layer_results jsonb not null default '{}'::jsonb,
+  findings jsonb not null default '[]'::jsonb,
+  weight_set_id text not null default 'sxo_default_v1',
+  model_version text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists audit_sxo_runs_user_audit_idx
+  on public.audit_sxo_runs (user_id, audit_id);
+
+create index if not exists audit_sxo_runs_workspace_idx
+  on public.audit_sxo_runs (workspace_id)
+  where workspace_id is not null;
+
+create index if not exists audit_sxo_runs_subject_idx
+  on public.audit_sxo_runs (subject_id)
+  where subject_id is not null;
+
+-- 2. Intent mappings table
+create table if not exists public.audit_intent_mappings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  subject_id text,
+  intent_class text not null,
+  target_url text not null,
+  mapped_prompt_kinds jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists audit_intent_mappings_user_subject_idx
+  on public.audit_intent_mappings (user_id, subject_id);
+
+-- 3. Page templates table
+create table if not exists public.audit_page_templates (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  template_key text not null,
+  label text not null,
+  rules jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists audit_page_templates_user_key_idx
+  on public.audit_page_templates (user_id, template_key)
+  where workspace_id is null;
+
+create unique index if not exists audit_page_templates_workspace_key_idx
+  on public.audit_page_templates (workspace_id, template_key)
+  where workspace_id is not null;
+
+-- 4. RLS and Security lockdown
+alter table public.audit_sxo_runs enable row level security;
+alter table public.audit_intent_mappings enable row level security;
+alter table public.audit_page_templates enable row level security;
+
+revoke all on public.audit_sxo_runs from anon, authenticated;
+revoke all on public.audit_intent_mappings from anon, authenticated;
+revoke all on public.audit_page_templates from anon, authenticated;
+
+grant select, insert, update, delete on public.audit_sxo_runs to service_role;
+grant select, insert, update, delete on public.audit_intent_mappings to service_role;
+grant select, insert, update, delete on public.audit_page_templates to service_role;
+
+
+-- ============================================================
+-- 0069_analytics_funnels_forms.sql
+-- ============================================================
+-- 0069_analytics_funnels_forms.sql — Analytics, Journey Funnels, Form Diagnostics & Goals (Stage 3 / P3B).
+--
+-- Governed by §11.8, §11.9, §11.14 & §13 of the P3 PRD:
+-- 1. Aggregates ONLY. No raw session rows, IP addresses, or visitor PII (§10 / §11.8).
+-- 2. Credentials and OAuth tokens in audit_analytics_connections are encrypted at rest.
+-- 3. RLS enabled, revoked from anon and authenticated, service_role access only.
+
+-- 1. Conversion goals table (§11.14: conversion_goals)
+create table if not exists public.audit_conversion_goals (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  audit_id text,
+  subject_id text,
+  name text not null,
+  outcome_type text not null,
+  target_url text,
+  target_selector text,
+  target_event text,
+  value_cents integer default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists audit_conversion_goals_user_idx
+  on public.audit_conversion_goals (user_id);
+
+create index if not exists audit_conversion_goals_workspace_idx
+  on public.audit_conversion_goals (workspace_id)
+  where workspace_id is not null;
+
+-- 2. Analytics connections table (§11.14: analytics_connections)
+create table if not exists public.audit_analytics_connections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  provider text not null,
+  provider_account_id text,
+  encrypted_token text,
+  token_fingerprint text not null,
+  status text not null default 'connected',
+  settings jsonb not null default '{}'::jsonb,
+  last_sync_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists audit_analytics_connections_user_idx
+  on public.audit_analytics_connections (user_id);
+
+create index if not exists audit_analytics_connections_workspace_idx
+  on public.audit_analytics_connections (workspace_id)
+  where workspace_id is not null;
+
+-- 3. Analytics event mappings table (§11.14: analytics_event_mappings)
+create table if not exists public.audit_analytics_event_mappings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  connection_id uuid references public.audit_analytics_connections(id) on delete cascade,
+  source_event_name text not null,
+  normalized_event_name text not null,
+  rules jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists audit_analytics_event_mappings_user_idx
+  on public.audit_analytics_event_mappings (user_id);
+
+-- 4. Analytics aggregates table (§11.14: analytics_aggregates)
+-- Aggregates only across the 7 segmentation axes.
+create table if not exists public.audit_analytics_aggregates (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  audit_id text,
+  subject_id text,
+  date_bucket date not null default current_date,
+  landing_page text not null default '/',
+  source_channel text not null default 'direct',
+  device text not null default 'all',
+  region text not null default 'global',
+  visitor_type text not null default 'all',
+  conversion_goal_id uuid references public.audit_conversion_goals(id) on delete set null,
+  event_counts jsonb not null default '{}'::jsonb,
+  metrics jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists audit_analytics_aggregates_user_audit_idx
+  on public.audit_analytics_aggregates (user_id, audit_id);
+
+create index if not exists audit_analytics_aggregates_workspace_idx
+  on public.audit_analytics_aggregates (workspace_id)
+  where workspace_id is not null;
+
+-- 5. Journey funnels table (§11.14: journey_funnels)
+create table if not exists public.audit_journey_funnels (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  audit_id text not null,
+  subject_id text,
+  funnel_name text not null default 'standard_9_stage',
+  stage_results jsonb not null default '[]'::jsonb,
+  overall_conversion_rate numeric(5,2),
+  mi_score numeric(5,1),
+  mi_caveats jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists audit_journey_funnels_user_audit_idx
+  on public.audit_journey_funnels (user_id, audit_id);
+
+create index if not exists audit_journey_funnels_workspace_idx
+  on public.audit_journey_funnels (workspace_id)
+  where workspace_id is not null;
+
+-- 6. Form diagnostics table (§11.14: form_diagnostics)
+create table if not exists public.audit_form_diagnostics (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  audit_id text not null,
+  form_id text not null,
+  form_name text,
+  page_url text not null,
+  metrics jsonb not null default '{}'::jsonb,
+  field_diagnostics jsonb not null default '[]'::jsonb,
+  recommendations jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists audit_form_diagnostics_user_audit_idx
+  on public.audit_form_diagnostics (user_id, audit_id);
+
+create index if not exists audit_form_diagnostics_workspace_idx
+  on public.audit_form_diagnostics (workspace_id)
+  where workspace_id is not null;
+
+-- RLS and Permission lockdown on all 6 tables
+alter table public.audit_conversion_goals enable row level security;
+alter table public.audit_analytics_connections enable row level security;
+alter table public.audit_analytics_event_mappings enable row level security;
+alter table public.audit_analytics_aggregates enable row level security;
+alter table public.audit_journey_funnels enable row level security;
+alter table public.audit_form_diagnostics enable row level security;
+
+revoke all on table public.audit_conversion_goals from public, anon, authenticated;
+revoke all on table public.audit_analytics_connections from public, anon, authenticated;
+revoke all on table public.audit_analytics_event_mappings from public, anon, authenticated;
+revoke all on table public.audit_analytics_aggregates from public, anon, authenticated;
+revoke all on table public.audit_journey_funnels from public, anon, authenticated;
+revoke all on table public.audit_form_diagnostics from public, anon, authenticated;
+
+grant all on table public.audit_conversion_goals to service_role;
+grant all on table public.audit_analytics_connections to service_role;
+grant all on table public.audit_analytics_event_mappings to service_role;
+grant all on table public.audit_analytics_aggregates to service_role;
+grant all on table public.audit_journey_funnels to service_role;
+grant all on table public.audit_form_diagnostics to service_role;
+
+
+-- ============================================================
+-- 0070_portfolio_experiments.sql
+-- ============================================================
+-- 0070_portfolio_experiments.sql — Portfolio rollups and optimization experiments (Stage 4 / P3C).
+--
+-- Governed by §11.10, §11.12, §11.14 of the P3 PRD:
+-- 1. Portfolio rollups materialize across the 9 rollup axes on workspace_id.
+-- 2. Optimization experiments record changes, observation periods, and expected metrics.
+-- 3. RLS enabled, revoked from anon and authenticated, service_role access only.
+
+-- 1. Portfolio rollups table (§11.14: portfolio_rollups)
+create table if not exists public.audit_portfolio_rollups (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  rollup_axis text not null check (rollup_axis in ('workspace', 'brand', 'business_unit', 'product_line', 'service_line', 'location', 'market_language', 'template', 'owner_team')),
+  axis_value text not null,
+  audit_count integer not null default 0,
+  master_score numeric(5,1),
+  layer_scores jsonb not null default '{}'::jsonb,
+  framework_scores jsonb not null default '{}'::jsonb,
+  coverage numeric(5,1) not null default 0,
+  calculated_at timestamptz not null default now()
+);
+
+create index if not exists audit_portfolio_rollups_user_axis_idx
+  on public.audit_portfolio_rollups (user_id, rollup_axis);
+
+create index if not exists audit_portfolio_rollups_workspace_idx
+  on public.audit_portfolio_rollups (workspace_id)
+  where workspace_id is not null;
+
+-- 2. Optimization experiments table (§11.14: optimization_experiments)
+create table if not exists public.audit_optimization_experiments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  audit_id text,
+  recommendation_id uuid references public.audit_recommendations(id) on delete set null,
+  experiment_name text not null,
+  ticket_url text,
+  hypothesis text,
+  expected_metric text not null default 'sxo_total_score',
+  baseline_value numeric(8,2),
+  current_value numeric(8,2),
+  status text not null default 'active' check (status in ('draft', 'active', 'completed', 'cancelled')),
+  observation_period_days integer not null default 28 check (observation_period_days > 0),
+  start_date timestamptz not null default now(),
+  completion_date timestamptz,
+  relationship text not null default 'correlation',
+  caveats jsonb not null default '[]'::jsonb,
+  results jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists audit_optimization_experiments_user_idx
+  on public.audit_optimization_experiments (user_id);
+
+create index if not exists audit_optimization_experiments_workspace_idx
+  on public.audit_optimization_experiments (workspace_id)
+  where workspace_id is not null;
+
+create index if not exists audit_optimization_experiments_audit_idx
+  on public.audit_optimization_experiments (audit_id)
+  where audit_id is not null;
+
+-- RLS and Permission lockdown
+alter table public.audit_portfolio_rollups enable row level security;
+alter table public.audit_optimization_experiments enable row level security;
+
+revoke all on public.audit_portfolio_rollups from anon, authenticated;
+revoke all on public.audit_optimization_experiments from anon, authenticated;
+
+grant select, insert, update, delete on public.audit_portfolio_rollups to service_role;
+grant select, insert, update, delete on public.audit_optimization_experiments to service_role;
+
+
+-- ============================================================
+-- 0071_analytics_import_jobs.sql
+-- ============================================================
+-- 0071_analytics_import_jobs.sql — durable, idempotent SXO analytics ingestion.
+--
+-- The HTTP request validates and normalizes aggregate counts, then writes one
+-- queue row and returns 202. A scheduled worker claims rows with SKIP LOCKED,
+-- writes the aggregate, and records completion or bounded retry state. Raw
+-- visitor/session data is never accepted or stored.
+
+create table if not exists public.audit_analytics_import_jobs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  provider text not null check (provider in ('ga4','posthog','plausible','custom')),
+  idempotency_key text not null check (length(btrim(idempotency_key)) between 1 and 200),
+  payload_hash text not null check (length(payload_hash) = 64),
+  aggregate_payload jsonb not null,
+  state text not null default 'pending'
+    check (state in ('pending','processing','retrying','completed','failed')),
+  attempts integer not null default 0 check (attempts >= 0),
+  max_attempts integer not null default 5 check (max_attempts between 1 and 10),
+  next_attempt_at timestamptz not null default now(),
+  last_error text,
+  result_json jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  completed_at timestamptz,
+  unique (user_id, provider, idempotency_key)
+);
+
+create index if not exists audit_analytics_import_jobs_due_idx
+  on public.audit_analytics_import_jobs (state, next_attempt_at, created_at)
+  where state in ('pending','retrying','processing');
+
+create index if not exists audit_analytics_import_jobs_workspace_idx
+  on public.audit_analytics_import_jobs (workspace_id, created_at desc)
+  where workspace_id is not null;
+
+alter table public.audit_analytics_import_jobs enable row level security;
+revoke all on table public.audit_analytics_import_jobs from public, anon, authenticated;
+grant all on table public.audit_analytics_import_jobs to service_role;
+
+alter table public.audit_analytics_aggregates
+  add column if not exists import_job_id uuid
+    references public.audit_analytics_import_jobs(id) on delete set null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'audit_analytics_aggregates_import_job_unique'
+       and conrelid = 'public.audit_analytics_aggregates'::regclass
+  ) then
+    alter table public.audit_analytics_aggregates
+      add constraint audit_analytics_aggregates_import_job_unique unique (import_job_id);
+  end if;
+end $$;
+
+create or replace function public.claim_audit_analytics_import_jobs(p_limit integer default 20)
+returns setof public.audit_analytics_import_jobs
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  return query
+  with due as (
+    select j.id
+      from public.audit_analytics_import_jobs j
+     where (
+       (j.state in ('pending','retrying') and j.next_attempt_at <= now())
+       or (j.state = 'processing' and j.updated_at < now() - interval '15 minutes')
+     )
+       and j.attempts < j.max_attempts
+     order by j.next_attempt_at, j.created_at
+     for update skip locked
+     limit greatest(1, least(coalesce(p_limit, 20), 100))
+  )
+  update public.audit_analytics_import_jobs j
+     set state = 'processing',
+         attempts = j.attempts + 1,
+         updated_at = now(),
+         last_error = null
+    from due
+   where j.id = due.id
+  returning j.*;
+end;
+$$;
+
+revoke all on function public.claim_audit_analytics_import_jobs(integer) from public, anon, authenticated;
+grant execute on function public.claim_audit_analytics_import_jobs(integer) to service_role;
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

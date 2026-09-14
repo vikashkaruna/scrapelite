@@ -2183,10 +2183,14 @@ export async function saveAnalyticsAggregates(userId, {
   auditId = null, subjectId = null, dateBucket = null, landingPage = "/",
   sourceChannel = "direct", device = "all", region = "global", visitorType = "all",
   conversionGoalId = null, eventCounts = {}, metrics = {}, workspaceId = null,
+  importJobId = null,
 }) {
-  const r = await rest("audit_analytics_aggregates", {
+  const path = importJobId
+    ? "audit_analytics_aggregates?on_conflict=import_job_id"
+    : "audit_analytics_aggregates";
+  const r = await rest(path, {
     method: "POST",
-    headers: { Prefer: "return=representation" },
+    headers: { Prefer: importJobId ? "resolution=merge-duplicates,return=representation" : "return=representation" },
     body: JSON.stringify({
       user_id: userId,
       workspace_id: workspaceId || null,
@@ -2201,10 +2205,85 @@ export async function saveAnalyticsAggregates(userId, {
       conversion_goal_id: conversionGoalId,
       event_counts: eventCounts,
       metrics,
+      import_job_id: importJobId || null,
     }),
   });
   const row = Array.isArray(r.data) ? r.data[0] : r.data;
   return r.ok && row ? { ok: true, aggregate: row } : { ok: false, error: r.error || "Could not save aggregates." };
+}
+
+export async function findAnalyticsImportJob(userId, provider, idempotencyKey) {
+  const r = await rest(
+    `audit_analytics_import_jobs?user_id=eq.${encodeURIComponent(userId)}`
+      + `&provider=eq.${encodeURIComponent(provider)}`
+      + `&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&${SELECT_ALL}&limit=1`,
+  );
+  return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+export async function enqueueAnalyticsImport(userId, {
+  provider, idempotencyKey, payloadHash, aggregatePayload, workspaceId = null,
+}) {
+  const existing = await findAnalyticsImportJob(userId, provider, idempotencyKey);
+  if (existing) return { ok: true, replay: true, job: existing };
+
+  const r = await insert("audit_analytics_import_jobs", [{
+    user_id: userId,
+    workspace_id: workspaceId || null,
+    provider,
+    idempotency_key: idempotencyKey,
+    payload_hash: payloadHash,
+    aggregate_payload: aggregatePayload,
+  }]);
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (r.ok && row) return { ok: true, replay: false, job: row };
+
+  // A concurrent replay can win the unique insert after our initial read.
+  if (r.status === 409) {
+    const raced = await findAnalyticsImportJob(userId, provider, idempotencyKey);
+    if (raced) return { ok: true, replay: true, job: raced };
+  }
+  return { ok: false, error: r.error || "Could not queue analytics import." };
+}
+
+export async function claimAnalyticsImportJobs(limit = 20) {
+  const r = await rest("rpc/claim_audit_analytics_import_jobs", {
+    method: "POST",
+    body: JSON.stringify({ p_limit: rowCap(limit, 20) }),
+  });
+  return r.ok && Array.isArray(r.data) ? r.data : [];
+}
+
+export async function completeAnalyticsImportJob(id, result) {
+  const r = await rest(`audit_analytics_import_jobs?id=eq.${encodeURIComponent(id)}&state=eq.processing`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      state: "completed",
+      result_json: result || {},
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_error: null,
+    }),
+  });
+  return { ok: r.ok && Array.isArray(r.data) && r.data.length > 0 };
+}
+
+export async function failAnalyticsImportJob(job, error, now = Date.now()) {
+  const exhausted = Number(job.attempts || 0) >= Number(job.max_attempts || 5);
+  const backoffMinutes = Math.min(60, 5 * (2 ** Math.max(0, Number(job.attempts || 1) - 1)));
+  const patch = {
+    state: exhausted ? "failed" : "retrying",
+    last_error: String(error || "Analytics import failed").slice(0, 1000),
+    updated_at: new Date(now).toISOString(),
+    next_attempt_at: new Date(now + backoffMinutes * 60_000).toISOString(),
+  };
+  const r = await rest(`audit_analytics_import_jobs?id=eq.${encodeURIComponent(job.id)}&state=eq.processing`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify(patch),
+  });
+  return { ok: r.ok && Array.isArray(r.data) && r.data.length > 0, state: patch.state };
 }
 
 export async function listAnalyticsAggregates(userId, {

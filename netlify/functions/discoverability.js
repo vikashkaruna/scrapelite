@@ -53,6 +53,7 @@
 // limit, so it can hold neither a quota nor a history worth keeping. Same
 // reasoning as scrape consent and referrals.
 
+import { createHash } from "node:crypto";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
@@ -1138,15 +1139,27 @@ export const handler = async (event) => {
       if (id === "events" && sub === "import") {
         if (method === "POST") {
           const workspaceId = body.workspace_id || null;
-          if (workspaceId) {
-            const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
-            if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+          const roleGate = await requireWorkspaceDiscoverabilityAction(userId, workspaceId, "run_analysis");
+          if (!roleGate.ok) return json(403, { error: roleGate.refusal.message, code: roleGate.refusal.code });
+
+          const idempotencyKey = typeof body.idempotency_key === "string"
+            ? body.idempotency_key.trim() : "";
+          if (!idempotencyKey || idempotencyKey.length > 200) {
+            return bad("`idempotency_key` is required and must be 1–200 characters.");
           }
 
           const events = Array.isArray(body.events) ? body.events : [body];
           const provider = body.provider || "custom";
           if (!ANALYTICS_IMPORT_PROVIDERS.includes(provider)) {
             return bad("Unsupported analytics import provider.", { allowed: ANALYTICS_IMPORT_PROVIDERS });
+          }
+          if (body.audit_id) {
+            const audit = await store.getAuditFull(userId, body.audit_id, { workspaceId });
+            if (!audit) return notFound("Audit not found.");
+          }
+          if (body.subject_id) {
+            const subject = await store.getSubject(userId, body.subject_id, { workspaceId });
+            if (!subject) return notFound("Subject not found.");
           }
           const mappedCounts = {};
           const unmappedList = [];
@@ -1170,7 +1183,8 @@ export const handler = async (event) => {
             }
           }
 
-          const saved = await store.saveAnalyticsAggregates(userId, {
+          const eventCounts = Object.fromEntries(Object.entries(mappedCounts).sort(([a], [b]) => a.localeCompare(b)));
+          const aggregatePayload = {
             auditId: body.audit_id || null,
             subjectId: body.subject_id || null,
             dateBucket: body.date_bucket || null,
@@ -1180,17 +1194,44 @@ export const handler = async (event) => {
             region: body.region || "global",
             visitorType: body.visitor_type || "all",
             conversionGoalId: body.conversion_goal_id || null,
-            eventCounts: mappedCounts,
+            eventCounts,
             metrics: body.metrics || {},
             workspaceId,
-          });
-
-          return json(200, {
-            ok: true,
-            imported_events_count: Object.keys(mappedCounts).length,
-            event_counts: mappedCounts,
             unmapped: unmappedList,
-            aggregate: saved.aggregate || null,
+          };
+          const payloadHash = createHash("sha256").update(JSON.stringify(aggregatePayload)).digest("hex");
+          const queued = await store.enqueueAnalyticsImport(userId, {
+            provider,
+            idempotencyKey,
+            payloadHash,
+            aggregatePayload,
+            workspaceId,
+          });
+          if (!queued.ok) return json(503, { ok: false, error: queued.error || "Could not queue analytics import." });
+          if (queued.replay && queued.job.payload_hash !== payloadHash) {
+            return json(409, {
+              ok: false,
+              code: "IDEMPOTENCY_CONFLICT",
+              error: "That idempotency key was already used for a different analytics import.",
+            });
+          }
+
+          const completed = queued.job.state === "completed";
+          return json(completed ? 200 : 202, {
+            ok: true,
+            queued: !completed,
+            replay: queued.replay,
+            job: {
+              id: queued.job.id,
+              state: queued.job.state,
+              attempts: queued.job.attempts,
+            },
+            imported_events_count: completed
+              ? queued.job.result_json?.imported_events_count ?? Object.keys(eventCounts).length
+              : 0,
+            event_counts: eventCounts,
+            unmapped: unmappedList,
+            result: completed ? queued.job.result_json || null : null,
           });
         }
       }
