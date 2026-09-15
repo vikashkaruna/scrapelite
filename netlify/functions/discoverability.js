@@ -3179,9 +3179,13 @@ async function entityGraphRoute(userId, method, path, body, event) {
         no_approver: [400, "No approver could be resolved for this request."],
         rejected: [409, "This relationship was rejected. Propose it again rather than reviving the rejection."],
         endpoint_rejected: [409, "One of the entities this connects was rejected. Approving the edge would silently revive it."],
+        // 0076. Approving an edge approves its proposed endpoints; if the
+        // reviewer proposed one of them, that half is a self-approval.
+        endpoint_self_approval: [403, "You proposed one of the entities this relationship connects. Approve it as a single-founder approval, or ask a teammate to approve."],
         not_found: [404, "Relationship not found."],
       };
-      const [status, message] = VERDICTS[r.verdict] || [500, "Could not approve the relationship."];
+      const [status, message] = VERDICTS[r.verdict]
+        || [500, "The approval could not be saved. Nothing was changed — try again, and contact support if it keeps failing."];
       return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
     }
 
@@ -3820,6 +3824,45 @@ async function localDirectoryRoute(userId, method, path, body, event) {
     }
   }
 
+  // ── Sources marked not applicable (0076) ─────────────────────────────────
+  //   GET    /local-directory/ignores?truth_record_id=
+  //   POST   /local-directory/ignores            { truth_record_id, source_id, reason }
+  //   DELETE /local-directory/ignores/{source_id} { truth_record_id }
+  if (section === "ignores") {
+    if (method === "GET") {
+      const found = await store.listDirectorySourceIgnores(userId, {
+        truthRecordId: q.truth_record_id || null, workspaceId,
+      });
+      const rows = Array.isArray(found) ? found : [];
+      return json(200, { ignores: rows, count: rows.length });
+    }
+    if (method === "POST") {
+      const sourceId = String(body.source_id || "").trim();
+      if (!SOURCE_BY_ID[sourceId]) return bad(`Unknown directory source: ${sourceId || "(none)"}.`);
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (!reason) return bad("Say why this source does not apply — an unexplained ignore reads as a mis-click later.", { code: "REASON_REQUIRED" });
+      const ref = await requireLocalRefs(userId, body);
+      if (ref.refusal) return ref.refusal;
+      const saved = await store.ignoreDirectorySource(userId, {
+        truthRecordId: body.truth_record_id || null, sourceId,
+        reason: reason.slice(0, 500), workspaceId: body.workspace_id || null,
+      });
+      if (!saved.ok) return json(503, { error: "Could not record the ignore.", code: "STORAGE_UNAVAILABLE", detail: saved.error });
+      return json(201, { ignore: saved.ignore });
+    }
+    if (method === "DELETE" && id) {
+      const ref = await requireLocalRefs(userId, body);
+      if (ref.refusal) return ref.refusal;
+      const r = await store.unignoreDirectorySource(userId, {
+        truthRecordId: body.truth_record_id || null, sourceId: id,
+        workspaceId: body.workspace_id || null,
+      });
+      if (r.notFound) return notFound("That source is not ignored.");
+      if (!r.ok) return json(503, { error: "Could not restore the source.", code: "STORAGE_UNAVAILABLE", detail: r.error });
+      return json(200, { restored: true, source_id: id });
+    }
+  }
+
   // ── Run a check ──────────────────────────────────────────────────────────
   if (section === "check" && method === "POST") {
     const truthRecordId = body.truth_record_id || null;
@@ -3832,11 +3875,20 @@ async function localDirectoryRoute(userId, method, path, body, event) {
     const ref = await requireLocalRefs(userId, body);
     if (ref.refusal) return ref.refusal;
 
-    const listings = await store.listDirectoryListings(userId, {
-      truthRecordId,
-      workspaceId: body.workspace_id || null,
-    });
-    const configured = (region ? sourcesForRegion(region) : DIRECTORY_SOURCES).map((src) => src.id);
+    // A source the user marked not applicable is excluded from BOTH sides —
+    // its listing is not scored, and it is not counted as a configured source
+    // that went unchecked — so ignoring it can neither lower nor pad the score.
+    const [allListings, ignores] = await Promise.all([
+      store.listDirectoryListings(userId, { truthRecordId, workspaceId: body.workspace_id || null }),
+      store.listDirectorySourceIgnores(userId, { truthRecordId, workspaceId: body.workspace_id || null }),
+    ]);
+    // An unreadable ignore list must not stop a check — it degrades to "nothing
+    // ignored", which is the state every record was in before 0076.
+    const ignoredIds = new Set((Array.isArray(ignores) ? ignores : []).map((i) => i.source_id));
+    const listings = (Array.isArray(allListings) ? allListings : []).filter((l) => !ignoredIds.has(l.source_id));
+    const configured = (region ? sourcesForRegion(region) : DIRECTORY_SOURCES)
+      .map((src) => src.id)
+      .filter((sid) => !ignoredIds.has(sid));
 
     const matches = listings
       .map((l) => {
@@ -3876,6 +3928,7 @@ async function localDirectoryRoute(userId, method, path, body, event) {
       persisted: Boolean(saved.ok),
       score, matches, findings,
       coverage_claim: coverageClaim({ checked: score.checkedCount, region }),
+      ignored_sources: [...ignoredIds],
       corrections: matches
         .filter((m) => m.mismatches.length > 0)
         .map((m) => correctionPack(m.sourceId, canonical, m)),

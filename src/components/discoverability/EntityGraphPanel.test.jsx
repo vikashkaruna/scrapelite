@@ -114,3 +114,23 @@ describe("EntityGraphPanel", () => {
     await waitFor(() => expect(discoverability.resolveGraphConflict).toHaveBeenCalledWith("c1", "not_a_conflict", { workspaceId: "ws-1" }));
   });
 });
+
+describe("EntityGraphPanel — approving an edge between entities you proposed", () => {
+  beforeEach(() => { vi.restoreAllMocks(); toast.mockReset(); });
+
+  it("🔴 sends the single-founder note when the approver proposed an ENDPOINT, not just the edge", async () => {
+    const ents = [
+      { id: "e1", name: "Acme", entity_type: "organization", state: "approved" },
+      { id: "e2", name: "Widget", entity_type: "product", state: "proposed", proposed_by: "u-me" },
+    ];
+    const rels = [{ id: "r1", subject_id: "e1", predicate: "offers", object_id: "e2", state: "proposed", proposed_by: "u-teammate", source: "declared" }];
+    mockApi({ entities: ents, relationships: rels });
+    const approve = vi.spyOn(discoverability, "approveRelationship").mockResolvedValue({ approved: true });
+    render(<EntityGraphPanel currentUser={{ id: "u-me" }} />);
+    const btn = (await screen.findAllByRole("button", { name: "Approve" }))
+      .find((b) => /relationship/i.test(b.getAttribute("title") || ""));
+    fireEvent.click(btn);
+    await waitFor(() => expect(approve).toHaveBeenCalled());
+    expect(approve.mock.calls[0][1].note).toMatch(/\[Single-founder approval\]/);
+  });
+});

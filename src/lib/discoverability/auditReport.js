@@ -93,6 +93,21 @@ export function buildMarkdownReport(audit, options = {}) {
   // ── pillars ──────────────────────────────────────────────────────────────
   out.push(`## Pillars`);
   out.push("");
+  // At-a-glance summary in TWO COLUMNS, mirroring the on-screen 2x2 pillar
+  // grid and the PDF: Answer Clarity | Entity Authority, then Structural
+  // Hierarchy | Technical Accessibility. The per-pillar signal tables follow.
+  const presentPillars = PILLAR_IDS.filter((id) => audit.pillars?.[id]);
+  if (presentPillars.length) {
+    const cellFor = (id) => (id
+      ? [`**${pillarLabel(id)}**`, `${fmt(audit.pillars[id].score)}`]
+      : ["", ""]);
+    out.push(`| Pillar | Score | Pillar | Score |`);
+    out.push(`|---|---|---|---|`);
+    for (let i = 0; i < presentPillars.length; i += 2) {
+      out.push(`| ${[...cellFor(presentPillars[i]), ...cellFor(presentPillars[i + 1])].join(" | ")} |`);
+    }
+    out.push("");
+  }
   for (const id of PILLAR_IDS) {
     const p = audit.pillars?.[id];
     if (!p) continue;

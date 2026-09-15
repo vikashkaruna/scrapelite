@@ -9,6 +9,7 @@ import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
 import { AuthContext } from "../AuthProvider.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
+import { cacheKey, readCache, loadWithCache } from "../../lib/discoverability/tabCache.js";
 // ⚠️ IMPORTED, NEVER RETYPED. The hand-written lists here offered `operates`,
 // `features`, `author_of`, `parent_of`, `place` and `local_business`, none of
 // which the registry (or 0056/0065's CHECK constraints) accepts — so choosing
@@ -48,21 +49,30 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
     note: "",
   });
 
+  // Paint the last-seen graph from localStorage, then refresh from the database.
   const loadGraphData = useCallback(async () => {
-    setLoading(true);
+    const key = cacheKey("entity-graph", { userId: user?.id || null, workspaceId });
+    if (!readCache(key)) setLoading(true);
     try {
-      const [graphRes, conflictRes] = await Promise.all([
-        discoverability.getGraph({ workspace_id: workspaceId }).catch(() => ({ entities: [], relationships: [] })),
-        discoverability.graphConflicts({ workspace_id: workspaceId }).catch(() => ({ conflicts: [] })),
-      ]);
-      setGraph(graphRes);
-      setConflicts(conflictRes.conflicts || []);
+      await loadWithCache(key,
+        async () => {
+          const [graphRes, conflictRes] = await Promise.all([
+            discoverability.getGraph({ workspace_id: workspaceId }).catch(() => ({ entities: [], relationships: [] })),
+            discoverability.graphConflicts({ workspace_id: workspaceId }).catch(() => ({ conflicts: [] })),
+          ]);
+          return { graphRes, conflictRes };
+        },
+        ({ graphRes, conflictRes }) => {
+          setGraph(graphRes || { entities: [], relationships: [] });
+          setConflicts(conflictRes?.conflicts || []);
+          setLoading(false);
+        });
     } catch (err) {
       showToast(err.message || "Failed to load entity graph", "error");
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, showToast]);
+  }, [workspaceId, showToast, user?.id]);
 
   useEffect(() => {
     loadGraphData();
@@ -132,7 +142,15 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
 
   const handleApproveRel = async (relId) => {
     const rel = (graph.relationships || []).find((r) => r.id === relId);
-    const isSelfApproval = Boolean(user?.id && rel?.proposed_by === user.id);
+    // Approving an edge also approves its still-proposed ENDPOINTS under the
+    // same reviewer (approve_entity_relationship). If this user proposed either
+    // endpoint, that is a self-approval too — sending the generic note there
+    // tripped audit_entities_no_self_approval and the whole approval failed.
+    const endpointIds = [rel?.subject_id, rel?.object_id];
+    const ownsProposedEndpoint = (graph.entities || []).some(
+      (e) => endpointIds.includes(e.id) && e.state !== "approved" && e.proposed_by && e.proposed_by === user?.id,
+    );
+    const isSelfApproval = Boolean(user?.id && (rel?.proposed_by === user.id || ownsProposedEndpoint));
     setApprovingRelId(relId);
     try {
       const note = isSelfApproval

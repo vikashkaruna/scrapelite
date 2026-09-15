@@ -186,40 +186,65 @@ export function renderAuditPdf(audit, { includeConstructs = false, diff = null, 
   // a client and read without the app was also the one that could not answer
   // "why is this number what it is".
   const pillars = audit?.pillars || {};
-  if (PILLAR_IDS.some((id) => pillars[id])) {
+  const presentPillars = PILLAR_IDS.filter((id) => pillars[id]);
+  if (presentPillars.length) {
     heading("Pillar breakdown");
-    for (const id of PILLAR_IDS) {
+    // TWO COLUMNS across the page width, matching the on-screen report's 2x2
+    // grid — Answer Clarity beside Entity Authority, Structural Hierarchy beside
+    // Technical Accessibility — instead of one long single-column run.
+    const GUTTER = 18;
+    const colW = (contentW - GUTTER) / 2;
+    const fit = (value, width) => {
+      const t = toPdfSafe(String(value ?? ""));
+      if (pdf.getTextWidth(t) <= width) return t;
+      let cut = t;
+      while (cut.length > 1 && pdf.getTextWidth(`${cut}...`) > width) cut = cut.slice(0, -1);
+      return `${cut}...`;
+    };
+    // An unmeasured signal carries its state in words on a second line, so it
+    // costs one extra row of height.
+    const blockHeight = (pil) => 11 + 12
+      + (pil.signals || []).reduce((h, sig) => h + (sig.measured ? 10.5 : 20), 0) + 12;
+    const drawPillar = (id, x, top) => {
       const pil = pillars[id];
-      if (!pil) continue;
-      room(30);
+      let yy = top;
       pdf.setFont("helvetica", "bold").setFontSize(10); setInk(INK);
-      pdf.text(toPdfSafe(pillarLabel(id)), MARGIN, y);
-      pdf.setFont("helvetica", "bold").setFontSize(10);
-      pdf.text(toPdfSafe(scoreText(pil.score)), MARGIN + 220, y, { align: "right" });
-      pdf.setFont("helvetica", "normal").setFontSize(8.2); setInk(MUTED);
+      pdf.text(fit(pillarLabel(id), colW - 56), x, yy);
+      pdf.text(toPdfSafe(scoreText(pil.score)), x + colW, yy, { align: "right" });
+      yy += 11;
+      pdf.setFont("helvetica", "normal").setFontSize(8); setInk(MUTED);
       const cov = n1(pil.coverage);
       pdf.text(toPdfSafe([
         `weight ${Math.round((pil.weight || 0) * 100)}%`,
         cov === null ? null : `coverage ${cov}%`,
-      ].filter(Boolean).join("   |   ")), MARGIN + 236, y);
-      y += 14;
-
+      ].filter(Boolean).join("   |   ")), x, yy);
+      yy += 12;
       for (const sig of pil.signals || []) {
-        room(12);
-        pdf.setFont("helvetica", "normal").setFontSize(8.4); setInk(INK);
-        pdf.text(toPdfSafe(sig.label || signalLabel(sig.code) || sig.code), MARGIN + 14, y);
-        pdf.setFontSize(8.2); setInk(MUTED);
-        pdf.text(toPdfSafe(`${Math.round((sig.weight || 0) * 100)}%`), MARGIN + 250, y, { align: "right" });
         // `unknown` is never `0`. An unmeasured or not-applicable signal says
         // so in words; printing a 0 here would be a different claim entirely.
-        const cell = sig.measured
-          ? scoreText(sig.score)
-          : (sig.applicable === false ? "not applicable to this page type" : "not measured");
-        setInk(sig.measured ? INK : MUTED);
-        pdf.text(toPdfSafe(cell), MARGIN + 266, y);
-        y += 10.5;
+        pdf.setFont("helvetica", "normal").setFontSize(8.2); setInk(MUTED);
+        pdf.text(toPdfSafe(`${Math.round((sig.weight || 0) * 100)}%`), x + colW - 40, yy, { align: "right" });
+        if (sig.measured) {
+          setInk(INK);
+          pdf.text(toPdfSafe(scoreText(sig.score)), x + colW, yy, { align: "right" });
+        }
+        pdf.setFontSize(8.4); setInk(INK);
+        pdf.text(fit(sig.label || signalLabel(sig.code) || sig.code, colW - 60), x + 8, yy);
+        yy += 10.5;
+        if (!sig.measured) {
+          pdf.setFontSize(7.8); setInk(MUTED);
+          pdf.text(toPdfSafe(sig.applicable === false ? "not applicable to this page type" : "not measured"), x + 16, yy);
+          yy += 9.5;
+        }
       }
-      y += 8;
+    };
+    for (let i = 0; i < presentPillars.length; i += 2) {
+      const pair = presentPillars.slice(i, i + 2);
+      const h = Math.max(...pair.map((id) => blockHeight(pillars[id])));
+      room(h);
+      const top = y;
+      pair.forEach((id, col) => drawPillar(id, MARGIN + col * (colW + GUTTER), top));
+      y = top + h;
     }
   }
 

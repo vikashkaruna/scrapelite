@@ -15,6 +15,7 @@
 // Must be placed INSIDE AuthProvider (to react to login events) and INSIDE
 // BrowserRouter (to call useNavigate).
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { clearDiscoverabilityCache } from "../lib/discoverability/tabCache.js";
 import { useNavigate } from "react-router";
 import { useAuth } from "./AuthProvider.jsx";
 import {
@@ -125,6 +126,9 @@ export function GuestTrialProvider({ children }) {
       // ── Logged in → Logged out ───────────────────────────────────────────────
       // Clear all sensitive localStorage keys so the next user on this machine
       // cannot see the previous user's saved extractions, enrichments, etc.
+      // Discoverability tab caches are keyed by user, but a shared machine should
+      // not keep one account's graph or truth records around after sign-out.
+      clearDiscoverabilityCache();
       SENSITIVE_KEYS.forEach((k) => {
         try { localStorage.removeItem(k); } catch { /* skip */ }
       });

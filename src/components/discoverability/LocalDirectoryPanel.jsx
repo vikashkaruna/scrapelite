@@ -8,7 +8,9 @@
 // `runLocalCheck` also returns `score` as an OBJECT from napScore(), so the
 // completion toast printed "NaN%".
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useContext } from "react";
+import { AuthContext } from "../AuthProvider.jsx";
+import { cacheKey, readCache, loadWithCache } from "../../lib/discoverability/tabCache.js";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
@@ -127,6 +129,18 @@ export const DIRECTORY_PORTALS = {
   },
 };
 
+/**
+ * Why a source does not apply. Offered as choices so an ignore is quick, but
+ * always recorded — 0076 refuses an ignore without a reason.
+ */
+export const IGNORE_REASONS = Object.freeze([
+  "Not relevant to our industry",
+  "We don't operate in this region",
+  "Not a local / walk-in business",
+  "Covered by another listing we maintain",
+  "Other — not applicable to this business",
+]);
+
 const TIER_LABELS = {
   authoritative: "Authoritative",
   major_aggregator: "Major Aggregator",
@@ -151,26 +165,41 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
   const [editingSourceId, setEditingSourceId] = useState(null);
   const [urlInputs, setUrlInputs] = useState({});
   const [savingSourceId, setSavingSourceId] = useState(null);
+  const [ignores, setIgnores] = useState([]);
+  const [ignoringSourceId, setIgnoringSourceId] = useState(null);
+  const [ignoreReason, setIgnoreReason] = useState(IGNORE_REASONS[0]);
+  const [busyIgnoreId, setBusyIgnoreId] = useState(null);
+  const [showIgnored, setShowIgnored] = useState(false);
+  const cacheUserId = useContext(AuthContext)?.user?.id || null;
 
+  // Paint the last-seen schema and truth records from localStorage, then refresh from the database.
   const loadInitial = useCallback(async () => {
-    setLoading(true);
+    const key = cacheKey("local.initial", { userId: cacheUserId, workspaceId });
+    if (!readCache(key)) setLoading(true);
     try {
-      const [schemaRes, trRes] = await Promise.all([
-        discoverability.localDirectorySchema().catch(() => null),
-        discoverability.listTruthRecords({ workspace_id: workspaceId }).catch(() => ({ records: [] })),
-      ]);
-      setSchema(schemaRes);
-      const records = trRes.records || [];
-      setTruthRecords(records);
-      if (records.length > 0) {
-        setSelectedRecordId(records[0].id);
-      }
+      await loadWithCache(key,
+        async () => {
+          const [schemaRes, trRes] = await Promise.all([
+            discoverability.localDirectorySchema().catch(() => null),
+            discoverability.listTruthRecords({ workspace_id: workspaceId }).catch(() => ({ records: [] })),
+          ]);
+          return { schemaRes, trRes };
+        },
+        ({ schemaRes, trRes }) => {
+          setSchema(schemaRes);
+          const records = trRes?.records || [];
+          setTruthRecords(records);
+          setSelectedRecordId((current) => (
+            current && records.some((r) => r.id === current) ? current : records[0]?.id || ""
+          ));
+          setLoading(false);
+        });
     } catch (err) {
       showToast(err.message || "Failed to load directory metadata", "error");
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, showToast]);
+  }, [workspaceId, showToast, cacheUserId]);
 
   useEffect(() => {
     loadInitial();
@@ -179,23 +208,31 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
   const loadRecordDetails = useCallback(async (trId) => {
     if (!trId) return;
     try {
-      const [listingsRes, checksRes] = await Promise.all([
-        discoverability.listDirectoryListings({ truth_record_id: trId, workspace_id: workspaceId }),
-        discoverability.listLocalChecks({ truth_record_id: trId, workspace_id: workspaceId }),
-      ]);
-      setListings(listingsRes.listings || []);
-      const chks = checksRes.checks || [];
-      setChecks(chks);
-      if (chks.length > 0) {
-        const full = await discoverability.getLocalCheck(chks[0].id, { workspace_id: workspaceId });
-        setSelectedCheck(full);
-      } else {
-        setSelectedCheck(null);
-      }
+      await loadWithCache(cacheKey("local.record", { userId: cacheUserId, workspaceId }, trId),
+        async () => {
+          const [listingsRes, checksRes, ignoresRes] = await Promise.all([
+            discoverability.listDirectoryListings({ truth_record_id: trId, workspace_id: workspaceId }),
+            discoverability.listLocalChecks({ truth_record_id: trId, workspace_id: workspaceId }),
+            (discoverability.listDirectoryIgnores
+              ? discoverability.listDirectoryIgnores({ truth_record_id: trId, workspace_id: workspaceId })
+              : Promise.resolve({ ignores: [] })).catch(() => ({ ignores: [] })),
+          ]);
+          const chks = checksRes?.checks || [];
+          const full = chks.length > 0
+            ? await discoverability.getLocalCheck(chks[0].id, { workspace_id: workspaceId })
+            : null;
+          return { listingsRes, checksRes, ignoresRes, full };
+        },
+        ({ listingsRes, checksRes, ignoresRes, full }) => {
+          setListings(listingsRes?.listings || []);
+          setChecks(checksRes?.checks || []);
+          setIgnores(ignoresRes?.ignores || []);
+          setSelectedCheck(full || null);
+        });
     } catch {
       // Best-effort
     }
-  }, [workspaceId]);
+  }, [workspaceId, cacheUserId]);
 
   useEffect(() => {
     if (selectedRecordId) {
@@ -276,6 +313,46 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
     }
   };
 
+  const handleIgnoreSource = async (sourceId) => {
+    if (!selectedRecordId) {
+      showToast("Please select a truth record first.", "warning");
+      return;
+    }
+    setBusyIgnoreId(sourceId);
+    try {
+      await discoverability.ignoreDirectorySource({
+        truth_record_id: selectedRecordId,
+        source_id: sourceId,
+        reason: ignoreReason,
+        workspace_id: workspaceId,
+      });
+      showToast("Source marked not applicable — it is excluded from NAP checks.", "check");
+      setIgnoringSourceId(null);
+      await loadRecordDetails(selectedRecordId);
+    } catch (err) {
+      showToast(err.message || "Could not ignore this source", "error");
+    } finally {
+      setBusyIgnoreId(null);
+    }
+  };
+
+  const handleRestoreSource = async (sourceId) => {
+    setBusyIgnoreId(sourceId);
+    try {
+      await discoverability.restoreDirectorySource({
+        truth_record_id: selectedRecordId,
+        source_id: sourceId,
+        workspace_id: workspaceId,
+      });
+      showToast("Source restored — it will be included in the next NAP check.", "check");
+      await loadRecordDetails(selectedRecordId);
+    } catch (err) {
+      showToast(err.message || "Could not restore this source", "error");
+    } finally {
+      setBusyIgnoreId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="dsc-panel dsc-panel-empty" style={{ padding: "2rem", textAlign: "center" }}>
@@ -291,7 +368,14 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
 
   const allSources = (schema?.sources && schema.sources.length > 0) ? schema.sources : DIRECTORY_SOURCES;
   const tiersPresent = Array.from(new Set(allSources.map((s) => s.tier).filter(Boolean)));
-  const displayedSources = selectedTier === "all" ? allSources : allSources.filter((s) => s.tier === selectedTier);
+  const ignoredById = new Map(ignores.map((i) => [i.source_id, i]));
+  const tierSources = selectedTier === "all" ? allSources : allSources.filter((s) => s.tier === selectedTier);
+  // Ignored sources sink to the bottom and are hidden until asked for, so the
+  // list shows what still needs attention first.
+  const displayedSources = [
+    ...tierSources.filter((s) => !ignoredById.has(s.id)),
+    ...(showIgnored ? tierSources.filter((s) => ignoredById.has(s.id)) : []),
+  ];
 
   return (
     <div className="dsc-local-surface" style={{ display: "grid", gap: "1.5rem" }}>
@@ -343,8 +427,18 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
           <div className="dsc-panel" style={{ padding: "1.25rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
               <h3 style={{ fontSize: "1rem", fontWeight: 600, margin: 0 }}>
-                Directory Sources ({allSources.length} Configured)
+                Directory Sources ({allSources.length - ignoredById.size} Applicable{ignoredById.size > 0 ? ` · ${ignoredById.size} ignored` : ""})
               </h3>
+              {ignoredById.size > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowIgnored((v) => !v)}
+                  aria-pressed={showIgnored}
+                >
+                  {showIgnored ? "Hide ignored" : `Show ignored (${ignoredById.size})`}
+                </button>
+              )}
               {tiersPresent.length > 1 && (
                 <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
                   <button
@@ -394,6 +488,7 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                 const existingListing = listings.find((l) => (l.source_id || l.sourceId) === src.id);
                 const portal = DIRECTORY_PORTALS[src.id];
                 const isEditing = editingSourceId === src.id;
+                const ignored = ignoredById.get(src.id) || null;
 
                 return (
                   <div
@@ -430,7 +525,11 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                         </div>
                       </div>
                       <div>
-                        {match ? (
+                        {ignored ? (
+                          <span className="dsc-pill dsc-pill-ignored" title={ignored.reason}>
+                            Not applicable
+                          </span>
+                        ) : match ? (
                           <span className={`dsc-pill dsc-pill-${matchState(match)}`}>
                             {MATCH_LABELS[matchState(match)]}
                           </span>
@@ -442,8 +541,52 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                       </div>
                     </div>
 
+                    {/* Applicability — ignore a source that does not fit this business */}
+                    {ignored ? (
+                      <div className="dsc-dir-ignored" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", fontSize: "0.75rem", color: "var(--text-sub)", flexWrap: "wrap" }}>
+                        <span>
+                          <Icon name="eye-off" size={12} /> Ignored: <strong>{ignored.reason}</strong>
+                          {ignored.created_at ? ` · ${new Date(ignored.created_at).toLocaleDateString()}` : ""}
+                        </span>
+                        <Button size="sm" variant="ghost" onClick={() => handleRestoreSource(src.id)} loading={busyIgnoreId === src.id}>
+                          Restore
+                        </Button>
+                      </div>
+                    ) : ignoringSourceId === src.id ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", fontSize: "0.75rem" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                          Why doesn't it apply?
+                          <select
+                            className="dsc-input"
+                            value={ignoreReason}
+                            onChange={(e) => setIgnoreReason(e.target.value)}
+                            style={{ fontSize: "0.75rem", padding: "0.2rem 0.4rem", width: "auto" }}
+                            aria-label={`Reason to ignore ${src.label}`}
+                          >
+                            {IGNORE_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        </label>
+                        <Button size="sm" variant="secondary" onClick={() => handleIgnoreSource(src.id)} loading={busyIgnoreId === src.id}>
+                          Ignore source
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setIgnoringSourceId(null)}>Cancel</Button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: "0.7rem" }}
+                          onClick={() => { setIgnoringSourceId(src.id); setIgnoreReason(IGNORE_REASONS[0]); }}
+                          title="Mark this directory as not applicable to this business. It will be excluded from NAP checks; you can restore it any time."
+                        >
+                          Not applicable? Ignore
+                        </button>
+                      </div>
+                    )}
+
                     {/* Portal link & Action Guidance */}
-                    {portal && (
+                    {!ignored && portal && (
                       <div style={{ fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.35rem", padding: "0.35rem 0.5rem", background: "var(--surface)", borderRadius: "var(--r)" }}>
                         <a
                           href={portal.portalUrl}
@@ -462,7 +605,7 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                     )}
 
                     {/* Declared URL provision */}
-                    {existingListing?.listing_url && !isEditing ? (
+                    {ignored ? null : existingListing?.listing_url && !isEditing ? (
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", fontSize: "0.75rem", background: "var(--surface)", padding: "0.35rem 0.5rem", borderRadius: "var(--r)" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", overflow: "hidden" }}>
                           <Icon name="link" size={12} style={{ flexShrink: 0, color: "var(--text-sub)" }} />

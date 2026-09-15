@@ -182,8 +182,10 @@ grant usage on schema public to anon, authenticated;
 //   nine relationships. No objects are added; counts are unchanged.
 // P3 migrations 0068 (+5 tables), 0069 (+5 tables), 0070 (+2 tables, +3 functions),
 // 0071 (+1 table, +1 function). 0075 (+1 function). Taking these to 117 / 55 / 29.
+// 0076 (+1 table: audit_directory_source_ignores; approve_entity_relationship
+// is replaced, not added). Taking these to 118 / 55 / 29.
 const EXPECT = {
-  tables: 117,
+  tables: 118,
   functions: 55,
   triggers: 29,
   tablesWithoutRls: 0,
@@ -2774,6 +2776,44 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     (await one(`select public.approve_entity($1,$2,'[Single-founder approval] Verified by owner') as r`, [soloNode, owner])).r, "ok");
   eq("0075: ...and entity state is updated to approved",
     (await one(`select state from public.audit_entities where id=$1`, [soloNode])).state, "approved");
+
+  // ── 0076 Endpoint self-approval is a VERDICT, never a raw CHECK violation ──
+  // Reproduced before the fix: a teammate proposed the edge, the reviewer had
+  // proposed its endpoints, and the endpoint UPDATE raised 23514 — which the
+  // panel showed as a failed save.
+  {
+    const ownEnd1 = await mkEntity("organization", "Endpoint Owner Co");
+    const ownEnd2 = await mkEntity("brand", "Endpoint Owner Brand");
+    const teamRel = (await one(
+      `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source, proposed_by)
+       values ($1,$2,'owns',$3,'declared',$4) returning id`, [owner, ownEnd1, ownEnd2, mate])).id;
+    eq("🔴 0076: approving a teammate's edge between entities YOU proposed returns endpoint_self_approval",
+      (await one(`select public.approve_entity_relationship($1,$2,'Approved by reviewer') as r`, [teamRel, owner])).r,
+      "endpoint_self_approval");
+    eq("0076: ...and nothing was half-approved",
+      (await q(`select id from public.audit_entities where id in ($1,$2) and state='approved'`, [ownEnd1, ownEnd2])).length, 0);
+    eq("0076: the single-founder note covers the endpoint half as well",
+      (await one(`select public.approve_entity_relationship($1,$2,'[Single-founder approval] Solo operator') as r`, [teamRel, owner])).r,
+      "ok");
+    eq("0076: ...approving the edge AND both endpoints",
+      (await q(`select id from public.audit_entities where id in ($1,$2) and state='approved'`, [ownEnd1, ownEnd2])).length, 2);
+  }
+
+  // ── 0076 Directory sources marked not applicable ─────────────────────────
+  {
+    const ig = (await one(`insert into auth.users (email) values ('dir-ignore@x.com') returning id`)).id;
+    check("0076: an ignore is recorded with its reason", !(await throws(
+      `insert into public.audit_directory_source_ignores (user_id, source_id, reason, ignored_by)
+       values ($1,'practo','Not relevant to our industry',$1)`, [ig])));
+    check("🔴 0076: an ignore without a reason is refused", Boolean(await throws(
+      `insert into public.audit_directory_source_ignores (user_id, source_id, reason)
+       values ($1,'zomato','   ')`, [ig])));
+    check("0076: the same source cannot be ignored twice for one record (NULLS NOT DISTINCT arbiter)", Boolean(await throws(
+      `insert into public.audit_directory_source_ignores (user_id, source_id, reason)
+       values ($1,'practo','again')`, [ig])));
+    eq("0076: RLS is enabled on the ignores table",
+      (await one(`select relrowsecurity as r from pg_class where relname='audit_directory_source_ignores'`)).r, true);
+  }
 
   // ── Parity with the pure model ────────────────────────────────────────────
   //

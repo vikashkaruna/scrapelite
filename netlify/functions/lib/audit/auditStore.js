@@ -1665,6 +1665,57 @@ export async function deleteDirectoryListing(userId, listingId, { workspaceId = 
 }
 
 /**
+ * Directory sources marked NOT APPLICABLE to a truth record (0076).
+ *
+ * An ignore is a recorded decision with a reason, not a deletion: it excludes
+ * the source from NAP checks and is undone by removing the row.
+ */
+export async function listDirectorySourceIgnores(userId, {
+  truthRecordId = null, workspaceId = null,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
+  const r = await rest(`audit_directory_source_ignores?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=500`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function ignoreDirectorySource(userId, {
+  truthRecordId = null, sourceId, reason, workspaceId = null,
+}) {
+  const r = await rest("audit_directory_source_ignores?on_conflict=user_id,truth_record_id,source_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify([{
+      user_id: userId,
+      workspace_id: workspaceId,
+      truth_record_id: truthRecordId,
+      source_id: sourceId,
+      reason,
+      ignored_by: userId,
+      created_at: new Date().toISOString(),
+    }]),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return row ? { ok: true, ignore: row } : { ok: false, error: "No row was returned." };
+}
+
+export async function unignoreDirectorySource(userId, {
+  truthRecordId = null, sourceId, workspaceId = null,
+}) {
+  const parts = [
+    ownerOrWorkspace(userId, workspaceId),
+    `source_id=eq.${encodeURIComponent(sourceId)}`,
+    truthRecordId ? `truth_record_id=eq.${encodeURIComponent(truthRecordId)}` : "truth_record_id=is.null",
+  ];
+  const r = await rest(`audit_directory_source_ignores?${parts.join("&")}`, {
+    method: "DELETE", headers: { Prefer: "return=representation" },
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  return Array.isArray(r.data) && r.data.length ? { ok: true } : { ok: false, notFound: true };
+}
+
+/**
  * Persist one NAP check: the run, every per-directory match, and the findings.
  *
  * ⚠️ THE CHECK ROW GOES FIRST AND ALONE, because the matches and the findings
