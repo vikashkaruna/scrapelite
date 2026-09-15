@@ -7,7 +7,8 @@ import {
 } from "../lib/pricingOverrides.js";
 import { CURRENCIES, CURRENCY_META, ENTERPRISE_PLAN } from "../lib/pricingConfig.js";
 import { getCouponsForPlan } from "../lib/offersService.js";
-import { convertPrice, formatPrice } from "../lib/currencyService.js"; // convertPrice: fallback for plans missing price_inr
+import { formatPrice } from "../lib/currencyService.js";
+import { resolvePlanPrice, annualSavingsPercent } from "../lib/planPricing.js";
 import { useBilling } from "../components/BillingProvider.jsx";
 import { PROVIDER_META } from "../lib/paymentConfig.js";
 import { preloadRazorpay } from "../lib/paymentService.js";
@@ -61,36 +62,9 @@ function CurrencyPicker({ value, onChange }) {
   );
 }
 
-// Returns the display price for a plan given billing period + currency.
-// INR prices use fixed amounts (GST-inclusive) — never do live USD→INR conversion.
-function resolvePrice(plan, billingPeriod, currency, rates) {
-  if (plan.price_usd === 0) return 0;
-  if (billingPeriod === "annual") {
-    if (currency === "INR" && plan.price_inr_annual) return plan.price_inr_annual;
-    return plan.price_usd_annual ?? plan.price_usd;
-  }
-  if (currency === "INR") return plan.price_inr || Math.round(convertPrice(plan.price_usd, rates, "INR"));
-  return plan.price_usd;
-}
-
-// Average "annual vs monthly" discount across paid, purchasable plans, for the
-// given currency — drives the "Save X% when you pay annually" banner. Computed
-// from the live (possibly admin-overridden) plan list rather than hardcoded, so
-// it can never drift from what the cards actually charge. Rounded to 1 decimal
-// place so prices like "16.7%" don't lose the meaningful sub-percent signal.
-function annualSavingsPercent(plans, currency) {
-  const fracs = plans
-    .filter((p) => p.price_usd > 0 && !p.comingSoon)
-    .map((p) => {
-      const monthly = currency === "INR" ? p.price_inr : p.price_usd;
-      const annual  = currency === "INR" ? p.price_inr_annual : p.price_usd_annual;
-      if (!monthly || annual == null) return null;
-      return 1 - annual / monthly;
-    })
-    .filter((f) => f != null && f > 0);
-  if (!fracs.length) return 20;
-  return Math.round((fracs.reduce((a, b) => a + b, 0) / fracs.length) * 1000) / 10;
-}
+// resolvePlanPrice / annualSavingsPercent live in lib/planPricing.js so the
+// plan cards and the comparison matrix below them read ONE rule.
+const resolvePrice = resolvePlanPrice;
 
 function BillingToggle({ value, onChange }) {
   return (
@@ -417,9 +391,11 @@ export default function Pricing() {
               {paymentProvider && <ProviderBadge provider={paymentProvider} />}
             </div>
           </div>
-          <p className="billing-savings-note">
-            Save {annualSavingsPercent(plans, currency)}% when you pay annually
-          </p>
+          {annualSavingsPercent(plans, currency) > 0 && (
+            <p className="billing-savings-note">
+              Save {annualSavingsPercent(plans, currency)}% when you pay annually
+            </p>
+          )}
 
           {!hasPayment && (
             <div className="payment-demo-notice">
@@ -463,8 +439,8 @@ export default function Pricing() {
           <p className="inr-annual-note">
             <Icon name="info" size={13} />
             {billingPeriod === "annual"
-              ? "INR annual prices are promotional fixed rates, billed upfront. Prices include 18% GST."
-              : "INR monthly prices are fixed and include 18% GST. No live USD conversion."}
+              ? "INR annual prices are promotional fixed rates, billed upfront. Prices shown exclude 18% GST, which is added at checkout."
+              : "INR monthly prices are fixed — no live USD conversion. Prices shown exclude 18% GST, which is added at checkout."}
           </p>
         )}
 
@@ -512,6 +488,8 @@ export default function Pricing() {
         <PricingMatrix
           currentPlanId={currentPlanId}
           currency={currency}
+          billingPeriod={billingPeriod}
+          rates={rates}
           onSelectPlan={handleSelect}
         />
 
@@ -523,7 +501,7 @@ export default function Pricing() {
             </div>
             <div className="pricing-faq-item">
               <Icon name="shield" size={16} />
-              <span>INR prices include 18% GST. USD prices exclude local taxes.</span>
+              <span>INR prices exclude 18% GST, added at checkout. USD prices exclude local taxes.</span>
             </div>
             <div className="pricing-faq-item">
               <Icon name="refresh" size={16} />

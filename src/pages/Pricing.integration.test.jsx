@@ -154,6 +154,40 @@ describe("I-39 — Pricing: 8 plan cards + monthly default + INR", () => {
   });
 });
 
+// "Compare every plan" must show the same per-month price as the plan card
+// above it, in whichever billing period is selected. It used to hardcode the
+// annual figure, so on the Monthly default Select read $14.4 on its card and
+// $12 in the table on the same screen.
+describe("I-39 — Pricing: comparison matrix prices match the plan cards", () => {
+  function cardMonthlyPrices() {
+    return Array.from(document.querySelectorAll(".plans-grid .plan-card"))
+      .filter((c) => !c.classList.contains("enterprise-card") && !c.classList.contains("plan-coming-soon"))
+      .map((c) => {
+        const sub = c.querySelector(".price-amount-sub");
+        const main = c.querySelector(".price-amount");
+        const txt = (sub || main).textContent.trim();
+        // The Free card reads "Free"; the table reads "$0" or "₹0" depending on
+        // the detected currency. Normalise both to one token.
+        return txt === "Free" ? "FREE" : txt;
+      });
+  }
+  function matrixPrices() {
+    return Array.from(document.querySelectorAll(".pm-plan-price"))
+      .map((n) => n.firstChild.textContent.trim())
+      .map((t) => (/^[$₹]0$/.test(t) ? "FREE" : t));
+  }
+
+  it("agrees on Monthly (the default) and after switching to Annual", async () => {
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    expect(matrixPrices()).toEqual(cardMonthlyPrices());
+
+    const annualBtn = screen.getByRole("button", { name: /annual/i });
+    await act(async () => { annualBtn.click(); });
+    expect(matrixPrices()).toEqual(cardMonthlyPrices());
+  });
+});
+
 // Regression guard: the currency dropdown used to render UNDERNEATH the
 // plan cards. Both `.pricing-hero` and `.plans-grid` are direct children
 // of `.container`, both inherit `position: relative; z-index: 1` from
