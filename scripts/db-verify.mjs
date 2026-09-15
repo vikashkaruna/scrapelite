@@ -181,10 +181,10 @@ grant usage on schema public to anon, authenticated;
 //   fifteen semantic concepts, and thirteen internal predicates cover its
 //   nine relationships. No objects are added; counts are unchanged.
 // P3 migrations 0068 (+5 tables), 0069 (+5 tables), 0070 (+2 tables, +3 functions),
-// 0071 (+1 table, +1 function). Taking these to 117 / 54 / 29.
+// 0071 (+1 table, +1 function). 0075 (+1 function). Taking these to 117 / 55 / 29.
 const EXPECT = {
   tables: 117,
-  functions: 54,
+  functions: 55,
   triggers: 29,
   tablesWithoutRls: 0,
 };
@@ -2762,6 +2762,18 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     [rejRel]);
   eq("a rejected edge is not revived by approving it again",
     (await one(`select public.approve_entity_relationship($1,$2) as r`, [rejRel, mate])).r, "rejected");
+
+  // ── 0075 Direct entity node approval ──────────────────────────────────────
+  const soloNode = await mkEntity("brand", "Solo Brand");
+  eq("0075: approve_entity refuses non-existent entity",
+    (await one(`select public.approve_entity($1,$2) as r`,
+      ["00000000-0000-0000-0000-000000000000", mate])).r, "not_found");
+  eq("0075: approve_entity refuses self-approval without single-founder note",
+    (await one(`select public.approve_entity($1,$2) as r`, [soloNode, owner])).r, "self_approval");
+  eq("0075: approve_entity permits self-approval with single-founder note",
+    (await one(`select public.approve_entity($1,$2,'[Single-founder approval] Verified by owner') as r`, [soloNode, owner])).r, "ok");
+  eq("0075: ...and entity state is updated to approved",
+    (await one(`select state from public.audit_entities where id=$1`, [soloNode])).state, "approved");
 
   // ── Parity with the pure model ────────────────────────────────────────────
   //

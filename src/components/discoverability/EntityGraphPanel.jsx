@@ -16,6 +16,7 @@ import { discoverability } from "../../lib/discoverability/discoverabilityClient
 import {
   ENTITY_TYPES, ENTITY_TYPE_IDS, PREDICATES, PREDICATE_IDS, GRAPH_CONFLICT_CODES,
 } from "../../lib/discoverability/entityGraph.js";
+import EntityGraphVisual from "./EntityGraphVisual.jsx";
 
 export default function EntityGraphPanel({ workspaceId = null, currentUser = null }) {
   const showToast = useToast();
@@ -29,6 +30,7 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
   const [submittingEntity, setSubmittingEntity] = useState(false);
   const [submittingRel, setSubmittingRel] = useState(false);
   const [approvingRelId, setApprovingRelId] = useState(null);
+  const [approvingEntityId, setApprovingEntityId] = useState(null);
   const [corroborationNotice, setCorroborationNotice] = useState(null);
 
   // Form states
@@ -128,25 +130,44 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
     }
   };
 
-  const handleApproveRel = async (relId, isSelfApproval = false) => {
+  const handleApproveRel = async (relId) => {
+    const rel = (graph.relationships || []).find((r) => r.id === relId);
+    const isSelfApproval = Boolean(user?.id && rel?.proposed_by === user.id);
     setApprovingRelId(relId);
     try {
       const note = isSelfApproval
         ? "[Single-founder approval] Self-approved by solo operator and recorded in audit trail."
-        : undefined;
-      const opts = { workspaceId };
-      if (note) opts.note = note;
+        : "Approved by reviewer";
+      const opts = { workspaceId, note };
       if (discoverability.approveRelationship) {
         await discoverability.approveRelationship(relId, opts);
       } else if (discoverability.reviewRelation) {
         await discoverability.reviewRelation(relId, "approve", { note, workspaceId });
       }
-      showToast(isSelfApproval ? "Self-approved relationship as single founder." : "Relationship and endpoints approved.", "check");
+      showToast("Relationship and endpoints approved.", "check");
       loadGraphData();
     } catch (err) {
       showToast(err.message || "Failed to approve relationship", "error");
     } finally {
       setApprovingRelId(null);
+    }
+  };
+
+  const handleApproveEntity = async (entityId) => {
+    const ent = (graph.entities || []).find((e) => e.id === entityId);
+    const isSelfApproval = Boolean(user?.id && ent?.proposed_by === user.id);
+    setApprovingEntityId(entityId);
+    try {
+      const note = isSelfApproval
+        ? "[Single-founder approval] Self-approved by solo operator and recorded in audit trail."
+        : "Approved by reviewer";
+      await discoverability.approveEntity(entityId, { note, workspaceId });
+      showToast(`Entity "${ent?.name || ""}" approved.`, "check");
+      loadGraphData();
+    } catch (err) {
+      showToast(err.message || "Failed to approve entity", "error");
+    } finally {
+      setApprovingEntityId(null);
     }
   };
 
@@ -305,6 +326,9 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
         </form>
       )}
 
+      {/* Visual Topological Representation */}
+      <EntityGraphVisual entities={entities} relationships={relationships} />
+
       {/* Grid of Entities and Relationships */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
         {/* Entities Column */}
@@ -316,27 +340,47 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
             <p style={{ color: "var(--text-sub)", fontSize: "0.875rem" }}>No entities in graph.</p>
           ) : (
             <div style={{ display: "grid", gap: "0.625rem" }}>
-              {entities.map((e) => (
-                <div
-                  key={e.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "0.75rem",
-                    background: "var(--bg)",
-                    borderRadius: "var(--r)",
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{e.name}</div>
-                    <div style={{ fontSize: "0.75rem", color: "var(--text-sub)" }}>
-                      {ENTITY_TYPES[e.entity_type]?.label || e.entity_type} {e.canonical_domain ? `• ${e.canonical_domain}` : ""}
+              {entities.map((e) => {
+                const mine = Boolean(user?.id && e.proposed_by === user.id);
+                return (
+                  <div
+                    key={e.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "0.75rem",
+                      background: "var(--bg)",
+                      borderRadius: "var(--r)",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{e.name}</div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-sub)" }}>
+                        {ENTITY_TYPES[e.entity_type]?.label || e.entity_type} {e.canonical_domain ? `• ${e.canonical_domain}` : ""}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <span className={`dsc-pill dsc-pill-${e.state || "proposed"}`}>{e.state || "proposed"}</span>
+                      {e.state !== "approved" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleApproveEntity(e.id)}
+                          loading={approvingEntityId === e.id}
+                          title={
+                            mine
+                              ? "Approve entity as solo operator (records [Single-founder approval]). Secondary checker can be assigned if team members are in workspace."
+                              : "Approve entity node"
+                          }
+                        >
+                          Approve
+                        </Button>
+                      )}
                     </div>
                   </div>
-                  <span className={`dsc-pill dsc-pill-${e.state || "proposed"}`}>{e.state || "proposed"}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -377,29 +421,19 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
                     <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
                       <span className={`dsc-pill dsc-pill-${r.state || "proposed"}`}>{r.state || "proposed"}</span>
                       {r.state !== "approved" && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleApproveRel(r.id, false)}
-                            loading={approvingRelId === r.id}
-                            disabled={mine}
-                            title={mine ? "You proposed this relationship" : undefined}
-                          >
-                            Approve
-                          </Button>
-                          {mine && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleApproveRel(r.id, true)}
-                              loading={approvingRelId === r.id}
-                              title="Self-approve as single founder (recorded in audit trail)"
-                            >
-                              Self-approve (Solo)
-                            </Button>
-                          )}
-                        </>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleApproveRel(r.id)}
+                          loading={approvingRelId === r.id}
+                          title={
+                            mine
+                              ? "Approve relationship as solo operator (records [Single-founder approval]). Secondary checker can be assigned if team members are in workspace."
+                              : "Approve relationship and endpoints"
+                          }
+                        >
+                          Approve
+                        </Button>
                       )}
                     </div>
                   </div>

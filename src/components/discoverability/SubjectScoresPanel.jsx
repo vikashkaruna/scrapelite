@@ -41,6 +41,7 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
   const showToast = useToast();
   const [subjects, setSubjects] = useState([]);
   const [entities, setEntities] = useState([]);
+  const [allEntities, setAllEntities] = useState([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState("");
   const [scores, setScores] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +61,7 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
       ]);
       const list = (subjRes.subjects || []).filter((s) => SUBJECT_SCORES[s.subject_kind]);
       setSubjects(list);
+      setAllEntities(graphRes.entities || []);
       setEntities((graphRes.entities || []).filter((e) => e.state === "approved"));
       setScores(scoreRes.scores || []);
       setSelectedSubjectId((current) => (
@@ -130,6 +132,7 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
   const spec = currentSubject ? SUBJECT_SCORES[currentSubject.subject_kind] : null;
   const components = currentSubject ? componentsFor(currentSubject.subject_kind, latestScore) : [];
   const eligibleEntities = entities.filter((e) => (SCORABLE_ENTITY_TYPES[newKind] || []).includes(e.entity_type));
+  const pendingEntities = allEntities.filter((e) => (SCORABLE_ENTITY_TYPES[newKind] || []).includes(e.entity_type) && e.state !== "approved");
   const thin = latestScore && (latestScore.score === null || Number(latestScore.coverage) < THIN_COVERAGE);
 
   return (
@@ -174,12 +177,16 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
                 {eligibleEntities.map((e) => (
                   <option key={e.id} value={e.id}>{e.name} ({e.entity_type})</option>
                 ))}
+                {pendingEntities.map((e) => (
+                  <option key={e.id} value="" disabled>{e.name} ({e.entity_type}) — Pending Approval</option>
+                ))}
               </select>
             </label>
           </div>
           {eligibleEntities.length === 0 && (
             <p style={{ fontSize: "0.8125rem", color: "var(--text-sub)", margin: 0 }}>
               No approved {(SCORABLE_ENTITY_TYPES[newKind] || []).join(" or ")} entity yet — approve one in the Entity Graph first.
+              {pendingEntities.length > 0 && ` (${pendingEntities.length} proposed awaiting approval in Entity Graph)`}
             </p>
           )}
           <Button size="sm" type="submit">Create Subject</Button>

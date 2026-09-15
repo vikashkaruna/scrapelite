@@ -1173,6 +1173,11 @@ export const handler = async (event) => {
               funnel_name: calculated.funnel_name,
               stage_results: calculated.stages,
               overall_conversion_rate: calculated.overall_conversion_rate,
+              qualified_outcome_delta: calculated.qualified_outcome_delta ?? (
+                Number.isFinite(Number(calculated.overall_conversion_rate))
+                  ? calculated.overall_conversion_rate
+                  : null
+              ),
               mi_score: mi.score,
               mi_caveats: calculated.caveats.concat(mi.caveats),
             };
@@ -2814,8 +2819,9 @@ async function businessTruthRoute(userId, method, path, body, event) {
       if (!row) return notFound("Version not found.");
 
       if (verb === "promote") {
+        const note = typeof body?.note === "string" ? body.note : (body?.note?.note || null);
         const r = await store.promoteTruthVersion(userId, id, subId, {
-          note: body.note || null, workspaceId,
+          note, workspaceId,
         });
         if (r.ok) {
           const full = await store.getTruthRecordFull(userId, id, { workspaceId });
@@ -3039,6 +3045,26 @@ async function entityGraphRoute(userId, method, path, body, event) {
       return created.ok
         ? json(201, { entity: created.entity })
         : json(500, { error: "Could not create the entity.", detail: created.error });
+    }
+
+    if (id && verb === "approve" && method === "POST") {
+      const note = typeof body?.note === "string" ? body.note : (body?.note?.note || null);
+      const r = await store.approveEntity(userId, id, {
+        note, workspaceId,
+      });
+      if (r.ok) {
+        const entity = await store.getEntity(userId, id, { workspaceId });
+        return json(200, { approved: true, entity });
+      }
+      if (r.notFound) return notFound("Entity not found.");
+      const VERDICTS = {
+        self_approval: [403, "You proposed this entity. Approval means a second person looked or single-founder confirmation is recorded."],
+        no_approver: [400, "No approver could be resolved for this request."],
+        rejected: [409, "This entity was rejected. Propose it again rather than reviving the rejection."],
+        not_found: [404, "Entity not found."],
+      };
+      const [status, message] = VERDICTS[r.verdict] || [500, "Could not approve the entity."];
+      return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
     }
 
     if (id && verb === "reject" && method === "POST") {

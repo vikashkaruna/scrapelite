@@ -63,14 +63,19 @@ describe("BusinessTruthPanel", () => {
     await waitFor(() => expect(discoverability.submitTruthVersion).toHaveBeenCalledWith("rec-1", "v1", { workspaceId: "ws-1" }));
   });
 
-  it("🔴 refuses self-approval using the stored proposer, and disables the control", async () => {
+  it("permits solo operator self-approval using single Approve & Promote button with audit trail note", async () => {
     mockApi({ record: full({ versions: [version({ state: "pending_review", proposed_by: "me" })] }) });
-    const promote = vi.spyOn(discoverability, "promoteTruthVersion");
+    const promote = vi.spyOn(discoverability, "promoteTruthVersion").mockResolvedValue({ promoted: true });
     render(<BusinessTruthPanel currentUser={{ id: "me" }} />);
     const button = await screen.findByRole("button", { name: /Approve & Promote/ });
-    expect(button.disabled).toBe(true);
-    expect(screen.getByText(/a second person has to approve it/)).toBeTruthy();
-    expect(promote).not.toHaveBeenCalled();
+    expect(button.disabled).toBe(false);
+    expect(screen.getByText(/Solo operator can self-approve/)).toBeTruthy();
+    fireEvent.click(button);
+    await waitFor(() => expect(promote).toHaveBeenCalledWith(
+      "rec-1", "v1",
+      expect.stringContaining("[Single-founder approval]"),
+      expect.anything(),
+    ));
   });
 
   it("promotes a version somebody else proposed", async () => {
