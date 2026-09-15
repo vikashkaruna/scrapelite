@@ -3,6 +3,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, within, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import PricingMatrix from "./PricingMatrix.jsx";
+import { PLANS } from "../lib/pricingConfig.js";
+import { resolvePlanPrice } from "../lib/planPricing.js";
+import { formatPrice } from "../lib/currencyService.js";
 
 beforeEach(() => {
   try { localStorage.clear(); } catch {}
@@ -72,6 +75,31 @@ describe("F13 — PricingMatrix", () => {
     // The "pro" column's CTA should say "Current" not "Pick Pro".
     const pro = screen.queryByRole("button", { name: /Pick Pro/i });
     expect(pro).toBeNull();
+  });
+
+  // The header prices used to read the ANNUAL figure unconditionally, so with
+  // /pricing on its Monthly default the table disagreed with every plan card.
+  for (const billingPeriod of ["monthly", "annual"]) {
+    for (const currency of ["USD", "INR"]) {
+      it(`header prices follow the selected period (${billingPeriod}, ${currency})`, () => {
+        const { container } = render(
+          <MemoryRouter><PricingMatrix billingPeriod={billingPeriod} currency={currency} /></MemoryRouter>
+        );
+        const shown = Array.from(container.querySelectorAll(".pm-plan-price"))
+          .map((n) => n.firstChild.textContent.trim());
+        const expected = PLANS.filter((p) => !p.comingSoon)
+          .map((p) => formatPrice(resolvePlanPrice(p, billingPeriod, currency), currency));
+        expect(shown).toEqual(expected);
+      });
+    }
+  }
+
+  it("defaults to monthly prices, matching the /pricing page default", () => {
+    const { container } = render(<MemoryRouter><PricingMatrix /></MemoryRouter>);
+    const select = PLANS.find((p) => p.id === "select");
+    const headers = Array.from(container.querySelectorAll(".pm-plan-price")).map((n) => n.textContent);
+    expect(headers.some((t) => t.startsWith(formatPrice(select.price_usd, "USD")))).toBe(true);
+    expect(headers.some((t) => t.startsWith(formatPrice(select.price_usd_annual, "USD") + "/"))).toBe(false);
   });
 
   it("renders a 'Compare every plan' heading", () => {

@@ -231,15 +231,15 @@ Every run shows a cost estimate before it starts and spends nothing until confir
 | Plan | Price (USD/mo) | Price (INR/mo, annual) | Extractions | Key features |
 |---|---|---|---|---|
 | Free | $0 | ₹0 | 10 / month + 25-trial credit | No credit card, headings + links + summary, CSV export |
-| Go | $4.80 | ₹299 | 200 / month | + PDF export, email export |
-| Select | $14.40 | ₹999 | 500 / month | + Markdown/JSON export, custom extraction |
-| Pro | $20.40 | ₹1,499 | 1,000 / month | + Scheduled monitoring, Google Sheets, batch |
+| Go | $4.80 | ₹299 | 200 / month | + PDF / Markdown / JSON export, email export |
+| Select | $14.40 | ₹999 | 500 / month | + 5 scheduled monitors, integrations, signal routing |
+| Pro | $20.40 | ₹1,499 | 1,000 / month | + 10 scheduled monitors, Google Sheets push, 100-URL batches |
 | Business | $44.40 | ₹3,499 | 10,000 / month | + API, 3 seats, HubSpot CRM sync, white-label PDF, priority support |
 | Agency | $106.80 | ₹8,499 | Unlimited | + 5 workspaces, white-label PDF, priority support |
 | Developer | $32.40 | ₹2,499 | 10K row credits | API-first (coming H3 2026) |
 | Enterprise | Custom ≥$1,000 | Custom | Custom | SSO, DPA, SLA, on-prem |
 
-20% discount on all annual plans. INR pricing available. GST invoices on every payment.
+Monthly prices shown; annual billing saves about 17% (Go $4, Select $12, Pro $17, Business $37, Agency $89 per month, billed annually). INR prices exclude 18% GST, added at checkout. INR pricing available. GST invoices on every payment.
 
 ### Plan-level features
 - **White-label PDF** (Business + Agency): upload a single-page PDF template in /account; every PDF export and invoice is rendered on top of your branded background.
@@ -425,7 +425,7 @@ No. DatIQ is zero-code — paste a URL, describe any field you want in plain Eng
 Export gives you CSV, PDF, Markdown and JSON as downloads, plus copy-to-clipboard, and you can email selected extractions from the Dashboard. PDF reports are customizable with white-label templates on Business and Agency plans. To send data to another tool instead of downloading it, use Push — HubSpot, Notion, Airtable and Slack (each connected once in Account → Integrations), plus Google Sheets, which needs no setup at all.
 
 **Q6. Can I schedule recurring extractions?**
-Yes. Scheduled monitoring is included on Pro, Business, and Agency plans. Schedules can run hourly, daily, weekly, or monthly, and you can attach an alert email to be notified when the page changes.
+Yes. Scheduled monitoring is included from Select upward: 5 monitors on Select, 10 on Pro, 25 on Business and unlimited on Agency. Schedules can run hourly, daily, weekly, or monthly, and you can attach an alert email to be notified when the page changes.
 
 **Q7. How does DatIQ handle JavaScript-heavy sites?**
 The "Render JavaScript" option uses Firecrawl's headless browser with a 3-second wait, which works for React, Vue, Angular, and Next.js SPAs.

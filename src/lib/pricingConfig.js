@@ -12,7 +12,7 @@ export const CURRENCY_META = {
 };
 
 // price_usd         = monthly USD price
-// price_usd_annual  = annual plan price per month (USD, ~20% off)
+// price_usd_annual  = annual plan price per month (USD, ~17% off the monthly price)
 // price_inr         = monthly INR price (base, pre-GST — 18% GST added at checkout)
 // price_inr_annual  = promotional annual price per month (INR, base, pre-GST) — fixed rate
 // trialCredit       = once-only signup extraction credit (Free plan only)
