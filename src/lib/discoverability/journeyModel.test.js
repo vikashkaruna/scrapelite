@@ -79,4 +79,24 @@ describe("journeyModel — 9 funnel stages and drop-off governance (Deliverable 
     expect(result.overall_conversion_rate).toBe(0.2);
     expect(result.caveats.length).toBe(0);
   });
+
+  it("computes qualified_outcome_delta against a baseline rate or passes explicit delta", () => {
+    // With a baseline rate of 0.1% and current conversion of 0.2% -> +100.0% delta
+    const resultWithBaseline = calculateJourneyFunnel(
+      {
+        search_impression: 10000,
+        qualified_outcome: 20,
+      },
+      { baselineRate: 0.1 },
+    );
+    expect(resultWithBaseline.overall_conversion_rate).toBe(0.2);
+    expect(resultWithBaseline.qualified_outcome_delta).toBe(100.0);
+
+    // With explicit delta in rawStageInputs
+    const resultExplicit = calculateJourneyFunnel({
+      landing_session: 1000,
+      qualified_outcome_delta: 14.5,
+    });
+    expect(resultExplicit.qualified_outcome_delta).toBe(14.5);
+  });
 });

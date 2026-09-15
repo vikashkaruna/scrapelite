@@ -15,8 +15,8 @@ const entities = [
   { id: "e2", name: "Widget", entity_type: "product", state: "proposed" },
 ];
 
-function mockApi({ relationships = [], conflicts = [] } = {}) {
-  vi.spyOn(discoverability, "getGraph").mockResolvedValue({ entities, relationships, conflicts });
+function mockApi({ entities: customEntities = entities, relationships = [], conflicts = [] } = {}) {
+  vi.spyOn(discoverability, "getGraph").mockResolvedValue({ entities: customEntities, relationships, conflicts });
   vi.spyOn(discoverability, "graphConflicts").mockResolvedValue({ conflicts });
 }
 
@@ -80,10 +80,29 @@ describe("EntityGraphPanel", () => {
     mockApi({ relationships: [{ id: "r1", subject_id: "e1", predicate: "offers", object_id: "e2", source: "declared", state: "proposed", confidence: 0.9 }] });
     vi.spyOn(discoverability, "approveRelationship").mockResolvedValue({ approved: true });
     render(<EntityGraphPanel workspaceId="ws-1" />);
-    expect(await screen.findByText(PREDICATES.offers.label)).toBeTruthy();
+    const labels = await screen.findAllByText(PREDICATES.offers.label);
+    expect(labels.length).toBeGreaterThan(0);
     expect(screen.getByText(/Confidence: 90%/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    await waitFor(() => expect(discoverability.approveRelationship).toHaveBeenCalledWith("r1", { workspaceId: "ws-1" }));
+    const approveRelBtn = screen.getByTitle(/Approve relationship/);
+    fireEvent.click(approveRelBtn);
+    await waitFor(() => expect(discoverability.approveRelationship).toHaveBeenCalledWith(
+      "r1",
+      expect.objectContaining({ workspaceId: "ws-1" }),
+    ));
+  });
+
+  it("approves an individual entity node", async () => {
+    mockApi({ entities: [{ id: "e1", name: "Acme", entity_type: "brand", state: "proposed" }] });
+    vi.spyOn(discoverability, "approveEntity").mockResolvedValue({ approved: true });
+    render(<EntityGraphPanel workspaceId="ws-1" />);
+    const names = await screen.findAllByText("Acme");
+    expect(names.length).toBeGreaterThan(0);
+    const approveEntityBtn = screen.getByTitle(/Approve entity/);
+    fireEvent.click(approveEntityBtn);
+    await waitFor(() => expect(discoverability.approveEntity).toHaveBeenCalledWith(
+      "e1",
+      expect.objectContaining({ workspaceId: "ws-1" }),
+    ));
   });
 
   it("describes conflicts from their stored code and message, and resolves them", async () => {

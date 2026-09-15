@@ -15,7 +15,7 @@ import { useToast } from "../Toast.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
 import { SXO_LAYERS, SXO_LAYER_WEIGHTS } from "../../lib/discoverability/sxoModel.js";
 import { computeMasterScore } from "../../lib/discoverability/sxoScoring.js";
-import { FUNNEL_STAGES } from "../../lib/discoverability/journeyModel.js";
+import { FUNNEL_STAGES, calculateJourneyFunnel } from "../../lib/discoverability/journeyModel.js";
 import { PORTFOLIO_ROLLUP_AXES } from "../../lib/discoverability/portfolioModel.js";
 import { PERSONA_PACKS, filterPersonaQueue } from "../../lib/discoverability/personaPacks.js";
 
@@ -26,17 +26,47 @@ const CORRELATION_NOTICE =
   "Observed metric movement between baseline and observation periods is correlational. External factors including search engine algorithm updates, seasonal traffic fluctuations, and unmeasured marketing campaigns contribute to real-world outcomes. Correlation does not establish causation.";
 
 const ANALYTICS_PROVIDERS = Object.freeze([
-  { id: "ga4", label: "Google Analytics 4", accountHint: "GA4 property ID" },
-  { id: "posthog", label: "PostHog", accountHint: "Project ID" },
-  { id: "plausible", label: "Plausible", accountHint: "Site domain" },
+  {
+    id: "ga4",
+    label: "Google Analytics 4",
+    accountHint: "GA4 property ID",
+    credentialHint: "Measurement Protocol API Secret or Service Account Key",
+    portalUrl: "https://analytics.google.com/analytics/web/#/admin",
+    portalLabel: "Google Analytics Admin",
+    portalPath: "Admin → Property Settings → Data Streams → Measurement Protocol API Secrets",
+    tip: "Open GA4 Admin > Property Settings to find your 9-digit Property ID. Under Data Streams, select your web stream and create a Measurement Protocol API secret.",
+  },
+  {
+    id: "posthog",
+    label: "PostHog",
+    accountHint: "Project ID",
+    credentialHint: "Project API Key (phc_...)",
+    portalUrl: "https://us.posthog.com/project/settings",
+    portalLabel: "PostHog Project Settings",
+    portalPath: "Project Settings → Project API Key",
+    tip: "In PostHog, go to Project Settings > General to copy your Project API Key and Project ID. Only privacy-safe aggregate event counts are imported.",
+  },
+  {
+    id: "plausible",
+    label: "Plausible",
+    accountHint: "Site domain",
+    credentialHint: "API Key",
+    portalUrl: "https://plausible.io/settings",
+    portalLabel: "Plausible Settings",
+    portalPath: "Settings → API Keys → New API Key",
+    tip: "In Plausible User Settings > API Keys, create a read-only stats key and enter your configured site domain.",
+  },
 ]);
 
 const IMPORT_EVENTS = Object.freeze([
-  ["page_view", "Page views"],
-  ["primary_cta_click", "Primary CTA clicks"],
-  ["form_start", "Form starts"],
-  ["form_submit", "Form submissions"],
-  ["qualified_conversion", "Qualified outcomes"],
+  ["page_view", "Page views", "Stages 1 & 2", "Landing sessions & exposure"],
+  ["scroll_50", "Scroll depth (50%+)", "Stage 3", "Engaged session depth"],
+  ["pricing_view", "Pricing / Value views", "Stage 4", "Key content seen"],
+  ["primary_cta_view", "Primary CTA views", "Stage 5", "CTA entered viewport"],
+  ["primary_cta_click", "Primary CTA clicks", "Stage 6", "Action trigger clicked"],
+  ["form_start", "Form starts", "Stage 7", "Action started"],
+  ["form_submit", "Form submissions", "Stage 8", "Conversion complete"],
+  ["qualified_conversion", "Qualified outcomes", "Stage 9", "Sales-qualified outcomes"],
 ]);
 
 function measured(value, suffix = "") {
@@ -77,6 +107,11 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
   const [goalName, setGoalName] = useState("");
   const [goalOutcome, setGoalOutcome] = useState("lead");
   const [goalBusy, setGoalBusy] = useState(false);
+  const [activeSection, setActiveSection] = useState("all");
+  const [recalculatingRollup, setRecalculatingRollup] = useState(false);
+  const [showFunnelConfig, setShowFunnelConfig] = useState(false);
+  const [funnelConfig, setFunnelConfig] = useState({});
+  const [savingFunnelConfig, setSavingFunnelConfig] = useState(false);
 
   const loadDashboardData = useCallback(async () => {
     if (!auditId) return;
@@ -335,112 +370,355 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
     }
   };
 
+  const handleRecalculateRollup = async () => {
+    setRecalculatingRollup(true);
+    try {
+      const res = await discoverability.getSxoPortfolioRollups({
+        axis: selectedAxis,
+        workspace_id: workspaceId,
+      });
+      setRollups(res?.rollups || []);
+      showToast(`Portfolio rollups re-calculated for axis: ${selectedAxis}.`, "check");
+    } catch (err) {
+      showToast(err.message || "Failed to recalculate rollups", "error");
+    } finally {
+      setRecalculatingRollup(false);
+    }
+  };
+
+  const openFunnelConfig = () => {
+    const initial = {};
+    for (const st of FUNNEL_STAGES) {
+      const existing = funnelData?.stage_results?.find((s) => s.key === st.key || s.id === st.key);
+      initial[st.key] = {
+        measured: existing?.measured ?? false,
+        count: existing?.count !== undefined && existing?.count !== null ? existing.count : "",
+      };
+    }
+    setFunnelConfig(initial);
+    setShowFunnelConfig(true);
+  };
+
+  const handleLoadSampleFunnel = () => {
+    setFunnelConfig({
+      search_impression: { measured: true, count: 25000 },
+      landing_session: { measured: true, count: 8500 },
+      engaged_session: { measured: true, count: 5200 },
+      key_content_seen: { measured: true, count: 3100 },
+      primary_cta_view: { measured: true, count: 2400 },
+      primary_cta_click: { measured: true, count: 980 },
+      action_start: { measured: true, count: 540 },
+      conversion_complete: { measured: true, count: 290 },
+      qualified_outcome: { measured: true, count: 95 },
+    });
+  };
+
+  const handleApplyFunnelConfig = async (saveToBackend = false) => {
+    const stageInputs = {};
+    const eventsToImport = [];
+
+    for (const [key, cfg] of Object.entries(funnelConfig)) {
+      if (cfg.measured && cfg.count !== "" && !isNaN(Number(cfg.count))) {
+        const cnt = Number(cfg.count);
+        stageInputs[key] = cnt;
+        const mappedEvt = {
+          landing_session: "page_view",
+          engaged_session: "scroll_50",
+          key_content_seen: "pricing_view",
+          primary_cta_view: "primary_cta_view",
+          primary_cta_click: "primary_cta_click",
+          action_start: "form_start",
+          conversion_complete: "form_submit",
+          qualified_outcome: "qualified_conversion",
+        }[key];
+        if (mappedEvt) {
+          eventsToImport.push({ event_name: mappedEvt, count: cnt });
+        }
+      } else {
+        stageInputs[key] = { measured: false, reason: "Telemetry not instrumented for this stage." };
+      }
+    }
+
+    const calculated = calculateJourneyFunnel(stageInputs, {
+      name: `audit_${auditId}_funnel`,
+    });
+
+    const updatedFunnel = {
+      audit_id: auditId,
+      funnel_name: calculated.funnel_name,
+      stage_results: calculated.stages,
+      overall_conversion_rate: calculated.overall_conversion_rate,
+      qualified_outcome_delta: calculated.qualified_outcome_delta ?? (
+        Number.isFinite(Number(calculated.overall_conversion_rate)) ? calculated.overall_conversion_rate : null
+      ),
+      mi_score: Math.min(100, calculated.coverage_percent),
+      mi_caveats: calculated.caveats,
+    };
+
+    setFunnelData(updatedFunnel);
+
+    if (saveToBackend && eventsToImport.length > 0) {
+      setSavingFunnelConfig(true);
+      try {
+        await discoverability.importSxoEvents({
+          audit_id: auditId,
+          workspace_id: workspaceId,
+          source_provider: "custom",
+          import_key: newImportKey("custom", auditId),
+          events: eventsToImport,
+        });
+        showToast("Funnel configuration saved and events queued.", "check");
+      } catch (err) {
+        showToast(err.message || "Saved locally; backend sync failed", "warning");
+      } finally {
+        setSavingFunnelConfig(false);
+      }
+    } else {
+      showToast("Funnel updated and drop-offs recalculated.", "check");
+    }
+
+    setShowFunnelConfig(false);
+  };
+
+  const activeProviderConfig = ANALYTICS_PROVIDERS.find((item) => item.id === provider);
+
   return (
-    <div className="dsc-sxo-dashboard" style={{ display: "grid", gap: "28px" }}>
+    <div className="dsc-sxo-dashboard" style={{ display: "grid", gap: "24px" }}>
       {loading && <div role="status" className="sr-only">Loading SXO and analytics data</div>}
-      {/* ── REGION 1: Master Score & 5 Frameworks ── */}
-      <section className="dsc-card dsc-master-card" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px", marginBottom: "16px" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <Icon name="zap" size={20} className="dsc-tone-ok" />
-              <h2 style={{ margin: 0, fontSize: "20px" }}>Search Experience & Master Composite</h2>
+
+      {/* ── LOGICAL SECTIONING: Section A vs Section B ── */}
+      <div
+        role="tablist"
+        aria-label="SXO dashboard sections"
+        style={{
+          display: "flex",
+          gap: "8px",
+          borderBottom: "1px solid var(--border)",
+          paddingBottom: "8px",
+        }}
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "all"}
+          className={`dsc-tab-btn ${activeSection === "all" ? "active" : ""}`}
+          onClick={() => setActiveSection("all")}
+          style={{
+            padding: "8px 16px",
+            background: activeSection === "all" ? "var(--surface)" : "transparent",
+            border: activeSection === "all" ? "1px solid var(--border)" : "1px solid transparent",
+            borderBottom: activeSection === "all" ? "2px solid var(--accent)" : "1px solid transparent",
+            borderRadius: "var(--r-md) var(--r-md) 0 0",
+            fontWeight: activeSection === "all" ? 600 : 500,
+            fontSize: "13px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            color: activeSection === "all" ? "var(--text)" : "var(--text-2)",
+          }}
+        >
+          All Overview
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "architecture"}
+          className={`dsc-tab-btn ${activeSection === "architecture" ? "active" : ""}`}
+          onClick={() => setActiveSection("architecture")}
+          style={{
+            padding: "8px 16px",
+            background: activeSection === "architecture" ? "var(--surface)" : "transparent",
+            border: activeSection === "architecture" ? "1px solid var(--border)" : "1px solid transparent",
+            borderBottom: activeSection === "architecture" ? "2px solid var(--accent)" : "1px solid transparent",
+            borderRadius: "var(--r-md) var(--r-md) 0 0",
+            fontWeight: activeSection === "architecture" ? 600 : 500,
+            fontSize: "13px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            color: activeSection === "architecture" ? "var(--text)" : "var(--text-2)",
+          }}
+        >
+          <Icon name="layers" size={15} /> SXO & Journey Architecture
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "portfolio"}
+          className={`dsc-tab-btn ${activeSection === "portfolio" ? "active" : ""}`}
+          onClick={() => setActiveSection("portfolio")}
+          style={{
+            padding: "8px 16px",
+            background: activeSection === "portfolio" ? "var(--surface)" : "transparent",
+            border: activeSection === "portfolio" ? "1px solid var(--border)" : "1px solid transparent",
+            borderBottom: activeSection === "portfolio" ? "2px solid var(--accent)" : "1px solid transparent",
+            borderRadius: "var(--r-md) var(--r-md) 0 0",
+            fontWeight: activeSection === "portfolio" ? 600 : 500,
+            fontSize: "13px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            color: activeSection === "portfolio" ? "var(--text)" : "var(--text-2)",
+          }}
+        >
+          <Icon name="layout-grid" size={15} /> Validating SXO & Portfolio
+        </button>
+      </div>
+
+      {/* ── SECTION A: SXO & Journey Architecture ── */}
+      <div
+        id="section-architecture"
+        role="tabpanel"
+        style={{
+          display: activeSection === "architecture" || activeSection === "all" ? "grid" : "none",
+          gap: "24px",
+        }}
+      >
+        {/* ── REGION 1: Master Score & 5 Frameworks ── */}
+        <section className="dsc-card dsc-master-card" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px", marginBottom: "16px" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Icon name="zap" size={20} className="dsc-tone-ok" />
+                <h2 style={{ margin: 0, fontSize: "20px" }}>Search Experience & Master Composite</h2>
+              </div>
+              <p style={{ margin: "4px 0 0", color: "var(--text-2)", fontSize: "14px" }}>
+                Read-time composite of Discoverability and Experience (D14: 0.25 SEO + 0.20 AEO + 0.20 GEO + 0.35 SXO)
+              </p>
             </div>
-            <p style={{ margin: "4px 0 0", color: "var(--text-2)", fontSize: "14px" }}>
-              Read-time composite of Discoverability and Experience (D14: 0.25 SEO + 0.20 AEO + 0.20 GEO + 0.35 SXO)
-            </p>
+            {(onRunSxo || auditId) && (
+              <Button size="sm" onClick={handleReevaluate} variant="secondary" loading={evaluatingSxo}>
+                <Icon name="rotate-cw" size={14} /> Re-evaluate SXO
+              </Button>
+            )}
           </div>
-          {(onRunSxo || auditId) && (
-            <Button size="sm" onClick={handleReevaluate} variant="secondary" loading={evaluatingSxo}>
-              <Icon name="rotate-cw" size={14} /> Re-evaluate SXO
-            </Button>
-          )}
-        </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "12px", marginBottom: "16px" }}>
-          <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>Master Score</div>
-            <div style={{ fontSize: "28px", fontWeight: "700", color: master.score !== null ? "var(--text)" : "var(--text-3)" }}>
-              {master.score !== null ? master.score : "Not measured"}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "12px", marginBottom: "16px" }}>
+            <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>Master Score</div>
+              <div style={{ fontSize: "28px", fontWeight: "700", color: master.score !== null ? "var(--text)" : "var(--text-3)" }}>
+                {master.score !== null ? master.score : "Not measured"}
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Coverage: {master.coverage}%</div>
             </div>
-            <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Coverage: {master.coverage}%</div>
-          </div>
 
-          <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>SEO (0.25)</div>
-            <div style={{ fontSize: "24px", fontWeight: "600" }}>{master.frameworks.seo ?? "—"}</div>
-            <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Search engines</div>
-          </div>
-
-          <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>AEO (0.20)</div>
-            <div style={{ fontSize: "24px", fontWeight: "600" }}>{master.frameworks.aeo ?? "—"}</div>
-            <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Answer engines</div>
-          </div>
-
-          <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>GEO (0.20)</div>
-            <div style={{ fontSize: "24px", fontWeight: "600" }}>{master.frameworks.geo ?? "—"}</div>
-            <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Generative engines</div>
-          </div>
-
-          <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>SXO (0.35)</div>
-            <div style={{ fontSize: "24px", fontWeight: "600", color: "var(--accent)" }}>{sxoRun?.sxo_total_score ?? "—"}</div>
-            <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Experience & Conv</div>
-          </div>
-
-          <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>Lead Delta</div>
-            <div style={{ fontSize: "24px", fontWeight: "600", color: "var(--dsc-success)" }}>
-              {Number.isFinite(Number(funnelData?.qualified_outcome_delta))
-                ? `${Number(funnelData.qualified_outcome_delta) > 0 ? "+" : ""}${Number(funnelData.qualified_outcome_delta).toFixed(1)}%`
-                : "Not measured"}
+            <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>SEO (0.25)</div>
+              <div style={{ fontSize: "24px", fontWeight: "600" }}>{master.frameworks.seo ?? "—"}</div>
+              <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Search engines</div>
             </div>
-            <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Measured qualified impact</div>
+
+            <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>AEO (0.20)</div>
+              <div style={{ fontSize: "24px", fontWeight: "600" }}>{master.frameworks.aeo ?? "—"}</div>
+              <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Answer engines</div>
+            </div>
+
+            <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>GEO (0.20)</div>
+              <div style={{ fontSize: "24px", fontWeight: "600" }}>{master.frameworks.geo ?? "—"}</div>
+              <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Generative engines</div>
+            </div>
+
+            <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>SXO (0.35)</div>
+              <div style={{ fontSize: "24px", fontWeight: "600", color: "var(--accent)" }}>{sxoRun?.sxo_total_score ?? "—"}</div>
+              <div style={{ fontSize: "11px", color: "var(--text-3)" }}>Experience & Conv</div>
+            </div>
+
+            <div
+              style={{ padding: "12px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px solid var(--border)" }}
+              title={
+                Number.isFinite(Number(funnelData?.qualified_outcome_delta))
+                  ? "Measured conversion delta relative to baseline audit"
+                  : "Not measured: requires instrumenting 2+ stages (e.g. Landing Session & Qualified Conversion) or baseline comparison period."
+              }
+            >
+              <div style={{ fontSize: "12px", color: "var(--text-3)", textTransform: "uppercase" }}>Lead Delta</div>
+              <div style={{ fontSize: "24px", fontWeight: "600", color: "var(--dsc-success)" }}>
+                {Number.isFinite(Number(funnelData?.qualified_outcome_delta))
+                  ? `${Number(funnelData.qualified_outcome_delta) > 0 ? "+" : ""}${Number(funnelData.qualified_outcome_delta).toFixed(1)}%`
+                  : "Not measured"}
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--text-3)" }}>
+                {Number.isFinite(Number(funnelData?.qualified_outcome_delta))
+                  ? "vs baseline audit"
+                  : "Measured qualified impact"}
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* Mandatory Overlap Disclosure (§4.1 / §13) */}
-        <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px dashed var(--border)", fontSize: "12px", color: "var(--text-2)" }}>
-          <strong style={{ color: "var(--text)" }}>Methodology & Overlap Disclosure:</strong> {OVERLAP_DISCLOSURE}
-        </div>
-      </section>
+          {/* Mandatory Overlap Disclosure (§4.1 / §13) */}
+          <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: "var(--r-md)", border: "1px dashed var(--border)", fontSize: "12px", color: "var(--text-2)" }}>
+            <strong style={{ color: "var(--text)" }}>Methodology & Overlap Disclosure:</strong> {OVERLAP_DISCLOSURE}
+          </div>
+        </section>
 
-      {/* ── REGION 2: Analytics setup, aggregate import and goals ── */}
-      <section className="dsc-card" aria-labelledby="analytics-setup-heading" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
-        <h3 id="analytics-setup-heading" style={{ margin: "0 0 6px", fontSize: "17px", display: "flex", alignItems: "center", gap: "8px" }}>
-          <Icon name="plug" size={18} /> Analytics Setup & Outcomes
-        </h3>
-        <p style={{ margin: "0 0 16px", fontSize: "13px", color: "var(--text-2)" }}>
-          Save encrypted provider credentials, import aggregate-only event counts, and define the outcome this audit should optimize. Saved credentials are marked configured until a real provider sync verifies them.
-        </p>
+        {/* ── REGION 2: Analytics setup, aggregate import and goals ── */}
+        <section className="dsc-card" aria-labelledby="analytics-setup-heading" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
+          <h3 id="analytics-setup-heading" style={{ margin: "0 0 6px", fontSize: "17px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Icon name="plug" size={18} /> Analytics Setup & Outcomes
+          </h3>
+          <p style={{ margin: "0 0 16px", fontSize: "13px", color: "var(--text-2)" }}>
+            Save encrypted provider credentials, import aggregate-only event counts, and define the outcome this audit should optimize. Saved credentials are marked configured until a real provider sync verifies them.
+          </p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
-          <form onSubmit={handleConnect} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-            <strong>Provider credentials</strong>
-            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Provider
-              <select value={provider} onChange={(e) => setProvider(e.target.value)} aria-label="Analytics provider">
-                {ANALYTICS_PROVIDERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>{ANALYTICS_PROVIDERS.find((item) => item.id === provider)?.accountHint}
-              <input value={providerAccountId} onChange={(e) => setProviderAccountId(e.target.value)} autoComplete="off" />
-            </label>
-            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>API credential
-              <input type="password" value={providerToken} onChange={(e) => setProviderToken(e.target.value)} autoComplete="new-password" />
-            </label>
-            <Button size="sm" type="submit" disabled={connectorBusy}>{connectorBusy ? "Saving…" : "Encrypt & save"}</Button>
-            <div aria-label="Configured analytics connections" style={{ display: "grid", gap: "6px" }}>
-              {connections.length === 0 && <span style={{ color: "var(--text-3)", fontSize: "12px" }}>No provider credentials configured.</span>}
-              {connections.map((connection) => (
-                <div key={connection.id} style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center", fontSize: "12px" }}>
-                  <span><strong>{connection.provider.toUpperCase()}</strong> · {connection.status || "configured"} · {connection.token_fingerprint}</span>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => handleDisconnect(connection)}>Disconnect</Button>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
+            <form onSubmit={handleConnect} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+              <strong>Provider credentials</strong>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Provider
+                <select value={provider} onChange={(e) => setProvider(e.target.value)} aria-label="Analytics provider">
+                  {ANALYTICS_PROVIDERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+
+              {activeProviderConfig && (
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    background: "var(--surface)",
+                    borderRadius: "var(--r-sm)",
+                    border: "1px solid var(--border)",
+                    fontSize: "11px",
+                    display: "grid",
+                    gap: "4px",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontWeight: 600, color: "var(--text)" }}>{activeProviderConfig.portalPath}</span>
+                    <a
+                      href={activeProviderConfig.portalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ display: "inline-flex", alignItems: "center", gap: "3px", color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}
+                    >
+                      Open {activeProviderConfig.portalLabel} <Icon name="external-link" size={11} />
+                    </a>
+                  </div>
+                  <div style={{ color: "var(--text-3)", lineHeight: 1.35 }}>{activeProviderConfig.tip}</div>
                 </div>
-              ))}
-            </div>
-          </form>
+              )}
+
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>{ANALYTICS_PROVIDERS.find((item) => item.id === provider)?.accountHint}
+                <input value={providerAccountId} onChange={(e) => setProviderAccountId(e.target.value)} autoComplete="off" />
+              </label>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>API credential
+                <input type="password" value={providerToken} onChange={(e) => setProviderToken(e.target.value)} autoComplete="new-password" />
+              </label>
+              <Button size="sm" type="submit" disabled={connectorBusy}>{connectorBusy ? "Saving…" : "Encrypt & save"}</Button>
+              <div aria-label="Configured analytics connections" style={{ display: "grid", gap: "6px" }}>
+                {connections.length === 0 && <span style={{ color: "var(--text-3)", fontSize: "12px" }}>No provider credentials configured.</span>}
+                {connections.map((connection) => (
+                  <div key={connection.id} style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center", fontSize: "12px" }}>
+                    <span><strong>{connection.provider.toUpperCase()}</strong> · {connection.status || "configured"} · {connection.token_fingerprint}</span>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => handleDisconnect(connection)}>Disconnect</Button>
+                  </div>
+                ))}
+              </div>
+            </form>
 
           <form onSubmit={handleImport} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
             <strong>Aggregate event import</strong>
@@ -452,9 +730,23 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
               </select>
             </label>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px" }}>
-              {IMPORT_EVENTS.map(([eventName, label]) => (
-                <label key={eventName} style={{ display: "grid", gap: "4px", fontSize: "12px" }}>{label}
-                  <input type="number" min="0" step="1" value={importCounts[eventName] ?? ""} onChange={(e) => setImportCounts((current) => ({ ...current, [eventName]: e.target.value }))} />
+              {IMPORT_EVENTS.map(([eventName, label, stage, hint]) => (
+                <label key={eventName} style={{ display: "grid", gap: "4px", fontSize: "12px" }} title={`${label} (${stage}): ${hint}`}>
+                  <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>{label}</span>
+                    <span style={{ fontSize: "10px", color: "var(--accent)", background: "var(--surface)", padding: "1px 5px", borderRadius: "3px", border: "1px solid var(--border)" }}>
+                      {stage}
+                    </span>
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    aria-label={label}
+                    placeholder={hint}
+                    value={importCounts[eventName] ?? ""}
+                    onChange={(e) => setImportCounts((current) => ({ ...current, [eventName]: e.target.value }))}
+                  />
                 </label>
               ))}
             </div>
@@ -515,12 +807,113 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
               Drop-offs are calculated strictly between consecutive measured stages. Missing instrumentation is excluded and named.
             </p>
           </div>
-          {funnelData?.mi_score !== undefined && (
-            <span style={{ fontSize: "12px", color: "var(--text-2)", background: "var(--bg)", padding: "4px 8px", borderRadius: "var(--r-sm)", border: "1px solid var(--border)" }}>
-              Measurement Maturity (MI): <strong>{funnelData.mi_score}/100</strong>
-            </span>
-          )}
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            {funnelData?.mi_score !== undefined && (
+              <span style={{ fontSize: "12px", color: "var(--text-2)", background: "var(--bg)", padding: "4px 8px", borderRadius: "var(--r-sm)", border: "1px solid var(--border)" }}>
+                Measurement Maturity (MI): <strong>{funnelData.mi_score}/100</strong>
+              </span>
+            )}
+            <Button size="sm" variant="secondary" onClick={openFunnelConfig}>
+              <Icon name="settings" size={14} /> Configure Funnel
+            </Button>
+          </div>
         </div>
+
+        {showFunnelConfig && (
+          <div
+            style={{
+              padding: "16px",
+              background: "var(--bg)",
+              borderRadius: "var(--r-md)",
+              border: "1px solid var(--accent)",
+              marginBottom: "16px",
+              display: "grid",
+              gap: "14px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+              <div>
+                <strong style={{ fontSize: "14px" }}>Interactive Funnel Configuration & Calibration</strong>
+                <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-3)" }}>
+                  Toggle instrumentation, override visitor counts, or load sample progression. Unchecked stages are strictly excluded from drop-off calculations.
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <Button size="sm" variant="ghost" onClick={handleLoadSampleFunnel}>
+                  Load Sample B2B Funnel
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowFunnelConfig(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "10px" }}>
+              {FUNNEL_STAGES.map((st, i) => {
+                const cfg = funnelConfig[st.key] || { measured: false, count: "" };
+                return (
+                  <div
+                    key={st.key}
+                    style={{
+                      padding: "10px",
+                      background: "var(--surface)",
+                      borderRadius: "var(--r-sm)",
+                      border: cfg.measured ? "1px solid var(--border)" : "1px dashed var(--border)",
+                      opacity: cfg.measured ? 1 : 0.7,
+                      display: "grid",
+                      gap: "6px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={cfg.measured}
+                          onChange={(e) => setFunnelConfig((cur) => ({
+                            ...cur,
+                            [st.key]: { ...cur[st.key], measured: e.target.checked },
+                          }))}
+                        />
+                        <span>{i + 1}. {st.label}</span>
+                      </label>
+                      <span style={{ fontSize: "10px", color: "var(--text-3)" }}>{st.key}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder={cfg.measured ? "Visitor count" : "Uninstrumented"}
+                        disabled={!cfg.measured}
+                        value={cfg.count}
+                        onChange={(e) => setFunnelConfig((cur) => ({
+                          ...cur,
+                          [st.key]: { ...cur[st.key], count: e.target.value },
+                        }))}
+                        style={{
+                          flex: 1,
+                          fontSize: "12px",
+                          padding: "4px 8px",
+                          borderRadius: "var(--r-sm)",
+                          border: "1px solid var(--border)",
+                          background: cfg.measured ? "var(--bg)" : "var(--surface)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+              <Button size="sm" variant="secondary" onClick={() => handleApplyFunnelConfig(false)}>
+                Apply & Recalculate Funnel
+              </Button>
+              <Button size="sm" onClick={() => handleApplyFunnelConfig(true)} loading={savingFunnelConfig}>
+                Apply & Save to Backend
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: "grid", gap: "8px" }}>
           {FUNNEL_STAGES.map((st, idx) => {
@@ -630,32 +1023,53 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
           </div>
         )}
       </section>
+      </div>
 
-      {/* ── REGION 5: Template & Portfolio Performance ── */}
-      <section className="dsc-card" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "14px" }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: "17px", display: "flex", alignItems: "center", gap: "8px" }}>
-              <Icon name="bar-chart-2" size={18} /> Portfolio Performance Rollups
-            </h3>
-            <p style={{ margin: "4px 0 0", fontSize: "13px", color: "var(--text-3)" }}>
-              Aggregates across the 9 rollup axes. Unaudited subjects read "No data", never zero.
-            </p>
-          </div>
+      {/* ── SECTION B: Validating SXO & Portfolio ── */}
+      <div
+        id="section-portfolio"
+        role="tabpanel"
+        style={{
+          display: activeSection === "portfolio" || activeSection === "all" ? "grid" : "none",
+          gap: "24px",
+        }}
+      >
+        {/* ── REGION 5: Template & Portfolio Performance ── */}
+        <section className="dsc-card" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "14px" }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: "17px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Icon name="bar-chart-2" size={18} /> Portfolio Performance Rollups
+              </h3>
+              <p style={{ margin: "4px 0 0", fontSize: "13px", color: "var(--text-3)" }}>
+                Aggregates across the 9 rollup axes. Unaudited subjects read "No data", never zero.
+              </p>
+            </div>
 
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {PORTFOLIO_ROLLUP_AXES.map((axis) => (
-              <button
-                key={axis}
-                onClick={() => setSelectedAxis(axis)}
-                className={`dsc-chip ${selectedAxis === axis ? "dsc-chip-on" : ""}`}
-                style={{ fontSize: "11px", padding: "4px 8px" }}
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {PORTFOLIO_ROLLUP_AXES.map((axis) => (
+                  <button
+                    key={axis}
+                    onClick={() => setSelectedAxis(axis)}
+                    className={`dsc-chip ${selectedAxis === axis ? "dsc-chip-on" : ""}`}
+                    style={{ fontSize: "11px", padding: "4px 8px" }}
+                  >
+                    {axis.replace("_", " ")}
+                  </button>
+                ))}
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={handleRecalculateRollup}
+                loading={recalculatingRollup}
+                title="Re-calculate rollup metrics for the selected segment axis"
               >
-                {axis.replace("_", " ")}
-              </button>
-            ))}
+                <Icon name="refresh-cw" size={14} /> Re-calculate Rollup
+              </Button>
+            </div>
           </div>
-        </div>
 
         {rollups.length > 0 ? (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
@@ -839,6 +1253,7 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
           </div>
         </div>
       </section>
+      </div>
     </div>
   );
 }

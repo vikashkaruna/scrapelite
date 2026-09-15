@@ -181,6 +181,18 @@ export function calculateJourneyFunnel(rawStageInputs = {}, options = {}) {
     }
   }
 
+  let qualifiedOutcomeDelta = null;
+  if (options.baselineRate !== undefined && options.baselineRate !== null && Number.isFinite(Number(options.baselineRate))) {
+    const base = Number(options.baselineRate);
+    if (overallConversionRate !== null && base > 0) {
+      qualifiedOutcomeDelta = Math.round(((overallConversionRate - base) / base) * 1000) / 10;
+    } else if (overallConversionRate !== null && base === 0) {
+      qualifiedOutcomeDelta = overallConversionRate > 0 ? 100.0 : 0.0;
+    }
+  } else if (typeof rawStageInputs.qualified_outcome_delta === "number" && Number.isFinite(rawStageInputs.qualified_outcome_delta)) {
+    qualifiedOutcomeDelta = rawStageInputs.qualified_outcome_delta;
+  }
+
   return {
     funnel_name: options.name || "standard_9_stage",
     stages,
@@ -188,6 +200,7 @@ export function calculateJourneyFunnel(rawStageInputs = {}, options = {}) {
     measured_stages_count: measuredCount,
     coverage_percent: coveragePercent,
     overall_conversion_rate: overallConversionRate,
+    qualified_outcome_delta: qualifiedOutcomeDelta,
     first_measured_stage: firstMeasuredStage ? firstMeasuredStage.key : null,
     last_measured_stage: lastMeasuredStage ? lastMeasuredStage.key : null,
     caveats,

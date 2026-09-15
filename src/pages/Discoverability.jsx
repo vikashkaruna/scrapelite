@@ -46,10 +46,10 @@ import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 export const UNIFIED_DISCOVERABILITY_NAV = Object.freeze([
   { id: "audit", label: "Audit", icon: "scan-search" },
   { id: "truth", label: "Business Truth", icon: "database", path: "/discoverability/truth" },
-  { id: "entities", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
   { id: "trust", label: "Schema & Trust", icon: "shield-check", path: "/discoverability/trust" },
   { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
   { id: "scores", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
+  { id: "entities", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
   { id: "local", label: "Local Directory", icon: "map-pin", path: "/discoverability/local" },
   { id: "history", label: "History", icon: "clock" },
 ]);

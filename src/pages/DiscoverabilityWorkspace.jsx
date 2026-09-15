@@ -17,11 +17,11 @@ import { discoverability } from "../lib/discoverability/discoverabilityClient.js
 
 export const DISCOVERABILITY_WORKSPACES = Object.freeze([
   { path: "/discoverability/truth", label: "Business Truth", icon: "database", component: BusinessTruthPanel, step: "implement" },
+  { path: "/discoverability/trust", label: "Schema & Trust", icon: "shield-check", component: SchemaTrustPanel, step: "implement" },
+  { path: "/discoverability/sxo", label: "SXO & Outcomes", icon: "zap", component: SxoDashboard, step: "validate" },
+  { path: "/discoverability/scores", label: "Subject Scores", icon: "award", component: SubjectScoresPanel, step: "benchmark" },
   { path: "/discoverability/entities", label: "Entity Graph", icon: "share-2", component: EntityGraphPanel, step: "expand" },
   { path: "/discoverability/local", label: "Local Directory", icon: "map-pin", component: LocalDirectoryPanel, step: "expand" },
-  { path: "/discoverability/trust", label: "Schema & Trust", icon: "shield-check", component: SchemaTrustPanel, step: "implement" },
-  { path: "/discoverability/scores", label: "Subject Scores", icon: "award", component: SubjectScoresPanel, step: "benchmark" },
-  { path: "/discoverability/sxo", label: "SXO & Outcomes", icon: "zap", component: SxoDashboard, step: "validate" },
 ]);
 
 function WorkspaceScreen() {

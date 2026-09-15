@@ -1483,6 +1483,25 @@ export async function getRelationship(userId, relationshipId, { workspaceId = nu
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
+/** Approve an entity node directly. Verdict returned unchanged. */
+export async function approveEntity(userId, entityId, {
+  note = null, workspaceId = null,
+} = {}) {
+  const owned = await getEntity(userId, entityId, { workspaceId });
+  if (!owned) return { ok: false, notFound: true };
+
+  const conn = db();
+  if (!conn) return { ok: false, degraded: true, error: "Supabase is not configured" };
+
+  const r = await rest("rpc/approve_entity", {
+    method: "POST",
+    body: JSON.stringify({ p_entity_id: entityId, p_reviewer_id: userId, p_note: typeof note === "string" ? note : null }),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const verdict = typeof r.data === "string" ? r.data : r.data?.approve_entity || "unknown";
+  return verdict === "ok" ? { ok: true } : { ok: false, verdict };
+}
+
 /** Approve an edge and its endpoints, atomically. Verdict returned unchanged. */
 export async function approveEntityRelationship(userId, relationshipId, {
   note = null, workspaceId = null,
@@ -1495,7 +1514,7 @@ export async function approveEntityRelationship(userId, relationshipId, {
 
   const r = await rest("rpc/approve_entity_relationship", {
     method: "POST",
-    body: JSON.stringify({ p_relationship_id: relationshipId, p_reviewer_id: userId, p_note: note }),
+    body: JSON.stringify({ p_relationship_id: relationshipId, p_reviewer_id: userId, p_note: typeof note === "string" ? note : null }),
   });
   if (!r.ok) return { ok: false, error: r.error };
   const verdict = typeof r.data === "string" ? r.data : r.data?.approve_entity_relationship || "unknown";
