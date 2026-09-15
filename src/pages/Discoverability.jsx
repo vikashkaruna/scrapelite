@@ -38,6 +38,7 @@ import {
 import AuditHistory from "../components/discoverability/AuditHistory.jsx";
 import AuditHeader from "../components/discoverability/AuditHeader.jsx";
 import ClosedLoopRibbon from "../components/discoverability/ClosedLoopRibbon.jsx";
+import ActiveAuditContext from "../components/discoverability/ActiveAuditContext.jsx";
 import BrandLoader from "../components/BrandLoader.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
@@ -46,10 +47,10 @@ import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 export const UNIFIED_DISCOVERABILITY_NAV = Object.freeze([
   { id: "audit", label: "Audit", icon: "scan-search" },
   { id: "truth", label: "Business Truth", icon: "database", path: "/discoverability/truth" },
-  { id: "entities", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
   { id: "trust", label: "Schema & Trust", icon: "shield-check", path: "/discoverability/trust" },
   { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
   { id: "scores", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
+  { id: "entities", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
   { id: "local", label: "Local Directory", icon: "map-pin", path: "/discoverability/local" },
   { id: "history", label: "History", icon: "clock" },
 ]);
@@ -605,6 +606,15 @@ export default function Discoverability() {
         auditId={audit?.auditId || null}
         currentStep={!audit ? "discover" : "score"}
       />
+
+      {audit?.auditId && (
+        <ActiveAuditContext
+          auditId={audit.auditId}
+          audit={audit}
+          workspaceId={currentWorkspaceId}
+          showReturnLink={false}
+        />
+      )}
 
       <nav className="dsc-tabs dsc-subnav-tabs" aria-label="Discoverability sections">
         {DISCOVERABILITY_VIEWS.map((v) => {

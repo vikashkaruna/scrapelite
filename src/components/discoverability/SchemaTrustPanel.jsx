@@ -12,7 +12,9 @@
 // source URL records a third-party observation; none records a self-published
 // one — and refuses the field outright if a client sends it.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useContext } from "react";
+import { AuthContext } from "../AuthProvider.jsx";
+import { cacheKey, readCache, loadWithCache } from "../../lib/discoverability/tabCache.js";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
@@ -42,22 +44,33 @@ export default function SchemaTrustPanel({ workspaceId = null }) {
   const [submitting, setSubmitting] = useState(false);
   const [trustForm, setTrustForm] = useState(EMPTY_FORM);
 
+  const cacheUserId = useContext(AuthContext)?.user?.id || null;
+
+  // Paint the last-seen schema and trust data from localStorage, then refresh from the database.
   const loadData = useCallback(async () => {
-    setLoading(true);
+    const key = cacheKey("schema-trust", { userId: cacheUserId, workspaceId });
+    if (!readCache(key)) setLoading(true);
     try {
-      const [schemaRes, trustRes] = await Promise.all([
-        discoverability.listSchemaEntities({ workspace_id: workspaceId }).catch(() => ({ entities: [] })),
-        (discoverability.listTrustObservations || discoverability.getTrustObservations)({ workspace_id: workspaceId }).catch(() => ({ observations: [], trust: null })),
-      ]);
-      setSchemaEntities(schemaRes.entities || []);
-      setTrustObservations(trustRes.observations || []);
-      setTrust(trustRes.trust || null);
+      await loadWithCache(key,
+        async () => {
+          const [schemaRes, trustRes] = await Promise.all([
+            discoverability.listSchemaEntities({ workspace_id: workspaceId }).catch(() => ({ entities: [] })),
+            (discoverability.listTrustObservations || discoverability.getTrustObservations)({ workspace_id: workspaceId }).catch(() => ({ observations: [], trust: null })),
+          ]);
+          return { schemaRes, trustRes };
+        },
+        ({ schemaRes, trustRes }) => {
+          setSchemaEntities(schemaRes?.entities || []);
+          setTrustObservations(trustRes?.observations || []);
+          setTrust(trustRes?.trust || null);
+          setLoading(false);
+        });
     } catch (err) {
       showToast(err.message || "Failed to load schema and trust data", "error");
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, showToast]);
+  }, [workspaceId, showToast, cacheUserId]);
 
   useEffect(() => {
     loadData();

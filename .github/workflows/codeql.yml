@@ -1,0 +1,64 @@
+# .github/workflows/codeql.yml
+#
+# Code Scanning (CodeQL)
+# ──────────────────────
+# Required by the "main-branch-securityquality-checks" ruleset on main
+# and staging. Runs CodeQL static analysis on JavaScript/TypeScript
+# source to satisfy GitHub's code_scanning rule.
+#
+# This is intentionally lightweight: the DatIQ codebase is a Vite+React
+# SPA with Netlify Functions — no compiled languages, so only the
+# "javascript-typescript" language pack is needed.
+
+name: "CodeQL"
+
+on:
+  push:
+    branches: [main, staging]
+    paths-ignore:
+      - 'docs/**'
+      - 'public/help/**'
+      - '*.md'
+  pull_request:
+    branches: [main, staging]
+    paths-ignore:
+      - 'docs/**'
+      - 'public/help/**'
+      - '*.md'
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # Only scan source, not node_modules or dist
+          config: |
+            paths:
+              - src
+              - netlify
+              - scripts
+            paths-ignore:
+              - node_modules
+              - dist
+              - public
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

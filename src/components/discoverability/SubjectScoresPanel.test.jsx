@@ -109,6 +109,8 @@ describe("SubjectScoresPanel", () => {
     const entityOptions = () => [...entitySelect.querySelectorAll("option")].map((o) => o.value).filter(Boolean);
     expect(kindSelect.value).toBe("brand");
     expect(entityOptions()).toEqual(["e-org"]);
+    // Proposed entity e-draft is present as disabled pending option
+    expect(screen.getByText(/Draft Co \(brand\) — Pending Approval/)).toBeInTheDocument();
     fireEvent.change(kindSelect, { target: { value: "product" } });
     expect(entityOptions()).toEqual(["e-prod"]);
     fireEvent.change(entitySelect, { target: { value: "e-prod" } });

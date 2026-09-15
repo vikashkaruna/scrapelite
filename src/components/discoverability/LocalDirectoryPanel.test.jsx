@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import LocalDirectoryPanel, { matchState } from "./LocalDirectoryPanel.jsx";
+import LocalDirectoryPanel, { matchState, IGNORE_REASONS } from "./LocalDirectoryPanel.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
 import { coverageClaim } from "../../lib/discoverability/directorySources.js";
 
@@ -31,7 +31,7 @@ const storedCheck = {
     { source_id: "justdial", match_score: 55, mismatched: ["phone"] },
   ],
   findings: [
-    { id: "f1", code: "LD-02", severity: "high", detail: "Justdial lists a different phone number.", fields: ["phone"] },
+    { id: "f1", code: "LD-02", severity: "high", detail: "Justdial lists a different phone number.", fields: ["phone"], source_id: "justdial" },
     { id: "f2", code: "LD-04", severity: "medium", detail: "Already handled.", fields: [], resolved_at: "2026-09-01", resolution: "listing_updated" },
   ],
 };
@@ -102,5 +102,75 @@ describe("LocalDirectoryPanel", () => {
     render(<LocalDirectoryPanel />);
     fireEvent.click(await screen.findByRole("button", { name: /Run NAP Check/ }));
     await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringMatching(/no score yet/), "check"));
+  });
+
+  it("renders portal configuration links and action hints for directory sources", async () => {
+    mockApi({ checks: [{ id: "chk-1" }], full: storedCheck });
+    render(<LocalDirectoryPanel />);
+    const portalLink = await screen.findByRole("link", { name: /Configure on Google Business Profile/ });
+    expect(portalLink).toHaveAttribute("href", "https://business.google.com/");
+    expect(screen.getByText(/Claim & manage official profile on Google Search & Maps/)).toBeTruthy();
+  });
+
+  it("declares a listing URL for a directory source", async () => {
+    mockApi({ records: [{ id: "tr-1" }], checks: [{ id: "chk-1" }], full: storedCheck, listings: [] });
+    vi.spyOn(discoverability, "upsertDirectoryListing").mockResolvedValue({ ok: true, listing: { id: "l-1" } });
+    render(<LocalDirectoryPanel workspaceId="ws-1" />);
+    const declareButtons = await screen.findAllByRole("button", { name: "Declare URL" });
+    expect(declareButtons.length).toBeGreaterThan(0);
+    const inputs = screen.getAllByPlaceholderText(/Enter listing URL/);
+    fireEvent.change(inputs[0], { target: { value: "https://business.google.com/profile/acme" } });
+    fireEvent.click(declareButtons[0]);
+    await waitFor(() => expect(discoverability.upsertDirectoryListing).toHaveBeenCalledWith({
+      truth_record_id: "tr-1",
+      source_id: "gbp",
+      listing_url: "https://business.google.com/profile/acme",
+      acquisition: "declared_url",
+      workspace_id: "ws-1",
+    }));
+  });
+
+  it("displays readable finding titles, source attribution, why it matters, and action explanations", async () => {
+    mockApi({ checks: [{ id: "chk-1" }], full: storedCheck });
+    render(<LocalDirectoryPanel />);
+    expect(await screen.findByText("A listing shows a different phone number")).toBeTruthy();
+    expect(screen.getByText(/Directory Source:/)).toHaveTextContent("Directory Source: Justdial");
+    expect(screen.getAllByText(/Why this matters:/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Fixed external profile to match truth record/)).toBeTruthy();
+    expect(screen.getByText(/Legitimate variance/)).toBeTruthy();
+  });
+});
+
+describe("LocalDirectoryPanel — ignoring sources that do not apply", () => {
+  beforeEach(() => { vi.restoreAllMocks(); toast.mockReset(); });
+
+  it("records an ignore with a reason for the selected truth record", async () => {
+    mockApi();
+    vi.spyOn(discoverability, "listDirectoryIgnores").mockResolvedValue({ ignores: [] });
+    const ignore = vi.spyOn(discoverability, "ignoreDirectorySource").mockResolvedValue({ ignore: {} });
+    render(<LocalDirectoryPanel workspaceId="ws-1" />);
+    await screen.findByText("Justdial");
+    const buttons = await screen.findAllByRole("button", { name: /Not applicable\? Ignore/ });
+    fireEvent.click(buttons[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Ignore source" }));
+    await waitFor(() => expect(ignore).toHaveBeenCalledWith({
+      truth_record_id: "tr-1", source_id: "justdial", reason: IGNORE_REASONS[0], workspace_id: "ws-1",
+    }));
+  });
+
+  it("hides ignored sources until asked, shows why, and restores them", async () => {
+    mockApi();
+    vi.spyOn(discoverability, "listDirectoryIgnores").mockResolvedValue({
+      ignores: [{ source_id: "mca", reason: "Not relevant to our industry", created_at: "2026-09-15" }],
+    });
+    const restore = vi.spyOn(discoverability, "restoreDirectorySource").mockResolvedValue({ restored: true });
+    render(<LocalDirectoryPanel />);
+    expect(await screen.findByText(/2 Applicable · 1 ignored/)).toBeTruthy();
+    expect(screen.queryByText("MCA registry")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show ignored (1)" }));
+    expect(await screen.findByText("MCA registry")).toBeTruthy();
+    expect(screen.getByText("Not relevant to our industry")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(restore).toHaveBeenCalledWith(expect.objectContaining({ truth_record_id: "tr-1", source_id: "mca" })));
   });
 });

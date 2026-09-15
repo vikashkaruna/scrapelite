@@ -233,4 +233,80 @@ describe("SxoDashboard (§11.15 / Deliverable 4.8)", () => {
       audit_id: "aud-test-101", workspace_id: "ws-1", name: "Qualified demo", outcome_type: "lead",
     })));
   });
+
+  it("provides Section A and Section B subnavigation switching", async () => {
+    render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} />);
+
+    const archTab = screen.getByRole("tab", { name: /SXO & Journey Architecture/i });
+    const portTab = screen.getByRole("tab", { name: /Validating SXO & Portfolio/i });
+    const allTab = screen.getByRole("tab", { name: /All Overview/i });
+
+    expect(archTab).toBeInTheDocument();
+    expect(portTab).toBeInTheDocument();
+    expect(allTab).toBeInTheDocument();
+
+    fireEvent.click(archTab);
+    expect(archTab).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(portTab);
+    expect(portTab).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(allTab);
+    expect(allTab).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("opens interactive funnel configuration and applies sample data", async () => {
+    render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} />);
+
+    const configBtn = screen.getByRole("button", { name: /Configure Funnel/i });
+    fireEvent.click(configBtn);
+
+    expect(screen.getByText("Interactive Funnel Configuration & Calibration")).toBeInTheDocument();
+
+    const sampleBtn = screen.getByRole("button", { name: /Load Sample B2B Funnel/i });
+    fireEvent.click(sampleBtn);
+
+    const applyBtn = screen.getByRole("button", { name: /Apply & Recalculate Funnel/i });
+    fireEvent.click(applyBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("25,000")).toBeInTheDocument();
+    });
+  });
+
+  it("re-calculates portfolio rollups when Re-calculate Rollup button is clicked", async () => {
+    const rollupSpy = vi.spyOn(discoverability, "getSxoPortfolioRollups").mockResolvedValue({
+      rollups: [{ axis_value: "Recalculated Segment", audit_count: 8, master_score: 82.5, coverage: 98 }],
+    });
+
+    render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} workspaceId="ws-1" />);
+
+    const recalcBtn = screen.getByRole("button", { name: /Re-calculate Rollup/i });
+    fireEvent.click(recalcBtn);
+
+    await waitFor(() => {
+      expect(rollupSpy).toHaveBeenCalledWith(expect.objectContaining({
+        axis: "template",
+        workspace_id: "ws-1",
+      }));
+      expect(screen.getByText("Recalculated Segment")).toBeInTheDocument();
+    });
+  });
+
+  it("displays measured Lead Delta when qualified_outcome_delta is present", async () => {
+    vi.spyOn(discoverability, "sxoJourney").mockResolvedValue({
+      funnel: {
+        qualified_outcome_delta: 14.8,
+        overall_conversion_rate: 4.2,
+        stage_results: [],
+      },
+    });
+
+    render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("+14.8%")).toBeInTheDocument();
+      expect(screen.getByText("vs baseline audit")).toBeInTheDocument();
+    });
+  });
 });

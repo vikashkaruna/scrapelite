@@ -437,3 +437,70 @@ describe("🔴 a parent id in a request body is a claim, not a fact", () => {
     expect(storeMock.getSubject).not.toHaveBeenCalled();
   });
 });
+
+// ═══ 0076 · directory sources marked not applicable ═════════════════════════
+
+describe("/local-directory/ignores", () => {
+  it("records an ignore with its reason, scoped to the truth record", async () => {
+    storeMock.ignoreDirectorySource = vi.fn(async () => ({ ok: true, ignore: { source_id: "practo" } }));
+    const res = await call("POST", "local-directory/ignores", {
+      body: { truth_record_id: "rec-1", source_id: "practo", reason: "Not relevant to our industry" },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(storeMock.ignoreDirectorySource).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      truthRecordId: "rec-1", sourceId: "practo", reason: "Not relevant to our industry",
+    }));
+  });
+
+  it("🔴 refuses an ignore with no reason — an unexplained ignore reads as a mis-click", async () => {
+    storeMock.ignoreDirectorySource = vi.fn();
+    const res = await call("POST", "local-directory/ignores", {
+      body: { truth_record_id: "rec-1", source_id: "practo", reason: "   " },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(parse(res).code).toBe("REASON_REQUIRED");
+    expect(storeMock.ignoreDirectorySource).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unknown source", async () => {
+    storeMock.ignoreDirectorySource = vi.fn();
+    const res = await call("POST", "local-directory/ignores", {
+      body: { source_id: "made_up_directory", reason: "x" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(storeMock.ignoreDirectorySource).not.toHaveBeenCalled();
+  });
+
+  it("🔴 404s an ignore against another tenant's truth record", async () => {
+    storeMock.getTruthRecord = vi.fn(async () => null);
+    storeMock.ignoreDirectorySource = vi.fn();
+    const res = await call("POST", "local-directory/ignores", {
+      body: { truth_record_id: "someone-else", source_id: "practo", reason: "x" },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(storeMock.ignoreDirectorySource).not.toHaveBeenCalled();
+  });
+
+  it("lists ignores and restores a source", async () => {
+    storeMock.listDirectorySourceIgnores = vi.fn(async () => [{ source_id: "practo", reason: "n/a" }]);
+    const list = parse(await call("GET", "local-directory/ignores", { query: { truth_record_id: "rec-1" } }));
+    expect(list.count).toBe(1);
+    storeMock.unignoreDirectorySource = vi.fn(async () => ({ ok: true }));
+    const res = await call("DELETE", "local-directory/ignores/practo", { body: { truth_record_id: "rec-1" } });
+    expect(res.statusCode).toBe(200);
+    expect(storeMock.unignoreDirectorySource).toHaveBeenCalledWith("user-1", expect.objectContaining({ sourceId: "practo", truthRecordId: "rec-1" }));
+  });
+
+  it("🔴 a NAP check excludes an ignored source from both the scored listings and the configured set", async () => {
+    storeMock.listDirectoryListings = vi.fn(async () => [listing()]);
+    storeMock.listDirectorySourceIgnores = vi.fn(async () => [{ source_id: "justdial", reason: "Not relevant" }]);
+    storeMock.saveLocalCheck = vi.fn(async () => ({ ok: true, check: { id: "chk-1" } }));
+    const res = await call("POST", "local-directory/check", {
+      body: { truth_record_id: "rec-1", canonical: CANONICAL, region: "in" },
+    });
+    const body = parse(res);
+    expect(body.ignored_sources).toEqual(["justdial"]);
+    expect(body.matches.map((m) => m.sourceId)).not.toContain("justdial");
+    expect(storeMock.saveLocalCheck.mock.calls[0][1].matches.map((m) => m.sourceId)).not.toContain("justdial");
+  });
+});

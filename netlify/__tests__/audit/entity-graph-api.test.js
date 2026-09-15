@@ -327,6 +327,14 @@ describe("approving a relationship", () => {
     expect(parse(res).error).toMatch(/silently revive/i);
   });
 
+  it("🔴 0076: owning a proposed endpoint is a 403 that says how to proceed, not a failed save", async () => {
+    storeMock.approveEntityRelationship = vi.fn(async () => ({ ok: false, verdict: "endpoint_self_approval" }));
+    const res = await call("POST", "entity-graph/relationships/r-1/approve");
+    expect(res.statusCode).toBe(403);
+    expect(parse(res).code).toBe("ENDPOINT_SELF_APPROVAL");
+    expect(parse(res).error).toMatch(/single-founder approval/i);
+  });
+
   it("does not fall through to 200 on an unrecognised verdict", async () => {
     storeMock.approveEntityRelationship = vi.fn(async () => ({ ok: false, verdict: "something_new" }));
     expect((await call("POST", "entity-graph/relationships/r-1/approve")).statusCode).toBe(500);

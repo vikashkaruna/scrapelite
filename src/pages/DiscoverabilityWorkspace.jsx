@@ -8,6 +8,8 @@ import SchemaTrustPanel from "../components/discoverability/SchemaTrustPanel.jsx
 import SubjectScoresPanel from "../components/discoverability/SubjectScoresPanel.jsx";
 import SxoDashboard from "../components/discoverability/SxoDashboard.jsx";
 import ClosedLoopRibbon from "../components/discoverability/ClosedLoopRibbon.jsx";
+import ActiveAuditContext from "../components/discoverability/ActiveAuditContext.jsx";
+import { readActiveAudit } from "../lib/discoverability/tabCache.js";
 import { UNIFIED_DISCOVERABILITY_NAV } from "./Discoverability.jsx";
 import { useWorkspace } from "../components/WorkspaceContext.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
@@ -17,11 +19,11 @@ import { discoverability } from "../lib/discoverability/discoverabilityClient.js
 
 export const DISCOVERABILITY_WORKSPACES = Object.freeze([
   { path: "/discoverability/truth", label: "Business Truth", icon: "database", component: BusinessTruthPanel, step: "implement" },
+  { path: "/discoverability/trust", label: "Schema & Trust", icon: "shield-check", component: SchemaTrustPanel, step: "implement" },
+  { path: "/discoverability/sxo", label: "SXO & Outcomes", icon: "zap", component: SxoDashboard, step: "validate" },
+  { path: "/discoverability/scores", label: "Subject Scores", icon: "award", component: SubjectScoresPanel, step: "benchmark" },
   { path: "/discoverability/entities", label: "Entity Graph", icon: "share-2", component: EntityGraphPanel, step: "expand" },
   { path: "/discoverability/local", label: "Local Directory", icon: "map-pin", component: LocalDirectoryPanel, step: "expand" },
-  { path: "/discoverability/trust", label: "Schema & Trust", icon: "shield-check", component: SchemaTrustPanel, step: "implement" },
-  { path: "/discoverability/scores", label: "Subject Scores", icon: "award", component: SubjectScoresPanel, step: "benchmark" },
-  { path: "/discoverability/sxo", label: "SXO & Outcomes", icon: "zap", component: SxoDashboard, step: "validate" },
 ]);
 
 function WorkspaceScreen() {
@@ -33,7 +35,12 @@ function WorkspaceScreen() {
   const config = DISCOVERABILITY_WORKSPACES.find((item) => item.path === pathname)
     || DISCOVERABILITY_WORKSPACES[0];
   const Screen = config.component;
-  const auditId = params.get("audit");
+  // The audit in the URL wins; otherwise keep working on the audit this user
+  // last opened in this workspace (remembered in localStorage), so moving
+  // between tabs never silently drops the context.
+  const auditId = params.get("audit")
+    || readActiveAudit({ userId: user?.id || null, workspaceId: currentWorkspaceId })?.id
+    || null;
 
   useSeo({
     title: `${config.label} — Discoverability | DatIQ`,
@@ -101,17 +108,7 @@ function WorkspaceScreen() {
           })}
         </nav>
 
-        {auditId && (
-          <div className="dsc-active-audit-banner">
-            <div className="dsc-active-audit-info">
-              <Icon name="scan-search" size={16} className="text-accent" />
-              <span>Active Audit Context: <code>{auditId}</code></span>
-            </div>
-            <Link to={`/discoverability?audit=${encodeURIComponent(auditId)}`} className="btn btn-ghost btn-sm">
-              Return to Audit Report &rarr;
-            </Link>
-          </div>
-        )}
+        {auditId && <ActiveAuditContext auditId={auditId} workspaceId={currentWorkspaceId} />}
 
         <Screen {...screenProps} />
       </div>

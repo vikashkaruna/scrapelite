@@ -18,6 +18,70 @@
 
 ---
 
+## 2026-09-15 IST — Discoverability tabs: localStorage-first loading, 1.1–1.4 → 5 step numbering, active-audit context, entity approval fix, ignorable directory sources, two-column pillars
+
+> **Branch:** `fix/discoverability-tabs-context`, cut from `origin/staging` @ `5ad8fc3`, then merged with `staging` after PR #179 (pricing consistency) landed · **Delivery:** PR into `staging` (direct pushes are refused by the CodeQL code-scanning rule) · **`main`:** untouched
+> **Migration:** `0076_endpoint_self_approval_and_directory_ignores.sql` — **apply to staging Supabase** before the ignore controls work; the approve fix is a `create or replace` · **Next migration number:** `0077`
+
+### 1. What was asked, and what shipped
+
+| Ask | Shipped |
+|---|---|
+| Tabs don't use localStorage | New `src/lib/discoverability/tabCache.js`. Business Truth, Schema & Trust, SXO, Subject Scores, Entity Graph, Local Directory and History paint their last payload from localStorage, then refresh from the database and overwrite the cache. Keys are scoped by user **and** workspace; sign-out sweeps the prefix (`GuestTrialProvider`). |
+| Number the loop 1.1–1.4, 2–5 | `ClosedLoopRibbon.jsx` — Discover/Score/Diagnose/Recommend are `1.1`–`1.4` (one audit does all four); Implement `2`, Validate `3`, Benchmark `4`, Expand `5`. |
+| Active audit context in brief | New `ActiveAuditContext.jsx` on the Audit page and every workspace tab: `Active audit (id8) domain · profile · device · page type · date/time`. Remembered per user/workspace so switching tabs keeps it. |
+| Entity Relationship "Couldn't save…" on Approve | **Root-caused on real Postgres (PGlite).** Approving an edge approves its proposed endpoints; when a teammate proposed the edge and the approver had proposed an endpoint, the panel sent the ordinary note and the endpoint UPDATE raised `23514 audit_entities_no_self_approval` → 500. Fixed in three places: `0076` returns `endpoint_self_approval` before any write, the route maps it to a 403 with guidance, and the panel sends the single-founder note when the user proposed the edge **or** an endpoint. |
+| Ignore directory sources that don't apply | New table `audit_directory_source_ignores` (reason required, per truth record, `NULLS NOT DISTINCT` arbiter, RLS service-role only). Routes `GET/POST /local-directory/ignores`, `DELETE /local-directory/ignores/{source_id}` (also in `docs/openapi.v1.json`). A NAP check excludes an ignored source from both the scored listings and the configured set. Panel: "Not applicable? Ignore" with reasons, "Show ignored (n)", Restore. |
+| Pillars in two columns, also in reports | `.dsc-pillar-grid` is 2 columns (1 column ≤720px). The PDF pillar breakdown is drawn in two columns; the Markdown report gains a two-column pillar summary table. |
+
+### 2. Verification
+
+- db-verify **76 migrations / 847 assertions / 0 failed** (+4 approve-verdict, +4 ignores assertions; tables 117 → 118).
+- `npm run test:prepush` **9/9 green**; prerender 28 pages / 112 refs present; help center regenerated.
+- New tests: `tabCache.test.js`, `ClosedLoopRibbon.test.jsx`, `ActiveAuditContext.test.jsx`, ignore + founder-note panel tests, ignore-route and endpoint-verdict contract tests. The 9 pre-existing NAP-check contract tests went red on the first draft (the route trusted the ignore lookup to return an array); the route now degrades to "nothing ignored".
+
+### 3. Open items
+
+- **Apply `0076` to staging Supabase** (and to production before `main`).
+- Not browser-verified: every Discoverability screen is signed-in only and needs live Supabase; covered by component/contract tests and db-verify.
+
+---
+
+## 2026-09-14 21:20 IST — Staging Merged Into Discoverability-P1-P3-implementation and the Result Promoted to Staging
+
+> **Branch:** `Discoverability-P1-P3-implementation` @ `7545a0f` (merge commit) · **`origin/staging`:** fast-forwarded `0ec1df9..7545a0f` · **`main`:** untouched
+> **Verification:** full local gate on the merged tree — vitest **432 files / 6,919 passed** · db-verify **73 migrations / 832 assertions** · referral 17 · workflows 56 · build · check:prerender 28 pages / 112 refs · security · `npm audit` 0 · `build:sql --check` 73 · readiness 6 pass / 1 warn — then the pre-push gate **all green in 256s** (Chromium smoke **159 passed**) on the single push that moved both refs
+
+### 1. Fresh-start orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-14 |
+| **Branch** | `Discoverability-P1-P3-implementation` — contains everything on `staging` |
+| **Merge commit** | `7545a0f` (both `origin/Discoverability-P1-P3-implementation` and `origin/staging` pointed here after the push) |
+| **What staging brought in** | 3 commits: `710607e` fix(auth) clarify staging signup failures, `a0b274d` prerender refresh, `0ec1df9` staging auth handoff |
+| **Status** | Merged, verified, pushed to both refs; this handoff record follows on the branch only |
+| **Deployment** | Pushing `staging` triggers the Netlify branch deploy. Not observed from this session — `staging.datiq.app` is Netlify-edge-gated (401) |
+| **Next migration number** | `0074` |
+
+**Start the next session by:** `git fetch && git log --oneline -3 origin/Discoverability-P1-P3-implementation origin/staging`. Under Node 24: `npm test`, `npm run test:db`.
+
+### 2. What was done
+
+- **Merge:** `git merge origin/staging` produced 30 conflicts, none in source code — staging's auth change (`AuthModal.jsx`, `authErrors.js` + tests) auto-merged cleanly against the Discoverability work.
+  - **28 prerendered pages** (`public/**/index.html`): resolved by taking one side and **regenerating all 28 with `npm run prerender`** from the merged source. They are generated output; hand-merging asset hashes from two builds would have produced pages matching neither.
+  - **`CLAUDE.md`**: kept this branch's header and carried staging's pointer forward as a `Prior (merged in from staging)` line.
+  - **`docs/sessions/SESSION-LOG.md`**: kept every entry from both sides; staging's "Staging signup diagnosis" entry inserted in date order (its commit is 03:03 IST, so directly above the 02:45 IST entry).
+- **Errors/issues found by verification:** none. The merged tree passed every gate first time; +4 tests relative to the pre-merge branch are staging's auth regressions.
+- **Promotion:** one `git push origin HEAD:Discoverability-P1-P3-implementation HEAD:staging`, after confirming both remote refs were ancestors (pure fast-forwards, no force).
+
+### 3. Operator actions and open items
+
+1. **Apply Supabase migrations `0065`–`0073` in order on staging (and later production) before relying on this deploy.** `staging` now carries code that sends `p_audit_limit` (needs `0073`; otherwise guest audits fail open) and reads `discoverability_role` (needs `0067`; otherwise workspace-scoped Discoverability requests return 403 `WORKSPACE_MEMBERSHIP_UNAVAILABLE`).
+2. **Carried from staging's handoff:** a real "Database error saving new user" on staging signup originates in the staging Supabase Auth hook / new-user trigger (project `aubwooslkkrprdxuiyvj`) — inspect Auth logs and repair; client code now reports it accurately.
+3. Confirm the Netlify staging deploy for `7545a0f` completed, then walk `/discoverability/truth|entities|local|trust|scores` with a real signed-in account — the rewritten panels are verified by component tests against API-shaped fixtures only.
+4. Another worktree (`.gemini/antigravity/worktrees/Extracta/prospect_engagement_engine_audit`) has local `staging` checked out at `0ec1df9`; it needs `git pull --ff-only`. Left untouched deliberately.
+5. `staging` is one docs-only commit (this record) behind the branch; it will arrive with the next promotion. `main` was not touched.
 ## 2026-09-15 01:50 IST — Discoverability Audit 504 Timeout Fixed, Competitor Limit 20 with Smart Entry, Closed-Loop Operating Ribbon, Account 2-Column Redesign & Full Verification Green; Merged to Staging
 
 > **Branch:** `fix_discoverability_audit_bugs` → merged to `staging` · **Target:** `staging`  
@@ -51,6 +115,42 @@
 - **Signal Rules & Integrations**: Optimistic caching on create/delete for Signal Rules; marked Slack, Airtable, Notion, and HubSpot as Available; sorted catalog: Available → Beta (Zapier) → Roadmap (Salesforce, Extension).
 
 ---
+
+## 2026-09-14 21:20 IST — Staging Merged Into Discoverability-P1-P3-implementation and the Result Promoted to Staging
+
+> **Branch:** `Discoverability-P1-P3-implementation` @ `7545a0f` (merge commit) · **`origin/staging`:** fast-forwarded `0ec1df9..7545a0f` · **`main`:** untouched
+> **Verification:** full local gate on the merged tree — vitest **432 files / 6,919 passed** · db-verify **73 migrations / 832 assertions** · referral 17 · workflows 56 · build · check:prerender 28 pages / 112 refs · security · `npm audit` 0 · `build:sql --check` 73 · readiness 6 pass / 1 warn — then the pre-push gate **all green in 256s** (Chromium smoke **159 passed**) on the single push that moved both refs
+
+### 1. Fresh-start orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-14 |
+| **Branch** | `Discoverability-P1-P3-implementation` — contains everything on `staging` |
+| **Merge commit** | `7545a0f` (both `origin/Discoverability-P1-P3-implementation` and `origin/staging` pointed here after the push) |
+| **What staging brought in** | 3 commits: `710607e` fix(auth) clarify staging signup failures, `a0b274d` prerender refresh, `0ec1df9` staging auth handoff |
+| **Status** | Merged, verified, pushed to both refs; this handoff record follows on the branch only |
+| **Deployment** | Pushing `staging` triggers the Netlify branch deploy. Not observed from this session — `staging.datiq.app` is Netlify-edge-gated (401) |
+| **Next migration number** | `0074` |
+
+**Start the next session by:** `git fetch && git log --oneline -3 origin/Discoverability-P1-P3-implementation origin/staging`. Under Node 24: `npm test`, `npm run test:db`.
+
+### 2. What was done
+
+- **Merge:** `git merge origin/staging` produced 30 conflicts, none in source code — staging's auth change (`AuthModal.jsx`, `authErrors.js` + tests) auto-merged cleanly against the Discoverability work.
+  - **28 prerendered pages** (`public/**/index.html`): resolved by taking one side and **regenerating all 28 with `npm run prerender`** from the merged source. They are generated output; hand-merging asset hashes from two builds would have produced pages matching neither.
+  - **`CLAUDE.md`**: kept this branch's header and carried staging's pointer forward as a `Prior (merged in from staging)` line.
+  - **`docs/sessions/SESSION-LOG.md`**: kept every entry from both sides; staging's "Staging signup diagnosis" entry inserted in date order (its commit is 03:03 IST, so directly above the 02:45 IST entry).
+- **Errors/issues found by verification:** none. The merged tree passed every gate first time; +4 tests relative to the pre-merge branch are staging's auth regressions.
+- **Promotion:** one `git push origin HEAD:Discoverability-P1-P3-implementation HEAD:staging`, after confirming both remote refs were ancestors (pure fast-forwards, no force).
+
+### 3. Operator actions and open items
+
+1. **Apply Supabase migrations `0065`–`0073` in order on staging (and later production) before relying on this deploy.** `staging` now carries code that sends `p_audit_limit` (needs `0073`; otherwise guest audits fail open) and reads `discoverability_role` (needs `0067`; otherwise workspace-scoped Discoverability requests return 403 `WORKSPACE_MEMBERSHIP_UNAVAILABLE`).
+2. **Carried from staging's handoff:** a real "Database error saving new user" on staging signup originates in the staging Supabase Auth hook / new-user trigger (project `aubwooslkkrprdxuiyvj`) — inspect Auth logs and repair; client code now reports it accurately.
+3. Confirm the Netlify staging deploy for `7545a0f` completed, then walk `/discoverability/truth|entities|local|trust|scores` with a real signed-in account — the rewritten panels are verified by component tests against API-shaped fixtures only.
+4. Another worktree (`.gemini/antigravity/worktrees/Extracta/prospect_engagement_engine_audit`) has local `staging` checked out at `0ec1df9`; it needs `git pull --ff-only`. Left untouched deliberately.
+5. `staging` is one docs-only commit (this record) behind the branch; it will arrive with the next promotion. `main` was not touched.
 
 ## 2026-09-14 20:15 IST — Discoverability P1–P3 End-to-End Review: Tenancy Leak, Guest-Quota Bypass and Four Broken Workspace Panels Fixed; Pushed
 

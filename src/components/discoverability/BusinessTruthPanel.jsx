@@ -13,7 +13,9 @@
 // offered no way to create a record at all. Everything below reads the full
 // record the API returns and the field registry the route validates against.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useContext } from "react";
+import { AuthContext } from "../AuthProvider.jsx";
+import { cacheKey, readCache, loadWithCache } from "../../lib/discoverability/tabCache.js";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
@@ -56,34 +58,45 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
   const [formFields, setFormFields] = useState({});
   const [busyVersion, setBusyVersion] = useState(null);
   const [resolveLoading, setResolveLoading] = useState(null);
+  const authContext = useContext(AuthContext);
+  const cacheUserId = currentUser?.id || authContext?.user?.id || null;
 
+  // Paint the last-seen records from localStorage, then refresh from the database.
   const loadRecords = useCallback(async () => {
-    setLoading(true);
+    const key = cacheKey("truth.records", { userId: cacheUserId, workspaceId });
+    if (!readCache(key)) setLoading(true);
     try {
-      const res = await discoverability.listTruthRecords({ workspace_id: workspaceId });
-      const list = res.records || [];
-      setRecords(list);
-      setSelectedId((current) => (current && list.some((r) => r.id === current) ? current : list[0]?.id || ""));
+      await loadWithCache(key,
+        () => discoverability.listTruthRecords({ workspace_id: workspaceId }),
+        (res) => {
+          const list = res?.records || [];
+          setRecords(list);
+          setSelectedId((current) => (current && list.some((r) => r.id === current) ? current : list[0]?.id || ""));
+          setLoading(false);
+        });
     } catch (err) {
       showToast(err.message || "Could not load business truth records", "error");
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, showToast]);
+  }, [workspaceId, showToast, cacheUserId]);
 
   const loadDetail = useCallback(async (recordId) => {
     if (!recordId) { setDetail(null); setDiff(null); return; }
     try {
-      const [full, diffRes] = await Promise.all([
-        discoverability.getTruthRecord(recordId, { workspaceId }),
-        discoverability.truthDiff(recordId, { workspaceId }).catch(() => null),
-      ]);
-      setDetail(full);
-      setDiff(diffRes);
+      await loadWithCache(cacheKey("truth.detail", { userId: cacheUserId, workspaceId }, recordId),
+        async () => {
+          const [full, diffRes] = await Promise.all([
+            discoverability.getTruthRecord(recordId, { workspaceId }),
+            discoverability.truthDiff(recordId, { workspaceId }).catch(() => null),
+          ]);
+          return { full, diffRes };
+        },
+        ({ full, diffRes }) => { setDetail(full); setDiff(diffRes); });
     } catch (err) {
       showToast(err.message || "Could not load the record", "error");
     }
-  }, [workspaceId, showToast]);
+  }, [workspaceId, showToast, cacheUserId]);
 
   useEffect(() => { loadRecords(); }, [loadRecords]);
   useEffect(() => { loadDetail(selectedId); }, [selectedId, loadDetail]);
@@ -163,21 +176,20 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
     }
   };
 
-  const handlePromote = async (version, isSelfApproval = false) => {
-    if (!isSelfApproval && currentUser?.id && version.proposed_by === currentUser.id) {
-      showToast(
-        "Self-approval requires single-founder confirmation. Use the Single Founder action to record in audit trail.",
-        "warning",
-      );
-      return;
-    }
+  const handlePromote = async (version) => {
+    const isSelfApproval = Boolean(currentUser?.id && version.proposed_by === currentUser.id);
     setBusyVersion(version.id);
     try {
       const note = isSelfApproval
         ? "[Single-founder approval] Self-approved by solo operator and recorded in audit trail."
         : "Promoted by review";
-      await discoverability.promoteTruthVersion(record.id, version.id, { note, workspaceId });
-      showToast(isSelfApproval ? "Self-approved as single founder & promoted to canonical truth." : "Version promoted to canonical truth.", "check");
+      await discoverability.promoteTruthVersion(record.id, version.id, note, { workspaceId });
+      showToast(
+        isSelfApproval
+          ? "Approved as solo operator & promoted to canonical truth (audit trail recorded)."
+          : "Version promoted to canonical truth.",
+        "check",
+      );
       refresh();
     } catch (err) {
       if (err.code === "SELF_APPROVAL") {
@@ -382,12 +394,12 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
                             </div>
                             {v.proposed_by && (
                               <div style={{ fontSize: "0.75rem", color: "var(--text-sub)", marginTop: "0.25rem" }}>
-                                Proposed by: {mine ? "You" : v.proposed_by}
+                                Proposed by: {mine ? "You (solo operator approval active)" : v.proposed_by}
                               </div>
                             )}
                             {v.state === "pending_review" && mine && (
-                              <div style={{ fontSize: "0.75rem", color: "var(--text-sub)", marginTop: "0.25rem" }}>
-                                You proposed this version, so a second person has to approve it.
+                              <div style={{ fontSize: "0.75rem", color: "var(--text-sub)", marginTop: "0.25rem", fontStyle: "italic" }}>
+                                Solo operator can self-approve. In workspaces with multiple team members, a second approver can be assigned via maker-checker.
                               </div>
                             )}
                           </div>
@@ -400,23 +412,16 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
                             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
                               <Button
                                 size="sm" variant="secondary"
-                                onClick={() => handlePromote(v, false)}
+                                onClick={() => handlePromote(v)}
                                 loading={busyVersion === v.id}
-                                disabled={mine}
-                                title={mine ? "You proposed this version" : undefined}
+                                title={
+                                  mine
+                                    ? "Approve as workspace operator (recorded in audit trail). For teams, secondary maker-checker can be assigned."
+                                    : "Approve version and promote to canonical truth"
+                                }
                               >
                                 Approve & Promote
                               </Button>
-                              {mine && (
-                                <Button
-                                  size="sm" variant="secondary"
-                                  onClick={() => handlePromote(v, true)}
-                                  loading={busyVersion === v.id}
-                                  title="Self-approve as single founder (recorded in audit trail)"
-                                >
-                                  Self-approve (Single Founder)
-                                </Button>
-                              )}
                             </div>
                           )}
                         </div>

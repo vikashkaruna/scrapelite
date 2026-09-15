@@ -1483,6 +1483,25 @@ export async function getRelationship(userId, relationshipId, { workspaceId = nu
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
+/** Approve an entity node directly. Verdict returned unchanged. */
+export async function approveEntity(userId, entityId, {
+  note = null, workspaceId = null,
+} = {}) {
+  const owned = await getEntity(userId, entityId, { workspaceId });
+  if (!owned) return { ok: false, notFound: true };
+
+  const conn = db();
+  if (!conn) return { ok: false, degraded: true, error: "Supabase is not configured" };
+
+  const r = await rest("rpc/approve_entity", {
+    method: "POST",
+    body: JSON.stringify({ p_entity_id: entityId, p_reviewer_id: userId, p_note: typeof note === "string" ? note : null }),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const verdict = typeof r.data === "string" ? r.data : r.data?.approve_entity || "unknown";
+  return verdict === "ok" ? { ok: true } : { ok: false, verdict };
+}
+
 /** Approve an edge and its endpoints, atomically. Verdict returned unchanged. */
 export async function approveEntityRelationship(userId, relationshipId, {
   note = null, workspaceId = null,
@@ -1495,7 +1514,7 @@ export async function approveEntityRelationship(userId, relationshipId, {
 
   const r = await rest("rpc/approve_entity_relationship", {
     method: "POST",
-    body: JSON.stringify({ p_relationship_id: relationshipId, p_reviewer_id: userId, p_note: note }),
+    body: JSON.stringify({ p_relationship_id: relationshipId, p_reviewer_id: userId, p_note: typeof note === "string" ? note : null }),
   });
   if (!r.ok) return { ok: false, error: r.error };
   const verdict = typeof r.data === "string" ? r.data : r.data?.approve_entity_relationship || "unknown";
@@ -1643,6 +1662,57 @@ export async function deleteDirectoryListing(userId, listingId, { workspaceId = 
   );
   const row = Array.isArray(r.data) ? r.data[0] : r.data;
   return row ? { ok: true } : { ok: false, notFound: true };
+}
+
+/**
+ * Directory sources marked NOT APPLICABLE to a truth record (0076).
+ *
+ * An ignore is a recorded decision with a reason, not a deletion: it excludes
+ * the source from NAP checks and is undone by removing the row.
+ */
+export async function listDirectorySourceIgnores(userId, {
+  truthRecordId = null, workspaceId = null,
+} = {}) {
+  const parts = [ownerOrWorkspace(userId, workspaceId)];
+  if (truthRecordId) parts.push(`truth_record_id=eq.${encodeURIComponent(truthRecordId)}`);
+  const r = await rest(`audit_directory_source_ignores?${parts.join("&")}&${SELECT_ALL}&order=created_at.desc&limit=500`);
+  return r.ok ? r.data || [] : [];
+}
+
+export async function ignoreDirectorySource(userId, {
+  truthRecordId = null, sourceId, reason, workspaceId = null,
+}) {
+  const r = await rest("audit_directory_source_ignores?on_conflict=user_id,truth_record_id,source_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify([{
+      user_id: userId,
+      workspace_id: workspaceId,
+      truth_record_id: truthRecordId,
+      source_id: sourceId,
+      reason,
+      ignored_by: userId,
+      created_at: new Date().toISOString(),
+    }]),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  const row = Array.isArray(r.data) ? r.data[0] : r.data;
+  return row ? { ok: true, ignore: row } : { ok: false, error: "No row was returned." };
+}
+
+export async function unignoreDirectorySource(userId, {
+  truthRecordId = null, sourceId, workspaceId = null,
+}) {
+  const parts = [
+    ownerOrWorkspace(userId, workspaceId),
+    `source_id=eq.${encodeURIComponent(sourceId)}`,
+    truthRecordId ? `truth_record_id=eq.${encodeURIComponent(truthRecordId)}` : "truth_record_id=is.null",
+  ];
+  const r = await rest(`audit_directory_source_ignores?${parts.join("&")}`, {
+    method: "DELETE", headers: { Prefer: "return=representation" },
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  return Array.isArray(r.data) && r.data.length ? { ok: true } : { ok: false, notFound: true };
 }
 
 /**

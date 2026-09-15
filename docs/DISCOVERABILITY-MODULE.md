@@ -1036,6 +1036,37 @@ deletion is what an audit trail exists to prevent. Nothing calls
 - **`PERMITTED_HOSTS` is EXCLUSIVE.** Setting it blocks every host not listed,
   for audits as well as extraction.
 
+- **Approving an edge approves its proposed endpoints — so self-approval has two
+  halves (0076).** 0074 let a single founder self-approve the *edge* and 0075 the
+  *entity*, but `approve_entity_relationship` never asked whether the reviewer
+  had proposed an *endpoint*. A teammate's edge between entities the reviewer
+  proposed raised a raw 23514 from the endpoint UPDATE, which surfaced as a
+  failed save. The function now returns `endpoint_self_approval` before any
+  write, the route maps it to a 403 that says how to proceed, and the panel sends
+  the `[Single-founder approval]` note when the user proposed the edge **or**
+  either still-proposed endpoint. Reproduced on PGlite before the fix; pinned in
+  db-verify.
+
+- **Tab caches are paint-only, never authority (`tabCache.js`).** Every workspace
+  tab paints its last payload from localStorage and then refreshes from the
+  database. Keys are scoped by **user and workspace**, sign-out sweeps the whole
+  `datiq.dsc.cache.v1:` / `datiq.dsc.activeAudit.v1:` prefix, payloads over
+  ~400 KB are simply not cached, and a failed fetch keeps the cached paint but
+  still surfaces its error. Do not read a cached payload to *decide* anything.
+
+- **An ignored directory source is excluded from BOTH sides of the NAP score
+  (0076).** Its listing is not matched and it is not counted as a configured
+  source that went unchecked — otherwise ignoring a source would either lower or
+  pad the score. An ignore requires a reason, is per truth record, uses a
+  `NULLS NOT DISTINCT` column arbiter so PostgREST can upsert it, and is undone
+  by deleting the row. An unreadable ignore list degrades to "nothing ignored",
+  never to a failed check.
+
+- **The step ribbon is hierarchical.** One audit performs Discover, Score,
+  Diagnose and Recommend, so they are `1.1`–`1.4`; Implement, Validate,
+  Benchmark and Expand are `2`–`5`. `CLOSED_LOOP_STEPS[].number` is the display
+  source — do not recompute numbers from array indexes.
+
 ---
 
 ## 7. Deliberately not built

@@ -5,11 +5,11 @@ describe("Discoverability workspace route contract", () => {
   it("exposes the six dedicated Stage 1 workspace routes in plan order", () => {
     expect(DISCOVERABILITY_WORKSPACES.map(({ path }) => path)).toEqual([
       "/discoverability/truth",
+      "/discoverability/trust",
+      "/discoverability/sxo",
+      "/discoverability/scores",
       "/discoverability/entities",
       "/discoverability/local",
-      "/discoverability/trust",
-      "/discoverability/scores",
-      "/discoverability/sxo",
     ]);
   });
 

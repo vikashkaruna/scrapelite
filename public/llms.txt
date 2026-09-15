@@ -68,7 +68,7 @@ All of the above are reachable from a single Push menu on Preview, Dashboard, an
 - Priority support (Business + Agency): contact-form submissions are routed through a faster SLA.
 - Extra Workspace add-on: same features as the parent plan, capped at the parent plan's team-seats limit (e.g. 3 seats on Business).
 - Enterprise: Custom ≥$1,000/mo — SSO, DPA, SLA, on-prem
-- 20% discount on all annual plans
+- Annual billing saves about 17% on every paid plan (e.g. Select $12/mo billed annually vs $14.40 monthly)
 
 ## Target Users
 SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and content marketers, Market researchers, Recruiters, Startup founders, VCs (due diligence), Digital agencies

@@ -263,9 +263,19 @@ export const discoverability = {
   rejectTruthVersion: (recordId, versionId, note, { workspaceId = null } = {}) =>
     req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/reject`, "POST",
       withWorkspace({ note }, workspaceId)),
-  promoteTruthVersion: (recordId, versionId, note = null, { workspaceId = null } = {}) =>
-    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/promote`, "POST",
-      withWorkspace({ note }, workspaceId)),
+  promoteTruthVersion: (recordId, versionId, noteOrOpts = null, maybeOpts = {}) => {
+    let note = null;
+    let workspaceId = null;
+    if (noteOrOpts && typeof noteOrOpts === "object") {
+      note = noteOrOpts.note || null;
+      workspaceId = noteOrOpts.workspaceId || noteOrOpts.workspace_id || maybeOpts.workspaceId || maybeOpts.workspace_id || null;
+    } else {
+      note = noteOrOpts;
+      workspaceId = maybeOpts.workspaceId || maybeOpts.workspace_id || null;
+    }
+    return req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/promote`, "POST",
+      withWorkspace({ note }, workspaceId));
+  },
 
   truthDiff: (recordId, { from = null, to = null, workspaceId = null, workspace_id = null } = {}) => {
     const q = new URLSearchParams(
@@ -283,11 +293,6 @@ export const discoverability = {
 
   // ── Entity graph (W10) ───────────────────────────────────────────────────
   //
-  // ⚠️ THERE IS NO METHOD THAT CREATES AN APPROVED ROW, and no PATCH that
-  // reaches `approved`. `approveRelationship` is the only way in, because
-  // approving an edge also approves its endpoints — an approved edge between
-  // two unreviewed nodes is a half-built statement, and a second path would be
-  // the one that forgets.
   graphSchema: () => req("/entity-graph/schema"),
   getGraph: (params = {}) => {
     const q = new URLSearchParams(
@@ -298,6 +303,20 @@ export const discoverability = {
 
   /** `source` may only be `declared` or `inferred`; the server writes observed. */
   proposeEntity: (payload) => req("/entity-graph/entities", "POST", payload),
+  /** Approve an entity node directly */
+  approveEntity: (id, noteOrOpts = null, maybeOpts = {}) => {
+    let note = null;
+    let workspaceId = null;
+    if (noteOrOpts && typeof noteOrOpts === "object") {
+      note = noteOrOpts.note || null;
+      workspaceId = noteOrOpts.workspaceId || noteOrOpts.workspace_id || maybeOpts.workspaceId || maybeOpts.workspace_id || null;
+    } else {
+      note = noteOrOpts;
+      workspaceId = maybeOpts.workspaceId || maybeOpts.workspace_id || null;
+    }
+    return req(`/entity-graph/entities/${encodeURIComponent(id)}/approve`, "POST",
+      withWorkspace({ note }, workspaceId));
+  },
   /** `reason` is REQUIRED — the server refuses a rejection without one. */
   rejectEntity: (id, reason, { workspaceId = null } = {}) =>
     req(`/entity-graph/entities/${encodeURIComponent(id)}/reject`, "POST", withWorkspace({ reason }, workspaceId)),
@@ -307,9 +326,22 @@ export const discoverability = {
   }) =>
     req("/entity-graph/relationships", "POST",
       withWorkspace({ subject_id: subjectId, predicate, object_id: objectId, source, note }, workspaceId)),
-  approveRelationship: (id, { note = null, truthRecordId = null, workspaceId = null } = {}) =>
-    req(`/entity-graph/relationships/${encodeURIComponent(id)}/approve`, "POST",
-      withWorkspace({ note, truth_record_id: truthRecordId }, workspaceId)),
+  approveRelationship: (id, noteOrOpts = {}, maybeOpts = {}) => {
+    let note = null;
+    let truthRecordId = null;
+    let workspaceId = null;
+    if (typeof noteOrOpts === "string") {
+      note = noteOrOpts;
+      workspaceId = maybeOpts.workspaceId || maybeOpts.workspace_id || null;
+      truthRecordId = maybeOpts.truthRecordId || maybeOpts.truth_record_id || null;
+    } else if (noteOrOpts && typeof noteOrOpts === "object") {
+      note = noteOrOpts.note || null;
+      truthRecordId = noteOrOpts.truthRecordId || noteOrOpts.truth_record_id || maybeOpts.truthRecordId || maybeOpts.truth_record_id || null;
+      workspaceId = noteOrOpts.workspaceId || noteOrOpts.workspace_id || maybeOpts.workspaceId || maybeOpts.workspace_id || null;
+    }
+    return req(`/entity-graph/relationships/${encodeURIComponent(id)}/approve`, "POST",
+      withWorkspace({ note, truth_record_id: truthRecordId }, workspaceId));
+  },
   rejectRelationship: (id, reason, { workspaceId = null } = {}) =>
     req(`/entity-graph/relationships/${encodeURIComponent(id)}/reject`, "POST",
       withWorkspace({ reason }, workspaceId)),
@@ -363,6 +395,14 @@ export const discoverability = {
   deleteDirectoryListing: (id, payload = {}) =>
     req(`/local-directory/listings/${encodeURIComponent(id)}`, "DELETE", payload),
   runLocalCheck: (payload) => req("/local-directory/check", "POST", payload),
+  /** Sources marked not applicable to a truth record (0076). */
+  listDirectoryIgnores: ({ truth_record_id = null, workspace_id = null } = {}) =>
+    req(withQuery("/local-directory/ignores", { truth_record_id, workspace_id })),
+  /** `reason` is REQUIRED — the server refuses an ignore without one. */
+  ignoreDirectorySource: ({ truth_record_id = null, source_id, reason, workspace_id = null }) =>
+    req("/local-directory/ignores", "POST", { truth_record_id, source_id, reason, workspace_id }),
+  restoreDirectorySource: ({ truth_record_id = null, source_id, workspace_id = null }) =>
+    req(`/local-directory/ignores/${encodeURIComponent(source_id)}`, "DELETE", { truth_record_id, workspace_id }),
   listLocalChecks: (params = {}) => {
     const q = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
