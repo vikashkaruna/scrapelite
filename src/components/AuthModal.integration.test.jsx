@@ -197,6 +197,30 @@ describe("I-42 — AuthModal", () => {
     expect(authMocks.signUpWithEmail).toHaveBeenCalledWith("bob@example.com", "sup3rs3cure");
   });
 
+  it("shows account-creation guidance, not a password-reset CTA, when Supabase cannot save a new user", async () => {
+    authMocks.signUpWithEmail.mockRejectedValue({
+      code: "unexpected_failure",
+      message: "Database error saving new user",
+    });
+    render(<Shell authMode="signup" />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "new@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: "sup3rs3cure" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("alert").textContent).toMatch(/sign-up service couldn't save/i);
+    expect(screen.queryByRole("button", { name: /reset password/i })).toBeNull();
+  });
+
   it("authError from the provider is shown in the error banner", async () => {
     // Drive the URL-hash error path the AuthProvider watches on mount
     // (the OAuth-redirect path is the only external way to seed authError).

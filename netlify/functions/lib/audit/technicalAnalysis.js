@@ -16,6 +16,7 @@ import {
   CWV_THRESHOLDS,
 } from "../../../../src/lib/discoverability/signalScorers.js";
 import { AI_CRAWLERS } from "../../../../src/lib/discoverability/constructTemplates.js";
+import { nullEvidenceCollector } from "./evidenceCollector.js";
 
 /**
  * Below this share of content surviving in raw HTML, the page is treated as
@@ -42,6 +43,7 @@ export function analyseTechnical(parsed, ctx = {}) {
   const reasons = {};
   const issues = [];
   const penalties = [];
+  const E = ctx.evidence || nullEvidenceCollector();
 
   const meta = parsed.meta || {};
   const fetchFacts = ctx.fetch || {};
@@ -203,6 +205,52 @@ export function analyseTechnical(parsed, ctx = {}) {
     if (cwv.lcp != null) raise("TA-09", "lcp", cwv.lcp);
     if (cwv.inp != null) raise("TA-10", "inp", cwv.inp);
     if (cwv.cls != null) raise("TA-11", "cls", cwv.cls);
+
+    // ── TA-17: severe, as distinct from failing ──────────────────────────
+    //
+    // The three issues above already report every metric past its GOOD
+    // threshold, and the signal score already carries the cost of that. This
+    // is a different claim — that performance has crossed from an experience
+    // problem into a discovery one — and it must not fire on a page that is
+    // merely a bit slow, or it stops meaning anything.
+    //
+    // Two rules, either of which qualifies, and neither of which invents a
+    // number that is not already published or arithmetically obvious:
+    //
+    //   * TWO OR MORE metrics past their POOR threshold. One marginal reading
+    //     is a fault; two independent ones is a characteristic of the page.
+    //   * ONE metric at or beyond TWICE its poor threshold — LCP ≥ 8s,
+    //     INP ≥ 1000ms, CLS ≥ 0.5. Each of those is unarguable on its own, and
+    //     without this clause a catastrophic single reading escapes whenever
+    //     CrUX returns only one metric, which for low-traffic URLs is common.
+    //
+    // ⚠️ It is deliberately possible for this NOT to fire on a page with one
+    // poor metric. `unknown ≠ 0` has a sibling: "bad" is not "severe", and a
+    // blocker that treats them alike would take 10% off a large share of the
+    // ordinary web.
+    const measured = [["lcp", cwv.lcp], ["inp", cwv.inp], ["cls", cwv.cls]]
+      .filter(([, v]) => v != null && Number.isFinite(v));
+    const poor = measured.filter(([m, v]) => v > CWV_THRESHOLDS[m].poor);
+    const catastrophic = measured.filter(([m, v]) => v >= CWV_THRESHOLDS[m].poor * 2);
+
+    if (poor.length >= 2 || catastrophic.length >= 1) {
+      const worst = (catastrophic.length ? catastrophic : poor)
+        .map(([m, v]) => `${CWV_THRESHOLDS[m].label} ${v}${CWV_THRESHOLDS[m].unit} (poor above ${CWV_THRESHOLDS[m].poor}${CWV_THRESHOLDS[m].unit})`);
+      penalties.push("SEVERE_CWV_FAILURE");
+      issues.push({
+        code: "TA-17", signalCode: "core_web_vitals", measuredScore: signals.core_web_vitals,
+        evidence: `${worst.join("; ")}. ${
+          catastrophic.length
+            ? "That is at or beyond twice the poor threshold."
+            : "Two or more metrics are past their poor threshold."
+        }`,
+        details: {
+          poor: poor.map(([m]) => m),
+          catastrophic: catastrophic.map(([m]) => m),
+          source: cwv.source || null,
+        },
+      });
+    }
   }
 
   // ── mobile parity ────────────────────────────────────────────────────────
@@ -269,6 +317,89 @@ export function analyseTechnical(parsed, ctx = {}) {
   // here, where the rest of the multiplicative layer lives.
   if (ctx.faqMismatch) penalties.push("FAQ_SCHEMA_MISMATCH");
 
+  // Entity markup that declares a thing and never names it is an identity
+  // failure, not a technical one — the entity analyser detects it and raises
+  // EA-11. The PENALTY arrives here for the same reason FAQ_SCHEMA_MISMATCH
+  // does: the multiplicative layer lives in one place, so there is one list to
+  // read when asking "why is this page's score scaled down".
+  if (ctx.entitySchemaInvalid) penalties.push("ENTITY_SCHEMA_INVALID");
+
+  // ── record what was read ─────────────────────────────────────────────────
+  // This pillar's readings come from four different places — the HTTP response,
+  // robots.txt, a third-party performance API and the document itself — and the
+  // `method` on each record is what lets a reader tell them apart. Two of them
+  // are not the customer's own page at all, and one of those (Core Web Vitals)
+  // is somebody else's measurement, which is exactly the sort of thing a
+  // customer disputes and therefore exactly the sort of thing that needs a
+  // source and a timestamp attached.
+  E.signal("crawl_index_eligibility", {
+    method: "http_response",
+    section: "Status, robots directives and crawler access",
+    observedValue: {
+      status,
+      noindex: Boolean(meta.noindex),
+      canonical: canonical || null,
+      canonical_self_reference: canonicalSelf,
+      ai_crawlers_allowed: access ? Object.values(access).filter((v) => v === true).length : null,
+      ai_crawlers_blocked: access ? Object.values(access).filter((v) => v === false).length : null,
+    },
+    excerpt: meta.robots || "",
+    structured: {
+      ai_crawler_access: aiAccessFacts || null,
+      robots_error: ctx.robotsError || null,
+      sitemaps: (ctx.sitemaps || []).slice(0, 10),
+    },
+  });
+  E.signal("render_completeness", {
+    // Deliberately `rendered_dom`: this signal exists ONLY because we compared
+    // two fetches, and filing it as `raw_html` would misdescribe the one
+    // measurement in the audit that needs both.
+    method: "rendered_dom",
+    section: "Raw HTML compared against rendered DOM",
+    observedValue: {
+      raw_word_count: rawWords ?? null,
+      rendered_word_count: renderedWords ?? null,
+      content_loss_ratio: loss,
+      js_shell: Boolean(fetchFacts.rawIsJsShell),
+    },
+    structured: { renderer: fetchFacts.renderer || null },
+  });
+  if (cwv && (cwv.lcp != null || cwv.inp != null || cwv.cls != null)) {
+    E.signal("core_web_vitals", {
+      method: "external_api",
+      section: `${cwv.source || "lab"} measurement`,
+      observedValue: { lcp: cwv.lcp ?? null, inp: cwv.inp ?? null, cls: cwv.cls ?? null, ttfb: cwv.ttfb ?? null },
+      structured: {
+        source: cwv.source || null,
+        thresholds: {
+          lcp: CWV_THRESHOLDS.lcp.good, inp: CWV_THRESHOLDS.inp.good, cls: CWV_THRESHOLDS.cls.good,
+        },
+      },
+    });
+  }
+  E.signal("mobile_parity", {
+    method: "raw_html",
+    selector: "meta[name='viewport']",
+    section: "Viewport declaration",
+    observedValue: { viewport: meta.viewport || null, head_reliable: fetchFacts.headSignalsReliable !== false },
+    excerpt: meta.viewport || "",
+  });
+  E.signal("structured_data_validity", {
+    method: "json_ld",
+    selector: "script[type='application/ld+json']",
+    section: "Structured-data blocks",
+    observedValue: {
+      blocks: blockCount,
+      parse_errors: jsonLdErrors.length,
+      microdata_items: (parsed.microdata || []).reduce((a, m) => a + m.count, 0),
+    },
+    structured: {
+      types: parsed.schemaTypes || [],
+      errors: jsonLdErrors.slice(0, 3),
+      microdata: (parsed.microdata || []).slice(0, 10),
+    },
+  });
+
   return {
     signals, reasons, issues, penalties,
     facts: {
@@ -301,7 +432,15 @@ export function analyseTechnical(parsed, ctx = {}) {
         block_count: blockCount,
         parse_errors: jsonLdErrors.length,
         types: parsed.schemaTypes || [],
+        // The BRD asks for a JSON-LD *and microdata* inventory. Types alone
+        // cannot distinguish "you have Product markup" from "you have forty
+        // Product blocks, none of which names a price".
+        microdata: parsed.microdata || [],
       },
+      // A sitemap declaration read from the host's own robots.txt, which we
+      // already fetched for crawler access. Empty means none was declared —
+      // NOT that none exists, since /sitemap.xml can be served undeclared.
+      sitemaps: ctx.sitemaps || [],
       checked_ai_crawlers: AI_CRAWLERS,
     },
   };

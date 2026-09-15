@@ -967,6 +967,26 @@ describe("extract — robots.txt refusal", () => {
     expect(consumeSpy).toHaveBeenCalled();
   });
 
+  // 🔴 consumeGuestCredit used to exempt ANY request carrying an Authorization
+  // header, so a forged bearer bought unlimited guest extractions. The charge
+  // is now exempted only for a user id the entitlement resolver verified.
+  it("charges a request whose bearer token did not verify, like any guest", async () => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(new Response("User-agent: *\nAllow: /\n", { status: 200 }));
+    const consumeSpy = vi.fn(async () => ({ allowed: false, cookie: null, reason: "single_limit_reached" }));
+    const h = await loadWithMocks({ consumeSpy, user: null });
+    const r = await h({ ...linkedInEvent, headers: { authorization: "Bearer forged" } });
+    expect(consumeSpy).toHaveBeenCalledWith(expect.anything(), "single", { verifiedUserId: null });
+    expect(r.statusCode).toBe(429);
+  });
+
+  it("exempts a verified signed-in user from the guest charge", async () => {
+    const consumeSpy = vi.fn(async () => ({ allowed: true, cookie: null }));
+    const h = await loadWithMocks({ consumeSpy, user: { id: "u1" }, consentGranted: true });
+    await h({ ...linkedInEvent, headers: { authorization: "Bearer t" } });
+    expect(consumeSpy).toHaveBeenCalledWith(expect.anything(), "single", { verifiedUserId: "u1" });
+  });
+
   it("IGNORES a client-supplied consent flag", async () => {
     // The whole point: consent is read server-side from the JWT. A flag a
     // client can set is not an attestation, it is compliance-off as a query

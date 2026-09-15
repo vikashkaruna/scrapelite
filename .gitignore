@@ -69,3 +69,15 @@ ds-bundle/
 .design-sync/.cache/
 .design-sync/learnings/
 .design-sync/node_modules
+
+# Agent worktrees — scratch checkouts, never part of the codebase.
+#
+# Claude Code creates a full checkout per isolated agent under here; three of
+# them from 2026-08 total 1.3 GB and each carries its own `.git`. Adding them
+# does NOT add their files — git records an embedded-repository GITLINK pointing
+# at a commit no clone can fetch, so the result is a repo that looks like it has
+# submodules, cannot be cloned intact, and is 1.3 GB heavier for nothing.
+#
+# `.claude/` itself stays tracked: skills, commands and launch.json live there
+# and are part of the project. Only the scratch worktrees are excluded.
+.claude/worktrees/

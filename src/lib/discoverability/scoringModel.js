@@ -61,6 +61,51 @@ export const FRAMEWORK_WEIGHTS = Object.freeze({
 export const FRAMEWORKS = Object.freeze(["overall", "seo", "aeo", "geo"]);
 
 /**
+ * The version of the maths in this file.
+ *
+ * ── WHY A VERSION AT ALL ───────────────────────────────────────────────────
+ * The whole point of the validation loop is the sentence "your score went up
+ * 5.2 because you did the work". That sentence is only true when both numbers
+ * came out of the same model. Change a pillar weight, add a penalty, alter a
+ * curve, and a stored baseline stops being a comparable measurement — it
+ * becomes a number produced by different rules, and subtracting it from today's
+ * score yields a delta nobody earned.
+ *
+ * So the version travels WITH the score, and `auditDiff` refuses to compare
+ * across versions. That is a worse user experience than showing a delta, and it
+ * is the correct one: an honest "re-run to compare" beats a confident number
+ * that is a fiction. It is the same discipline as `unknown` never being `0`.
+ *
+ * ── WHEN TO BUMP IT ────────────────────────────────────────────────────────
+ * Any change that could move a score for an unchanged page: pillar weights,
+ * framework weights, signal weights, penalty factors, the penalty SET, or a
+ * scorer curve. NOT for a new issue code, a new construct, a copy change, or a
+ * bug fix in something that never ran.
+ *
+ * ── HISTORY ────────────────────────────────────────────────────────────────
+ *   v1  the shipped four-pillar model: 7 penalties, multiplicative priority.
+ *   v3  W6. Adds the `ai_visibility` signal (WAVI) to entity authority at
+ *       0.15, taken from `citation_footprint`'s 0.25 rather than added on
+ *       top — WAVI's first two components ARE mention and citation rate, so
+ *       carrying both at full weight would count one body of evidence twice.
+ *       The pillar's total exposure to answer-engine evidence is unchanged;
+ *       what moves is how richly it is measured. A page whose sample cannot
+ *       be taken scores identically on v2 and v3.
+ *   v2  W3. Adds ENTITY_SCHEMA_INVALID (0.10) and SEVERE_CWV_FAILURE (0.10),
+ *       the two PRD critical conditions the shipped set had no equivalent for.
+ *       NOTHING ELSE MOVED — every pre-existing penalty keeps the factor it
+ *       shipped with, the pillar and framework weights are untouched, and no
+ *       scorer curve changed. A page that trips neither new condition scores
+ *       IDENTICALLY on v1 and v2.
+ *
+ *       That last sentence is why the bump is still correct rather than
+ *       pedantic: "identical for most pages" is not "identical", and the
+ *       pages it does move are precisely the badly-broken ones whose owners
+ *       are most likely to be watching a trend line.
+ */
+export const SCORING_MODEL_VERSION = "v3";
+
+/**
  * Hard blockers, applied MULTIPLICATIVELY after the weighted sum.
  *
  * These exist because some failures undermine discovery no matter how good the
@@ -116,6 +161,26 @@ export const PENALTIES = Object.freeze({
     label: "Page is marked noindex",
     description: "The page explicitly asks not to be indexed. Everything else in this audit is advisory until that is intentional or removed.",
   },
+
+  // ── Added in v2. See DISCOVERABILITY-MODULE.md §4b for the full
+  //    shipped-vs-PRD mapping and the four deliberate divergences.
+  ENTITY_SCHEMA_INVALID: {
+    factor: 0.10, severity: "critical",
+    label: "Entity markup is present but unusable",
+    // The distinction this blocker rests on, and the reason it is not just a
+    // low signal score: ABSENT markup and BROKEN markup are different failures.
+    // Absent markup leaves an engine to infer the publisher from prose, which
+    // it can do badly but can do. Markup that declares an entity and then fails
+    // to name it gives the resolver something to attach to and nothing to
+    // resolve — and a half-built entity is what gets merged into the wrong
+    // knowledge-graph node, which is worse than never having claimed one.
+    description: "Entity markup exists but cannot identify the entity it declares, so an engine has something to parse and nothing to resolve.",
+  },
+  SEVERE_CWV_FAILURE: {
+    factor: 0.10, severity: "high",
+    label: "Core Web Vitals are severely failing",
+    description: "Field measurements are far beyond the poor threshold, at the level where crawl budget and ranking are affected rather than merely the experience.",
+  },
 });
 
 export const PENALTY_CODES = Object.freeze(Object.keys(PENALTIES));
@@ -139,7 +204,7 @@ export function round1(n) {
  * and "does not apply" is carried alongside in `reasons`, for the UI's benefit,
  * and never changes the arithmetic.
  */
-function isMeasured(v) {
+export function isMeasured(v) {
   return typeof v === "number" && Number.isFinite(v);
 }
 

@@ -79,6 +79,7 @@ import WorkflowRunPreview from "./pages/WorkflowRunPreview.jsx";
 import Report from "./pages/Report.jsx";
 import Schedules from "./pages/Schedules.jsx";
 import Discoverability from "./pages/Discoverability.jsx";
+import DiscoverabilityWorkspace from "./pages/DiscoverabilityWorkspace.jsx";
 import NotFound from "./pages/NotFound.jsx";
 import Workspace from "./pages/Workspace.jsx";
 import PublicReport from "./pages/PublicReport.jsx";
@@ -251,6 +252,12 @@ function Shell() {
           <Route path="/batch"                         element={<Batch />} />
           <Route path="/schedules"                     element={<Schedules />} />
           <Route path="/discoverability"               element={<Discoverability />} />
+          <Route path="/discoverability/truth"         element={<DiscoverabilityWorkspace />} />
+          <Route path="/discoverability/entities"      element={<DiscoverabilityWorkspace />} />
+          <Route path="/discoverability/local"         element={<DiscoverabilityWorkspace />} />
+          <Route path="/discoverability/trust"         element={<DiscoverabilityWorkspace />} />
+          <Route path="/discoverability/scores"        element={<DiscoverabilityWorkspace />} />
+          <Route path="/discoverability/sxo"           element={<DiscoverabilityWorkspace />} />
           {/* PRD 1 — the workflow template gallery + runner. Public: the
               catalogue is an acquisition surface, and a guest can run a
               template (template.run is deliberately ungated) — they just

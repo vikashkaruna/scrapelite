@@ -39,30 +39,30 @@ vi.mock("../../functions/lib/audit/auditPipeline.js", () => ({
   inferPageType: vi.fn(),
   PIPELINE_STAGES: [],
 }));
-// Every store export, declared explicitly. vitest's ESM mock needs the export
-// names up front — a Proxy factory returns a module with no declared exports
-// and every call fails with "No <name> export is defined on the mock".
-const STORE_EXPORTS = [
-  "ABANDONED_AUDIT_MS",
-  "countAuditsThisMonth", "createAudit", "deleteAudit", "ensureTarget",
-  "findByIdempotencyKey", "getAudit", "getAuditFull", "getTargetTrend",
-  "listAudits", "listTargets", "markAuditFailed", "monthStart",
-  "persistPromptRuns", "persistResult", "recordEvent", "setRecommendationStatus",
-  "saveAuditSummary",
-  "createBenchmark", "attachBenchmarkAudit", "completeBenchmark", "getBenchmark",
-  "listBenchmarks", "deleteBenchmark", "createPromptSet", "listPromptSets",
-  "getPromptSet", "deletePromptSet", "createWebhook", "listWebhooks",
-  "webhooksForEvent", "recordWebhookDelivery", "deleteWebhook",
-  "createSchedule", "listSchedules", "updateSchedule", "deleteSchedule",
-  "dueSchedules", "markScheduleRun", "nextRunAt",
-];
-vi.mock("../../functions/lib/audit/auditStore.js", () =>
-  Object.fromEntries(STORE_EXPORTS.map((name) => [
+// 🔴 THE MOCK'S EXPORT LIST IS DERIVED FROM THE REAL MODULE, NOT COPIED.
+//
+// This file kept a hand-written `STORE_EXPORTS` array guarded by a parity test.
+// That guard worked — it went red on W10 and again on W12 — but every time it
+// did, the fix was to retype names into a list, and a list that must be retyped
+// every workstream is a list somebody eventually gets wrong at the worst moment.
+// An async factory can `importActual`, so the names come from the module
+// itself: a store export added tomorrow is mocked tomorrow, with nothing to
+// remember. `entity-graph-api.test.js` already uses this pattern; this is the older
+// file catching up.
+vi.mock("../../functions/lib/audit/auditStore.js", async () => {
+  const real = await vi.importActual("../../functions/lib/audit/auditStore.js");
+  return Object.fromEntries(Object.keys(real).map((name) => [
     name,
     (...args) => (storeMock[name] || (storeMock[name] = vi.fn()))(...args),
-  ])));
+  ]));
+});
 
-
+// The guest charge is observable so its ORDER against SSRF/compliance can be
+// asserted. Default: allowed, exactly what the real helper returns unconfigured.
+const guestCredit = vi.fn();
+vi.mock("../../functions/lib/guestUsage.js", () => ({
+  consumeGuestCredit: (...a) => guestCredit(...a),
+}));
 
 const summarise = vi.fn();
 vi.mock("../../functions/lib/audit/aiEvaluator.js", () => ({
@@ -110,6 +110,7 @@ beforeEach(() => {
   });
   auditRun.mockResolvedValue({ ...AUDIT_RESULT });
   dispatchWebhook.mockResolvedValue({ delivered: 0, failed: 0, results: [] });
+  guestCredit.mockResolvedValue({ ok: true, allowed: true, degraded: true, cookie: null, remaining: null });
 });
 
 // Configure the store proxy for a happy path.
@@ -117,6 +118,7 @@ function happyStore() {
   storeMock.countAuditsThisMonth = vi.fn(async () => ({ count: 0, degraded: false }));
   storeMock.findByIdempotencyKey = vi.fn(async () => null);
   storeMock.ensureTarget = vi.fn(async () => "target-1");
+  storeMock.ensureSubject = vi.fn(async () => "subject-1");
   storeMock.createAudit = vi.fn(async () => ({ ok: true, audit: { id: "audit-1" } }));
   storeMock.persistResult = vi.fn(async () => ({ ok: true }));
   storeMock.persistPromptRuns = vi.fn(async () => ({ ok: true }));
@@ -127,9 +129,13 @@ function happyStore() {
 // does not know about, the suite fails loudly here rather than silently
 // exercising a route that always throws.
 describe("test scaffolding", () => {
-  it("the store mock covers every real export", async () => {
+  it("the store mock is DERIVED from the real module, not a hand-written list", async () => {
+    // Asserting the derivation rather than the contents. A hand-written list
+    // would pass a contents check on the day it was written and fail silently
+    // the next time the store grows — which is precisely what happened twice.
     const real = await vi.importActual("../../functions/lib/audit/auditStore.js");
-    expect([...STORE_EXPORTS].sort()).toEqual(Object.keys(real).sort());
+    const mocked = await import("../../functions/lib/audit/auditStore.js");
+    expect(Object.keys(mocked).sort()).toEqual(Object.keys(real).sort());
   });
 });
 
@@ -409,6 +415,302 @@ describe("input validation", () => {
     expect(p.options.prompts).toHaveLength(10);
     expect(p.options.tags).toHaveLength(10);
   });
+
+  // ── W2 — goal-based intake ──────────────────────────────────────────────
+  it("accepts the four business-model profiles the BRD names", () => {
+    for (const profile of ["saas", "services", "local", "ecommerce"]) {
+      const p = parseAuditOptions({ target_url: "https://x.com", audit_profile: profile });
+      expect(p.errors, profile).toEqual([]);
+      expect(p.options.auditProfile).toBe(profile);
+    }
+  });
+
+  it("records whether anybody actually CHOSE the profile", () => {
+    // "balanced" as a fallback and "balanced" as a deliberate choice of the
+    // neutral lens look identical in the column; this flag is the difference,
+    // and it is what stops inference overriding a considered decision.
+    expect(parseAuditOptions({ target_url: "https://x.com" }).options.auditProfileExplicit).toBe(false);
+    expect(parseAuditOptions({ target_url: "https://x.com", audit_profile: "balanced" })
+      .options.auditProfileExplicit).toBe(true);
+  });
+
+  it("rejects an unknown goal rather than storing the audit with none", () => {
+    // A caller sending the PROFILE id where the GOAL id belongs would
+    // otherwise get an audit whose row says the question was never asked, and
+    // go looking for findings nobody commissioned.
+    const p = parseAuditOptions({ target_url: "https://x.com", primary_goal: "local" });
+    expect(p.errors[0]).toMatch(/primary_goal must be one of/);
+  });
+
+  it("accepts every goal in the vocabulary", () => {
+    for (const goal of ["seo_health", "ai_citations", "product_discovery",
+      "service_leads", "local_discovery", "competitor_intelligence"]) {
+      const p = parseAuditOptions({ target_url: "https://x.com", primary_goal: goal });
+      expect(p.errors, goal).toEqual([]);
+      expect(p.options.primaryGoal).toBe(goal);
+    }
+  });
+
+  it("rejects an unknown page-type hint instead of silently ignoring it", () => {
+    const p = parseAuditOptions({ target_url: "https://x.com", page_type_hint: "landing" });
+    expect(p.errors[0]).toMatch(/page_type_hint must be one of/);
+  });
+
+  it("accepts the four page types W2 added", () => {
+    for (const hint of ["homepage", "service", "location", "comparison"]) {
+      const p = parseAuditOptions({ target_url: "https://x.com", page_type_hint: hint });
+      expect(p.errors, hint).toEqual([]);
+    }
+  });
+
+  it("REFUSES an audit type the engine cannot honour", () => {
+    // The alternative — accepting `domain` and fetching one page — writes a row
+    // that claims work nobody did, and the claim is invisible: the row looks
+    // like a domain snapshot in every list, export and trend it appears in.
+    const p = parseAuditOptions({ target_url: "https://x.com", audit_type: "domain" });
+    expect(p.errors[0]).toMatch(/not available yet/i);
+    // W6.5: prompt monitoring now EXISTS, and POST /audits still cannot create
+    // one — it is created at POST /monitors, where it gets a cadence and an
+    // engine. Accepting it here would write a row calling itself a monitor
+    // while monitoring nothing.
+    const q = parseAuditOptions({ target_url: "https://x.com", audit_type: "prompt_monitor" });
+    expect(q.errors.length).toBeGreaterThan(0);
+  });
+
+  it("refuses a type that only its own endpoint may set", () => {
+    // A rerun with no baseline is a re-audit of nothing.
+    const p = parseAuditOptions({ target_url: "https://x.com", audit_type: "rerun" });
+    expect(p.errors[0]).toMatch(/set by the rerun endpoint/);
+  });
+
+  it("defaults the audit type to the one kind of audit that runs today", () => {
+    expect(parseAuditOptions({ target_url: "https://x.com" }).options.auditType).toBe("url");
+  });
+
+  it("normalises geography, and stores NULL rather than {} for an empty one", () => {
+    const p = parseAuditOptions({
+      target_url: "https://x.com",
+      target_geography: { country: "in", city: " Bengaluru ", language: "EN_in" },
+    });
+    expect(p.options.targetGeography).toEqual({
+      country: "IN", region: null, city: "Bengaluru", language: "en-IN",
+    });
+    expect(parseAuditOptions({ target_url: "https://x.com", target_geography: {} })
+      .options.targetGeography).toBeNull();
+  });
+
+  it("names the competitor URLs it could not use", () => {
+    const p = parseAuditOptions({
+      target_url: "https://x.com",
+      competitor_urls: ["fine.com", "http://[broken"],
+    });
+    expect(p.options.competitorUrls).toEqual(["https://fine.com/"]);
+    expect(p.errors[0]).toMatch(/competitor URL was not usable/);
+  });
+
+  it("reports the overflow rather than keeping twenty of twenty-one quietly", () => {
+    const p = parseAuditOptions({
+      target_url: "https://x.com",
+      competitor_urls: Array.from({ length: 22 }, (_, i) => `https://c${i}.com`),
+    });
+    expect(p.options.competitorUrls).toHaveLength(20);
+    expect(p.errors[0]).toMatch(/beyond the limit of 20/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W2 — THE INTAKE SURVIVES THE ROUND TRIP
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("intake reaches the audit row and the pipeline", () => {
+  it("writes what the customer said, and marks the profile unchosen", async () => {
+    happyStore();
+    await call("POST", "audits", { body: {
+      target_url: "https://example.com/p",
+      primary_goal: "service_leads",
+      target_geography: { country: "in", city: "Bengaluru" },
+      competitor_urls: ["rival.com"],
+    } });
+
+    const row = storeMock.createAudit.mock.calls[0][1];
+    expect(row.primaryGoal).toBe("service_leads");
+    expect(row.targetGeography).toEqual({ country: "IN", region: null, city: "Bengaluru", language: null });
+    expect(row.competitorUrls).toEqual(["https://rival.com/"]);
+    expect(row.auditType).toBe("url");
+    // Nobody chose a profile, so the row must not claim one was chosen.
+    expect(row.auditProfileSource).toBe("default");
+  });
+
+  it("does not hand the pipeline a profile nobody chose", async () => {
+    // Sending the "balanced" fallback here would be indistinguishable from a
+    // deliberate choice of the neutral lens, and would stop the goal and then
+    // the page from ever settling it.
+    happyStore();
+    await call("POST", "audits", { body: { target_url: "https://example.com/p", primary_goal: "ai_citations" } });
+    const opts = auditRun.mock.calls[0][1];
+    expect(opts.auditProfile).toBeNull();
+    expect(opts.primaryGoal).toBe("ai_citations");
+  });
+
+  it("passes an explicit profile straight through", async () => {
+    happyStore();
+    await call("POST", "audits", { body: { target_url: "https://example.com/p", audit_profile: "local" } });
+    expect(auditRun.mock.calls[0][1].auditProfile).toBe("local");
+    expect(storeMock.createAudit.mock.calls[0][1].auditProfileSource).toBe("explicit");
+  });
+
+  it("commissions a guest audit exactly like a signed-in one", async () => {
+    // The two run paths built their options separately until W2, and a field
+    // added to one and forgotten in the other is invisible: the audit still
+    // runs, and only the context is missing.
+    authenticate.mockResolvedValue({ ok: false, user: null });
+    entitlement.mockResolvedValue({
+      userId: null, guest: true, degraded: false,
+      entitlement: { plan_id: "free", status: "active" }, planMap: PLAN_BY_ID,
+    });
+    const res = await call("POST", "audits/guest", { body: {
+      target_url: "https://example.com/p", primary_goal: "local_discovery",
+      target_geography: { city: "Pune" },
+    } });
+    // Whether the guest gate lets it through is a different test's business;
+    // what matters here is that IF it runs, it runs with the same intake.
+    if (auditRun.mock.calls.length) {
+      const opts = auditRun.mock.calls[0][1];
+      expect(opts.primaryGoal).toBe("local_discovery");
+      expect(opts.targetGeography).toEqual({ country: null, region: null, city: "Pune", language: null });
+    }
+    expect(res.statusCode).toBeGreaterThan(0);
+  });
+
+  it("refuses a domain snapshot rather than running one page and calling it that", async () => {
+    happyStore();
+    const res = await call("POST", "audits", { body: {
+      target_url: "https://example.com/p", audit_type: "domain",
+    } });
+    expect(res.statusCode).toBe(400);
+    expect(storeMock.createAudit).not.toHaveBeenCalled();
+    expect(auditRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("the re-audit plan gate", () => {
+  // 🔴 REGRESSION GUARD ON A GATE THAT REFUSED EVERYONE.
+  //
+  // It read `resolved.plan?.id`, and resolveRequestEntitlement has never
+  // returned a `plan` key on any of its four return paths — so the `|| "free"`
+  // fallback fired on every request and every re-audit answered 402, to paying
+  // customers included. It failed closed and silently: the refusal is a
+  // plausible upgrade prompt, so it reads as a plan limit to the customer and
+  // as working code to us.
+  function rerunStore() {
+    happyStore();
+    storeMock.getAudit = vi.fn(async () => ({ id: "audit-1", target_url: "https://example.com/p" }));
+  }
+
+  it("lets a paying customer re-audit", async () => {
+    rerunStore();
+    const res = await call("POST", "audits/audit-1/rerun", { body: {} });
+    expect(res.statusCode).not.toBe(402);
+    expect(storeMock.createAudit).toHaveBeenCalled();
+  });
+
+  it("still refuses a free plan", async () => {
+    entitlement.mockResolvedValue({
+      userId: "user-1", guest: false, degraded: false,
+      entitlement: { plan_id: "free", status: "active" }, planMap: PLAN_BY_ID,
+    });
+    rerunStore();
+    const res = await call("POST", "audits/audit-1/rerun", { body: {} });
+    expect(res.statusCode).toBe(402);
+    expect(parse(res).code).toBe("UPGRADE_REQUIRED");
+  });
+
+  it("refuses a signed-in caller with no entitlement row", async () => {
+    entitlement.mockResolvedValue({
+      userId: "user-1", guest: false, degraded: false, entitlement: null, planMap: PLAN_BY_ID,
+    });
+    rerunStore();
+    expect((await call("POST", "audits/audit-1/rerun", { body: {} })).statusCode).toBe(402);
+  });
+
+  it("fails OPEN when the entitlement lookup degraded", async () => {
+    // A Supabase blip must not present itself as a plan limit. Every other
+    // capability check in this codebase already holds this line.
+    entitlement.mockResolvedValue({
+      userId: "user-1", guest: false, degraded: true, entitlement: null, planMap: PLAN_BY_ID,
+    });
+    rerunStore();
+    expect((await call("POST", "audits/audit-1/rerun", { body: {} })).statusCode).not.toBe(402);
+  });
+});
+
+describe("a re-audit inherits the commission", () => {
+  const PRIOR = {
+    id: "audit-1", target_url: "https://example.com/p", device_profile: "mobile",
+    audit_profile: "local", page_type_hint: "location", prompt_set_id: null, tags: ["t"],
+    primary_goal: "local_discovery",
+    target_geography: { country: "IN", region: null, city: "Bengaluru", language: null },
+    competitor_urls: ["https://rival.com/"],
+  };
+
+  function rerunStore() {
+    happyStore();
+    storeMock.getAudit = vi.fn(async () => ({ ...PRIOR }));
+    storeMock.createAudit = vi.fn(async () => ({ ok: true, audit: { id: "audit-2" } }));
+  }
+
+  it("carries the goal, geography and competitors forward untouched", async () => {
+    // "Did my fix work" is only answerable if the second run was commissioned
+    // like the first. A rerun that dropped the context would still be diffed
+    // against its baseline, and the delta read as page movement.
+    rerunStore();
+    await call("POST", "audits/audit-1/rerun", { body: {} });
+    const row = storeMock.createAudit.mock.calls[0][1];
+    expect(row.primaryGoal).toBe("local_discovery");
+    expect(row.targetGeography).toEqual(PRIOR.target_geography);
+    expect(row.competitorUrls).toEqual(["https://rival.com/"]);
+    expect(row.auditType).toBe("rerun");
+    expect(row.baselineAuditId).toBe("audit-1");
+  });
+
+  it("treats the inherited profile as explicit so the lens cannot drift", async () => {
+    // The baseline was scored under that lens. Re-inferring a different one
+    // from the same page would change which score leads the comparison.
+    rerunStore();
+    await call("POST", "audits/audit-1/rerun", { body: {} });
+    expect(auditRun.mock.calls[0][1].auditProfile).toBe("local");
+    expect(storeMock.createAudit.mock.calls[0][1].auditProfileSource).toBe("explicit");
+  });
+
+  it("lets a caller CLEAR the goal rather than re-inheriting it", async () => {
+    // The `??` vs `||` distinction: with `||` an explicit null silently
+    // re-inherits, which is the failure mode of a form that lets you change
+    // your mind and does not record it.
+    rerunStore();
+    await call("POST", "audits/audit-1/rerun", { body: { primary_goal: null } });
+    expect(storeMock.createAudit.mock.calls[0][1].primaryGoal).toBeNull();
+  });
+
+  it("lets a caller change the goal on the re-run", async () => {
+    rerunStore();
+    await call("POST", "audits/audit-1/rerun", { body: { primary_goal: "seo_health" } });
+    expect(storeMock.createAudit.mock.calls[0][1].primaryGoal).toBe("seo_health");
+  });
+});
+
+describe("the intake vocabulary is served to the composer", () => {
+  it("returns goals, types and page types beside the profiles", async () => {
+    const res = await call("GET", "profiles");
+    const body = parse(res);
+    // `profiles` keeps its original key and shape — there are clients reading
+    // it — and the new vocabularies sit beside it rather than nesting it.
+    expect(body.profiles.balanced).toBeTruthy();
+    expect(body.profiles.ecommerce).toBeTruthy();
+    expect(body.primary_goals.local_discovery).toBeTruthy();
+    expect(body.page_types.comparison).toBeTruthy();
+    expect(body.selectable_audit_types).toEqual(["url"]);
+    expect(body.max_competitor_urls).toBe(20);
+  });
 });
 
 describe("results and ownership", () => {
@@ -423,7 +725,7 @@ describe("results and ownership", () => {
   it("scopes every read by the caller's user id", async () => {
     storeMock.getAuditFull = vi.fn(async () => null);
     await call("GET", "audits/abc/results");
-    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "abc");
+    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "abc", { workspaceId: null });
   });
 });
 
@@ -473,13 +775,87 @@ describe("recommendations", () => {
     }));
   });
 
+  // ── W5.5 · assign ───────────────────────────────────────────────────────
+
+  it("hands a recommendation to a person", async () => {
+    storeMock.setRecommendationAssignee = vi.fn(async () => ({
+      ok: true, recommendation: { id: "r1", audit_id: "a1", code: "AC-01", assigned_to: "user-2" },
+    }));
+    storeMock.recordEvent = vi.fn(async () => {});
+    const res = await call("POST", "recommendations/r1/assign", { body: { assignee: "user-2" } });
+    expect(res.statusCode).toBe(200);
+    expect(storeMock.setRecommendationAssignee).toHaveBeenCalledWith("user-1", "r1", "user-2");
+    expect(storeMock.recordEvent).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      eventType: "recommendation.assigned",
+    }));
+  });
+
+  it("treats a null assignee as putting the work down", async () => {
+    storeMock.setRecommendationAssignee = vi.fn(async () => ({
+      ok: true, recommendation: { id: "r1", audit_id: "a1", code: "AC-01", assigned_to: null },
+    }));
+    storeMock.recordEvent = vi.fn(async () => {});
+    await call("POST", "recommendations/r1/assign", { body: {} });
+    expect(storeMock.setRecommendationAssignee).toHaveBeenCalledWith("user-1", "r1", null);
+    expect(storeMock.recordEvent).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      eventType: "recommendation.unassigned",
+    }));
+  });
+
+  it("🔴 refuses an assignee who shares no workspace, and says why", async () => {
+    storeMock.setRecommendationAssignee = vi.fn(async () => ({
+      ok: false, error: "You can only assign work to someone who shares a workspace with you.",
+    }));
+    const res = await call("POST", "recommendations/r1/assign", { body: { assignee: "stranger" } });
+    expect(res.statusCode).toBe(400);
+    expect(parse(res).error).toMatch(/shares a workspace/);
+  });
+
+  it("🔴 answers 404, never 403, for a recommendation that is not theirs", async () => {
+    // A 403 confirms the id is real, which is how an id space gets enumerated.
+    storeMock.setRecommendationAssignee = vi.fn(async () => ({ ok: false, notFound: true }));
+    const res = await call("POST", "recommendations/r1/assign", { body: { assignee: "user-2" } });
+    expect(res.statusCode).toBe(404);
+  });
+
   it("maps every queue action to the right status", async () => {
     storeMock.setRecommendationStatus = vi.fn(async () => ({ ok: true, recommendation: { audit_id: "a" } }));
     storeMock.recordEvent = vi.fn(async () => {});
+    // ⚠️ The four original verbs keep their EXACT shipped meanings. `done` maps
+    // to `done`, not to `implemented`, even though W8 made them one state —
+    // every stored row and webhook payload says `done`, and a client posting it
+    // must get back what it expects.
     for (const [action, status] of [["accept", "accepted"], ["done", "done"], ["reopen", "open"]]) {
       await call("POST", `recommendations/r1/${action}`, { body: {} });
-      expect(storeMock.setRecommendationStatus).toHaveBeenLastCalledWith("user-1", "r1", status, undefined);
+      expect(storeMock.setRecommendationStatus).toHaveBeenLastCalledWith(
+        "user-1", "r1", status, undefined, expect.any(Object));
     }
+  });
+
+  it("W8: carries the rest of the lifecycle the PRD names", async () => {
+    storeMock.setRecommendationStatus = vi.fn(async () => ({ ok: true, recommendation: { audit_id: "a" } }));
+    storeMock.recordEvent = vi.fn(async () => {});
+    for (const [action, status] of [
+      ["start", "in_progress"],
+      ["implemented", "implemented"],
+      ["schedule_validation", "validation_scheduled"],
+      ["validate", "validated"],
+    ]) {
+      await call("POST", `recommendations/r1/${action}`, { body: {} });
+      expect(storeMock.setRecommendationStatus, action).toHaveBeenLastCalledWith(
+        "user-1", "r1", status, undefined, expect.any(Object));
+    }
+  });
+
+  it("🔴 W8: passes the validating audit through, which is what makes 'validated' real", async () => {
+    // Without it, `validated` is a second word for `implemented` — a claim by
+    // the person who did the work rather than a measurement.
+    storeMock.setRecommendationStatus = vi.fn(async () => ({ ok: true, recommendation: { audit_id: "a" } }));
+    storeMock.recordEvent = vi.fn(async () => {});
+    await call("POST", "recommendations/r1/validate", { body: { validated_by_audit_id: "aud-9" } });
+    expect(storeMock.setRecommendationStatus).toHaveBeenLastCalledWith(
+      "user-1", "r1", "validated", undefined,
+      expect.objectContaining({ validatedByAuditId: "aud-9" }));
   });
 });
 
@@ -653,7 +1029,7 @@ describe("POST /audits/{id}/summary", () => {
     storeMock.getAuditFull = vi.fn(async () => fullWith(null));
     summarise.mockResolvedValue({ summary: "x".repeat(60), provider: "gemini" });
     await call("POST", "audits/abc/summary", { body: {} });
-    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "abc");
+    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "abc", { workspaceId: null });
     expect(storeMock.saveAuditSummary).toHaveBeenCalledWith("user-1", "abc", expect.anything());
   });
 });
@@ -712,4 +1088,466 @@ describe("workspace member pause", () => {
     // The workspace lookup is never even attempted for a personal request.
     expect(globalThis.fetch).not.toHaveBeenCalled();
   }));
+
+  it("scopes audit history, report reads, and target trends to the active workspace", withServiceDb(async () => {
+    // A FRESH Response per lookup. Reusing one object meant the second
+    // membership check read an already-consumed body, threw, and was waved
+    // through by the old fail-open — this test only ever passed because of it.
+    globalThis.fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify([{
+      paused_at: null, role: "member", discoverability_role: "viewer",
+    }]), { status: 200 }));
+    storeMock.listAudits = vi.fn(async () => []);
+    storeMock.getAuditFull = vi.fn(async () => ({
+      audit: { id: "audit-1", user_id: "creator-1", workspace_id: "ws-1" },
+      result: {}, signals: [], issues: [], recommendations: [], promptRuns: [],
+    }));
+    storeMock.getTargetTrend = vi.fn(async () => []);
+
+    expect((await call("GET", "audits", { query: { workspace_id: "ws-1" } })).statusCode).toBe(200);
+    expect((await call("GET", "audits/audit-1", { query: { workspace_id: "ws-1" } })).statusCode).toBe(200);
+    expect((await call("GET", "targets/target-1/trends", {
+      query: { workspace_id: "ws-1", limit: "12" },
+    })).statusCode).toBe(200);
+
+    expect(storeMock.listAudits).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      workspaceId: "ws-1",
+    }));
+    expect(storeMock.getAuditFull).toHaveBeenCalledWith("user-1", "audit-1", {
+      workspaceId: "ws-1",
+    });
+    expect(storeMock.getTargetTrend).toHaveBeenCalledWith("user-1", "target-1", 12, {
+      workspaceId: "ws-1",
+    });
+  }));
+
+  it("refuses workspace reads before returning rows to a non-member", withServiceDb(async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    storeMock.listAudits = vi.fn(async () => [{ id: "must-not-leak" }]);
+    const res = await call("GET", "audits", { query: { workspace_id: "ws-foreign" } });
+    expect(res.statusCode).toBe(403);
+    expect(parse(res).code).toBe("WORKSPACE_NOT_MEMBER");
+    expect(storeMock.listAudits).not.toHaveBeenCalled();
+  }));
+});
+
+// ── D7 · the subject registry, forward and backward ─────────────────────────
+describe("D7 — every audit gets a subject, and every pre-0057 audit still works", () => {
+  const auditFull = (id, { subjectId = null, targetId = null, issues = [], score = 78 } = {}) => ({
+    audit: {
+      id, target_url: "https://example.com", created_at: "2026-09-11T00:00:00Z",
+      subject_id: subjectId, target_id: targetId,
+    },
+    result: { final_score: score, scoring_model_version: "v2", coverage: 90 },
+    signals: [], issues, recommendations: [], promptRuns: [],
+  });
+
+  it("a new audit carries the subject it was opened against", async () => {
+    happyStore();
+    await call("POST", "audits", { body: { target_url: "https://example.com" } });
+
+    expect(storeMock.ensureSubject).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      kind: "page", targetId: "target-1",
+    }));
+    expect(storeMock.createAudit).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      subjectId: "subject-1", targetId: "target-1",
+    }));
+  });
+
+  it("🔴 an audit still RUNS when the subject could not be resolved", async () => {
+    // subject_id is nullable precisely because every pre-0057 row carries none.
+    // Failing the audit here would take the product down for a registry that is
+    // additive — the opposite of the trade D7 was chosen to make.
+    happyStore();
+    storeMock.ensureSubject = vi.fn(async () => null);
+
+    const res = await call("POST", "audits", { body: { target_url: "https://example.com" } });
+    expect(res.statusCode).toBe(201);
+    expect(storeMock.createAudit).toHaveBeenCalledWith("user-1", expect.objectContaining({
+      subjectId: null,
+    }));
+  });
+
+  it("compares two audits of the same subject", async () => {
+    storeMock.getAuditFull = vi.fn(async (_u, id) =>
+      auditFull(id, { subjectId: "subj-1", targetId: "t-1", score: id === "base" ? 70 : 78 }));
+
+    const res = await call("GET", "audits/current/compare/base");
+    expect(res.statusCode).toBe(200);
+    const body = parse(res);
+    expect(body.comparable).toBe(true);
+    expect(body.diff.frameworks.overall.comparable).toBe(true);
+  });
+
+  it("🔴 REFUSES to compare two DIFFERENT subjects instead of printing a number", async () => {
+    // Until D7 this route compared whatever it was given: an audit of /pricing
+    // against an audit of /about produced a confident delta that meant nothing.
+    storeMock.getAuditFull = vi.fn(async (_u, id) => auditFull(id, {
+      subjectId: id === "base" ? "subj-1" : "subj-2", targetId: "t-1",
+    }));
+
+    const res = await call("GET", "audits/current/compare/base");
+    expect(res.statusCode).toBe(200);
+    const body = parse(res);
+    expect(body.comparable).toBe(false);
+    expect(body.diff.frameworks.overall.comparable).toBe(false);
+    expect(body.diff.subjectMismatch.reason).toMatch(/different subjects/);
+    expect(body.diff.versionMismatch).toBeNull();
+  });
+
+  it("🔴 WITHHOLDS the issue lists on a subject mismatch, unlike a version bump", async () => {
+    // Codes survive a model version change on the same page. Across two
+    // different subjects, "AC-01 was resolved" credits a fix on one thing to
+    // another — the silent mis-attribution audit_recommendations.issue_id
+    // already had to be fixed for.
+    storeMock.getAuditFull = vi.fn(async (_u, id) => auditFull(id, {
+      subjectId: id === "base" ? "subj-1" : "subj-2",
+      targetId: "t-1",
+      issues: id === "base" ? [{ code: "AC-01" }] : [],
+    }));
+
+    const body = parse(await call("GET", "audits/current/compare/base"));
+    expect(body.diff.issues.resolved).toEqual([]);
+    expect(body.diff.issues.resolvedCount).toBe(0);
+  });
+
+  it("🔴 BACKWARD COMPATIBLE: two pre-0057 audits over the same target still compare", async () => {
+    storeMock.getAuditFull = vi.fn(async (_u, id) =>
+      auditFull(id, { subjectId: null, targetId: "t-1", score: id === "base" ? 70 : 78 }));
+
+    const body = parse(await call("GET", "audits/current/compare/base"));
+    expect(body.comparable).toBe(true);
+    expect(body.diff.frameworks.overall.change).toBeCloseTo(8, 5);
+  });
+
+  it("🔴 two NULL subjects over DIFFERENT targets are still refused", async () => {
+    // The trap the fallback exists to avoid: null === null would make every
+    // pre-0057 audit comparable with every other one.
+    storeMock.getAuditFull = vi.fn(async (_u, id) =>
+      auditFull(id, { subjectId: null, targetId: id === "base" ? "t-1" : "t-2" }));
+
+    const body = parse(await call("GET", "audits/current/compare/base"));
+    expect(body.comparable).toBe(false);
+    expect(body.diff.subjectMismatch.reason).toMatch(/different pages/);
+  });
+
+  it("compares a backfilled audit against one that has not been backfilled yet", async () => {
+    // The state a real database is in DURING the backfill: some rows adopted,
+    // some not. Both are about the same target, so both must still compare.
+    storeMock.getAuditFull = vi.fn(async (_u, id) => auditFull(id, {
+      subjectId: id === "base" ? null : "subj-1", targetId: "t-1",
+    }));
+
+    expect(parse(await call("GET", "audits/current/compare/base")).comparable).toBe(true);
+  });
+
+  it("reports the subject on both sides so a caller can see WHY", async () => {
+    storeMock.getAuditFull = vi.fn(async (_u, id) =>
+      auditFull(id, { subjectId: "subj-1", targetId: "t-1" }));
+
+    const body = parse(await call("GET", "audits/current/compare/base"));
+    expect(body.baseline.subject_id).toBe("subj-1");
+    expect(body.current.subject_id).toBe("subj-1");
+  });
+});
+
+// ── P1–P3 review · tenancy on workspace-scoped reads ────────────────────────
+//
+// 🔴 `auditStore.ownerOrWorkspace` scopes a query by `workspace_id` ALONE when
+// one is named — it deliberately drops the `user_id` filter so a teammate can
+// read a colleague's work. That makes the route's membership check the ONLY
+// thing between a caller-supplied workspace id and another tenant's rows. Six
+// readers shipped without it, so any signed-in user holding a workspace UUID
+// could list that workspace's SXO runs, experiments and portfolio rollups.
+describe("workspace-scoped reads refuse non-members before touching the store", () => {
+  const withMembership = (response) => async (fn) => {
+    process.env.SUPABASE_URL = "https://db.example.co";
+    process.env.SUPABASE_SERVICE_KEY = "service-key";
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation(async () => response());
+    try {
+      await fn();
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.SUPABASE_URL;
+      delete process.env.SUPABASE_SERVICE_KEY;
+    }
+  };
+  const nonMember = withMembership(() => new Response(JSON.stringify([]), { status: 200 }));
+  const membershipDown = withMembership(() => new Response("boom", { status: 500 }));
+  const leak = [{ id: "must-not-leak", workspace_id: "ws-foreign" }];
+
+  const READERS = [
+    ["GET sxo/runs", "sxo/runs", "listSxoRuns", async () => leak],
+    ["GET sxo/runs/:id", "sxo/runs/run-1", "getSxoRun", async () => leak[0]],
+    ["GET sxo/experiments", "sxo/experiments", "listOptimizationExperiments", async () => leak],
+    ["GET sxo/experiments/:id", "sxo/experiments/exp-1", "getOptimizationExperiment", async () => leak[0]],
+    ["GET sxo/portfolio/rollups", "sxo/portfolio/rollups", "listPortfolioRollups", async () => leak],
+    ["GET recommendations/:id/asset", "recommendations/rec-1/asset", "getAuditFull", async () => ({
+      audit: { id: "audit-1" }, recommendations: [{ id: "rec-1", implementation_asset_json: { secret: 1 } }],
+    })],
+  ];
+
+  for (const [label, splat, storeFn, impl] of READERS) {
+    it(`${label} → 403 WORKSPACE_NOT_MEMBER for a foreign workspace`, () => nonMember(async () => {
+      storeMock[storeFn] = vi.fn(impl);
+      storeMock.getRecommendation = vi.fn(async () => ({ id: "rec-1", workspace_id: "ws-foreign" }));
+      const res = await call("GET", splat, { query: { workspace_id: "ws-foreign", audit_id: "audit-1" } });
+      expect(res.statusCode).toBe(403);
+      expect(parse(res).code).toBe("WORKSPACE_NOT_MEMBER");
+      expect(storeMock[storeFn]).not.toHaveBeenCalled();
+    }));
+  }
+
+  // 🔴 A membership lookup that FAILED is not a membership that was FOUND.
+  // requireWorkspaceDiscoverabilityAction used to read "no role came back" as
+  // "degraded, allow" — the entitlement posture. For tenancy that turns a
+  // PostgREST 5xx (or a production database still missing 0067's
+  // `discoverability_role` column, which 400s the select) into every workspace
+  // being readable by every user.
+  it("fails CLOSED when the membership lookup itself fails", () => membershipDown(async () => {
+    storeMock.listAudits = vi.fn(async () => leak);
+    const res = await call("GET", "audits", { query: { workspace_id: "ws-foreign" } });
+    expect(res.statusCode).toBe(403);
+    expect(parse(res).code).toBe("WORKSPACE_MEMBERSHIP_UNAVAILABLE");
+    expect(storeMock.listAudits).not.toHaveBeenCalled();
+  }));
+
+  it("does not stamp a new audit into a workspace whose membership could not be verified", () => membershipDown(async () => {
+    happyStore();
+    const res = await call("POST", "audits", {
+      body: { target_url: "https://example.com", workspace_id: "ws-foreign" },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(parse(res).code).toBe("WORKSPACE_MEMBERSHIP_UNAVAILABLE");
+    expect(storeMock.createAudit).not.toHaveBeenCalled();
+    expect(auditRun).not.toHaveBeenCalled();
+  }));
+
+  it("a personal request (no workspace) still never consults membership", () => membershipDown(async () => {
+    storeMock.listAudits = vi.fn(async () => []);
+    const res = await call("GET", "audits");
+    expect(res.statusCode).toBe(200);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  }));
+});
+
+// ── P1–P3 review · the guest audit path ─────────────────────────────────────
+describe("guest audits cannot be taken for free", () => {
+  const guestEntitlement = () => { authenticate.mockResolvedValue({ ok: false, user: null }); return entitlement.mockResolvedValue({
+    userId: null, guest: true, degraded: false,
+    entitlement: { plan_id: "free", status: "active" }, planMap: PLAN_BY_ID,
+  }); };
+
+  // 🔴 consumeGuestCredit short-circuits to "authenticated, allowed" whenever
+  // ANY Authorization header is present — it trusts its caller to have already
+  // resolved one. The discoverability handler let a FAILED bearer fall through
+  // to the guest branch, so `Authorization: Bearer x` + `guest: true` ran the
+  // full audit pipeline with no quota at all, as many times as requested.
+  it("an invalid bearer token is a 401, never a free guest audit", async () => {
+    authenticate.mockResolvedValue({ ok: false, user: null });
+    guestEntitlement();
+    guestCredit.mockImplementation(async (event) => (
+      event?.headers?.authorization
+        ? { ok: true, allowed: true, authenticated: true, cookie: null }
+        : { ok: true, allowed: false, cookie: null }
+    ));
+    const res = await call("POST", "audits", { body: { target_url: "https://example.com", guest: true } });
+    expect(res.statusCode).toBe(401);
+    expect(auditRun).not.toHaveBeenCalled();
+  });
+
+  const guestCall = (body) => handler({
+    httpMethod: "POST",
+    queryStringParameters: { splat: "audits" },
+    headers: {},
+    body: JSON.stringify({ guest: true, ...body }),
+  });
+
+  it("a guest request with no Authorization header still runs", async () => {
+    guestEntitlement();
+    const res = await guestCall({ target_url: "https://example.com" });
+    expect(res.statusCode).toBe(200);
+    expect(guestCredit).toHaveBeenCalledTimes(1);
+    expect(auditRun).toHaveBeenCalledTimes(1);
+  });
+
+  // Same load-bearing order as extract.js: every gate that can decline without
+  // doing work runs BEFORE the charge, so a refused guest audit costs nothing.
+  it("an SSRF refusal does not spend the guest's credit", async () => {
+    guestEntitlement();
+    publicUrl.mockResolvedValue(false);
+    const res = await guestCall({ target_url: "http://169.254.169.254/" });
+    expect(res.statusCode).toBe(400);
+    expect(guestCredit).not.toHaveBeenCalled();
+  });
+
+  it("a robots.txt refusal does not spend the guest's credit", async () => {
+    guestEntitlement();
+    compliance.mockResolvedValue({
+      allowed: false, host: "linkedin.com", code: "robots_disallowed", reason: "robots.txt disallows",
+    });
+    const res = await guestCall({ target_url: "https://linkedin.com/company/x" });
+    expect(res.statusCode).toBe(403);
+    expect(guestCredit).not.toHaveBeenCalled();
+  });
+
+  it("an exhausted guest is refused before the pipeline runs", async () => {
+    guestEntitlement();
+    guestCredit.mockResolvedValue({ ok: true, allowed: false, cookie: "datiq_guest=abc" });
+    const res = await guestCall({ target_url: "https://example.com" });
+    expect(res.statusCode).toBe(402);
+    expect(auditRun).not.toHaveBeenCalled();
+    expect(res.headers["Set-Cookie"]).toBe("datiq_guest=abc");
+  });
+});
+
+// ── P1–P3 review · SXO writes are plan-gated, and references are owned ─────
+describe("SXO analytics writes: plan gate and foreign references", () => {
+  const plan = (planId) => entitlement.mockResolvedValue({
+    userId: "user-1", guest: false, degraded: false,
+    entitlement: { plan_id: planId, status: "active" }, planMap: PLAN_BY_ID,
+  });
+
+  // D20. Storing a third-party analytics credential and defining outcome goals
+  // are writes into Search-to-Outcome Intelligence, and every other P3 write
+  // already answered to `audit.sxo`. These two did not.
+  it("refuses to store an analytics credential on a plan without SXO", async () => {
+    plan("free");
+    storeMock.saveAnalyticsConnection = vi.fn(async () => ({ ok: true, connection: {} }));
+    const res = await call("POST", "sxo/integrations/ga4/connect", { body: { token: "secret" } });
+    expect(res.statusCode).toBe(402);
+    expect(parse(res).capability).toBe("audit.sxo");
+    expect(storeMock.saveAnalyticsConnection).not.toHaveBeenCalled();
+  });
+
+  it("stores the credential on a plan that includes SXO", async () => {
+    plan("pro");
+    storeMock.saveAnalyticsConnection = vi.fn(async () => ({ ok: true, connection: { provider: "ga4" } }));
+    const res = await call("POST", "sxo/integrations/ga4/connect", { body: { token: "secret" } });
+    expect(res.statusCode).toBe(200);
+    expect(storeMock.saveAnalyticsConnection).toHaveBeenCalled();
+  });
+
+  it("still lets any plan disconnect and purge — removing your data never needs an upgrade", async () => {
+    plan("free");
+    storeMock.deleteAnalyticsConnection = vi.fn(async () => ({ ok: true }));
+    const res = await call("DELETE", "sxo/integrations/ga4");
+    expect(res.statusCode).toBe(200);
+    expect(storeMock.deleteAnalyticsConnection).toHaveBeenCalled();
+  });
+
+  it("refuses a conversion goal on a plan without SXO", async () => {
+    plan("free");
+    storeMock.saveConversionGoal = vi.fn();
+    const res = await call("POST", "sxo/conversion-goals", { body: { name: "Demo booked", outcome_type: "lead" } });
+    expect(res.statusCode).toBe(402);
+    expect(storeMock.saveConversionGoal).not.toHaveBeenCalled();
+  });
+
+  it("🔴 refuses a conversion goal that points at somebody else's audit — 404, never 403", async () => {
+    plan("pro");
+    storeMock.getAudit = vi.fn(async () => null);
+    storeMock.saveConversionGoal = vi.fn();
+    const res = await call("POST", "sxo/conversion-goals", {
+      body: { name: "Demo booked", outcome_type: "lead", audit_id: "foreign-audit" },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(storeMock.saveConversionGoal).not.toHaveBeenCalled();
+  });
+
+  it("refuses a conversion goal over a subject the caller cannot address", async () => {
+    plan("pro");
+    storeMock.getSubject = vi.fn(async () => null);
+    storeMock.saveConversionGoal = vi.fn();
+    const res = await call("POST", "sxo/conversion-goals", {
+      body: { name: "Demo booked", outcome_type: "lead", subject_id: "foreign-subject" },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(storeMock.saveConversionGoal).not.toHaveBeenCalled();
+  });
+
+  it("🔴 refuses an analytics import attributed to somebody else's conversion goal", async () => {
+    plan("pro");
+    storeMock.getConversionGoal = vi.fn(async () => null);
+    storeMock.enqueueAnalyticsImport = vi.fn();
+    const res = await call("POST", "sxo/events/import", { body: {
+      idempotency_key: "k1", provider: "custom", conversion_goal_id: "foreign-goal",
+      events: [{ event_name: "page_view", count: 3 }],
+    } });
+    expect(res.statusCode).toBe(404);
+    expect(storeMock.enqueueAnalyticsImport).not.toHaveBeenCalled();
+  });
+
+  it("refuses an analytics import on a plan without SXO", async () => {
+    plan("free");
+    storeMock.enqueueAnalyticsImport = vi.fn();
+    const res = await call("POST", "sxo/events/import", { body: {
+      idempotency_key: "k1", provider: "custom", events: [{ event_name: "page_view" }],
+    } });
+    expect(res.statusCode).toBe(402);
+    expect(storeMock.enqueueAnalyticsImport).not.toHaveBeenCalled();
+  });
+
+  it("reports total events and distinct event types separately", async () => {
+    plan("pro");
+    storeMock.enqueueAnalyticsImport = vi.fn(async () => ({
+      ok: true, replay: false,
+      job: { id: "job-1", state: "completed", attempts: 1, payload_hash: null, result_json: null },
+    }));
+    const res = await call("POST", "sxo/events/import", { body: {
+      idempotency_key: "k2", provider: "custom",
+      events: [{ event_name: "page_view", count: 7 }, { event_name: "page_view", count: 3 }],
+    } });
+    // payload_hash of null vs the real hash is a replay mismatch only when replay=true.
+    expect(res.statusCode).toBe(200);
+    const body = parse(res);
+    expect(body.event_counts).toEqual({ page_view: 10 });
+    expect(body.imported_events_count).toBe(10);
+    expect(body.imported_event_types_count).toBe(1);
+  });
+});
+
+describe("guest audits draw on their own bucket", () => {
+  it("charges the `audit` kind, not the extraction bucket", async () => {
+    authenticate.mockResolvedValue({ ok: false, user: null });
+    const res = await handler({
+      httpMethod: "POST",
+      queryStringParameters: { splat: "audits" },
+      headers: {},
+      body: JSON.stringify({ guest: true, target_url: "https://example.com" }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(guestCredit).toHaveBeenCalledWith(expect.anything(), "audit");
+  });
+});
+
+// ── P1–P3 review · the subjects reader the client always called ───────────
+describe("GET /subject-score/subjects", () => {
+  it("🔴 exists, and lists scorable kinds by default", async () => {
+    storeMock.listSubjects = vi.fn(async () => [{ id: "s1", subject_kind: "brand" }]);
+    const res = await call("GET", "subject-score/subjects");
+    expect(res.statusCode).toBe(200);
+    expect(parse(res).subjects).toHaveLength(1);
+    expect(storeMock.listSubjects).toHaveBeenCalledWith("user-1", {
+      workspaceId: null, kinds: ["brand", "product", "service"],
+    });
+  });
+
+  it("filters to one real kind, lists everything for kind=all, and ignores an invented kind", async () => {
+    storeMock.listSubjects = vi.fn(async () => []);
+    await call("GET", "subject-score/subjects", { query: { kind: "page" } });
+    expect(storeMock.listSubjects).toHaveBeenLastCalledWith("user-1", { workspaceId: null, kinds: ["page"] });
+    await call("GET", "subject-score/subjects", { query: { kind: "all" } });
+    expect(storeMock.listSubjects).toHaveBeenLastCalledWith("user-1", { workspaceId: null, kinds: null });
+    await call("GET", "subject-score/subjects", { query: { kind: "brand)&user_id=eq.x" } });
+    expect(storeMock.listSubjects).toHaveBeenLastCalledWith("user-1", {
+      workspaceId: null, kinds: ["brand", "product", "service"],
+    });
+  });
+
+  it("reads one subject, 404 when it is not the caller's", async () => {
+    storeMock.getSubject = vi.fn(async (_u, id) => (id === "mine" ? { id: "mine" } : null));
+    expect((await call("GET", "subject-score/subjects/mine")).statusCode).toBe(200);
+    expect((await call("GET", "subject-score/subjects/theirs")).statusCode).toBe(404);
+  });
 });

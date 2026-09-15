@@ -726,6 +726,30 @@ carries it straight here.
 
 ![The DatIQ Discoverability screen](assets/screenshots/11-discoverability.png)
 
+### The operating loop
+
+The step ribbon at the top of every Discoverability screen shows where you are:
+
+| Step | What happens |
+|---|---|
+| **1.1 Discover · 1.2 Score · 1.3 Diagnose · 1.4 Recommend** | One audit does all four in a single run — it reads the page, scores it, explains what is wrong and writes the fixes. |
+| **2. Implement** | Record your canonical business facts and check your schema and trust signals. |
+| **3. Validate** | Re-measure search-to-outcome friction and confirm fixes worked. |
+| **4. Benchmark** | Score your brand, products and services and compare over time. |
+| **5. Expand** | Grow your entity graph and check your local directory listings. |
+
+### Which audit you are working on
+
+Once an audit is open, a context bar shows it in brief — its short id in
+brackets, then the domain, audit profile, device, page type and when it ran — for
+example *Active audit (9a8b7c6d) acme.com · Balanced · Mobile · Pricing · 15 Sep 2026*.
+The same audit stays selected as you move between tabs, so every tab works on the
+same page until you open a different one.
+
+Tabs show what you last saw on them straight away and then refresh from your
+account, so you are never staring at an empty screen while data loads. Nothing
+is kept in the browser after you sign out.
+
 ### What it measures
 
 Search has split into three audiences that reward different things, so DatIQ
@@ -827,9 +851,30 @@ audit — so it travels into every export and does not change between readings.
 Occasionally it is unavailable; the report says so, and the findings below it are
 unaffected.
 
-Below the summary, each of the four pillars can be **expanded independently** to
-show the signals underneath it and what each one scored. Opening a second pillar
-does not close the first, so two can be compared side by side.
+Below the summary, the four pillars are laid out in **two columns** across the
+full width of the report — Answer Clarity beside Entity Authority, Structural
+Hierarchy beside Technical Accessibility — and each can be **expanded
+independently** to show the signals underneath it and what each one scored.
+Opening a second pillar does not close the first, so two can be compared side by
+side. Exported PDF and Markdown reports use the same two-column pillar layout.
+
+### Entity graph approvals
+
+Approving a relationship also approves the two entities it connects, if they are
+still only proposed. Approval normally means a second person looked. If you work
+alone, DatIQ records your approval as a single-founder approval — including when
+you proposed one of the connected entities yourself. If a teammate proposed the
+relationship but you proposed an entity it connects, you are told plainly and can
+approve it as a single-founder approval or ask the teammate.
+
+### Local directories that do not apply
+
+The local directory list covers every source relevant to a region, and not every
+source fits every business — a restaurant directory is no use to a software
+company. Choose **Not applicable? Ignore** on a source, pick a reason, and it is
+excluded from NAP checks for that business record. Ignored sources are hidden
+under **Show ignored**, keep the reason and date you recorded, and can be
+**restored** at any time.
 
 ### Exporting a report
 

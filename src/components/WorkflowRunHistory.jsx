@@ -4,7 +4,7 @@
 // table/cards layout, selection bar, batch actions, search, filters,
 // and navigation to the dedicated full-page preview at /workflows/runs/:runId.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useContext } from "react";
 import { Link, useNavigate } from "react-router";
 import * as api from "../lib/templates/templatesClient.js";
 import {
@@ -15,6 +15,7 @@ import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import ExportMenu from "./ExportMenu.jsx";
 import { useToast } from "./Toast.jsx";
+import { AuthContext } from "./AuthProvider.jsx";
 
 const BUCKET_LABEL = {
   succeeded: "Succeeded", partial: "Partial", failed: "Failed",
@@ -56,9 +57,18 @@ function Check({ checked, indeterminate, onChange, title }) {
 export default function WorkflowRunHistory({ compact = false, limit = null }) {
   const navigate = useNavigate();
   const showToast = useToast();
+  const authContext = useContext(AuthContext);
+  const user = authContext?.user || null;
 
-  const [runs, setRuns] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [runs, setRuns] = useState(() => {
+    try {
+      const raw = localStorage.getItem("datiq.workflowRuns");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState(() => !runs);
   const [error, setError] = useState(null);
   const [bucket, setBucket] = useState("all");
   const [templateKey, setTemplateKey] = useState("all");
@@ -77,11 +87,15 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
     setLoading(true);
     api.listRuns()
       .then((r) => {
-        setRuns(r.runs || []);
+        const fetched = r.runs || [];
+        setRuns(fetched);
         setError(null);
+        try {
+          localStorage.setItem("datiq.workflowRuns", JSON.stringify(fetched));
+        } catch { /* ignore storage error */ }
       })
       .catch((e) => {
-        setRuns([]);
+        if (!runs) setRuns([]);
         setError(e?.status === 401 ? null : e.message);
       })
       .finally(() => setLoading(false));
@@ -89,7 +103,7 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [user]);
 
   const changeLayout = (l) => {
     setLayout(l);
@@ -210,6 +224,8 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
 
   // ── Full Dashboard Mode ───────────────────────────────────────
   const selectedExportItems = selectedRuns.map(runToItem).filter(Boolean);
+  const allExportItems = filtered.map(runToItem).filter(Boolean);
+  const exportItems = selectedExportItems.length > 0 ? selectedExportItems : allExportItems;
 
   return (
     <div className="wrh">
@@ -252,6 +268,15 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
               <Icon name="layout-grid" size={14} />
             </button>
           </div>
+          {exportItems.length > 0 && (
+            <ExportMenu
+              items={exportItems}
+              label={selectedExportItems.length > 0 ? `Export (${selectedExportItems.length})` : "Export"}
+              buttonVariant="secondary"
+              showPush
+              showEmail
+            />
+          )}
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -376,10 +401,10 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
       ) : layout === "table" ? (
         /* ── Rich Table View ────────────────────────────────────────── */
         <div style={{ overflowX: "auto", marginTop: 8 }}>
-          <table className="dash-table">
+          <table className="dash-table" style={{ tableLayout: "fixed", width: "100%" }}>
             <thead>
               <tr>
-                <th className="col-check">
+                <th className="col-check" style={{ width: "40px" }}>
                   <Check
                     checked={allSelected}
                     indeterminate={someSelected && !allSelected}
@@ -387,13 +412,13 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
                     title={allSelected ? "Deselect all" : "Select all runs"}
                   />
                 </th>
-                <th style={{ width: "220px" }}>Template</th>
-                <th style={{ width: "200px" }}>Target</th>
+                <th style={{ width: "200px" }}>Template</th>
+                <th style={{ width: "160px" }}>Target</th>
                 <th className="col-sum">Summary</th>
-                <th style={{ width: "110px" }}>Status</th>
-                <th style={{ width: "90px" }}>Credits</th>
-                <th className="col-date" style={{ width: "140px" }}>Run Date</th>
-                <th className="col-act" style={{ width: "130px", textAlign: "right" }}>Actions</th>
+                <th style={{ width: "105px" }}>Status</th>
+                <th style={{ width: "85px" }}>Credits</th>
+                <th className="col-date" style={{ width: "130px" }}>Run Date</th>
+                <th className="col-act" style={{ width: "125px", textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -436,7 +461,7 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
                       </div>
                     </td>
                     <td>
-                      <span style={{ color: "var(--text-2)", fontFamily: "monospace", fontSize: "12px" }}>
+                      <span style={{ color: "var(--text-2)", fontFamily: "monospace", fontSize: "12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
                         {target}
                       </span>
                     </td>

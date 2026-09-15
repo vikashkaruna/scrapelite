@@ -13,6 +13,7 @@ import {
   citationFootprintScore, shareOfVoice, freshnessScore,
 } from "../../../../src/lib/discoverability/signalScorers.js";
 import { findSchema } from "./htmlParse.js";
+import { nullEvidenceCollector } from "./evidenceCollector.js";
 
 /** Properties that make each identity type actually resolvable. */
 const IDENTITY_REQUIREMENTS = Object.freeze({
@@ -23,6 +24,50 @@ const IDENTITY_REQUIREMENTS = Object.freeze({
   SoftwareApplication: ["name", "description", "offers"],
   WebSite:      ["name", "url"],
 });
+
+/**
+ * The property WITHOUT WHICH a block cannot identify the thing it declares.
+ *
+ * ── NOT THE SAME QUESTION AS COMPLETENESS ──────────────────────────────────
+ * `IDENTITY_REQUIREMENTS` above asks "how well is this entity described"; a
+ * block missing `logo` is thin, and thinness is what the signal score is for.
+ * This asks "is there an entity here AT ALL". A block that declares itself an
+ * Organization and never says which organization gives a resolver a node to
+ * build and no identity to attach — and a half-built node is what gets merged
+ * into the wrong knowledge-graph entry, which is a worse outcome than never
+ * having claimed one. That is why it is a multiplicative blocker and not
+ * another few points off a signal.
+ *
+ * ⚠️ `WebSite` IS DELIBERATELY ABSENT. The sitelinks-searchbox pattern is a
+ * WebSite block carrying `url` and `potentialAction` and nothing else, which is
+ * both extremely common and entirely correct. Including it here would fire this
+ * blocker on a large share of perfectly healthy sites, and a penalty that cries
+ * wolf is worse than no penalty: it teaches its reader to dismiss the ones that
+ * are real.
+ */
+const NAMING_PROPERTY = Object.freeze({
+  Organization: "name",
+  Person: "name",
+  Product: "name",
+  SoftwareApplication: "name",
+  Article: "headline",
+  BlogPosting: "headline",
+});
+
+/** Does a block carry the one property that says what it IS? */
+function identifiesItself(block, type) {
+  const key = NAMING_PROPERTY[type];
+  if (!block || !key) return true;
+  const v = block[key];
+  // schema.org permits a language-tagged object here, and a block using one is
+  // named — just not as a bare string. Reading only `typeof v === "string"`
+  // would report a correctly-internationalised page as broken.
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    return Boolean(v["@value"] || v.name);
+  }
+  if (Array.isArray(v)) return v.some((x) => typeof x === "string" && x.trim());
+  return typeof v === "string" && v.trim().length > 0;
+}
 
 /** How complete is one schema block against the properties that matter? */
 export function schemaCompleteness(block, type) {
@@ -41,6 +86,7 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
   const signals = {};
   const reasons = {};
   const issues = [];
+  const E = ctx.evidence || nullEvidenceCollector();
 
   const jsonLd = parsed.jsonLd || [];
   const org = findSchema(jsonLd, "Organization");
@@ -48,6 +94,10 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
   const article = findSchema(jsonLd, "Article") || findSchema(jsonLd, "BlogPosting");
   const product = findSchema(jsonLd, "Product") || findSchema(jsonLd, "SoftwareApplication");
   const website = findSchema(jsonLd, "WebSite");
+  // W9. LocalBusiness first where both exist: it is the node that carries the
+  // address and phone a truth record is matched on, and an Organization node
+  // beside it is usually the thinner of the two.
+  const identityNode = findSchema(jsonLd, "LocalBusiness") || org || null;
 
   // ── schema identity completeness ─────────────────────────────────────────
   // Averaged over the types PRESENT, not over all five. A blog post has no
@@ -107,6 +157,34 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
         details: {},
       });
     }
+  }
+
+  // ── EA-11: declared, and unresolvable ────────────────────────────────────
+  //
+  // Checked OUTSIDE the parts.length branch above, because the two conditions
+  // are independent: a page can have a perfectly complete Organization block
+  // and a nameless Product block beside it, and that Product is exactly as
+  // unresolvable as it would be alone.
+  //
+  // Only blocks that are actually PRESENT are examined. An absent Person block
+  // is not an invalid one — that is EA-01's territory, and firing both on the
+  // same page would report one absence twice.
+  const unresolvable = [
+    ["Organization", org], ["Person", person],
+    [article?.["@type"] === "BlogPosting" ? "BlogPosting" : "Article", article],
+    [product?.["@type"] === "SoftwareApplication" ? "SoftwareApplication" : "Product", product],
+  ].filter(([type, block]) => block && !identifiesItself(block, type));
+
+  if (unresolvable.length > 0) {
+    const types = unresolvable.map(([type]) => type);
+    issues.push({
+      code: "EA-11", signalCode: "schema_identity_completeness",
+      measuredScore: signals.schema_identity_completeness ?? 0,
+      evidence: `${types.join(" and ")} markup is present but carries no ${
+        types.length === 1 ? `\`${NAMING_PROPERTY[types[0]]}\`` : "identifying property"
+      }, so there is nothing for an engine to resolve it to.`,
+      details: { unresolvable: types },
+    });
   }
 
   // ── sameAs / profile linkage ─────────────────────────────────────────────
@@ -197,6 +275,23 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
     });
   }
 
+  // ── AI visibility (WAVI) ─────────────────────────────────────────────────
+  // v3. The richer read of the same evidence `citation_footprint` scores, which
+  // is why the two SPLIT one weight rather than each carrying a full one.
+  //
+  // 🔴 NULL, NOT ZERO, WHENEVER THE SAMPLE COULD NOT BE TAKEN. A missing engine
+  // key, an outage or an exhausted budget must redistribute this signal's
+  // weight, not mark the brand invisible — the same rule the whole scorer runs
+  // on, and the reason a page whose sample cannot be taken scores identically
+  // on v2 and v3.
+  const wavi = ctx.citationSample?.wavi || null;
+  if (!wavi || wavi.score === null) {
+    signals.ai_visibility = null;
+    reasons.ai_visibility = ctx.citationSample ? "not_measured" : "no_engine_configured";
+  } else {
+    signals.ai_visibility = wavi.score;
+  }
+
   // ── citation footprint (supplied by the sampling layer) ──────────────────
   const sample = ctx.citationSample || null;
   if (!sample || !sample.promptCount) {
@@ -229,10 +324,76 @@ export function analyseEntityAuthority(parsed, ctx = {}) {
     }
   }
 
+  // ── record what was read ─────────────────────────────────────────────────
+  // One record per signal, emitted after the branches settle. Note that
+  // citation_footprint's method is `answer_engine`, not `raw_html`: it is the
+  // one signal in this pillar that was not read off the customer's own page,
+  // and its lower default confidence says so without anyone having to remember.
+  E.signal("schema_identity_completeness", {
+    method: "json_ld",
+    selector: "script[type='application/ld+json']",
+    section: "Identity markup",
+    observedValue: { types_scored: parts.length, types_found: (parsed.schemaTypes || []).length },
+    structured: { schema_types: parsed.schemaTypes || [] },
+  });
+  E.signal("sameas_consistency", {
+    method: uniqueSameAs.length ? "json_ld" : "raw_html",
+    selector: uniqueSameAs.length ? "sameAs" : "a[href]",
+    section: "Official profile linkage",
+    observedValue: { sameAs: uniqueSameAs.length, visible_profiles: visibleProfiles.length },
+    structured: { sameAs: uniqueSameAs.slice(0, 8), visible: visibleProfiles.slice(0, 8) },
+  });
+  E.signal("author_trust_signals", {
+    method: "raw_html",
+    section: "Byline and author credentials",
+    observedValue: {
+      named: Boolean(author.name),
+      bio_linked: Boolean(author.bioLinked),
+      credentials: Boolean(author.credentials),
+      visible: Boolean(author.visible),
+    },
+    excerpt: author.name || "",
+  });
+  E.signal("freshness_and_sources", {
+    method: "raw_html",
+    section: "Dates and outbound attribution",
+    observedValue: {
+      visible_date: Boolean(dates.visibleDate),
+      age_days: ageDays,
+      outbound_references: outbound.length,
+    },
+    structured: { date_published: dates.published || null, date_modified: dates.modified || null },
+  });
+  if (sample && sample.promptCount) {
+    E.signal("citation_footprint", {
+      method: "answer_engine",
+      sourceUrl: parsed.url || undefined,
+      section: `${sample.engine || "answer engine"} prompt sample`,
+      observedValue: {
+        prompts: sample.promptCount,
+        mentions: sample.mentions,
+        citations: sample.citations,
+        live: Boolean(sample.live),
+      },
+      // A recall-only sample is a model's memory of the brand, not a retrieval
+      // result, so it is worth materially less than a live one — and the record
+      // says which it was rather than leaving the reader to guess.
+      confidence: sample.live ? undefined : 0.35,
+      structured: { engine: sample.engine || null, sentiment: sample.sentiment ?? null },
+    });
+  }
+
   return {
     signals, reasons, issues,
     facts: {
       brand_name: org?.name || website?.name || null,
+      // 🔴 W9 — THE RAW IDENTITY NODE, AND IT IS NOT A SIGNAL.
+      // Nothing scores it. It is carried because the Canonical Business Truth
+      // Record is compared against what the page actually declares, and
+      // re-parsing the document somewhere else to get the same node would be a
+      // second parser to keep in step with this one — which is how two readings
+      // of one page start disagreeing.
+      organization_node: identityNode,
       schema_types: parsed.schemaTypes || [],
       sameAs_links: uniqueSameAs,
       visible_profile_links: visibleProfiles.slice(0, 12),

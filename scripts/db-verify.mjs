@@ -119,15 +119,80 @@ grant usage on schema public to anon, authenticated;
 // 0042_watchlists.sql          +6 tables (watchlists, watchlist_targets,
 //   monitored_pages, entity_snapshots, field_changes, change_feedback)
 //   +1 function (watchlists_touch_updated_at) +1 trigger.
+// 0043_signal_rules.sql        +2 tables (signal_rules, rule_executions)
+//   +1 function (signal_rules_touch_updated_at) +1 trigger.
 // 0048_prospect_engagement_engine.sql +5 tables (engagement_campaigns,
 //   engagement_prospects, engagement_messages, engagement_activity_log,
 //   engagement_sync_configs) +1 function (engagement_touch_updated_at)
 //   +4 triggers.
-// Taking these to 92 / 47 / 23.
+// 0051_recommendation_assignment.sql +1 function (assign_recommendation), no
+//   new table: the assignee is two columns on audit_recommendations.
+// 0052_citation_states.sql     columns only — the seven states sit on
+//   audit_prompt_runs rather than in a table of their own.
+// 0053_prompt_monitors.sql     +2 tables (prompt_monitors, prompt_monitor_runs)
+//   +1 trigger. No new function: the touch trigger reuses 0030's.
+// 0054_workflow_hub.sql       columns + constraint only — the lifecycle lives
+//   on audit_recommendations.status rather than in a table of its own.
+// 0055_business_truth.sql     +3 tables (audit_business_truth_records,
+//   _versions, _conflicts) +1 function (promote_business_truth_version)
+//   +2 triggers. The function exists because promotion is three writes that
+//   must not separate — see the migration's own header.
+// 0056_entity_graph.sql       +4 tables (audit_entities,
+//   audit_entity_relationships, _evidence, _conflicts) +1 function
+//   (approve_entity_relationship) +2 triggers. That function exists because an
+//   approved edge between two unreviewed nodes is a half-built statement.
+// 0057_audit_subjects.sql     +1 table (audit_subjects) +1 function
+//   (upsert_audit_subject) +1 trigger. D7: the audit becomes polymorphic one
+//   level UP, so the polymorphism lives in CHECK constraints over three real
+//   foreign keys rather than in a bare uuid on audit_issues that no foreign key
+//   could ever check. audits.target_id is KEPT — see the migration's header.
+// 0058_local_directory.sql     +4 tables (audit_directory_listings,
+//   audit_local_checks, audit_directory_matches, audit_local_findings)
+//   +2 triggers. NO new function: nothing here is several writes that must not
+//   separate, so there is nothing for one to buy. ⚠️ Source ids are NOT
+//   enumerated in a CHECK — see the migration's header for why this departs
+//   from 0056 on purpose.
+// 0059_local_directory_listing_upsert.sql replaces 0058's expression index
+//   with a NULLS NOT DISTINCT column constraint. It adds no objects, but it is
+//   load-bearing: PostgREST can only name column conflict arbiters, so the
+//   normal listing upsert would otherwise fail for every save.
+// 0060_audit_subject_upsert_atomic.sql replaces upsert_audit_subject with an
+//   atomic INSERT .. ON CONFLICT per reference. It adds NO objects — 0057's
+//   select-then-insert made a concurrent caller raise unique_violation instead
+//   of receiving the existing subject, which `ensureSubject` swallowed into a
+//   NULL subject_id. Counts are unchanged.
+// 0061_rpc_lockdown.sql       grants only. 🔴 The 0044 defect one layer down:
+//   PostgreSQL grants EXECUTE on a new function to PUBLIC by default, so ten
+//   SECURITY DEFINER functions taking a caller-supplied p_user_id were callable
+//   by anon through PostgREST — and SECURITY DEFINER bypasses RLS, making each
+//   an impersonation primitive. Also fixes 0012's no-op revoke (revoking from
+//   anon while PUBLIC still holds the grant changes nothing) and states three
+//   service_role grants that were inherited from Supabase defaults.
+// 0062_schema_trust.sql       +2 tables (audit_schema_entities,
+//   audit_trust_evidence) +2 triggers. NO new function — nothing here is
+//   several writes that must not separate. W13: the `trust_proof` source W11
+//   bound three components to and nobody had built. ⚠️ `independence` IS a
+//   CHECK (a three-value trust vocabulary that decides what a claim is worth);
+//   `signal` is NOT (an open registry that grows with the market) — the same
+//   split 0058 made, for the same reason.
+// 0063_revalidation_request.sql columns + one partial index only — the
+//   revalidation REQUEST. `validation_scheduled` has been a legal state since
+//   0054 and `validated_by_audit_id` has recorded the result; between them sat
+//   no way to ASK. Columns rather than a table, because nothing here is
+//   several writes that must not separate.
+// 0065_entity_graph_taxonomy.sql widens 0056's two CHECK constraints without
+//   changing any stored id: eighteen internal entity types cover §9.2's
+//   fifteen semantic concepts, and thirteen internal predicates cover its
+//   nine relationships. No objects are added; counts are unchanged.
+// P3 migrations 0068 (+5 tables), 0069 (+5 tables), 0070 (+2 tables, +3 functions),
+// 0071 (+1 table, +1 function). 0075 (+1 function). Taking these to 117 / 55 / 29.
+// 0076 (+1 table: audit_directory_source_ignores; approve_entity_relationship
+// is replaced, not added). Taking these to 118 / 55 / 29.
+// 0048 adds +5 tables, +1 function, +4 triggers → 123 / 56 / 33.
 const EXPECT = {
-  tables: 92,
-  functions: 47,
-  triggers: 23,
+  tables: 123,
+  functions: 56,
+  triggers: 33,
   tablesWithoutRls: 0,
 };
 
@@ -621,6 +686,28 @@ group("0026 guest identity usage — atomic quota");
   eq("guest identity row is stored without raw cookie", table.n, 2);
 }
 
+// ── 0073 guest audit credit — its own bucket of one ──────────────────────────
+group("0073 guest audit credit — a separate, single free audit");
+{
+  const h = "guest-hash-audit-00000000000000000000000000000";
+  const first = await one(`select public.consume_guest_credit($1,'audit',10,5,1) result`, [h]);
+  eq("the first guest audit is allowed", first.result.allowed, true);
+  eq("...and reported as the audit kind", first.result.kind, "audit");
+  const second = await one(`select public.consume_guest_credit($1,'audit',10,5,1) result`, [h]);
+  eq("a second guest audit is refused at the limit of one", second.result.allowed, false);
+  eq("...with a kind-specific reason", second.result.reason, "audit_limit_reached");
+  const single = await one(`select public.consume_guest_credit($1,'single',10,5) result`, [h]);
+  eq("spending the audit does not touch the extraction bucket", single.result.allowed, true);
+  eq("...which still has nine left", single.result.remaining, 9);
+  const counts = await one(`select audit_count, single_count from public.guest_identities where token_hash = $1`, [h]);
+  eq("audit_count recorded exactly one audit", counts.audit_count, 1);
+  eq("single_count recorded exactly one extraction", counts.single_count, 1);
+  const unknown = await one(`select public.consume_guest_credit('guest-hash-audit-00000000000000000000000000001','bogus',10,5) result`);
+  eq("an unknown kind still counts as single, as 0026 did", unknown.result.kind, "single");
+  const overloads = await one(`select count(*)::int n from pg_proc where proname = 'consume_guest_credit'`);
+  eq("the 4-argument signature was replaced, not overloaded", overloads.n, 1);
+}
+
 // ── 0027 admin coupon grants ───────────────────────────────────────────────
 group("0027 admin coupon grants — user-scoped, one-time redemption");
 {
@@ -804,8 +891,8 @@ group("discoverability — targets, idempotency, trends, retention");
          (audit_id, user_id, final_score, seo_score, aeo_score, geo_score,
           answer_clarity_score, entity_authority_score, structural_hierarchy_score,
           technical_accessibility_score, pre_penalty_score, penalty_multiplier,
-          coverage, issue_count, critical_count)
-       values ($1,$2,$3,$3,$3,$3,$3,$3,$3,$3,$3,1,92.5,4,1)`,
+          coverage, issue_count, critical_count, scoring_model_version)
+       values ($1,$2,$3,$3,$3,$3,$3,$3,$3,$3,$3,1,92.5,4,1,'v1')`,
       [auditId, user, score]);
   };
   await addResult(a1, alice, 78.4);
@@ -835,6 +922,302 @@ group("discoverability — targets, idempotency, trends, retention");
        values ($1,$2,'technical_accessibility','core_web_vitals',0.30)`, [a1, alice]);
   } catch (e) { dupSignal = e.message; }
   check("one row per signal per audit", !!dupSignal, dupSignal || "the duplicate insert succeeded");
+
+  // ── 0048: evidence, thresholds and the model version ─────────────────────
+  // Every one of these columns exists because a score with no traceable
+  // observation behind it is what the BRD forbids. `raw_value` and
+  // `evidence_json` were declared in 0030 and written by nothing until 0048 —
+  // NULL on every row in the table for the whole life of the module — so these
+  // assertions are as much about the WRITE path existing as the column.
+  const evidenceRecord = {
+    method: "raw_html", observed: true,
+    source_url: "https://example.com/pricing", selector: "h1", section: "Page H1",
+    observed_value: { h1_count: 2 }, excerpt: "Pricing that scales",
+    structured: null, collected_at: "2026-09-10T09:00:00.000Z", confidence: 0.99,
+  };
+
+  let signalEvidence = null;
+  try {
+    await db.query(
+      `insert into public.audit_signals
+         (audit_id, user_id, pillar, signal_code, normalized_score, weight,
+          measured, raw_value, evidence_json, threshold_json)
+       values ($1,$2,'structural_hierarchy','single_h1',60,0.15,true,$3,$4,$5)`,
+      [a1, alice, JSON.stringify({ h1_count: 2 }), JSON.stringify([evidenceRecord]),
+       JSON.stringify({ ideal_min: 40, ideal_max: 60 })]);
+  } catch (e) { signalEvidence = e.message; }
+  eq("a signal stores its raw value, evidence and threshold", signalEvidence, null);
+
+  const storedSignal = await one(
+    `select raw_value, evidence_json, threshold_json from public.audit_signals
+      where audit_id = $1 and signal_code = 'single_h1'`, [a1]);
+  eq("the raw reading survives the round trip",
+    storedSignal.raw_value?.h1_count, 2);
+  eq("the evidence record survives the round trip",
+    storedSignal.evidence_json?.[0]?.source_url, "https://example.com/pricing");
+  eq("the collection timestamp survives the round trip",
+    storedSignal.evidence_json?.[0]?.collected_at, "2026-09-10T09:00:00.000Z");
+  eq("a declared threshold survives the round trip",
+    storedSignal.threshold_json?.ideal_max, 60);
+
+  // A curve has no threshold, and NULL is the correct and common answer. If
+  // this column were ever made NOT NULL, seventeen of twenty signals would have
+  // to carry a boundary the scorer never applied.
+  const curve = await one(
+    `select threshold_json from public.audit_signals
+      where audit_id = $1 and signal_code = 'core_web_vitals'`, [a1]);
+  eq("a signal that is a curve stores no threshold", curve.threshold_json, null);
+
+  let issueEvidence = null;
+  try {
+    await db.query(
+      `insert into public.audit_issues
+         (audit_id, user_id, code, pillar, severity, title, evidence, evidence_json)
+       values ($1,$2,'SH-02','structural_hierarchy','high','Two H1s',
+               'Two H1 elements compete to describe this page.', $3)`,
+      [a1, alice, JSON.stringify([evidenceRecord])]);
+  } catch (e) { issueEvidence = e.message; }
+  eq("an issue stores structured evidence beside its sentence", issueEvidence, null);
+
+  const storedIssue = await one(
+    `select evidence, evidence_json from public.audit_issues
+      where audit_id = $1 and code = 'SH-02'`, [a1]);
+  check("the human sentence is kept, not replaced",
+    /compete to describe/.test(storedIssue.evidence || ""));
+  eq("the issue's evidence names a selector",
+    storedIssue.evidence_json?.[0]?.selector, "h1");
+
+  const versioned = await one(
+    `select scoring_model_version v from public.audit_results where audit_id = $1`, [a1]);
+  eq("a result records which maths produced it", versioned.v, "v1");
+
+  // NOT NULL with no default. A default would let a writer that forgets the
+  // stamp file a v3 score as whatever the default was — the exact mislabelling
+  // the version exists to prevent — so a forgotten stamp must fail loudly.
+  const unstamped = await throws(
+    `insert into public.audit_results (audit_id, user_id, final_score, penalty_multiplier)
+     values ($1,$2,50,1)`, [bobA, bob]);
+  check("a result cannot be stored without its scoring model version", Boolean(unstamped),
+    unstamped || "the unstamped insert succeeded");
+
+  let setV2 = null;
+  try {
+    await db.query(
+      `update public.audit_results set scoring_model_version = 'v2' where audit_id = $1`, [a1]);
+  } catch (e) { setV2 = e.message; }
+  eq("a result can record a newer scoring model", setV2, null);
+  await db.query(`update public.audit_results set scoring_model_version = 'v1' where audit_id = $1`, [a1]);
+
+  // ── 0049: the intake ─────────────────────────────────────────────────────
+  // Every other column in this module records something we MEASURED, and a
+  // measurement can be taken again. These record something the CUSTOMER SAID,
+  // and if the question was never asked the answer does not exist anywhere.
+  // That is why primary_goal is nullable and why nothing back-fills it.
+  const intakeAudit = await one(
+    `insert into public.audits
+       (user_id, target_id, target_url, audit_type, primary_goal,
+        target_geography, competitor_urls, audit_profile, audit_profile_source)
+     values ($1,$2,'https://x.com/local','url','local_discovery',
+             $3, array['https://rival.com/'], 'local', 'goal')
+     returning id, audit_type, primary_goal, target_geography, competitor_urls,
+               audit_profile_source`,
+    [alice, t1, JSON.stringify({ country: "IN", region: null, city: "Bengaluru", language: "en-IN" })]);
+
+  eq("an audit records what kind of audit it is", intakeAudit.audit_type, "url");
+  eq("an audit records the goal it was commissioned for", intakeAudit.primary_goal, "local_discovery");
+  eq("the geography survives the round trip", intakeAudit.target_geography?.city, "Bengaluru");
+  eq("the language tag survives normalised", intakeAudit.target_geography?.language, "en-IN");
+  eq("competitors are stored as an array", intakeAudit.competitor_urls?.[0], "https://rival.com/");
+  eq("the audit records WHY it carries its profile", intakeAudit.audit_profile_source, "goal");
+
+  // NULL is the correct and expected state for every audit that predates the
+  // question. A default here would be a fabricated intent — the same class of
+  // error as an evidence record with a guessed source URL — and the P2 brand,
+  // product, service and local modules key off this field.
+  const noGoal = await one(
+    `insert into public.audits (user_id, target_id, target_url)
+     values ($1,$2,'https://x.com/no-goal')
+     returning primary_goal, target_geography, audit_type, competitor_urls, audit_profile_source`,
+    [alice, t1]);
+  eq("an audit with no stated goal stores NULL, not a default", noGoal.primary_goal, null);
+  eq("an audit with no stated geography stores NULL, not {}", noGoal.target_geography, null);
+  // Defaulted, unlike the goal, because it IS knowable retrospectively: every
+  // audit that already exists fetched exactly one page, which is what 'url'
+  // means. A true statement about the past, not a guess at one.
+  eq("audit_type defaults to the one kind of audit that has ever run", noGoal.audit_type, "url");
+  eq("competitor_urls defaults to empty, never null", noGoal.competitor_urls?.length, 0);
+  eq("a profile nobody chose is recorded as a default", noGoal.audit_profile_source, "default");
+
+  check("primary_goal rejects a value outside the vocabulary", Boolean(await throws(
+    `insert into public.audits (user_id, target_id, target_url, primary_goal)
+     values ($1,$2,'https://x.com','world_domination')`, [alice, t1])));
+  check("audit_type rejects a value outside the vocabulary", Boolean(await throws(
+    `insert into public.audits (user_id, target_id, target_url, audit_type)
+     values ($1,$2,'https://x.com','vibes')`, [alice, t1])));
+  check("audit_profile_source rejects a value outside the vocabulary", Boolean(await throws(
+    `insert into public.audits (user_id, target_id, target_url, audit_profile_source)
+     values ($1,$2,'https://x.com','because')`, [alice, t1])));
+
+  // The two types the API refuses today are legal in the COLUMN on purpose.
+  // The vocabulary is a stored contract, and widening a live CHECK later is a
+  // migration plus a deploy plus a window in which the API and the database
+  // disagree about what is legal.
+  for (const type of ["domain", "prompt_monitor", "benchmark", "rerun"]) {
+    let err = null;
+    try {
+      await db.query(
+        `insert into public.audits (user_id, target_id, target_url, audit_type)
+         values ($1,$2,'https://x.com/t','${type}')`, [alice, t1]);
+    } catch (e) { err = e.message; }
+    eq(`the column accepts audit_type '${type}' ahead of the engine`, err, null);
+  }
+
+  // ── the four business-model profiles ─────────────────────────────────────
+  for (const profile of ["saas", "services", "local", "ecommerce"]) {
+    let err = null;
+    try {
+      await db.query(
+        `insert into public.audits (user_id, target_id, target_url, audit_profile)
+         values ($1,$2,'https://x.com/p','${profile}')`, [alice, t1]);
+    } catch (e) { err = e.message; }
+    eq(`audit_profile accepts '${profile}'`, err, null);
+  }
+
+  // ── intake reuse on the recurring path ───────────────────────────────────
+  // A monitor that dropped the goal would build a trend line whose first point
+  // had context and whose others did not — and the diff would still be drawn,
+  // because nothing downstream knows the context changed.
+  const sched = await one(
+    `insert into public.audit_schedules
+       (user_id, target_id, cadence, audit_profile, primary_goal, page_type_hint,
+        target_geography, competitor_urls)
+     values ($1,$2,'weekly','local','local_discovery','location',$3,array['https://rival.com/'])
+     returning primary_goal, page_type_hint, target_geography, competitor_urls, audit_profile`,
+    [alice, t1, JSON.stringify({ country: "IN", region: null, city: "Bengaluru", language: null })]);
+  eq("a schedule carries the goal onto every run it creates", sched.primary_goal, "local_discovery");
+  eq("a schedule carries the page-type hint", sched.page_type_hint, "location");
+  eq("a schedule carries the geography", sched.target_geography?.city, "Bengaluru");
+  eq("a schedule may use a business-model profile", sched.audit_profile, "local");
+
+  check("a schedule's primary_goal is held to the same vocabulary", Boolean(await throws(
+    `insert into public.audit_schedules (user_id, target_id, cadence, primary_goal)
+     values ($1,$2,'weekly','vibes')`, [alice, t1])));
+
+  // The benchmark table's profile CHECK was widened by the same migration. It
+  // was missed once already — 0030 wrote the same four-value list three times.
+  let benchProfile = null;
+  try {
+    await db.query(
+      `insert into public.audit_benchmarks (user_id, name, audit_profile)
+       values ($1,'set','ecommerce')`, [alice]);
+  } catch (e) { benchProfile = e.message; }
+  eq("a benchmark may use a business-model profile too", benchProfile, null);
+
+  // ── 0050: the gap-analysis fields, and the link nothing ever wrote ───────
+  //
+  // The BRD specifies eleven fields on every issue; the table carried six. The
+  // five it did not carry are the five that make a queue actionable rather
+  // than merely correct.
+  const gapIssue = await one(
+    `insert into public.audit_issues
+       (audit_id, user_id, code, pillar, severity, title, evidence,
+        observed, inference, root_cause, recommended_module, owner_role)
+     values ($1,$2,'EA-11','entity_authority','critical','Entity markup is unusable',
+             'Organization markup carries no name.',
+             'Organization markup carries no name.',
+             'A resolver has a node to build and no identity to attach.',
+             'entity_ambiguity','schema_intelligence','seo')
+     returning id, observed, inference, root_cause, recommended_module, owner_role, status, evidence`,
+    [a1, alice]);
+
+  // The split that is the whole point: one column launders the weaker claim
+  // into the stronger. "We measured this" and "we reason it means that" have
+  // different warranties and must not share a field.
+  eq("an issue stores what was OBSERVED", gapIssue.observed, "Organization markup carries no name.");
+  check("an issue stores the INFERENCE separately",
+    /no identity to attach/.test(gapIssue.inference || ""));
+  check("the two are different sentences", gapIssue.observed !== gapIssue.inference);
+  // `evidence` is kept and keeps its meaning — every export prints it and every
+  // historical diff compares it.
+  check("the original evidence sentence is kept, not replaced",
+    /no name/.test(gapIssue.evidence || ""));
+
+  eq("an issue stores its root cause", gapIssue.root_cause, "entity_ambiguity");
+  eq("an issue stores the module that answers it", gapIssue.recommended_module, "schema_intelligence");
+  eq("an issue stores who fixes it", gapIssue.owner_role, "seo");
+  // Defaulted, unlike 0049's primary_goal, because unlike a goal this one IS
+  // knowable retrospectively: every finding genuinely starts open.
+  eq("an issue starts open", gapIssue.status, "open");
+
+  check("root_cause rejects a cause outside the taxonomy", Boolean(await throws(
+    `insert into public.audit_issues (audit_id, user_id, code, pillar, severity, title, root_cause)
+     values ($1,$2,'AC-02','answer_clarity','high','x','vibes')`, [a1, alice])));
+  check("recommended_module rejects a module that does not exist", Boolean(await throws(
+    `insert into public.audit_issues (audit_id, user_id, code, pillar, severity, title, recommended_module)
+     values ($1,$2,'AC-03','answer_clarity','high','x','M99')`, [a1, alice])));
+  check("owner_role rejects a role outside the five", Boolean(await throws(
+    `insert into public.audit_issues (audit_id, user_id, code, pillar, severity, title, owner_role)
+     values ($1,$2,'AC-04','answer_clarity','high','x','legal')`, [a1, alice])));
+  check("issue status rejects a state outside the lifecycle", Boolean(await throws(
+    `insert into public.audit_issues (audit_id, user_id, code, pillar, severity, title, status)
+     values ($1,$2,'AC-05','answer_clarity','high','x','probably')`, [a1, alice])));
+
+  // The full BRD vocabulary is legal in the column ahead of W8 wiring the
+  // transitions — same reasoning 0049 applies to the audit types the engine
+  // cannot yet produce.
+  for (const state of ["accepted", "assigned", "in_progress", "implemented",
+    "validation_scheduled", "validated", "dismissed"]) {
+    let err = null;
+    try {
+      await db.query(
+        `update public.audit_issues set status = $2 where id = $1`, [gapIssue.id, state]);
+    } catch (e) { err = e.message; }
+    eq(`the column accepts issue status '${state}' ahead of W8`, err, null);
+  }
+  await db.query(`update public.audit_issues set status = 'open' where id = $1`, [gapIssue.id]);
+
+  // Two of the eight causes belong to P2 and are unused in P1. They are legal
+  // now because the taxonomy is a contract and one that arrives in two halves
+  // invites the second half to be numbered around the first.
+  for (const cause of ["location_radius_mismatch", "conversion_friction"]) {
+    let err = null;
+    try {
+      await db.query(
+        `update public.audit_issues set root_cause = $2 where id = $1`, [gapIssue.id, cause]);
+    } catch (e) { err = e.message; }
+    eq(`the column accepts the P2 cause '${cause}'`, err, null);
+  }
+  await db.query(`update public.audit_issues set root_cause = 'entity_ambiguity' where id = $1`, [gapIssue.id]);
+
+  // 🔴 THE LINK THAT WAS DECLARED IN 0030 AND WRITTEN BY NOTHING.
+  // Every recommendation was an orphan, so "which finding produced this task"
+  // had no answer in the data and the validation loop could not close.
+  let linked = null;
+  try {
+    await db.query(
+      `insert into public.audit_recommendations
+         (audit_id, user_id, code, issue_id, pillar, priority, title)
+       values ($1,$2,'EA-11',$3,'entity_authority','high','Name the organization')`,
+      [a1, alice, gapIssue.id]);
+  } catch (e) { linked = e.message; }
+  eq("a recommendation can name the issue that produced it", linked, null);
+
+  const joined = await one(
+    `select i.code issue_code, r.code rec_code
+       from public.audit_recommendations r
+       join public.audit_issues i on i.id = r.issue_id
+      where r.audit_id = $1 and r.issue_id is not null`, [a1]);
+  eq("the join resolves back to the finding", joined.issue_code, "EA-11");
+
+  // ON DELETE SET NULL, not CASCADE: the work survives the finding being
+  // re-audited away. A recommendation deleted because its issue was resolved
+  // would erase the record that anyone ever did anything about it.
+  await db.query(`delete from public.audit_issues where id = $1`, [gapIssue.id]);
+  const orphaned = await one(
+    `select issue_id from public.audit_recommendations
+      where audit_id = $1 and code = 'EA-11'`, [a1]);
+  eq("deleting the issue nulls the link rather than deleting the work",
+    orphaned.issue_id, null);
 
   // ── constraints that keep the vocabulary honest ───────────────────────────
   const badEnum = async (sql, params) => Boolean(await throws(sql, params));
@@ -1953,6 +2336,1352 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
           and grantee in ('anon','authenticated')`, [t]);
     eq(`${t}: anon and authenticated hold no grants`, grants.length, 0);
   }
+}
+
+// ── 0051 · assigning a recommendation ────────────────────────────────────────
+{
+  group("assign_recommendation() — you can only hand work to someone you share a workspace with");
+
+  const owner   = (await one(`insert into auth.users (email) values ('own@w.com') returning id`)).id;
+  const mate    = (await one(`insert into auth.users (email) values ('mate@w.com') returning id`)).id;
+  const outsider= (await one(`insert into auth.users (email) values ('out@w.com') returning id`)).id;
+
+  const ws = (await one(
+    `insert into public.workspaces (owner_id, name) values ($1,'W') returning id`, [owner])).id;
+  await db.query(`insert into public.workspace_members (workspace_id, user_id, role)
+                  values ($1,$2,'owner'), ($1,$3,'member')`, [ws, owner, mate]);
+
+  const target = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://x.com/a','x.com') returning id`, [owner])).id;
+  const audit = (await one(
+    `insert into public.audits (user_id, target_id, target_url, status)
+     values ($1,$2,'https://x.com/a','completed') returning id`, [owner, target])).id;
+  const rec = (await one(
+    `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title)
+     values ($1,$2,'TA-03','technical_accessibility','high','Remove the noindex') returning id`,
+    [owner, audit])).id;
+
+  eq("a new recommendation starts unassigned",
+    (await one(`select assigned_to from public.audit_recommendations where id=$1`, [rec])).assigned_to, null);
+
+  eq("the owner can assign to a workspace mate",
+    (await one(`select public.assign_recommendation($1,$2,$3) as r`, [owner, rec, mate])).r, "ok");
+
+  const held = await one(`select assigned_to, assigned_at from public.audit_recommendations where id=$1`, [rec]);
+  eq("...and the row records who holds it", held.assigned_to, mate);
+  check("...and when they took it", held.assigned_at !== null);
+
+  eq("🔴 assigning to someone outside every shared workspace is refused",
+    (await one(`select public.assign_recommendation($1,$2,$3) as r`, [owner, rec, outsider])).r, "not_a_member");
+
+  eq("...and the refusal changed nothing",
+    (await one(`select assigned_to from public.audit_recommendations where id=$1`, [rec])).assigned_to, mate);
+
+  eq("a solo operator can always assign to themselves",
+    (await one(`select public.assign_recommendation($1,$2,$1) as r`, [outsider, rec])).r, "not_found");
+
+  eq("the owner can take it themselves with no workspace check",
+    (await one(`select public.assign_recommendation($1,$2,$1) as r`, [owner, rec])).r, "ok");
+
+  eq("unassigning is always allowed",
+    (await one(`select public.assign_recommendation($1,$2,null) as r`, [owner, rec])).r, "ok");
+  const freed = await one(`select assigned_to, assigned_at from public.audit_recommendations where id=$1`, [rec]);
+  eq("...and clears the timestamp with the pointer", [freed.assigned_to, freed.assigned_at], [null, null]);
+
+  eq("🔴 another tenant cannot assign a recommendation that is not theirs",
+    (await one(`select public.assign_recommendation($1,$2,$1) as r`, [mate, rec])).r, "not_found");
+
+  eq("an unknown recommendation reports not_found, never a different error",
+    (await one(`select public.assign_recommendation($1,'00000000-0000-0000-0000-000000000000',$1) as r`, [owner])).r,
+    "not_found");
+
+  // 🔴 Offboarding must FREE a finding, never destroy one. Asserted on the
+  // constraint itself rather than only by deleting a user, because the
+  // behavioural version passes for the wrong reason if some other cascade
+  // reaches the row first — and it is the constraint that is the guarantee.
+  const fk = await one(
+    `select confdeltype from pg_constraint
+      where conrelid='public.audit_recommendations'::regclass
+        and contype='f' and pg_get_constraintdef(oid) like '%assigned_to%'`);
+  eq("assigned_to is ON DELETE SET NULL, so offboarding frees work rather than deleting it",
+    fk?.confdeltype ?? "NO SUCH CONSTRAINT", "n");
+
+  await db.query(`select public.assign_recommendation($1,$2,$3)`, [owner, rec, mate]);
+  await db.query(`delete from auth.users where id=$1`, [mate]);
+  const survivor = await one(`select id, assigned_to from public.audit_recommendations where id=$1`, [rec]);
+  check("the recommendation outlives the person who held it", Boolean(survivor),
+    `\n      the row was deleted, not freed`);
+}
+
+// ── 0052 · citation states ───────────────────────────────────────────────────
+{
+  group("audit_prompt_runs — seven states, and the null that is not a false");
+
+  const u = (await one(`insert into auth.users (email) values ('cit@x.com') returning id`)).id;
+  const t = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://x.com/a','x.com') returning id`, [u])).id;
+  const a = (await one(
+    `insert into public.audits (user_id, target_id, target_url, status)
+     values ($1,$2,'https://x.com/a','completed') returning id`, [u, t])).id;
+
+  const mk = (over) => Object.assign({
+    state: null, commercial: null, misrepresented: null, prompt_kind: null,
+  }, over);
+
+  for (const st of ["misrepresented", "cited_and_recommended", "recommended",
+                    "cited", "mentioned", "competitor_dominated", "absent"]) {
+    const row = await one(
+      `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, state)
+       values ($1,$2,'perplexity','p',$3) returning state`, [a, u, st]);
+    eq(`state '${st}' is storable`, row.state, st);
+  }
+
+  const bad = await throws(
+    `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, state)
+     values ($1,$2,'perplexity','p','invented')`, [a, u]);
+  check("🔴 an invented state is refused by the constraint", Boolean(bad));
+
+  // 🔴 The distinction the whole accuracy heuristic rests on.
+  const n = await one(
+    `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, misrepresented)
+     values ($1,$2,'perplexity','p',null) returning misrepresented`, [a, u]);
+  eq("misrepresented NULL means could-not-check, and stays NULL", n.misrepresented, null);
+  const f = await one(
+    `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, misrepresented)
+     values ($1,$2,'perplexity','p',false) returning misrepresented`, [a, u]);
+  eq("...and false means checked-and-consistent, which is a different row", f.misrepresented, false);
+
+  // A run predating the taxonomy classifies as nothing, not as absent.
+  const legacy = await one(
+    `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt)
+     values ($1,$2,'perplexity','p') returning state, commercial, prompt_kind`, [a, u]);
+  eq("🔴 a row written without a state is unclassified, not 'absent'",
+    [legacy.state, legacy.commercial, legacy.prompt_kind], [null, null, null]);
+
+  const comp = await one(
+    `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, competitors_json)
+     values ($1,$2,'perplexity','p','[{"host":"clay.com","declared":true,"confidence":100}]'::jsonb)
+     returning competitors_json`, [a, u]);
+  eq("a competitor keeps its declared flag and confidence",
+    [comp.competitors_json[0].declared, comp.competitors_json[0].confidence], [true, 100]);
+
+  eq("kind confidence records whether the intent was declared or guessed",
+    (await one(
+      `insert into public.audit_prompt_runs (audit_id, user_id, engine_name, prompt, kind_confidence)
+       values ($1,$2,'perplexity','p',30) returning kind_confidence`, [a, u])).kind_confidence, 30);
+}
+
+// ── 0054 · the workflow lifecycle ────────────────────────────────────────────
+{
+  group("audit_recommendations — eight states, and the one that must be earned");
+
+  const u = (await one(`insert into auth.users (email) values ('wf@x.com') returning id`)).id;
+  const t = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://x.com/a','x.com') returning id`, [u])).id;
+  const a = (await one(
+    `insert into public.audits (user_id, target_id, target_url, status)
+     values ($1,$2,'https://x.com/a','completed') returning id`, [u, t])).id;
+
+  // One row per state, each with its own code: (audit_id, code) is unique.
+  const mk = async (status, code) => one(
+    `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title, status)
+     values ($1,$2,$4,'technical_accessibility','high','t',$3) returning status`, [u, a, status, code]);
+
+  const STATES = ["open", "accepted", "dismissed", "done",
+                  "assigned", "in_progress", "implemented", "validation_scheduled", "validated"];
+  for (const [i, st] of STATES.entries()) {
+    eq(`status '${st}' is storable`, (await mk(st, `ST-${i}`)).status, st);
+  }
+
+  check("🔴 an invented status is still refused", Boolean(await throws(
+    `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title, status)
+     values ($1,$2,'ST-BAD','technical_accessibility','high','t','invented')`, [u, a])));
+
+  // 🔴 The column that makes `validated` a measurement rather than a claim.
+  const rec = (await one(
+    `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title)
+     values ($1,$2,'WF-1','technical_accessibility','high','t') returning id`, [u, a])).id;
+  await db.query(
+    `update public.audit_recommendations set status='validated', validated_by_audit_id=$2 where id=$1`,
+    [rec, a]);
+  eq("validated points at the audit that re-measured it",
+    (await one(`select validated_by_audit_id from public.audit_recommendations where id=$1`, [rec])).validated_by_audit_id, a);
+
+  // Deleting that audit must free the pointer, not delete the recommendation.
+  const fk = await one(
+    `select confdeltype from pg_constraint
+      where conrelid='public.audit_recommendations'::regclass and contype='f'
+        and pg_get_constraintdef(oid) like '%validated_by_audit_id%'`);
+  eq("🔴 validated_by_audit_id is ON DELETE SET NULL, so pruning audits never deletes findings",
+    fk?.confdeltype ?? "NO SUCH CONSTRAINT", "n");
+
+  eq("due dates and notes are storable, and default to nothing",
+    (await one(`select due_at, notes from public.audit_recommendations where id=$1`, [rec])),
+    { due_at: null, notes: null });
+
+  // D6 — the column 0030 declared and nothing wrote.
+  const ws = (await one(
+    `insert into public.workspaces (owner_id, name) values ($1,'W') returning id`, [u])).id;
+  await db.query(`update public.audit_recommendations set workspace_id=$2 where id=$1`, [rec, ws]);
+  eq("D6: a recommendation can carry its workspace",
+    (await one(`select workspace_id from public.audit_recommendations where id=$1`, [rec])).workspace_id, ws);
+  eq("...and NULL stays valid, because most audits have no workspace",
+    (await one(
+      `insert into public.audit_recommendations (user_id, audit_id, code, pillar, priority, title)
+       values ($1,$2,'WF-2','technical_accessibility','high','t') returning workspace_id`, [u, a])).workspace_id,
+    null);
+}
+
+// ── 0055 · the Canonical Business Truth Record ───────────────────────────────
+{
+  group("audit_business_truth_* — versioned, approval-gated, and enforced twice");
+
+  const owner = (await one(`insert into auth.users (email) values ('bt-owner@x.com') returning id`)).id;
+  const mate  = (await one(`insert into auth.users (email) values ('bt-mate@x.com') returning id`)).id;
+
+  const rec = (await one(
+    `insert into public.audit_business_truth_records (user_id, canonical_domain, display_name)
+     values ($1,'acme.example','Acme') returning id`, [owner])).id;
+
+  eq("a new record is canonical-less until something is promoted",
+    (await one(`select current_version_id from public.audit_business_truth_records where id=$1`, [rec])).current_version_id,
+    null);
+
+  // 🔴 One live answer to "what is true" per business per owner.
+  check("a second ACTIVE record for the same domain is refused", Boolean(await throws(
+    `insert into public.audit_business_truth_records (user_id, canonical_domain)
+     values ($1,'acme.example')`, [owner])));
+  await db.query(
+    `update public.audit_business_truth_records set status='archived' where id=$1`, [rec]);
+  check("...but archiving one frees the domain, so a record can be retired and rebuilt",
+    !(await throws(
+      `insert into public.audit_business_truth_records (user_id, canonical_domain)
+       values ($1,'acme.example')`, [owner])));
+  await db.query(`delete from public.audit_business_truth_records where user_id=$1 and id<>$2`, [owner, rec]);
+  await db.query(`update public.audit_business_truth_records set status='active' where id=$1`, [rec]);
+  check("a different owner may hold the same domain", !(await throws(
+    `insert into public.audit_business_truth_records (user_id, canonical_domain)
+     values ($1,'acme.example')`, [mate])));
+
+  const FIELDS = JSON.stringify({
+    legal_name: { field: "legal_name", value: "Acme Technologies", source: "declared", stated_at: "2026-09-11T10:00:00Z" },
+    canonical_domain: { field: "canonical_domain", value: "acme.example", source: "declared", stated_at: "2026-09-11T10:00:00Z" },
+  });
+
+  const mkVersion = async (no, fields = FIELDS, proposer = owner) => (await one(
+    `insert into public.audit_business_truth_versions (record_id, version_no, state, fields_json, proposed_by)
+     values ($1,$2,'pending_review',$3::jsonb,$4) returning id`, [rec, no, fields, proposer])).id;
+
+  const v1 = await mkVersion(1);
+
+  check("🔴 version numbers are unique per record", Boolean(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no) values ($1,1)`, [rec])));
+  check("a version number of zero is refused", Boolean(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no) values ($1,0)`, [rec])));
+  check("an invented state is refused", Boolean(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no, state)
+     values ($1,99,'probably_fine')`, [rec])));
+
+  // ── The three constraints that make "approved" mean something ──────────────
+  check("🔴 SELF-APPROVAL is refused by the DATABASE, not only by the handler", Boolean(await throws(
+    `insert into public.audit_business_truth_versions
+       (record_id, version_no, state, proposed_by, reviewed_by, reviewed_at)
+     values ($1,50,'approved',$2,$2,now())`, [rec, owner])));
+  check("...while a genuine second reviewer is accepted", !(await throws(
+    `insert into public.audit_business_truth_versions
+       (record_id, version_no, state, proposed_by, reviewed_by, reviewed_at)
+     values ($1,51,'approved',$2,$3,now())`, [rec, owner, mate])));
+  check("an approved version with no reviewer recorded is refused", Boolean(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no, state)
+     values ($1,52,'approved')`, [rec])));
+  check("🔴 a rejection with no reason is refused — same rule as a dismissal reason", Boolean(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no, state, review_note)
+     values ($1,53,'rejected','   ')`, [rec])));
+  check("...a rejection WITH a reason is kept", !(await throws(
+    `insert into public.audit_business_truth_versions (record_id, version_no, state, review_note)
+     values ($1,54,'rejected','Address is the old office.')`, [rec])));
+  await db.query(`delete from public.audit_business_truth_versions where version_no >= 50 and record_id=$1`, [rec]);
+
+  // ── Promotion ─────────────────────────────────────────────────────────────
+  eq("promotion refuses a version that does not exist",
+    (await one(`select public.promote_business_truth_version($1,$2) as r`,
+      ["00000000-0000-0000-0000-000000000000", mate])).r, "not_found");
+  eq("🔴 promotion refuses self-approval, restating the CHECK rather than trusting it",
+    (await one(`select public.promote_business_truth_version($1,$2) as r`, [v1, owner])).r, "self_approval");
+  eq("promotion refuses when no reviewer is supplied",
+    (await one(`select public.promote_business_truth_version($1,null) as r`, [v1])).r, "no_approver");
+
+  const thin = await mkVersion(2, JSON.stringify({ brand_name: { value: "Acme" } }));
+  eq("promotion refuses a version missing an identifying fact",
+    (await one(`select public.promote_business_truth_version($1,$2) as r`, [thin, mate])).r, "missing_required");
+  eq("...and that version is untouched by the refusal",
+    (await one(`select state, reviewed_by from public.audit_business_truth_versions where id=$1`, [thin])),
+    { state: "pending_review", reviewed_by: null });
+
+  eq("a complete, independently-reviewed version promotes",
+    (await one(`select public.promote_business_truth_version($1,$2,'Checked against the GST certificate.') as r`,
+      [v1, mate])).r, "ok");
+  eq("...the version records who approved it and why",
+    (await one(`select state, reviewed_by, review_note from public.audit_business_truth_versions where id=$1`, [v1])),
+    { state: "approved", reviewed_by: mate, review_note: "Checked against the GST certificate." });
+  eq("...and the record now points at it",
+    (await one(`select current_version_id from public.audit_business_truth_records where id=$1`, [rec])).current_version_id, v1);
+
+  eq("🔴 promotion is idempotent — a retry cannot double-supersede",
+    (await one(`select public.promote_business_truth_version($1,$2) as r`, [v1, mate])).r, "ok");
+
+  // 🔴 The window this function exists to close: promoting a second version
+  // must retire the first in the SAME statement, so no reader ever sees two
+  // approved versions of one record — or a record pointing at nothing.
+  const v3 = await mkVersion(3);
+  eq("a second promotion succeeds", (await one(
+    `select public.promote_business_truth_version($1,$2) as r`, [v3, mate])).r, "ok");
+  eq("🔴 exactly ONE version of a record is ever approved",
+    (await q(`select id from public.audit_business_truth_versions where record_id=$1 and state='approved'`, [rec])).length, 1);
+  eq("...the outgoing version is superseded and dated, not deleted",
+    (await one(`select state, superseded_at is not null as dated from public.audit_business_truth_versions where id=$1`, [v1])),
+    { state: "superseded", dated: true });
+  eq("...and the record repointed",
+    (await one(`select current_version_id from public.audit_business_truth_records where id=$1`, [rec])).current_version_id, v3);
+
+  eq("a superseded version cannot be re-promoted behind the current one",
+    (await one(`select public.promote_business_truth_version($1,$2) as r`, [v1, mate])).r, "not_reviewable");
+
+  // ── Parity with the pure model ────────────────────────────────────────────
+  //
+  // The SQL function names the identifying facts literally. `businessTruth.js`
+  // names them in REQUIRED_FOR_CANONICAL. Those two lists drifting apart would
+  // mean the UI gate and the database gate refuse different things — so assert
+  // agreement rather than hoping, exactly as signalDispatch.parity does for the
+  // trigger_source CHECK.
+  {
+    const { REQUIRED_FOR_CANONICAL } = await import(
+      "file://" + join(ROOT, "src", "lib", "discoverability", "businessTruth.js"));
+    const src = readFileSync(join(DIR, "0055_business_truth.sql"), "utf8");
+    const fn = src.slice(src.indexOf("create or replace function public.promote_business_truth_version"));
+    for (const id of REQUIRED_FOR_CANONICAL) {
+      check(`parity: promote_business_truth_version enforces '${id}' like REQUIRED_FOR_CANONICAL does`,
+        fn.includes(`'${id}'`));
+    }
+    eq("parity: the model gates on exactly two identifying facts",
+      [...REQUIRED_FOR_CANONICAL].sort(), ["canonical_domain", "legal_name"]);
+  }
+
+  // ── Conflicts ─────────────────────────────────────────────────────────────
+  check("an invented conflict code is refused — codes are a public contract", Boolean(await throws(
+    `insert into public.audit_business_truth_conflicts (record_id, code, field)
+     values ($1,'BT-99','legal_name')`, [rec])));
+  const conf = (await one(
+    `insert into public.audit_business_truth_conflicts (record_id, version_id, code, field, severity, canonical_value, observed_value)
+     values ($1,$2,'BT-01','legal_name','high','Acme Technologies','Globex') returning id`, [rec, v3])).id;
+  eq("a conflict is open until it is resolved",
+    (await one(`select resolved_at, resolution from public.audit_business_truth_conflicts where id=$1`, [conf])),
+    { resolved_at: null, resolution: null });
+  check("an invented resolution is refused", Boolean(await throws(
+    `update public.audit_business_truth_conflicts set resolution='ignored' where id=$1`, [conf])));
+
+  // ── Referential behaviour ─────────────────────────────────────────────────
+  const cvFk = await one(
+    `select confdeltype from pg_constraint
+      where conrelid='public.audit_business_truth_records'::regclass and contype='f'
+        and pg_get_constraintdef(oid) like '%current_version_id%'`);
+  eq("🔴 current_version_id is ON DELETE SET NULL — losing the pointer never deletes the record",
+    cvFk?.confdeltype ?? "NO SUCH CONSTRAINT", "n");
+
+  eq("not_applicable defaults to empty, so nothing is excluded from completeness by accident",
+    (await one(`select not_applicable from public.audit_business_truth_records where id=$1`, [rec])).not_applicable, []);
+
+  const wsB = (await one(`insert into public.workspaces (owner_id, name) values ($1,'BT') returning id`, [owner])).id;
+  await db.query(`update public.audit_business_truth_records set workspace_id=$2 where id=$1`, [rec, wsB]);
+  eq("D6: a truth record can carry its workspace, and NULL stays valid",
+    (await one(`select workspace_id from public.audit_business_truth_records where id=$1`, [rec])).workspace_id, wsB);
+
+  // ── RLS ───────────────────────────────────────────────────────────────────
+  for (const t of ["audit_business_truth_records", "audit_business_truth_versions", "audit_business_truth_conflicts"]) {
+    eq(`${t} has RLS enabled`,
+      (await one(`select relrowsecurity from pg_class where oid=('public.'||$1)::regclass`, [t])).relrowsecurity, true);
+    eq(`${t} grants nothing to anon or authenticated`,
+      (await q(`select 1 from information_schema.role_table_grants
+                 where table_name=$1 and grantee in ('anon','authenticated')`, [t])).length, 0);
+  }
+}
+
+// ── 0056 · the entity graph ──────────────────────────────────────────────────
+{
+  group("audit_entities / _relationships / _evidence — a graph that cannot lie about itself");
+
+  const owner = (await one(`insert into auth.users (email) values ('eg-owner@x.com') returning id`)).id;
+  const mate  = (await one(`insert into auth.users (email) values ('eg-mate@x.com') returning id`)).id;
+
+  const mkEntity = async (type, name, over = {}) => (await one(
+    `insert into public.audit_entities (user_id, entity_type, name, source, evidence_json, proposed_by, state)
+     values ($1,$2,$3,$4,$5,$6,coalesce($7,'proposed')) returning id`,
+    [owner, type, name, over.source || 'declared', over.evidence || null, over.proposedBy ?? owner, over.state || null])).id;
+
+  const acme  = await mkEntity("organization", "Acme Technologies");
+  const cloud = await mkEntity("brand", "Acme Cloud");
+
+  eq("everything is created proposed, whatever proposed it",
+    (await one(`select state from public.audit_entities where id=$1`, [acme])).state, "proposed");
+
+  check("an invented entity type is refused — the stable registry is a contract", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source)
+     values ($1,'wizard','Merlin','declared')`, [owner])));
+  check("an unnamed node is refused — it resolves nothing", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source)
+     values ($1,'organization','   ','declared')`, [owner])));
+  check("🔴 an OBSERVED entity with no evidence is refused", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source)
+     values ($1,'organization','Ghost','observed')`, [owner])));
+  check("...and an observed entity WITH evidence is kept", !(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source, evidence_json)
+     values ($1,'organization','Seen','observed','{"method":"json_ld"}'::jsonb)`, [owner])));
+  check("a confidence outside 0-1 is refused", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source, confidence)
+     values ($1,'organization','X','declared',1.5)`, [owner])));
+
+  for (const type of ["partner", "customer_case_study", "directory_listing", "competitor"]) {
+    check(`§9.2 additive entity type '${type}' is storable`, !(await throws(
+      `insert into public.audit_entities (user_id, entity_type, name, source)
+       values ($1,$2,$3,'declared')`, [owner, type, `Example ${type}`])));
+  }
+
+  check("🔴 self-approval of an entity is refused by the database", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source, proposed_by, reviewed_by, reviewed_at, state)
+     values ($1,'organization','Y','declared',$2,$2,now(),'approved')`, [owner, owner])));
+  check("an entity rejection with no reason is refused", Boolean(await throws(
+    `insert into public.audit_entities (user_id, entity_type, name, source, state, review_note)
+     values ($1,'organization','Z','declared','rejected','  ')`, [owner])));
+
+  // ── Relations ─────────────────────────────────────────────────────────────
+  const mkRel = async (s, p, o, over = {}) => one(
+    `insert into public.audit_entity_relationships
+       (user_id, subject_id, predicate, object_id, source, evidence_json, proposed_by)
+     values ($1,$2,$3,$4,$5,$6,$7) returning id`,
+    [owner, s, p, o, over.source || 'declared', over.evidence || null, over.proposedBy ?? owner]);
+
+  const owns = (await mkRel(acme, "owns", cloud)).id;
+  eq("a relation is created proposed too",
+    (await one(`select state from public.audit_entity_relationships where id=$1`, [owns])).state, "proposed");
+
+  check("an invented predicate is refused — the stable registry is a contract", Boolean(await throws(
+    `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
+     values ($1,$2,'vibes',$3,'declared')`, [owner, acme, cloud])));
+
+  for (const predicate of ["provides", "founded_by", "validated_by", "listed_on"]) {
+    check(`§9.2 additive predicate '${predicate}' is storable`, !(await throws(
+      `insert into public.audit_entity_relationships
+         (user_id, subject_id, predicate, object_id, source)
+       values ($1,$2,$3,$4,'declared')`, [owner, acme, predicate, cloud])));
+  }
+
+  check("🔴 A SELF-EDGE IS REFUSED — it is vacuously true and pollutes every traversal",
+    Boolean(await throws(
+      `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
+       values ($1,$2,'part_of',$2,'declared')`, [owner, acme])));
+
+  check("🔴 THE SAME EDGE CANNOT BE STORED TWICE — a weekly crawler would otherwise double every count",
+    Boolean(await throws(
+      `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
+       values ($1,$2,'owns',$3,'declared')`, [owner, acme, cloud])));
+  check("...but the same pair under a DIFFERENT predicate is a different edge", !(await throws(
+    `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
+     values ($1,$2,'offers',$3,'declared')`, [owner, acme, cloud])));
+
+  check("🔴 an OBSERVED relation with no evidence is refused", Boolean(await throws(
+    `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source)
+     values ($1,$2,'serves',$3,'observed')`, [owner, acme, cloud])));
+  check("🔴 self-approval of a relation is refused by the database", Boolean(await throws(
+    `insert into public.audit_entity_relationships
+       (user_id, subject_id, predicate, object_id, source, proposed_by, reviewed_by, reviewed_at, state)
+     values ($1,$2,'about',$3,'declared',$4,$4,now(),'approved')`, [owner, acme, cloud, owner])));
+
+  // 🔴 A dangling edge is worse than a missing one: every traversal has to
+  // defend against it for ever.
+  const tmp = await mkEntity("person", "Temp");
+  const tmpRel = (await mkRel(acme, "employs", tmp)).id;
+  await db.query(`delete from public.audit_entities where id=$1`, [tmp]);
+  eq("🔴 deleting a node deletes the edges that pointed at it — no dangling pointers",
+    (await q(`select id from public.audit_entity_relationships where id=$1`, [tmpRel])).length, 0);
+
+  // ── Approval ──────────────────────────────────────────────────────────────
+  eq("approval refuses an edge that does not exist",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`,
+      ["00000000-0000-0000-0000-000000000000", mate])).r, "not_found");
+  eq("🔴 approval refuses self-approval",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`, [owns, owner])).r, "self_approval");
+  eq("approval refuses when no reviewer is supplied",
+    (await one(`select public.approve_entity_relationship($1,null) as r`, [owns])).r, "no_approver");
+
+  eq("an independently-reviewed edge approves",
+    (await one(`select public.approve_entity_relationship($1,$2,'Confirmed from the filings.') as r`,
+      [owns, mate])).r, "ok");
+  eq("...and records who approved it and why",
+    (await one(`select state, reviewed_by, review_note from public.audit_entity_relationships where id=$1`, [owns])),
+    { state: "approved", reviewed_by: mate, review_note: "Confirmed from the filings." });
+
+  // 🔴 An approved edge between two unreviewed nodes is a half-built statement.
+  eq("🔴 approving an edge approves its ENDPOINTS in the same statement",
+    (await q(`select id from public.audit_entities where id in ($1,$2) and state='approved'`, [acme, cloud])).length, 2);
+
+  eq("approval is idempotent",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`, [owns, mate])).r, "ok");
+
+  // An endpoint somebody explicitly rejected blocks the edge — reviving it
+  // silently would undo their decision.
+  const dead = await mkEntity("person", "Departed");
+  await db.query(
+    `update public.audit_entities set state='rejected', review_note='Left the company.' where id=$1`, [dead]);
+  const deadRel = (await mkRel(acme, "employs", dead)).id;
+  eq("🔴 an edge to an explicitly REJECTED node is refused, not silently revived",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`, [deadRel, mate])).r, "endpoint_rejected");
+  eq("...and the rejected node stays rejected",
+    (await one(`select state from public.audit_entities where id=$1`, [dead])).state, "rejected");
+
+  const rejRel = (await mkRel(cloud, "serves", acme)).id;
+  await db.query(
+    `update public.audit_entity_relationships set state='rejected', review_note='Wrong direction.' where id=$1`,
+    [rejRel]);
+  eq("a rejected edge is not revived by approving it again",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`, [rejRel, mate])).r, "rejected");
+
+  // ── 0075 Direct entity node approval ──────────────────────────────────────
+  const soloNode = await mkEntity("brand", "Solo Brand");
+  eq("0075: approve_entity refuses non-existent entity",
+    (await one(`select public.approve_entity($1,$2) as r`,
+      ["00000000-0000-0000-0000-000000000000", mate])).r, "not_found");
+  eq("0075: approve_entity refuses self-approval without single-founder note",
+    (await one(`select public.approve_entity($1,$2) as r`, [soloNode, owner])).r, "self_approval");
+  eq("0075: approve_entity permits self-approval with single-founder note",
+    (await one(`select public.approve_entity($1,$2,'[Single-founder approval] Verified by owner') as r`, [soloNode, owner])).r, "ok");
+  eq("0075: ...and entity state is updated to approved",
+    (await one(`select state from public.audit_entities where id=$1`, [soloNode])).state, "approved");
+
+  // ── 0076 Endpoint self-approval is a VERDICT, never a raw CHECK violation ──
+  // Reproduced before the fix: a teammate proposed the edge, the reviewer had
+  // proposed its endpoints, and the endpoint UPDATE raised 23514 — which the
+  // panel showed as a failed save.
+  {
+    const ownEnd1 = await mkEntity("organization", "Endpoint Owner Co");
+    const ownEnd2 = await mkEntity("brand", "Endpoint Owner Brand");
+    const teamRel = (await one(
+      `insert into public.audit_entity_relationships (user_id, subject_id, predicate, object_id, source, proposed_by)
+       values ($1,$2,'owns',$3,'declared',$4) returning id`, [owner, ownEnd1, ownEnd2, mate])).id;
+    eq("🔴 0076: approving a teammate's edge between entities YOU proposed returns endpoint_self_approval",
+      (await one(`select public.approve_entity_relationship($1,$2,'Approved by reviewer') as r`, [teamRel, owner])).r,
+      "endpoint_self_approval");
+    eq("0076: ...and nothing was half-approved",
+      (await q(`select id from public.audit_entities where id in ($1,$2) and state='approved'`, [ownEnd1, ownEnd2])).length, 0);
+    eq("0076: the single-founder note covers the endpoint half as well",
+      (await one(`select public.approve_entity_relationship($1,$2,'[Single-founder approval] Solo operator') as r`, [teamRel, owner])).r,
+      "ok");
+    eq("0076: ...approving the edge AND both endpoints",
+      (await q(`select id from public.audit_entities where id in ($1,$2) and state='approved'`, [ownEnd1, ownEnd2])).length, 2);
+  }
+
+  // ── 0076 Directory sources marked not applicable ─────────────────────────
+  {
+    const ig = (await one(`insert into auth.users (email) values ('dir-ignore@x.com') returning id`)).id;
+    check("0076: an ignore is recorded with its reason", !(await throws(
+      `insert into public.audit_directory_source_ignores (user_id, source_id, reason, ignored_by)
+       values ($1,'practo','Not relevant to our industry',$1)`, [ig])));
+    check("🔴 0076: an ignore without a reason is refused", Boolean(await throws(
+      `insert into public.audit_directory_source_ignores (user_id, source_id, reason)
+       values ($1,'zomato','   ')`, [ig])));
+    check("0076: the same source cannot be ignored twice for one record (NULLS NOT DISTINCT arbiter)", Boolean(await throws(
+      `insert into public.audit_directory_source_ignores (user_id, source_id, reason)
+       values ($1,'practo','again')`, [ig])));
+    eq("0076: RLS is enabled on the ignores table",
+      (await one(`select relrowsecurity as r from pg_class where relname='audit_directory_source_ignores'`)).r, true);
+  }
+
+  // ── Parity with the pure model ────────────────────────────────────────────
+  //
+  // The CHECK constraints list the types and predicates literally; entityGraph
+  // lists them in ENTITY_TYPE_IDS and PREDICATE_IDS. Those drifting apart would
+  // mean the model proposes edges the database refuses. Assert agreement rather
+  // than hoping, exactly as signalDispatch.parity does.
+  {
+    const { ENTITY_TYPE_IDS, PREDICATE_IDS, GRAPH_CONFLICT_CODES } = await import(
+      "file://" + join(ROOT, "src", "lib", "discoverability", "entityGraph.js"));
+    const constraintValues = async (name) => {
+      const row = await one(
+        `select pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where conname=$1`,
+        [name],
+      );
+      return row ? [...row.definition.matchAll(/'([^']+)'/g)].map((x) => x[1]).sort() : null;
+    };
+    eq("parity: the entity_type CHECK matches ENTITY_TYPE_IDS exactly",
+      await constraintValues("audit_entities_entity_type_check"), [...ENTITY_TYPE_IDS].sort());
+    eq("parity: the predicate CHECK matches PREDICATE_IDS exactly",
+      await constraintValues("audit_entity_relationships_predicate_check"), [...PREDICATE_IDS].sort());
+    const src = readFileSync(join(DIR, "0056_entity_graph.sql"), "utf8");
+    const listIn = (col) => {
+      const m = src.match(new RegExp(`${col}\\s+text not null[\\s\\S]*?check \\(${col} in \\(([\\s\\S]*?)\\)\\)`));
+      return m ? [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort() : null;
+    };
+    eq("parity: the conflict-code CHECK matches GRAPH_CONFLICT_CODES exactly",
+      listIn("code"), Object.keys(GRAPH_CONFLICT_CODES).sort());
+    eq("parity: eighteen stable ids cover §9.2's fifteen types and nine relationships",
+      [ENTITY_TYPE_IDS.length, PREDICATE_IDS.length], [18, 13]);
+
+    await db.exec(readFileSync(join(DIR, "0065_entity_graph_taxonomy.sql"), "utf8"));
+    eq("0065 is forward-only and safely re-runnable after entity rows exist",
+      await constraintValues("audit_entities_entity_type_check"), [...ENTITY_TYPE_IDS].sort());
+  }
+
+  // ── Evidence and conflicts ────────────────────────────────────────────────
+  check("evidence for nothing at all is refused", Boolean(await throws(
+    `insert into public.audit_entity_evidence (evidence_json) values ('{}'::jsonb)`)));
+  const evId = (await one(
+    `insert into public.audit_entity_evidence (relationship_id, evidence_json, confidence)
+     values ($1,'{"method":"json_ld","source_url":"https://acme.example/"}'::jsonb, 0.99) returning id`,
+    [owns])).id;
+  check("corroboration attaches to an existing edge", Boolean(evId));
+  await db.query(`delete from public.audit_entity_relationships where id=$1`, [owns]);
+  eq("...and is removed with the edge it corroborated",
+    (await q(`select id from public.audit_entity_evidence where id=$1`, [evId])).length, 0);
+
+  check("an invented conflict code is refused", Boolean(await throws(
+    `insert into public.audit_entity_conflicts (user_id, code) values ($1,'EG-99')`, [owner])));
+  const conf = (await one(
+    `insert into public.audit_entity_conflicts (user_id, code, severity, predicate, message)
+     values ($1,'EG-01','high','located_at','Two approved headquarters.') returning id`, [owner])).id;
+  eq("a graph conflict is open until resolved",
+    (await one(`select resolved_at, resolution from public.audit_entity_conflicts where id=$1`, [conf])),
+    { resolved_at: null, resolution: null });
+  check("an invented resolution is refused", Boolean(await throws(
+    `update public.audit_entity_conflicts set resolution='shrug' where id=$1`, [conf])));
+
+  // ── D6 + RLS ──────────────────────────────────────────────────────────────
+  const wsE = (await one(`insert into public.workspaces (owner_id, name) values ($1,'EG') returning id`, [owner])).id;
+  await db.query(`update public.audit_entities set workspace_id=$2 where id=$1`, [acme, wsE]);
+  eq("D6: an entity can carry its workspace",
+    (await one(`select workspace_id from public.audit_entities where id=$1`, [acme])).workspace_id, wsE);
+
+  for (const t of ["audit_entities", "audit_entity_relationships",
+                   "audit_entity_evidence", "audit_entity_conflicts"]) {
+    eq(`${t} has RLS enabled`,
+      (await one(`select relrowsecurity from pg_class where oid=('public.'||$1)::regclass`, [t])).relrowsecurity, true);
+    eq(`${t} grants nothing to anon or authenticated`,
+      (await q(`select 1 from information_schema.role_table_grants
+                 where table_name=$1 and grantee in ('anon','authenticated')`, [t])).length, 0);
+  }
+}
+
+// ── 0057 · D7, the subject registry ─────────────────────────────────────────
+{
+  group("audit_subjects — polymorphism the database can actually enforce");
+
+  const owner = (await one(`insert into auth.users (email) values ('subj-owner@x.com') returning id`)).id;
+  const other = (await one(`insert into auth.users (email) values ('subj-other@x.com') returning id`)).id;
+
+  const tgt = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host, label)
+     values ($1,'https://acme.com/pricing','acme.com','Pricing') returning id`, [owner])).id;
+  const ent = (await one(
+    `insert into public.audit_entities (user_id, entity_type, name, source, canonical_domain, proposed_by, reviewed_by, reviewed_at, state)
+     values ($1,'brand','Acme Cloud','declared','acme.com',$1,$2,now(),'approved') returning id`, [owner, other])).id;
+  const rec = (await one(
+    `insert into public.audit_business_truth_records (user_id, canonical_domain, display_name)
+     values ($1,'acme.com','Acme') returning id`, [owner])).id;
+
+  // ── exactly one reference ───────────────────────────────────────────────
+  check("a subject with NO reference is refused", Boolean(await throws(
+    `insert into public.audit_subjects (user_id, subject_kind, label)
+     values ($1,'page','orphan')`, [owner])));
+  check("a subject with TWO references is refused — this is the whole point of D7", Boolean(await throws(
+    `insert into public.audit_subjects (user_id, subject_kind, target_id, entity_id, label)
+     values ($1,'page',$2,$3,'two')`, [owner, tgt, ent])));
+
+  // ── the kind must agree with the reference ──────────────────────────────
+  // Without this the polymorphic bug is back, one column over: a 'page'
+  // subject pointing at a brand would score a brand and report it as a page.
+  check("a 'page' subject pointing at an ENTITY is refused", Boolean(await throws(
+    `insert into public.audit_subjects (user_id, subject_kind, entity_id, label)
+     values ($1,'page',$2,'wrong kind')`, [owner, ent])));
+  check("a 'brand' subject pointing at a TARGET is refused", Boolean(await throws(
+    `insert into public.audit_subjects (user_id, subject_kind, target_id, label)
+     values ($1,'brand',$2,'wrong kind')`, [owner, tgt])));
+  check("a blank label is refused", Boolean(await throws(
+    `insert into public.audit_subjects (user_id, subject_kind, target_id, label)
+     values ($1,'page',$2,'   ')`, [owner, tgt])));
+  check("an invented kind is refused", Boolean(await throws(
+    `insert into public.audit_subjects (user_id, subject_kind, target_id, label)
+     values ($1,'campaign',$2,'nope')`, [owner, tgt])));
+
+  // 'domain' is the one kind that legitimately accepts either reference.
+  const domSubj = (await one(
+    `insert into public.audit_subjects (user_id, subject_kind, truth_record_id, label, canonical_domain)
+     values ($1,'domain',$2,'Acme','acme.com') returning id`, [owner, rec])).id;
+  check("a 'domain' subject may point at a truth record", Boolean(domSubj));
+
+  // ── get-or-create is idempotent ─────────────────────────────────────────
+  const s1 = (await one(`select public.upsert_audit_subject($1,'page',$2,null,null,'Pricing','acme.com') as id`, [owner, tgt])).id;
+  const s2 = (await one(`select public.upsert_audit_subject($1,'page',$2,null,null,'Pricing','acme.com') as id`, [owner, tgt])).id;
+  eq("upsert_audit_subject returns the SAME subject twice — a re-audit must not scatter the history", s2, s1);
+  eq("...and only one row exists for that target",
+    (await q(`select 1 from public.audit_subjects where target_id=$1 and subject_kind='page'`, [tgt])).length, 1);
+
+  const b1 = (await one(`select public.upsert_audit_subject($1,'brand',null,$2,null,'Acme Cloud','acme.com') as id`, [owner, ent])).id;
+  check("a brand subject over the same domain is a DIFFERENT subject from the page", b1 !== s1);
+
+  // 🔴 THE RACE `upsert_audit_target` DOES NOT HAVE. 0057 shipped this as a
+  // SELECT-then-INSERT whose own comment claimed the partial unique indexes
+  // made it safe under concurrency. They make a SECOND ROW impossible — they
+  // do NOT make the loser return the winner's id: a concurrent snapshot cannot
+  // see the uncommitted row, so its select misses and its insert raises
+  // unique_violation, which `ensureSubject` swallows into a NULL subject.
+  // Today `sameSubject()` falls back to `target_id` so a page audit survives
+  // it; an entity-backed subject has NO fallback, so W13 would have turned a
+  // race into a scattered history. 0060 makes it atomic.
+  //
+  // ⚠️ THIS IS A STRUCTURAL ASSERTION AND IT SAYS SO. PGlite is a single
+  // connection, so the interleaving cannot be reproduced here — and a
+  // BEHAVIOURAL test cannot tell the two implementations apart, because the
+  // select fast-path answers first in every single-threaded call. An earlier
+  // draft of this block asserted "returns the existing subject rather than
+  // raising" and passed against the UNFIXED function for exactly that reason.
+  // What is checkable is that the atomicity is present at all: once the insert
+  // carries its own ON CONFLICT arbiter, Postgres owns the guarantee.
+  const subjSrc = (await one(
+    `select pg_get_functiondef(p.oid) src from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname='public' and p.proname='upsert_audit_subject'`)).src;
+  check("🔴 upsert_audit_subject is ATOMIC — every insert carries ON CONFLICT",
+    (subjSrc.match(/insert into public\.audit_subjects/g) || []).length ===
+    (subjSrc.match(/on conflict/gi) || []).length &&
+    (subjSrc.match(/on conflict/gi) || []).length >= 3);
+  check("...inferring each PARTIAL index by restating its predicate",
+    /on conflict \(user_id, subject_kind, target_id\) where target_id is not null/i.test(subjSrc)
+    && /on conflict \(user_id, subject_kind, entity_id\) where entity_id is not null/i.test(subjSrc)
+    && /on conflict \(user_id, subject_kind, truth_record_id\) where truth_record_id is not null/i.test(subjSrc));
+
+  // A bare duplicate must STILL be refused: 0060 makes the function absorb the
+  // conflict, it does not weaken the constraint that creates one.
+  check("a bare duplicate INSERT is still refused — the invariant is intact", Boolean(await throws(
+    `insert into public.audit_subjects (user_id, subject_kind, target_id, label)
+     values ($1,'page',$2,'page')`, [owner, tgt])));
+  const merged = await one(
+    `select public.upsert_audit_subject($1,'page',$2,null,null,'Raced label','acme.com') as id`, [owner, tgt]);
+  eq("the conflict path returns the EXISTING subject", merged.id, s1);
+  eq("...and still only one row exists for that target",
+    (await q(`select 1 from public.audit_subjects where target_id=$1 and subject_kind='page'`, [tgt])).length, 1);
+  eq("...having merged the newer label rather than discarding it",
+    (await one(`select label from public.audit_subjects where id=$1`, [s1])).label, "Raced label");
+  // The merge must never BLANK what another caller established.
+  await q(`select public.upsert_audit_subject($1,'page',$2,null,null,null,null)`, [owner, tgt]);
+  eq("...and a caller supplying nothing does not erase the label",
+    (await one(`select label from public.audit_subjects where id=$1`, [s1])).label, "Raced label");
+  eq("...nor the canonical domain",
+    (await one(`select canonical_domain from public.audit_subjects where id=$1`, [s1])).canonical_domain, "acme.com");
+
+  check("upsert refuses two references with a named error, not a raw constraint violation",
+    (await throws(`select public.upsert_audit_subject($1,'page',$2,$3,null,'x',null)`, [owner, tgt, ent]) || "")
+      .includes("exactly one reference"));
+  check("upsert refuses zero references", Boolean(await throws(
+    `select public.upsert_audit_subject($1,'page',null,null,null,'x',null)`, [owner])));
+
+  // Two owners over the same underlying row are two subjects — the partial
+  // unique index is scoped to (user_id, kind, ref), not to the ref alone.
+  const tgtOther = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://acme.com/pricing','acme.com') returning id`, [other])).id;
+  const sOther = (await one(`select public.upsert_audit_subject($1,'page',$2,null,null,'Pricing',null) as id`, [other, tgtOther])).id;
+  check("another owner auditing the same URL gets their OWN subject", sOther !== s1);
+
+  // ── the audit points at its subject, and NULL stays valid ───────────────
+  const aNew = (await one(
+    `insert into public.audits (user_id, target_id, target_url, subject_id)
+     values ($1,$2,'https://acme.com/pricing',$3) returning id`, [owner, tgt, s1])).id;
+  eq("an audit carries its subject",
+    (await one(`select subject_id from public.audits where id=$1`, [aNew])).subject_id, s1);
+
+  // 🔴 BACKWARD COMPATIBILITY — the contract this whole design rests on.
+  // A pre-0057 audit has no subject and must keep working untouched.
+  const aOld = (await one(
+    `insert into public.audits (user_id, target_id, target_url)
+     values ($1,$2,'https://acme.com/about') returning id`, [owner, tgt])).id;
+  eq("a pre-0057 audit has a NULL subject and that is VALID",
+    (await one(`select subject_id from public.audits where id=$1`, [aOld])).subject_id, null);
+  const issueOld = (await one(
+    `insert into public.audit_issues (user_id, audit_id, code, pillar, severity, title)
+     values ($1,$2,'AC-01','answer_clarity','high','t') returning id`, [owner, aOld])).id;
+  check("...and findings still hang off it unchanged — audit_issues was not touched", Boolean(issueOld));
+
+  // ── the backfill is re-runnable ─────────────────────────────────────────
+  // The migration's own backfill ran before any of this data existed. Re-run
+  // the exact statements: the first pass adopts the rows created since, the
+  // second changes nothing. A migration that is only correct once cannot be
+  // safely re-applied after a partial failure.
+  const BACKFILL_SUBJECTS = `
+    insert into public.audit_subjects (user_id, workspace_id, subject_kind, target_id, label, canonical_domain)
+    select t.user_id, t.workspace_id, 'page', t.id,
+           coalesce(nullif(btrim(t.label), ''), t.canonical_url), t.host
+      from public.audit_targets t
+    on conflict do nothing`;
+  const BACKFILL_AUDITS = `
+    update public.audits a set subject_id = s.id
+      from public.audit_subjects s
+     where s.target_id = a.target_id and s.subject_kind = 'page'
+       and s.user_id = a.user_id and a.subject_id is null`;
+
+  await db.query(BACKFILL_SUBJECTS);
+  await db.query(BACKFILL_AUDITS);
+  eq("the backfill adopts a pre-0057 audit",
+    (await one(`select subject_id from public.audits where id=$1`, [aOld])).subject_id, s1);
+  eq("...without disturbing one that already had a subject",
+    (await one(`select subject_id from public.audits where id=$1`, [aNew])).subject_id, s1);
+
+  const before = (await q(`select id from public.audit_subjects`)).length;
+  await db.query(BACKFILL_SUBJECTS);
+  await db.query(BACKFILL_AUDITS);
+  eq("running the backfill a SECOND time creates no duplicate subjects",
+    (await q(`select id from public.audit_subjects`)).length, before);
+
+  // ── deletes cascade, and an audit outlives its subject ──────────────────
+  await db.query(`delete from public.audit_subjects where id=$1`, [b1]);
+  eq("deleting a subject leaves the entity alone",
+    (await q(`select 1 from public.audit_entities where id=$1`, [ent])).length, 1);
+
+  const aKeep = (await one(
+    `insert into public.audits (user_id, target_id, target_url, subject_id)
+     values ($1,$2,'https://acme.com/keep',$3) returning id`, [owner, tgt, domSubj])).id;
+  await db.query(`delete from public.audit_subjects where id=$1`, [domSubj]);
+  const kept = await one(`select id, subject_id from public.audits where id=$1`, [aKeep]);
+  check("🔴 deleting a subject NEVER destroys an audit that was run and charged for",
+    Boolean(kept) && kept.subject_id === null);
+
+  await db.query(`delete from public.audit_entities where id=$1`, [ent]);
+  eq("deleting an entity cascades to its subject",
+    (await q(`select 1 from public.audit_subjects where entity_id=$1`, [ent])).length, 0);
+
+  // ── D6 + RLS ────────────────────────────────────────────────────────────
+  const wsS = (await one(`insert into public.workspaces (owner_id, name) values ($1,'Subj') returning id`, [owner])).id;
+  await db.query(`update public.audit_subjects set workspace_id=$2 where id=$1`, [s1, wsS]);
+  eq("D6: a subject can carry its workspace",
+    (await one(`select workspace_id from public.audit_subjects where id=$1`, [s1])).workspace_id, wsS);
+
+  eq("audit_subjects has RLS enabled",
+    (await one(`select relrowsecurity from pg_class where oid='public.audit_subjects'::regclass`)).relrowsecurity, true);
+  eq("audit_subjects grants nothing to anon or authenticated",
+    (await q(`select 1 from information_schema.role_table_grants
+               where table_name='audit_subjects' and grantee in ('anon','authenticated')`)).length, 0);
+}
+
+// ── 0058 · W12, local and directory intelligence ────────────────────────────
+{
+  group("audit_directory_* / audit_local_* — one listing per source, and null is never zero");
+
+  const owner = (await one(`insert into auth.users (email) values ('ld-owner@x.com') returning id`)).id;
+  const rec = (await one(
+    `insert into public.audit_business_truth_records (user_id, canonical_domain, display_name)
+     values ($1,'acme.com','Acme') returning id`, [owner])).id;
+
+  // ── listings ────────────────────────────────────────────────────────────
+  const listing = (await one(
+    `insert into public.audit_directory_listings
+       (user_id, truth_record_id, source_id, source_tier, acquisition, listing_url,
+        observed_name, observed_address, observed_phone)
+     values ($1,$2,'justdial','major_aggregator','public_listing','https://justdial.com/acme',
+             'Acme Technologies','4th Flr MG Rd','08047182200') returning id`, [owner, rec])).id;
+  check("a public listing is stored with the page it was read from", Boolean(listing));
+
+  check("an invented tier is refused", Boolean(await throws(
+    `insert into public.audit_directory_listings (user_id, source_id, source_tier, acquisition, listing_url)
+     values ($1,'x','tier_one','public_listing','https://x.com')`, [owner])));
+  check("an invented acquisition mode is refused", Boolean(await throws(
+    `insert into public.audit_directory_listings (user_id, source_id, source_tier, acquisition, listing_url)
+     values ($1,'x','vertical','guessing','https://x.com')`, [owner])));
+
+  // A public listing claims somebody could go and check it.
+  check("a public listing with NO url is refused", Boolean(await throws(
+    `insert into public.audit_directory_listings (user_id, source_id, source_tier, acquisition)
+     values ($1,'x','vertical','public_listing')`, [owner])));
+  const apiListing = (await one(
+    `insert into public.audit_directory_listings (user_id, source_id, source_tier, acquisition, observed_name)
+     values ($1,'google_business_profile','authoritative','authorized_api','Acme') returning id`, [owner])).id;
+  check("...but an authorised-API listing needs none — the connection IS the evidence", Boolean(apiListing));
+
+  // 🔴 This is the API's exact `on_conflict` shape.  0058's expression index
+  // enforced uniqueness but could NOT be selected by this column list, making
+  // PostgREST reject saves before its update branch.  0059's NULLS NOT DISTINCT
+  // constraint must make both the non-null and null-record forms legal.
+  const upsertedNullRecord = await one(
+    `insert into public.audit_directory_listings (user_id, source_id, source_tier, acquisition, observed_name)
+     values ($1,'google_business_profile','authoritative','authorized_api','Acme corrected')
+     on conflict (user_id, truth_record_id, source_id)
+     do update set observed_name = excluded.observed_name
+     returning id, observed_name`, [owner]);
+  eq("🔴 a NULL-record listing supports the API's column-based upsert",
+    upsertedNullRecord.observed_name, "Acme corrected");
+  eq("...without stacking a second current listing",
+    (await one(`select count(*)::int n from public.audit_directory_listings
+                 where user_id=$1 and truth_record_id is null and source_id='google_business_profile'`, [owner])).n, 1);
+
+  // The operator may need to retry 0059 after a connection hiccup. Re-apply
+  // its real SQL against the already-migrated database: a constraint-backed
+  // index must be dropped THROUGH its constraint, not directly.
+  await db.exec(readFileSync(join(DIR, "0059_local_directory_listing_upsert.sql"), "utf8"));
+  const reupsertedNullRecord = await one(
+    `insert into public.audit_directory_listings (user_id, source_id, source_tier, acquisition, observed_name)
+     values ($1,'google_business_profile','authoritative','authorized_api','Acme rechecked')
+     on conflict (user_id, truth_record_id, source_id)
+     do update set observed_name = excluded.observed_name
+     returning observed_name`, [owner]);
+  eq("🔴 0059 is safely re-runnable and keeps the NULL-record upsert legal",
+    reupsertedNullRecord.observed_name, "Acme rechecked");
+
+  check("a SECOND listing for the same source and record is refused", Boolean(await throws(
+    `insert into public.audit_directory_listings
+       (user_id, truth_record_id, source_id, source_tier, acquisition, listing_url)
+     values ($1,$2,'justdial','major_aggregator','public_listing','https://justdial.com/acme-2')`, [owner, rec])));
+
+  // ── checks ──────────────────────────────────────────────────────────────
+  // 🔴 D7 IN USE. A local check is about a BUSINESS, which is exactly the case
+  // the page-shaped audits.target_id could never carry.
+  const subj = (await one(
+    `select public.upsert_audit_subject($1,'domain',null,null,$2,'Acme','acme.com') as id`, [owner, rec])).id;
+  const chk = (await one(
+    `insert into public.audit_local_checks
+       (user_id, truth_record_id, subject_id, nap_score, coverage, checked_count, configured_count,
+        region, unchecked_sources)
+     values ($1,$2,$3,92.5,0.4,2,5,'IN','{bing_places,sulekha,mca}') returning id`, [owner, rec, subj])).id;
+  eq("a local check carries its D7 subject",
+    (await one(`select subject_id from public.audit_local_checks where id=$1`, [chk])).subject_id, subj);
+
+  const nullScore = (await one(
+    `insert into public.audit_local_checks (user_id, nap_score, coverage, checked_count, configured_count)
+     values ($1,null,0,0,5) returning nap_score, coverage`, [owner]));
+  eq("🔴 a run that could read NOTHING stores a null score, never 0", nullScore.nap_score, null);
+
+  check("a score above 100 is refused", Boolean(await throws(
+    `insert into public.audit_local_checks (user_id, nap_score) values ($1,101)`, [owner])));
+  check("a coverage above 1 is refused", Boolean(await throws(
+    `insert into public.audit_local_checks (user_id, coverage) values ($1,1.5)`, [owner])));
+  check("checking MORE sources than are configured is refused", Boolean(await throws(
+    `insert into public.audit_local_checks (user_id, checked_count, configured_count) values ($1,6,5)`, [owner])));
+
+  // ── matches ─────────────────────────────────────────────────────────────
+  const match = (await one(
+    `insert into public.audit_directory_matches
+       (user_id, check_id, listing_id, source_id, source_tier, tier_weight, match_score, coverage,
+        fields_json, mismatched)
+     values ($1,$2,$3,'justdial','major_aggregator',0.70,92,1.0,
+             '[{"field":"name","state":"strong"}]'::jsonb,'{}') returning id`, [owner, chk, listing])).id;
+  check("a per-directory match is stored with the states behind its number", Boolean(match));
+
+  check("a SECOND match for the same source in one check is refused", Boolean(await throws(
+    `insert into public.audit_directory_matches
+       (user_id, check_id, source_id, source_tier, tier_weight)
+     values ($1,$2,'justdial','major_aggregator',0.70)`, [owner, chk])));
+
+  check("a tier weight of 0 is refused — a source that counts for nothing is not a source", Boolean(await throws(
+    `insert into public.audit_directory_matches (user_id, check_id, source_id, source_tier, tier_weight)
+     values ($1,$2,'sulekha','major_aggregator',0)`, [owner, chk])));
+
+  // ── findings ────────────────────────────────────────────────────────────
+  const finding = (await one(
+    `insert into public.audit_local_findings (user_id, check_id, truth_record_id, source_id, code, severity, fields)
+     values ($1,$2,$3,'justdial','LD-01','critical','{address}') returning id`, [owner, chk, rec])).id;
+  check("an LD finding is stored open", Boolean(finding));
+
+  check("a code outside the LD-NN shape is refused — codes are a public contract", Boolean(await throws(
+    `insert into public.audit_local_findings (user_id, code, severity) values ($1,'LD-1','high')`, [owner])));
+  check("a non-LD prefix is refused", Boolean(await throws(
+    `insert into public.audit_local_findings (user_id, code, severity) values ($1,'AC-01','high')`, [owner])));
+  check("an invented severity is refused", Boolean(await throws(
+    `insert into public.audit_local_findings (user_id, code, severity) values ($1,'LD-02','catastrophic')`, [owner])));
+
+  // A half-resolved finding shows as open while a reader believes it closed.
+  check("a resolution with no timestamp is refused", Boolean(await throws(
+    `update public.audit_local_findings set resolution='listing_updated' where id=$1`, [finding])));
+  check("a timestamp with no resolution is refused", Boolean(await throws(
+    `update public.audit_local_findings set resolved_at=now() where id=$1`, [finding])));
+  check("an invented resolution is refused", Boolean(await throws(
+    `update public.audit_local_findings set resolution='shrug', resolved_at=now() where id=$1`, [finding])));
+  await db.query(
+    `update public.audit_local_findings set resolution='listing_updated', resolved_at=now(), resolved_by=$2 where id=$1`,
+    [finding, owner]);
+  eq("...and a properly paired resolution is accepted",
+    (await one(`select resolution from public.audit_local_findings where id=$1`, [finding])).resolution,
+    "listing_updated");
+
+  // ── cascades ────────────────────────────────────────────────────────────
+  await db.query(`delete from public.audit_local_checks where id=$1`, [chk]);
+  eq("deleting a check takes its matches with it",
+    (await q(`select 1 from public.audit_directory_matches where check_id=$1`, [chk])).length, 0);
+  eq("...and its findings", (await q(`select 1 from public.audit_local_findings where check_id=$1`, [chk])).length, 0);
+  eq("but NOT the listing it read — an observation outlives the run that used it",
+    (await q(`select 1 from public.audit_directory_listings where id=$1`, [listing])).length, 1);
+
+  // ── D6 + RLS ────────────────────────────────────────────────────────────
+  const wsL = (await one(`insert into public.workspaces (owner_id, name) values ($1,'LD') returning id`, [owner])).id;
+  await db.query(`update public.audit_directory_listings set workspace_id=$2 where id=$1`, [listing, wsL]);
+  eq("D6: a listing can carry its workspace",
+    (await one(`select workspace_id from public.audit_directory_listings where id=$1`, [listing])).workspace_id, wsL);
+
+  for (const t of ["audit_directory_listings", "audit_local_checks",
+                   "audit_directory_matches", "audit_local_findings"]) {
+    eq(`${t} has RLS enabled`,
+      (await one(`select relrowsecurity from pg_class where oid=('public.'||$1)::regclass`, [t])).relrowsecurity, true);
+    eq(`${t} grants nothing to anon or authenticated`,
+      (await q(`select 1 from information_schema.role_table_grants
+                 where table_name=$1 and grantee in ('anon','authenticated')`, [t])).length, 0);
+  }
+}
+
+// ── 0062 · W13, schema intelligence + trust & proof ────────────────────────
+group("audit_schema_entities / audit_trust_evidence — the W13 storage");
+{
+  const owner = (await one(`insert into auth.users (email) values ('w13-owner@x.com') returning id`)).id;
+  const other = (await one(`insert into auth.users (email) values ('w13-other@x.com') returning id`)).id;
+  const tgt = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://acme.com/','acme.com') returning id`, [owner])).id;
+  const subj = (await one(
+    `select public.upsert_audit_subject($1,'page',$2,null,null,'Home','acme.com') as id`, [owner, tgt])).id;
+
+  // ── The API's exact on_conflict shape ────────────────────────────────────
+  // 🔴 0059's LESSON, APPLIED FORWARD. PostgREST can only name COLUMN
+  // arbiters, so a NULLS NOT DISTINCT constraint is what makes the normal save
+  // legal when subject_id is nullable. 0058 shipped an expression index that
+  // enforced the invariant AND refused every save.
+  const noSubject = await one(
+    `insert into public.audit_schema_entities (user_id, schema_type, validity)
+     values ($1,'Organization','valid')
+     on conflict (user_id, subject_id, schema_type)
+     do update set validity = excluded.validity
+     returning id, validity`, [owner]);
+  eq("🔴 a NULL-subject schema row supports the API's column-based upsert", noSubject.validity, "valid");
+
+  const reupsert = await one(
+    `insert into public.audit_schema_entities (user_id, schema_type, validity)
+     values ($1,'Organization','incomplete')
+     on conflict (user_id, subject_id, schema_type)
+     do update set validity = excluded.validity
+     returning validity`, [owner]);
+  eq("...and a re-observation UPDATES rather than stacking a second opinion", reupsert.validity, "incomplete");
+  eq("...leaving exactly one row", (await one(
+    `select count(*)::int n from public.audit_schema_entities
+      where user_id=$1 and subject_id is null and schema_type='Organization'`, [owner])).n, 1);
+
+  check("a subject-scoped row is a DIFFERENT row from the null-subject one", Boolean(await one(
+    `insert into public.audit_schema_entities (user_id, subject_id, schema_type)
+     values ($1,$2,'Organization') returning id`, [owner, subj])));
+
+  // Present-but-unusable is a third state, not a worse absence.
+  for (const v of ["valid", "incomplete", "unparseable"]) {
+    check(`validity '${v}' is storable`, Boolean(await one(
+      `insert into public.audit_schema_entities (user_id, schema_type, validity)
+       values ($1,$2,$3) returning id`, [owner, `T_${v}`, v])));
+  }
+  check("an invented validity is refused", Boolean(await throws(
+    `insert into public.audit_schema_entities (user_id, schema_type, validity)
+     values ($1,'X','probably_fine')`, [owner])));
+
+  // ── Trust evidence ───────────────────────────────────────────────────────
+  check("a self-published observation needs no source", Boolean(await one(
+    `insert into public.audit_trust_evidence (user_id, signal, independence, observed_count)
+     values ($1,'ratings','self_published',12) returning id`, [owner])));
+
+  // 🔴 THE CHECK THAT MAKES THE DATABASE AGREE WITH THE MODEL. An independent
+  // record nobody can go and check is not an independent record.
+  check("🔴 a third_party observation with NO source_url is refused by the DATABASE", Boolean(await throws(
+    `insert into public.audit_trust_evidence (user_id, signal, independence, observed_count)
+     values ($1,'ratings','third_party',3)`, [owner])));
+  check("...but is accepted with one", Boolean(await one(
+    `insert into public.audit_trust_evidence (user_id, signal, independence, observed_count, source_url)
+     values ($1,'ratings','third_party',3,'https://g2.com/acme') returning id`, [owner])));
+
+  check("an invented independence is refused", Boolean(await throws(
+    `insert into public.audit_trust_evidence (user_id, signal, independence)
+     values ($1,'ratings','trust_me_bro')`, [owner])));
+  check("a negative observed_count is refused", Boolean(await throws(
+    `insert into public.audit_trust_evidence (user_id, signal, independence, observed_count)
+     values ($1,'ratings','self_published',-4)`, [owner])));
+
+  // ⚠️ `signal` is deliberately NOT constrained — a new trust source is a code
+  // change, not a migration. The TIER-equivalent (independence) is.
+  check("an unregistered signal is ACCEPTED — the registry is code, not a CHECK", Boolean(await one(
+    `insert into public.audit_trust_evidence (user_id, signal, independence)
+     values ($1,'a_source_invented_next_quarter','self_published') returning id`, [owner])));
+
+  // ── Ownership and cascade ────────────────────────────────────────────────
+  const otherTgt = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://acme.com/','acme.com') returning id`, [other])).id;
+  const otherSubj = (await one(
+    `select public.upsert_audit_subject($1,'page',$2,null,null,'Home',null) as id`, [other, otherTgt])).id;
+  check("another owner's identical schema row does not collide", Boolean(await one(
+    `insert into public.audit_schema_entities (user_id, subject_id, schema_type)
+     values ($1,$2,'Organization') returning id`, [other, otherSubj])));
+
+  const before = (await one(`select count(*)::int n from public.audit_trust_evidence where user_id=$1`, [owner])).n;
+  check("the owner has trust rows before the cascade test", before > 0);
+  await db.query(`delete from auth.users where id=$1`, [owner]);
+  eq("deleting the owner cascades their trust evidence away",
+    (await one(`select count(*)::int n from public.audit_trust_evidence where user_id=$1`, [owner])).n, 0);
+  eq("...and their schema entities",
+    (await one(`select count(*)::int n from public.audit_schema_entities where user_id=$1`, [owner])).n, 0);
+}
+
+group("W13 RLS lockdown");
+{
+  for (const t of ["audit_schema_entities", "audit_trust_evidence"]) {
+    eq(`${t} has RLS enabled`, (await one(
+      `select relrowsecurity from pg_class where relname=$1`, [t])).relrowsecurity, true);
+    eq(`${t} grants nothing to anon or authenticated`, (await q(
+      `select 1 from information_schema.role_table_grants
+        where table_name=$1 and grantee in ('anon','authenticated')`, [t])).length, 0);
+  }
+}
+
+// ── 0061 · RPC lockdown ─────────────────────────────────────────────────────
+// 🔴 THE 0044 DEFECT ONE LAYER DOWN. 0044 locked fifteen TABLES that anon could
+// read and write; nobody checked FUNCTIONS. PostgreSQL grants EXECUTE on a new
+// function to PUBLIC by default, and SECURITY DEFINER bypasses RLS — so an
+// anon-executable definer function that takes a caller-supplied user id and
+// never consults auth.uid() is an impersonation primitive, not merely a loose
+// grant. This sweep is DERIVED from the catalog rather than being a list to
+// keep in step: a future migration that adds such a function fails here on the
+// day it lands, which a hand-written list could not do.
+group("RPC lockdown — no SECURITY DEFINER function lets anon act as someone else");
+{
+  const definer = await q(`
+    select p.proname, pg_get_function_identity_arguments(p.oid) ia,
+           has_function_privilege('anon', p.oid, 'EXECUTE') anon_x,
+           has_function_privilege('authenticated', p.oid, 'EXECUTE') auth_x,
+           pg_get_functiondef(p.oid) ~* 'auth\\.uid\\(\\)' checks_uid
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.prosecdef
+     order by 1`);
+  check("the schema still has SECURITY DEFINER functions to check", definer.length > 0);
+
+  // The dangerous shape, stated once: reachable by an untrusted role, accepts
+  // the identity it is supposed to be enforcing, and never checks the real one.
+  const impersonable = definer.filter((f) =>
+    (f.anon_x || f.auth_x) && /p_user_?id|p_uid/i.test(f.ia) && !f.checks_uid);
+  eq(`🔴 no definer function takes a caller-supplied user id AND is reachable by anon/authenticated${
+      impersonable.length ? " — " + impersonable.map((f) => f.proname).join(", ") : ""}`,
+    impersonable.length, 0);
+
+  // The ten 0061 names, asserted individually so a partial revoke cannot pass
+  // as a whole one.
+  for (const n of ["set_account_frozen", "request_account_deletion", "cancel_account_deletion",
+                   "credit_spend", "credit_balance", "redeem_admin_coupon",
+                   "create_admin_coupon_assignment", "issue_referral_code",
+                   "accept_workspace_invite", "upsert_audit_target"]) {
+    const f = definer.find((x) => x.proname === n);
+    check(`${n} is not executable by anon`, Boolean(f) && !f.anon_x);
+  }
+
+  // ...and service_role must KEEP it, or the revoke has taken the product down
+  // instead of securing it. Every one of these is called from netlify/.
+  //
+  // ⚠️ SCOPED TO THE FUNCTIONS 0061 GRANTS EXPLICITLY, deliberately. A sweep
+  // over EVERY definer function would be testing a PGlite artifact, not the
+  // product: a stock Supabase project carries `ALTER DEFAULT PRIVILEGES ...
+  // GRANT ALL ON FUNCTIONS TO service_role`, so functions whose migration
+  // revokes without granting still work there and fail only here. 0061 states
+  // those grants rather than inheriting them; this asserts the stated ones.
+  const NEEDS_SERVICE = [
+    "set_account_frozen", "request_account_deletion", "cancel_account_deletion",
+    "credit_spend", "credit_balance", "redeem_admin_coupon",
+    "create_admin_coupon_assignment", "issue_referral_code",
+    "accept_workspace_invite", "upsert_audit_target", "claim_billing_session",
+    "assign_recommendation", "prune_ops_history", "record_pql_score",
+  ];
+  const svc = await q(`
+    select p.proname, has_function_privilege('service_role', p.oid, 'EXECUTE') x
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.prosecdef and p.proname = any($1)`, [NEEDS_SERVICE]);
+  eq("...while service_role keeps EXECUTE on every one of them", svc.filter((f) => !f.x).length, 0);
+  eq("...and all of them were actually found", svc.length, NEEDS_SERVICE.length);
+
+  // `claim_billing_session` is the shape the other ten should have had: it
+  // reads auth.uid() itself and takes no user id, so `authenticated` may keep
+  // it. Pinned so a later sweep does not "tidy" the one correct exception away.
+  const claim = definer.find((f) => f.proname === "claim_billing_session");
+  check("claim_billing_session stays available to authenticated — it derives auth.uid() itself",
+    Boolean(claim) && claim.auth_x && claim.checks_uid && !/p_user_?id/i.test(claim.ia));
+  check("...and is still not reachable by anon", Boolean(claim) && !claim.anon_x);
+}
+
+// ── 0064 · W11's result surface, landed as W13's step 5 ────────────────────
+group("audit_subject_scores — the table W11's model was waiting for");
+{
+  const owner = (await one(`insert into auth.users (email) values ('w11-owner@x.com') returning id`)).id;
+  const other = (await one(`insert into auth.users (email) values ('w11-other@x.com') returning id`)).id;
+  const tgt = (await one(
+    `insert into public.audit_targets (user_id, canonical_url, host)
+     values ($1,'https://acme.com/','acme.com') returning id`, [owner])).id;
+  const subj = (await one(
+    `select public.upsert_audit_subject($1,'page',$2,null,null,'Home','acme.com') as id`, [owner, tgt])).id;
+
+  // 🔴 THE APPEND. Two scorings of the same subject are two MEASUREMENTS, and
+  // the trend is what W11 exists for. Every sibling table in W12/W13 upserts;
+  // an arbiter here would collapse a subject's history into one row on every
+  // re-score, leaving a single row claiming to be the whole history.
+  await q(
+    `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'brand','BDS',61.5,80.0,'s1')`, [owner, subj]);
+  await q(
+    `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'brand','BDS',68.0,100.0,'s1')`, [owner, subj]);
+  eq("🔴 re-scoring APPENDS — the trend is the product, not the latest row",
+    (await one(`select count(*)::int n from public.audit_subject_scores where subject_id=$1`, [subj])).n, 2);
+
+  // 🔴 THE ONE THING THIS MODULE EXISTS TO PREVENT. A stored 0 is
+  // indistinguishable, for ever, from a subject that genuinely scored zero.
+  const nullScore = await one(
+    `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'service','SFS',null,0.0,'s1') returning score, coverage`, [owner, subj]);
+  check("🔴 `score` accepts NULL — unknown is never 0", nullScore.score === null);
+  eq("...while `coverage` still travels with it", Number(nullScore.coverage), 0);
+
+  // A score without its coverage is a DIFFERENT measurement, not a smaller
+  // one, so the column cannot be skipped.
+  check("coverage is NOT NULL — a score without it makes the trend lie",
+    Boolean(await throws(
+      `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, model_version)
+     values ($1,$2,'brand','BDS',61.5,'s1')`, [owner, subj])));
+
+  // ⚠️ THE 0048 RULE. A default lets a writer that forgets the stamp file a
+  // future score under the current version — the exact mislabelling the column
+  // exists to prevent.
+  check("model_version is NOT NULL with no default",
+    Boolean(await throws(
+      `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage)
+     values ($1,$2,'brand','BDS',61.5,80.0)`, [owner, subj])));
+
+  // ⚠️ THREE KINDS, NOT SIX. `audit_subjects` legitimately holds page, domain
+  // and location too, and `scoreIdFor` returns null for all three. A row
+  // claiming a page has a BDS is a category error.
+  check("a non-scorable subject kind is refused by the database, not just the route",
+    Boolean(await throws(
+      `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'page','BDS',61.5,80.0,'s1')`, [owner, subj])));
+
+  check("a score outside 0-100 is refused",
+    Boolean(await throws(
+      `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'brand','BDS',140.0,80.0,'s1')`, [owner, subj])));
+
+  // 🔴 subject_id is NOT NULL — a subject score with no subject is the
+  // polymorphic pointer D7 was written to refuse.
+  check("a score with no subject is refused — D7 is why this table can exist",
+    Boolean(await throws(
+      `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,null,'brand','BDS',61.5,80.0,'s1')`, [owner])));
+
+  // Deleting the subject takes its scores with it; a score pointing at a
+  // subject nobody holds explains nothing.
+  const subj2 = (await one(
+    `select public.upsert_audit_subject($1,'page',$2,null,null,'Other','acme.com') as id`, [other, tgt])).id;
+  await q(
+    `insert into public.audit_subject_scores
+       (user_id, subject_id, kind, code, score, coverage, model_version)
+     values ($1,$2,'brand','BDS',50.0,90.0,'s1')`, [other, subj2]);
+  await q(`delete from public.audit_subjects where id = $1`, [subj2]);
+  eq("deleting a subject cascades its scores",
+    (await one(`select count(*)::int n from public.audit_subject_scores where subject_id=$1`, [subj2])).n, 0);
+}
+
+group("W11 score RLS lockdown");
+{
+  const r = await one(
+    `select relrowsecurity rls from pg_class where relname = 'audit_subject_scores'`);
+  check("audit_subject_scores has RLS enabled", r.rls === true);
+  const pol = await q(
+    `select polname, polroles::regrole[] roles from pg_policy p
+       join pg_class c on c.oid = p.polrelid where c.relname = 'audit_subject_scores'`);
+  check("...and its only policy is service_role",
+    pol.length === 1 && String(pol[0].roles).includes("service_role"));
+}
+
+// ── 0071 · durable, idempotent analytics imports ──────────────────────────
+group("analytics import queue — durable claims and exactly-once aggregate storage");
+{
+  const owner = (await one(
+    `insert into auth.users (email) values ('analytics-queue-owner@x.com') returning id`)).id;
+  const workspace = (await one(
+    `insert into public.workspaces (owner_id, name) values ($1,'Analytics QA') returning id`, [owner])).id;
+  const payload = JSON.stringify({
+    workspaceId: workspace,
+    auditId: "audit-queue-1",
+    dateBucket: "2026-09-14",
+    landingPage: "/pricing",
+    sourceChannel: "organic",
+    device: "mobile",
+    region: "global",
+    visitorType: "new",
+    eventCounts: { page_view: 12, form_submit: 2 },
+    metrics: { conversion_rate: 16.67 },
+  });
+
+  const job = await one(
+    `insert into public.audit_analytics_import_jobs
+       (user_id, workspace_id, provider, idempotency_key, payload_hash, aggregate_payload)
+     values ($1,$2,'ga4','queue-check-1',repeat('a',64),$3::jsonb)
+     returning id, state, attempts`, [owner, workspace, payload]);
+  eq("a queued import starts pending", job.state, "pending");
+  eq("...with no attempt charged before a worker claim", job.attempts, 0);
+
+  check("the same provider idempotency key cannot enqueue twice", Boolean(await throws(
+    `insert into public.audit_analytics_import_jobs
+       (user_id, workspace_id, provider, idempotency_key, payload_hash, aggregate_payload)
+     values ($1,$2,'ga4','queue-check-1',repeat('b',64),$3::jsonb)`, [owner, workspace, payload])));
+  check("a malformed payload hash is refused", Boolean(await throws(
+    `insert into public.audit_analytics_import_jobs
+       (user_id, provider, idempotency_key, payload_hash, aggregate_payload)
+     values ($1,'custom','bad-hash','short','{}'::jsonb)`, [owner])));
+
+  const claimed = await q(`select id, state, attempts from public.claim_audit_analytics_import_jobs(10)`);
+  const claimedJob = claimed.find((row) => row.id === job.id);
+  check("the due job is claimed", Boolean(claimedJob));
+  eq("...and enters processing", claimedJob?.state, "processing");
+  eq("...with exactly one charged attempt", claimedJob?.attempts, 1);
+  eq("a processing job is not claimed concurrently", (await q(
+    `select id from public.claim_audit_analytics_import_jobs(10) where id=$1`, [job.id])).length, 0);
+
+  check("one aggregate may be attributed to the import job", Boolean(await one(
+    `insert into public.audit_analytics_aggregates
+       (user_id, workspace_id, audit_id, event_counts, metrics, import_job_id)
+     values ($1,$2,'audit-queue-1','{"page_view":12}'::jsonb,'{}'::jsonb,$3)
+     returning id`, [owner, workspace, job.id])));
+  check("🔴 a retry cannot create a second aggregate for the same job", Boolean(await throws(
+    `insert into public.audit_analytics_aggregates
+       (user_id, workspace_id, audit_id, event_counts, metrics, import_job_id)
+     values ($1,$2,'audit-queue-1','{"page_view":12}'::jsonb,'{}'::jsonb,$3)`,
+    [owner, workspace, job.id])));
+
+  const fn = await one(`
+    select has_function_privilege('anon', p.oid, 'EXECUTE') anon_x,
+           has_function_privilege('authenticated', p.oid, 'EXECUTE') auth_x,
+           has_function_privilege('service_role', p.oid, 'EXECUTE') service_x
+      from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+     where n.nspname='public' and p.proname='claim_audit_analytics_import_jobs'`);
+  check("the claim RPC is service-role only", Boolean(fn) && !fn.anon_x && !fn.auth_x && fn.service_x);
+
+  const table = await one(`select relrowsecurity rls from pg_class where relname='audit_analytics_import_jobs'`);
+  check("the queue has RLS enabled", table?.rls === true);
+  eq("...and grants nothing to anon/authenticated", (await q(
+    `select 1 from information_schema.role_table_grants
+      where table_name='audit_analytics_import_jobs' and grantee in ('anon','authenticated')`)).length, 0);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

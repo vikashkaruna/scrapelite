@@ -64,6 +64,29 @@ const RULES = [
       "Try again later or contact support.",
   },
   {
+    // GoTrue deliberately returns this generic message when an Auth database
+    // hook or trigger rejects a new user. It is not a bad password and a
+    // reset link cannot resolve it.
+    test: /database error saving new user|unexpected_failure|unexpected failure/i,
+    title: "We couldn't create your account",
+    message:
+      "The sign-up service couldn't save this account. Please try again in a " +
+      "few minutes. If it keeps happening, contact support so we can check the " +
+      "staging authentication service.",
+  },
+  {
+    test: /invalid api key|apikey.*invalid|jwt.*invalid/i,
+    title: "Sign-in service configuration error",
+    message:
+      "This environment is using an invalid sign-in configuration. Please try " +
+      "again shortly while we correct it.",
+  },
+  {
+    test: /unable to validate email|validation_failed|email.*invalid format/i,
+    title: "Enter a valid email address",
+    message: "Check the email address and try again.",
+  },
+  {
     test: /network|fetch|failed to fetch/i,
     title: "Couldn't reach the auth server",
     message:
@@ -71,20 +94,31 @@ const RULES = [
   },
 ];
 
-const DEFAULT = {
-  title: "Authentication failed",
-  message:
-    "Something went wrong while signing you in. Try again — if the problem " +
-    "continues, use the forgot-password link to reset your password.",
-  cta: { label: "Reset password", action: "open-forgot" },
-};
+function defaultError(operation) {
+  if (operation === "signup") {
+    return {
+      title: "We couldn't create your account",
+      message:
+        "Something went wrong while creating your account. Please try again. " +
+        "If it continues, contact support so we can investigate the sign-up service.",
+    };
+  }
+  return {
+    title: "Authentication failed",
+    message:
+      "Something went wrong while signing you in. Try again — if the problem " +
+      "continues, use the forgot-password link to reset your password.",
+    cta: { label: "Reset password", action: "open-forgot" },
+  };
+}
 
 /**
  * Classify a Supabase auth error into { title, message, cta? }.
  * Accepts either an Error object, a string, or a { code, message } shape.
+ * `operation` prevents a failed sign-up from being presented as a failed sign-in.
  */
-export function classifyAuthError(error) {
-  if (!error) return DEFAULT;
+export function classifyAuthError(error, { operation } = {}) {
+  if (!error) return defaultError(operation);
   const raw =
     typeof error === "string"
       ? error
@@ -96,5 +130,5 @@ export function classifyAuthError(error) {
       return { title: rule.title, message: rule.message, cta: rule.cta || null };
     }
   }
-  return DEFAULT;
+  return defaultError(operation);
 }

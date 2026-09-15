@@ -3,6 +3,7 @@
 // before the provider call; batch runs reserve their run credit here.
 
 import { consumeGuestCredit } from "./lib/guestUsage.js";
+import { authenticateBearer } from "./lib/supabaseServerClient.js";
 
 const CORS = {
   "Content-Type": "application/json",
@@ -14,8 +15,13 @@ const CORS = {
 export const handler = async (event = {}) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
   if (event.httpMethod !== "POST") return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: "Method not allowed" }) };
+  // A presented token is VERIFIED before it exempts anyone. An unverifiable one
+  // (expired, forged, or Supabase unreachable) is charged like any guest.
   if (event.headers?.authorization || event.headers?.Authorization) {
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ allowed: true, authenticated: true }) };
+    const auth = await authenticateBearer(event, { label: "guest-usage" });
+    if (auth.ok && auth.user) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ allowed: true, authenticated: true }) };
+    }
   }
   let body = {};
   try { body = JSON.parse(event.body || "{}"); } catch { /* default to single */ }

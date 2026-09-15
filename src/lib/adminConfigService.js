@@ -52,11 +52,11 @@ export async function getProviderCatalogue() {
  * id BEFORE saving it as the default — which is what makes free-text model
  * entry safe.
  */
-export async function testProvider(provider, model) {
+export async function testProvider(provider, model, { grounded = false } = {}) {
   const res = await fetch(TEST_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
-    body: JSON.stringify({ provider, ...(model ? { model } : {}) }),
+    body: JSON.stringify({ provider, ...(model ? { model } : {}), ...(grounded ? { grounded: true } : {}) }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Test failed (${res.status})`);

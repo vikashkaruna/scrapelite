@@ -150,32 +150,57 @@ export default function Lists() {
     setRunningJob(true);
     setJobProgress({ processed: 0, remaining: currentList.total_records });
 
+    window.dispatchEvent(new CustomEvent("datiq:listenrichment", {
+      detail: {
+        status: "running",
+        listName: currentList.name,
+        processed: 0,
+        total: currentList.total_records || 1,
+      },
+    }));
+
     try {
-      // 🔴 THIS USED TO FABRICATE THE ID: `job_${currentList.id}`.
-      // Jobs carry a database-generated id and createList() already returns the
-      // real one, so the constructed id matched nothing and the server answered
-      // 404 "Job not found" for EVERY list — the button could never work once.
-      // The server now returns the list's jobs, and we advance the real one.
       const jobId = currentList.active_job_id;
       if (!jobId) {
-        // Nothing to advance is not an error. Say which of the two it is —
-        // there was never a job, or every job is finished — because those need
-        // different actions from the user.
         const finished = (currentList.jobs || []).length > 0;
         showToast(finished
           ? "Every enrichment job for this list has already completed."
           : "This list has no enrichment job yet — re-import the list to create one.");
+        window.dispatchEvent(new CustomEvent("datiq:listenrichment", { detail: { status: "dismiss" } }));
         return;
       }
       await bulkApi.runFullJob(jobId, (p) => {
         setJobProgress(p);
+        window.dispatchEvent(new CustomEvent("datiq:listenrichment", {
+          detail: {
+            status: "running",
+            listName: currentList.name,
+            processed: p?.processed || 0,
+            total: currentList.total_records || 1,
+          },
+        }));
       });
       showToast("Enrichment run complete!");
+      window.dispatchEvent(new CustomEvent("datiq:listenrichment", {
+        detail: {
+          status: "done",
+          listName: currentList.name,
+          processed: currentList.total_records || 1,
+          total: currentList.total_records || 1,
+        },
+      }));
       loadCurrentList(currentList.id);
       loadLists();
       loadReview();
     } catch (err) {
       showToast(err.message);
+      window.dispatchEvent(new CustomEvent("datiq:listenrichment", {
+        detail: {
+          status: "error",
+          listName: currentList.name,
+          error: err.message,
+        },
+      }));
     } finally {
       setRunningJob(false);
       setJobProgress(null);

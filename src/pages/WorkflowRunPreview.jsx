@@ -167,48 +167,50 @@ export default function WorkflowRunPreview() {
     <div className="page fade wrp-page">
       {/* ── Fixed/Sticky Top Action Bar ──────────────────────────── */}
       <header className="wrp-sticky-bar">
-        <div className="wrp-bar-left">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm wrp-back-btn"
-            onClick={() => navigate("/dashboard?view=runs")}
-          >
-            <Icon name="arrow-left" size={15} />
-            <span>Workflow Runs</span>
-          </button>
-          <div className="wrp-bar-divider" aria-hidden="true" />
-          <div className="wrp-bar-identity">
-            <h1 className="wrp-bar-title">{humanTemplate(run.template_key)}</h1>
-            <span className="wrp-bar-target" title={target}>{target}</span>
+        <div className="container wrp-bar-inner">
+          <div className="wrp-bar-left">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm wrp-back-btn"
+              onClick={() => navigate("/dashboard?view=runs")}
+            >
+              <Icon name="arrow-left" size={15} />
+              <span>Workflow Runs</span>
+            </button>
+            <div className="wrp-bar-divider" aria-hidden="true" />
+            <div className="wrp-bar-identity">
+              <h1 className="wrp-bar-title">{humanTemplate(run.template_key)}</h1>
+              <span className="wrp-bar-target" title={target}>{target}</span>
+            </div>
+            <StatusPill status={run.status} />
+            {Number.isFinite(run.credits_actual) && (
+              <span className="wrp-bar-credits" title="Charged credits">
+                {run.credits_actual} cr
+              </span>
+            )}
           </div>
-          <StatusPill status={run.status} />
-          {Number.isFinite(run.credits_actual) && (
-            <span className="wrp-bar-credits" title="Charged credits">
-              {run.credits_actual} cr
-            </span>
-          )}
-        </div>
 
-        <div className="wrp-bar-right">
-          {!isFailed && exportItem && (
-            <ExportMenu
-              items={[exportItem]}
-              label="Export"
-              buttonVariant="secondary"
-              showPush
-              showEmail
-            />
-          )}
-          <Button variant="secondary" size="sm" onClick={handleReRun}>
-            <Icon name="rotate-cw" size={14} />
-            <span>Re-run in Templates</span>
-          </Button>
-          {!isFailed && (
-            <Button variant="primary" size="sm" onClick={handleShare} disabled={sharing}>
-              <Icon name="share-2" size={14} />
-              <span>{sharing ? "Creating…" : "Share report"}</span>
+          <div className="wrp-bar-right">
+            {!isFailed && exportItem && (
+              <ExportMenu
+                items={[exportItem]}
+                label="Export"
+                buttonVariant="secondary"
+                showPush
+                showEmail
+              />
+            )}
+            <Button variant="secondary" size="sm" onClick={handleReRun}>
+              <Icon name="rotate-cw" size={14} />
+              <span>Re-run in Templates</span>
             </Button>
-          )}
+            {!isFailed && (
+              <Button variant="primary" size="sm" onClick={handleShare} disabled={sharing}>
+                <Icon name="share-2" size={14} />
+                <span>{sharing ? "Creating…" : "Share report"}</span>
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 

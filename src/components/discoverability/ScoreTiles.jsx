@@ -172,12 +172,75 @@ export function PillarCard({ pillarId, pillar, diff, expanded, onToggle }) {
                 ) : (
                   <span className="dsc-signal-unmeasured" title={why}>{why}</span>
                 )}
+                {/* ── WHERE EXACTLY DID YOU SEE THAT? ──────────────────────
+                    W1 built the evidence envelope and threaded it through the
+                    pipeline, the store and the API — and it reached NO SCREEN.
+                    A record that is stored and never shown answers the
+                    question only for whoever can query the database, which is
+                    not the person asking it.
+
+                    Rendered inline, collapsed, on the signal it supports: the
+                    question is always "why is THIS number what it is", so an
+                    evidence drawer somewhere else on the page would make the
+                    reader carry a signal code across it. */}
+                <SignalEvidence signal={s} />
               </li>
             );
           })}
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * The provenance behind one signal's number.
+ *
+ * ── OBSERVATION AND INFERENCE ARE VISUALLY DIFFERENT ───────────────────────
+ * Each evidence record declares `observed: true|false` (evidenceModel.js), and
+ * a record produced by a model judgement must never look like a reading taken
+ * off the page. That is the same rule the issue list applies one level up, and
+ * it is the whole reason `method` carries the flag rather than a call site
+ * setting it.
+ *
+ * Renders nothing at all when there is no evidence — which is the common case
+ * for a signal that could not be measured, and for every audit stored before
+ * migration 0048. An empty "Evidence" disclosure would read as "we looked and
+ * found none", which is a different and untrue claim.
+ */
+function SignalEvidence({ signal }) {
+  const records = Array.isArray(signal?.evidence) ? signal.evidence : [];
+  if (records.length === 0) return null;
+  return (
+    <details className="dsc-evidence-drawer">
+      <summary>
+        <Icon name="search" size={11} />
+        {records.length} observation{records.length === 1 ? "" : "s"}
+        {Number.isFinite(signal.confidence) && (
+          <span className="dsc-evidence-confidence">{Math.round(signal.confidence * 100)}% confidence</span>
+        )}
+      </summary>
+      <ul className="dsc-evidence-records">
+        {records.map((r, idx) => (
+          <li key={`${r.method}-${idx}`} className="dsc-evidence-record">
+            <span className={`dsc-claim-tag ${r.observed ? "dsc-claim-observed" : "dsc-claim-inferred"}`}>
+              {r.observed ? "Observed" : "Inferred"}
+            </span>
+            <span className="dsc-evidence-method">{String(r.method || "").replace(/_/g, " ")}</span>
+            {r.section && <span className="dsc-evidence-section">{r.section}</span>}
+            {/* The selector is the literal answer to "where on the page",
+                so it is monospaced and never truncated away. */}
+            {r.selector && <code className="dsc-evidence-selector">{r.selector}</code>}
+            {r.excerpt && <p className="dsc-evidence-excerpt">“{r.excerpt}”</p>}
+            {r.collected_at && (
+              <time className="dsc-evidence-time" dateTime={r.collected_at}>
+                {new Date(r.collected_at).toLocaleString()}
+              </time>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

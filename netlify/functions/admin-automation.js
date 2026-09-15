@@ -262,6 +262,45 @@ async function handlePost(event) {
     const r = await runOnce(orchEnv, db);
     return ok({ ok: true, ran: r });
   }
+  if (action === "purge-analytics-retention") {
+    const olderThanDays = body.older_than_days !== undefined ? Number(body.older_than_days) : 90;
+    const targetUserId = body.user_id || null;
+    const targetWorkspaceId = body.workspace_id || null;
+
+    const queryParts = [];
+    if (targetUserId) queryParts.push(`user_id=eq.${encodeURIComponent(targetUserId)}`);
+    if (targetWorkspaceId) queryParts.push(`workspace_id=eq.${encodeURIComponent(targetWorkspaceId)}`);
+    if (olderThanDays > 0) {
+      const cutoff = new Date(Date.now() - olderThanDays * 86400000).toISOString();
+      queryParts.push(`created_at=lt.${encodeURIComponent(cutoff)}`);
+    }
+    const qStr = queryParts.length ? `?${queryParts.join("&")}` : "";
+
+    const headers = { ...db.headers, Prefer: "return=representation" };
+    const [delAgg, delFunnels, delForms] = await Promise.all([
+      fetch(`${db.base}/audit_analytics_aggregates${qStr}`, { method: "DELETE", headers }).then(r => r.json()).catch(() => []),
+      fetch(`${db.base}/audit_journey_funnels${qStr}`, { method: "DELETE", headers }).then(r => r.json()).catch(() => []),
+      fetch(`${db.base}/audit_form_diagnostics${qStr}`, { method: "DELETE", headers }).then(r => r.json()).catch(() => []),
+    ]);
+
+    const aggCount = Array.isArray(delAgg) ? delAgg.length : 0;
+    const funnelCount = Array.isArray(delFunnels) ? delFunnels.length : 0;
+    const formCount = Array.isArray(delForms) ? delForms.length : 0;
+
+    return ok({
+      ok: true,
+      purged: true,
+      older_than_days: olderThanDays,
+      target_user_id: targetUserId,
+      target_workspace_id: targetWorkspaceId,
+      deleted: {
+        aggregates: aggCount,
+        funnels: funnelCount,
+        form_diagnostics: formCount,
+        total: aggCount + funnelCount + formCount,
+      },
+    });
+  }
   return bad(400, `unknown action '${action}'`);
 }
 

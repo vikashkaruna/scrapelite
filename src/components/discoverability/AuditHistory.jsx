@@ -12,7 +12,9 @@
 // that it errored, not an unexplained gap in the list — and because a failed
 // audit is not charged, showing it also makes the quota arithmetic legible.
 
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
+import { AuthContext } from "../AuthProvider.jsx";
+import { cacheKey, readCache, writeCache } from "../../lib/discoverability/tabCache.js";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
@@ -45,29 +47,47 @@ function whenLabel(iso) {
   return d.toLocaleDateString();
 }
 
-export default function AuditHistory({ onOpen, onClose, currentAuditId = null }) {
+export default function AuditHistory({ onOpen, onClose, currentAuditId = null, workspaceId = null }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [offset, setOffset] = useState(0);
   const [more, setMore] = useState(false);
   const [query, setQuery] = useState("");
+  const cacheUserId = useContext(AuthContext)?.user?.id || null;
+
+  useEffect(() => {
+    setRows([]);
+    setOffset(0);
+  }, [workspaceId]);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     setError(null);
-    discoverability.listAudits({ limit: PAGE_SIZE, offset })
+    // The first page paints from localStorage straight away; the database
+    // answer then replaces it. Later pages are never cached.
+    const key = cacheKey("audit-history", { userId: cacheUserId, workspaceId });
+    const cached = offset === 0 ? readCache(key) : null;
+    if (cached) {
+      const list = cached.data?.audits || [];
+      setRows(list);
+      setMore(list.length === PAGE_SIZE);
+    }
+    setLoading(!cached);
+    discoverability.listAudits({
+      limit: PAGE_SIZE, offset, ...(workspaceId ? { workspace_id: workspaceId } : {}),
+    })
       .then((data) => {
         if (cancelled) return;
         const list = data?.audits || [];
+        if (offset === 0) writeCache(key, data);
         setRows((prev) => (offset === 0 ? list : [...prev, ...list]));
         setMore(list.length === PAGE_SIZE);
       })
       .catch((err) => { if (!cancelled) setError(err?.message || "Could not load your audit history."); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [offset]);
+  }, [offset, workspaceId, cacheUserId]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -81,7 +101,7 @@ export default function AuditHistory({ onOpen, onClose, currentAuditId = null })
         <div>
           <h2>Audit history</h2>
           <p className="dsc-history-page-sub">
-            Every discoverability audit on this account. Open one to see its full report,
+            Every discoverability audit {workspaceId ? "in this workspace" : "on this account"}. Open one to see its full report,
             or re-run it to measure a fix.
           </p>
         </div>

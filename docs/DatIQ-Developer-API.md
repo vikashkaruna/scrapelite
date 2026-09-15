@@ -243,6 +243,83 @@ GET /v1/audits/{id}/report?format=json
 `markdown` and `csv` return text rather than JSON. `constructs=1` embeds the
 copy-ready implementation assets in the markdown report.
 
+#### Governed P2 intelligence APIs
+
+The canonical namespace for Discoverability automation is `/v1/discoverability/*`. The older
+bare P1 paths above remain permanent aliases. P2 resources are workspace-aware: pass
+`workspace_id` as a query parameter on reads and in the JSON body on writes. Read endpoints require
+a workspace viewer role; writes require the action-specific workspace role and entitlement
+(`audit.business_truth`, `audit.entity_graph`, `audit.subject_score`, `audit.local_directory`, or
+`audit.schema_trust`). A resource outside the caller's personal/workspace scope returns `404`, not `403`, so
+opaque IDs cannot be enumerated. A valid resource with an insufficient workspace role returns `403`.
+
+```http
+GET|POST /v1/discoverability/business-truth
+GET      /v1/discoverability/business-truth/{id}
+GET|POST /v1/discoverability/business-truth/{id}/versions
+POST     /v1/discoverability/business-truth/{id}/versions/{version}/promote
+
+GET      /v1/discoverability/entity-graph
+POST     /v1/discoverability/entity-graph/entities
+POST     /v1/discoverability/entity-graph/relationships
+
+GET|POST /v1/discoverability/subject-score/subjects
+GET|POST /v1/discoverability/subject-score/scores
+GET|POST /v1/discoverability/local-directory/listings
+GET|POST /v1/discoverability/local-directory/checks
+GET|POST /v1/discoverability/schema-trust/schema
+GET|POST /v1/discoverability/schema-trust/trust
+```
+
+Entity-backed `brand`, `product`, and `service` subjects are created only through the explicit
+subject endpoint and only after the referenced entity is approved. Approval never auto-mints a
+scorable subject. Business-truth promotion also requires an independent reviewer; self-approval is
+refused. Duplicate entity relationships return `409` with corroboration semantics rather than
+silently creating a second edge.
+
+#### P3 SXO and outcome APIs
+
+The canonical prefix is `/v1/discoverability/sxo/*`; `/v1/sxo/*` is a permanent compatibility
+alias. SXO reads are authenticated. Evaluation, imports, connection configuration, goals and
+validation require `audit.sxo`; portfolio experiment writes require `audit.portfolio`.
+
+```http
+POST /v1/discoverability/sxo/audits
+GET  /v1/discoverability/sxo/audits/{id}
+GET  /v1/discoverability/sxo/audits/{id}/results
+GET  /v1/discoverability/sxo/audits/{id}/intent-match
+GET  /v1/discoverability/sxo/audits/{id}/first-screen
+GET  /v1/discoverability/sxo/audits/{id}/journey
+GET  /v1/discoverability/sxo/audits/{id}/form-diagnostics
+POST /v1/discoverability/sxo/events/import
+POST /v1/discoverability/sxo/integrations/{provider}/connect
+POST /v1/discoverability/sxo/conversion-goals
+GET  /v1/discoverability/sxo/conversion-goals
+POST /v1/discoverability/sxo/experiments
+GET  /v1/discoverability/sxo/portfolio/rollups
+POST /v1/discoverability/sxo/recommendations/{id}/validate
+```
+
+`POST /sxo/audits` requires `audit_id`; optional `intent_class`, `primary_outcome`, and
+`weight_set_id` select the declared evaluation context. The response contains six layer results,
+coverage, the SXO score, and the read-time master composite. Unmeasured inputs are `null` and named;
+they are never coerced to zero.
+
+Analytics connection bodies require `provider_account_id` plus `token` or `api_key`. Supported
+providers are `ga4`, `posthog`, and `plausible`. Credentials are encrypted and never returned;
+responses expose only a masked fingerprint. Saving credentials produces `status: "configured"`—it
+does not claim provider verification or a successful sync.
+
+Aggregate imports require a stable `idempotency_key`, `provider`, and an `events` array of
+`{ event_name, count }`. Counts must be non-negative safe integers. The API accepts aggregate-only
+data, queues it with `202`, returns `200` for a completed replay, and returns `409
+IDEMPOTENCY_CONFLICT` if the same key is reused with different content. Raw sessions, IP addresses,
+and visitor identifiers are not accepted. Funnel responses name and exclude uninstrumented stages.
+
+Common errors are `400` invalid shape/vocabulary, `401` invalid API key, `402` missing entitlement,
+`403` insufficient role on a known workspace resource, `404` absent or out-of-scope resource, `409`
+idempotency/duplicate conflict, and `503` unavailable credential encryption or import queue.
+
 ---
 
 ### Schedules

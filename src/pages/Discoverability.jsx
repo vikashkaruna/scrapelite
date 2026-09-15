@@ -28,17 +28,132 @@ import { useSeo } from "../hooks/useSeo.js";
 import AuditComposer from "../components/discoverability/AuditComposer.jsx";
 import { setPendingAudit } from "../lib/pendingAudit.js";
 import ScoreTiles, { PillarGrid, PenaltyBanner } from "../components/discoverability/ScoreTiles.jsx";
-import IssueMatrix, { IssueList } from "../components/discoverability/IssueMatrix.jsx";
+import IssueMatrix, { IssueList, RootCauseSummary } from "../components/discoverability/IssueMatrix.jsx";
 import RecommendationQueue from "../components/discoverability/RecommendationQueue.jsx";
+import AiVisibilityPanel from "../components/discoverability/AiVisibilityPanel.jsx";
 import TrendChart from "../components/discoverability/TrendChart.jsx";
 import {
   Panel, HeadingTreePanel, SchemaPanel, AnswerPanel, EntityPanel, TechnicalPanel,
 } from "../components/discoverability/EvidencePanels.jsx";
 import AuditHistory from "../components/discoverability/AuditHistory.jsx";
 import AuditHeader from "../components/discoverability/AuditHeader.jsx";
+import ClosedLoopRibbon from "../components/discoverability/ClosedLoopRibbon.jsx";
+import ActiveAuditContext from "../components/discoverability/ActiveAuditContext.jsx";
+import BrandLoader from "../components/BrandLoader.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
 import { readBrandKit } from "../lib/whiteLabelTemplate.js";
+
+export const UNIFIED_DISCOVERABILITY_NAV = Object.freeze([
+  { id: "audit", label: "Audit", icon: "scan-search" },
+  { id: "truth", label: "Business Truth", icon: "database", path: "/discoverability/truth" },
+  { id: "trust", label: "Schema & Trust", icon: "shield-check", path: "/discoverability/trust" },
+  { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
+  { id: "scores", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
+  { id: "entities", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
+  { id: "local", label: "Local Directory", icon: "map-pin", path: "/discoverability/local" },
+  { id: "history", label: "History", icon: "clock" },
+]);
+
+const DISCOVERABILITY_VIEWS = UNIFIED_DISCOVERABILITY_NAV;
+
+function AuditExportMenu({ onExport, onEmail, emailing }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div className="export-dropdown" ref={ref}>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <Icon name="download" size={14} />
+        <span>Export</span>
+        <Icon name="chevron-down" size={12} />
+      </Button>
+      {open && (
+        <div className="export-dropdown-menu" role="menu">
+          <div className="export-dropdown-section">
+            <div className="export-dropdown-section-label">Report Formats</div>
+            <button
+              type="button"
+              className="export-dropdown-item"
+              onClick={() => { setOpen(false); onExport("pdf"); }}
+            >
+              <Icon name="file-text" size={15} />
+              <span>
+                <b>PDF Report</b>
+                <span className="export-plan-hint">Full executive &amp; technical report</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="export-dropdown-item"
+              onClick={() => { setOpen(false); onExport("markdown"); }}
+            >
+              <Icon name="file-code" size={15} />
+              <span>
+                <b>Markdown Report</b>
+                <span className="export-plan-hint">With copy-ready code constructs</span>
+              </span>
+            </button>
+          </div>
+          <div className="export-dropdown-section">
+            <div className="export-dropdown-section-label">Data Formats</div>
+            <button
+              type="button"
+              className="export-dropdown-item"
+              onClick={() => { setOpen(false); onExport("csv"); }}
+            >
+              <Icon name="table" size={15} />
+              <span>
+                <b>CSV Data</b>
+                <span className="export-plan-hint">Pillars, issues &amp; recommendations</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="export-dropdown-item"
+              onClick={() => { setOpen(false); onExport("json"); }}
+            >
+              <Icon name="code" size={15} />
+              <span>
+                <b>JSON Data</b>
+                <span className="export-plan-hint">Raw structured evidence payload</span>
+              </span>
+            </button>
+          </div>
+          <div className="export-dropdown-section">
+            <button
+              type="button"
+              className="export-dropdown-item"
+              onClick={() => { setOpen(false); onEmail(); }}
+              disabled={emailing}
+            >
+              <Icon name="mail" size={15} />
+              <span>
+                <b>{emailing ? "Sending email…" : "Email PDF Report"}</b>
+                <span className="export-plan-hint">Send directly to your inbox</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Which pillar cards the reader has open, for this browsing session only.
@@ -111,6 +226,7 @@ export default function Discoverability() {
   const [trend, setTrend] = useState(null);
   const [history, setHistory] = useState([]);
   const [running, setRunning] = useState(false);
+  const [loadingAudit, setLoadingAudit] = useState(false);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("overall");
   // A Set, so pillars expand independently — see PillarGrid. Persisted to
@@ -128,6 +244,11 @@ export default function Discoverability() {
     });
   }, []);
   const [matrixCell, setMatrixCell] = useState(null);
+  // The two filters are mutually exclusive on purpose. Selecting a cause after
+  // a cell would show the intersection, which is almost always empty and reads
+  // as "no issues" — the user's own two clicks having hidden the finding they
+  // were looking for.
+  const [causeFilter, setCauseFilter] = useState(null);
   const [busyRec, setBusyRec] = useState(null);
   const [series, setSeries] = useState(["overall"]);
   const [lastRequest, setLastRequest] = useState(null);
@@ -150,44 +271,62 @@ export default function Discoverability() {
   // covers this exact path, and netlify.toml's header rule is an EXACT match
   // that a sub-path would silently escape, leaving an audit-history screen
   // indexable. A query param needs none of those four touched.
-  const showHistory = params.get("view") === "history";
+  const currentView = params.get("view") || "audit";
+  const showHistory = currentView === "history";
+  const [subjects, setSubjects] = useState([]);
+
+  useEffect(() => {
+    const legacy = DISCOVERABILITY_VIEWS.find((view) => view.id === currentView && view.path);
+    if (!legacy) return;
+    navigate(`${legacy.path}${auditId ? `?audit=${encodeURIComponent(auditId)}` : ""}`, { replace: true });
+  }, [auditId, currentView, navigate]);
+
+  useEffect(() => {
+    if (!user) { setSubjects([]); return; }
+    (discoverability?.listSubjects ? discoverability.listSubjects(currentWorkspaceId ? { workspace_id: currentWorkspaceId } : {}) : Promise.resolve({ subjects: [] }))
+      .then((res) => setSubjects(res?.subjects || []))
+      .catch(() => setSubjects([]));
+  }, [user, currentWorkspaceId]);
 
   // ── Load an audit named in the URL ───────────────────────────────────────
+  const loadTrend = useCallback(async (targetId) => {
+    try {
+      const [t, h] = await Promise.all([
+        discoverability.trends(targetId, 30, { workspaceId: currentWorkspaceId }),
+        discoverability.history(targetId, { workspaceId: currentWorkspaceId }),
+      ]);
+      setTrend(t);
+      setHistory(h.audits || []);
+    } catch { /* the trend is supplementary; its absence must not break the page */ }
+  }, [currentWorkspaceId]);
+
   const loadAudit = useCallback(async (id) => {
-    setRunning(true);
+    setLoadingAudit(true);
     setError(null);
     try {
-      const data = await discoverability.getResults(id);
+      const scope = { workspaceId: currentWorkspaceId };
+      const data = await discoverability.getResults(id, scope);
       setAudit(data);
       if (data?.audit?.target_id) await loadTrend(data.audit.target_id);
       if (data?.audit?.baseline_audit_id) {
         try {
-          const c = await discoverability.compare(id, data.audit.baseline_audit_id);
+          const c = await discoverability.compare(id, data.audit.baseline_audit_id, scope);
           setDiff(c.diff);
         } catch { /* a missing baseline is not an error worth surfacing */ }
       }
     } catch (err) {
       setError(err);
     } finally {
-      setRunning(false);
+      setLoadingAudit(false);
     }
-  }, []);
-
-  const loadTrend = useCallback(async (targetId) => {
-    try {
-      const [t, h] = await Promise.all([
-        discoverability.trends(targetId),
-        discoverability.history(targetId),
-      ]);
-      setTrend(t);
-      setHistory(h.audits || []);
-    } catch { /* the trend is supplementary; its absence must not break the page */ }
-  }, []);
+  }, [currentWorkspaceId, loadTrend]);
 
   useEffect(() => {
-    if (auditId && auditId !== audit?.auditId) loadAudit(auditId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditId]);
+    const loadedScope = audit?.audit?.workspace_id || null;
+    if (auditId && (auditId !== audit?.auditId || loadedScope !== (currentWorkspaceId || null))) {
+      loadAudit(auditId);
+    }
+  }, [auditId, audit?.auditId, audit?.audit?.workspace_id, currentWorkspaceId, loadAudit]);
 
   // ── Run ──────────────────────────────────────────────────────────────────
   const run = useCallback(async (payload) => {
@@ -275,7 +414,11 @@ export default function Discoverability() {
     handoffConsumedRef.current = true;
     setResumedRequest({
       target_url: url,
-      audit_profile: location.state?.auditProfile || "balanced",
+      // "" when the caller named none. Seeding "balanced" here would make a
+      // handoff from another screen look like a deliberate choice of the
+      // neutral lens and stop the goal — and then the page itself — from ever
+      // settling the profile. The composer treats "" as "choose for me".
+      audit_profile: location.state?.auditProfile || "",
       idempotency_key: `handoff-${url}`,
     });
     navigate(location.pathname + location.search, { replace: true, state: null });
@@ -293,13 +436,14 @@ export default function Discoverability() {
     setRunning(true);
     setError(null);
     try {
-      const data = await discoverability.rerun(audit.auditId, {});
+      const scope = { workspaceId: currentWorkspaceId };
+      const data = await discoverability.rerun(audit.auditId, {}, scope);
       setAudit(data);
       if (data.auditId) setParams({ audit: data.auditId }, { replace: true });
       // A re-run is automatically measured against the audit it re-ran, which
       // is what makes "did my fix work" a single click.
       try {
-        const c = await discoverability.compare(data.auditId, audit.auditId);
+        const c = await discoverability.compare(data.auditId, audit.auditId, scope);
         setDiff(c.diff);
       } catch { /* the comparison is a bonus, not the point */ }
       if (data.targetId) await loadTrend(data.targetId);
@@ -309,18 +453,18 @@ export default function Discoverability() {
     } finally {
       setRunning(false);
     }
-  }, [user, openAuth, lastRequest, audit, setParams, loadTrend, showToast]);
+  }, [user, openAuth, lastRequest, audit, setParams, loadTrend, showToast, currentWorkspaceId]);
 
   // ── Recommendation queue ─────────────────────────────────────────────────
   const changeStatus = useCallback(async (rec, status, reason) => {
     if (!rec.id) { showToast("This audit was not saved, so its queue can't be updated."); return; }
     setBusyRec(rec.id);
     try {
-      const fn = status === "accepted" ? discoverability.accept
-        : status === "dismissed" ? (id) => discoverability.dismiss(id, reason)
-        : status === "done" ? discoverability.markDone
-        : discoverability.reopen;
-      await fn(rec.id);
+      const scope = { workspaceId: currentWorkspaceId };
+      if (status === "accepted") await discoverability.accept(rec.id, scope);
+      else if (status === "dismissed") await discoverability.dismiss(rec.id, reason, scope);
+      else if (status === "done") await discoverability.markDone(rec.id, scope);
+      else await discoverability.reopen(rec.id, scope);
       setAudit((a) => ({
         ...a,
         recommendations: a.recommendations.map((r) => (r.id === rec.id ? { ...r, status } : r)),
@@ -331,7 +475,27 @@ export default function Discoverability() {
     } finally {
       setBusyRec(null);
     }
-  }, [showToast]);
+  }, [showToast, currentWorkspaceId]);
+
+  const assignRecommendation = useCallback(async (rec, assignee) => {
+    if (!rec.id) { showToast("This audit was not saved, so its queue can't be updated."); return; }
+    setBusyRec(rec.id);
+    try {
+      await discoverability.assign(rec.id, assignee, { workspaceId: currentWorkspaceId });
+      setAudit((a) => ({
+        ...a,
+        recommendations: a.recommendations.map((r) =>
+          (r.id === rec.id ? { ...r, assigned_to: assignee } : r)),
+      }));
+      showToast(assignee ? "Assigned" : "Unassigned");
+    } catch (err) {
+      // The server refuses an assignee who shares no workspace, and its message
+      // says so in those words — worth showing verbatim rather than generically.
+      showToast(err.message || "Could not assign that recommendation");
+    } finally {
+      setBusyRec(null);
+    }
+  }, [showToast, currentWorkspaceId]);
 
   // ── Export ───────────────────────────────────────────────────────────────
   const exportReport = useCallback(async (format) => {
@@ -354,20 +518,26 @@ export default function Discoverability() {
         const { downloadAuditPdf } = await import("../lib/discoverability/auditPdf.js");
         downloadAuditPdf(audit, { includeConstructs: true, diff, brandKit: readBrandKit() });
       } else if (format === "markdown") {
-        const md = await discoverability.reportMarkdown(audit.auditId, { constructs: true });
+        const md = await discoverability.reportMarkdown(audit.auditId, {
+          constructs: true, workspaceId: currentWorkspaceId,
+        });
         downloadTextFile(md, `discoverability-${slug}.md`, "text/markdown;charset=utf-8;");
       } else if (format === "csv") {
-        const csv = await discoverability.reportCsv(audit.auditId);
+        const csv = await discoverability.reportCsv(audit.auditId, "all", {
+          workspaceId: currentWorkspaceId,
+        });
         downloadTextFile(csv, `discoverability-${slug}.csv`, "text/csv;charset=utf-8;");
       } else {
-        const payload = await discoverability.reportJson(audit.auditId);
+        const payload = await discoverability.reportJson(audit.auditId, {
+          workspaceId: currentWorkspaceId,
+        });
         downloadTextFile(JSON.stringify(payload, null, 2), `discoverability-${slug}.json`, "application/json;charset=utf-8;");
       }
       showToast("Report downloaded");
     } catch (err) {
       showToast(err.message || "Could not build the report");
     }
-  }, [audit, diff, showToast]);
+  }, [audit, diff, showToast, currentWorkspaceId]);
 
   // ── Email report — new capability, no email feature existed on this page
   // before. Always sent to the signed-in account's own email (resolved
@@ -378,14 +548,16 @@ export default function Discoverability() {
     if (!audit?.auditId || emailingReport) return;
     setEmailingReport(true);
     try {
-      await discoverability.emailReport(audit.auditId, { format: "pdf", brandKit: readBrandKit() });
+      await discoverability.emailReport(audit.auditId, {
+        format: "pdf", brandKit: readBrandKit(), workspaceId: currentWorkspaceId,
+      });
       showToast(`Report emailed to ${user?.email || "your account"}`, "check");
     } catch (err) {
       showToast(err.message || "Could not email the report");
     } finally {
       setEmailingReport(false);
     }
-  }, [audit, emailingReport, user, showToast]);
+  }, [audit, emailingReport, user, showToast, currentWorkspaceId]);
 
   const issues = audit?.issues || [];
   const filteredIssueCount = useMemo(() => {
@@ -409,41 +581,83 @@ export default function Discoverability() {
           {user && !showHistory && (
             <Button
               size="sm"
-              variant="ghost"
+              variant="secondary"
               onClick={() => setParams({ view: "history" })}
             >
-              <Icon name="clock" size={14} /> History
+              <Icon name="clock" size={14} /> Audit History
             </Button>
           )}
           {audit && (
             <>
-            <Button size="sm" variant="secondary" onClick={rerun} loading={running}>
-              <Icon name="rotate-cw" size={14} /> Re-audit
-            </Button>
-            <div className="dsc-export">
-              <Button size="sm" variant="ghost" onClick={() => exportReport("markdown")}>
-                <Icon name="file-text" size={14} /> Report
+              <Button size="sm" variant="secondary" onClick={rerun} loading={running}>
+                <Icon name="rotate-cw" size={14} /> Re-audit
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => exportReport("pdf")}>PDF</Button>
-              <Button size="sm" variant="ghost" onClick={() => exportReport("csv")}>CSV</Button>
-              <Button size="sm" variant="ghost" onClick={() => exportReport("json")}>JSON</Button>
               <Button size="sm" variant="ghost" onClick={emailReport} loading={emailingReport}
                 title={`Email the PDF report to ${user?.email || "your account"}`}>
                 <Icon name="mail" size={14} /> Email
               </Button>
-            </div>
+              <AuditExportMenu onExport={exportReport} onEmail={emailReport} emailing={emailingReport} />
             </>
           )}
         </div>
       </header>
 
-      {showHistory ? (
+      <ClosedLoopRibbon
+        auditId={audit?.auditId || null}
+        currentStep={!audit ? "discover" : "score"}
+      />
+
+      {audit?.auditId && (
+        <ActiveAuditContext
+          auditId={audit.auditId}
+          audit={audit}
+          workspaceId={currentWorkspaceId}
+          showReturnLink={false}
+        />
+      )}
+
+      <nav className="dsc-tabs dsc-subnav-tabs" aria-label="Discoverability sections">
+        {DISCOVERABILITY_VIEWS.map((v) => {
+          const isActive = currentView === v.id;
+          return (
+            <button
+              key={v.id}
+              type="button"
+              className={`dsc-tab${isActive ? " dsc-tab-on" : ""}`}
+              onClick={() => {
+                if (v.id === "history") {
+                  setParams({ view: "history", ...(audit?.auditId ? { audit: audit.auditId } : {}) });
+                } else if (v.id === "audit") {
+                  if (location.pathname !== "/discoverability") {
+                    navigate(`/discoverability${audit?.auditId ? `?audit=${encodeURIComponent(audit.auditId)}` : ""}`);
+                  } else {
+                    setParams(audit?.auditId ? { audit: audit.auditId } : {});
+                  }
+                } else if (v.path) {
+                  navigate(`${v.path}${audit?.auditId ? `?audit=${encodeURIComponent(audit.auditId)}` : ""}`);
+                }
+              }}
+              aria-current={isActive ? "page" : undefined}
+            >
+              <span className="dsc-tab-label">
+                <Icon name={v.icon} size={15} />
+                {v.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {currentView === "history" && (
         <AuditHistory
           currentAuditId={audit?.auditId || null}
+          workspaceId={currentWorkspaceId}
           onClose={() => setParams(audit?.auditId ? { audit: audit.auditId } : {})}
           onOpen={(id) => setParams({ audit: id })}
         />
-      ) : (
+      )}
+
+      {currentView === "audit" && (
       <>
       <AuditComposer
         // Forces a remount — and so a fresh read of the default* props below —
@@ -454,9 +668,21 @@ export default function Discoverability() {
         onRun={run}
         running={running}
         defaultUrl={resumedRequest?.target_url || audit?.target?.url || ""}
-        defaultProfile={resumedRequest?.audit_profile || "balanced"}
+        // "" rather than "balanced": an empty profile means nobody has chosen
+        // one, which is what lets the goal — and then the page — settle it.
+        // Defaulting to "balanced" here would make every resumed request claim
+        // a deliberate choice of the neutral lens.
+        defaultProfile={resumedRequest?.audit_profile || ""}
         defaultDevice={resumedRequest?.device_profile || "mobile"}
         defaultPageType={resumedRequest?.page_type_hint || ""}
+        // The intake a sign-in interruption is resumed with. Losing the goal
+        // on the way through an auth bounce would mean the audit that finally
+        // ran was not the one the visitor asked for.
+        defaultGoal={resumedRequest?.primary_goal || ""}
+        defaultGeography={resumedRequest?.target_geography || null}
+        defaultCompetitors={resumedRequest?.competitor_urls || []}
+        subjects={subjects}
+        defaultSubjectId={resumedRequest?.subject_id || ""}
         signedIn={Boolean(user)}
       />
 
@@ -482,7 +708,13 @@ export default function Discoverability() {
         />
       )}
 
-      {running && !audit && (
+      {loadingAudit && (
+        <div style={{ padding: "48px 0" }}>
+          <BrandLoader title="Loading audit report…" sub="Fetching saved report and evidence panels…" />
+        </div>
+      )}
+
+      {running && !audit && !loadingAudit && (
         <div className="dsc-running">
           <Icon name="radar" size={22} className="dsc-spin" />
           <div>
@@ -492,7 +724,7 @@ export default function Discoverability() {
         </div>
       )}
 
-      {audit && (
+      {audit && !loadingAudit && (
         <>
           {audit.unreachable && (
             <div className="dsc-error" role="alert">
@@ -529,7 +761,13 @@ export default function Discoverability() {
           {/* Which page this report is about, and what it says — above the
               scores, because a wall of numbers with no subject is what opening
               an audit from History used to produce. */}
-          <AuditHeader audit={audit} />
+          <AuditHeader
+            audit={audit}
+            diff={diff}
+            workspaceId={currentWorkspaceId}
+            framework={tab}
+            onFrameworkChange={setTab}
+          />
 
           <ScoreTiles
             audit={audit}
@@ -575,8 +813,17 @@ export default function Discoverability() {
 
           <div className="dsc-grid-2">
             <Panel title={`Issues (${filteredIssueCount})`} icon="alert-triangle">
-              <IssueMatrix issues={issues} activeCell={matrixCell} onSelectCell={setMatrixCell} />
-              <IssueList issues={issues} filter={matrixCell} framework={tab} />
+              <RootCauseSummary
+                issues={issues}
+                activeCause={causeFilter}
+                onSelectCause={(c) => { setCauseFilter(c); setMatrixCell(null); }}
+              />
+              <IssueMatrix
+                issues={issues}
+                activeCell={matrixCell}
+                onSelectCell={(c) => { setMatrixCell(c); setCauseFilter(null); }}
+              />
+              <IssueList issues={issues} filter={matrixCell} cause={causeFilter} framework={tab} />
             </Panel>
 
             <Panel title="Technical" icon="shield-check">
@@ -606,6 +853,10 @@ export default function Discoverability() {
                 faqPairs={audit.evidence?.faq_pairs}
               />
             </Panel>
+            <Panel title="AI visibility" icon="radio" wide>
+              <AiVisibilityPanel sample={audit.citationSample} />
+            </Panel>
+
             <Panel title="Entity & citation" icon="fingerprint">
               <EntityPanel entity={audit.facts?.entity} />
             </Panel>
@@ -630,6 +881,8 @@ export default function Discoverability() {
               recommendations={audit.recommendations}
               framework={tab}
               onStatusChange={changeStatus}
+              onAssign={assignRecommendation}
+              currentUserId={user?.id || null}
               busyId={busyRec}
             />
           </Panel>
@@ -660,7 +913,9 @@ export default function Discoverability() {
                           onClick={async (e) => {
                             e.stopPropagation();
                             try {
-                              const c = await discoverability.compare(audit.auditId, h.id);
+                              const c = await discoverability.compare(audit.auditId, h.id, {
+                                workspaceId: currentWorkspaceId,
+                              });
                               setDiff(c.diff);
                               showToast("Compared against that run");
                             } catch { showToast("Could not compare those audits"); }

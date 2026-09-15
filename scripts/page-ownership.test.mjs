@@ -209,6 +209,10 @@ describe("private routes are excluded everywhere", () => {
     expect(missing).toEqual([]);
   });
 
+  it("covers every dedicated Discoverability workspace with a wildcard header", () => {
+    expect(toml).toContain('for = "/discoverability/*"');
+  });
+
   it("robots.txt disallows each", () => {
     const missing = PRIVATE_PREFIXES.filter((p) => !robots.includes(`Disallow: ${p}`));
     expect(missing).toEqual([]);

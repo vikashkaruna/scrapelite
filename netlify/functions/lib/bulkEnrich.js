@@ -197,11 +197,11 @@ export async function enrichDomain(canonicalDomain, opts = {}) {
     return { ok: false, reason: `fetch_failed: ${e.message}`, ...empty };
   }
 
-  const html = scraped?.data?.html || "";
+  const html = scraped?.html || scraped?.data?.html || "";
   if (!html) return { ok: false, reason: "empty_response", ...empty };
 
   const content = extractPageContent(html, { maxChars: 40_000 });
-  const title = scraped?.data?.metadata?.title || "";
+  const title = scraped?.title || scraped?.data?.metadata?.title || "";
 
   const fields = {};
   const provenance = {};

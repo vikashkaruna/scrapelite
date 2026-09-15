@@ -62,13 +62,13 @@ describe("resolveWorkspaceMembership", () => {
   it("fails open when the lookup itself errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
     const r = await resolveWorkspaceMembership("ws-1", "u1");
-    expect(r).toEqual({ ok: true, memberPaused: false });
+    expect(r).toEqual({ ok: true, memberPaused: false, degraded: true });
   });
 
   it("fails open on a non-OK response (degraded, not refused)", async () => {
     stubFetch(500, {});
     const r = await resolveWorkspaceMembership("ws-1", "u1");
-    expect(r).toEqual({ ok: true, memberPaused: false });
+    expect(r).toEqual({ ok: true, memberPaused: false, degraded: true });
   });
 });
 

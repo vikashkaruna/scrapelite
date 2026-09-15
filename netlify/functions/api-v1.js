@@ -781,8 +781,22 @@ export async function routeApiV1(event, auth) {
   // compliance, quota, rate limit) and a parallel copy here would be one
   // refactor away from applying a different set — which is how the guest-credit
   // leak documented in CLAUDE.md happened.
+  //
+  // ── D2: /v1/discoverability/* IS CANONICAL, THE BARE PREFIXES ARE ALIASES ──
+  // The PRD namespaces every one of these under `discoverability`. The bare
+  // forms shipped first and are in use, so they stay — PERMANENTLY, not
+  // deprecated. An alias that is quietly removed a year later is worse than one
+  // that was never offered, because by then somebody has built on it.
+  //
+  // The segment is stripped rather than routed separately, so both forms reach
+  // exactly the same handler and cannot drift into applying different gates —
+  // which is how the guest-credit leak documented in CLAUDE.md happened.
+  if (path[0] === "discoverability" && path.length > 1) {
+    return handleDiscoverability(event, auth, path.slice(1));
+  }
   if (path[0] === "audits" || path[0] === "recommendations" || path[0] === "targets"
-      || path[0] === "benchmarks") {
+      || path[0] === "benchmarks" || path[0] === "monitors" || path[0] === "prompts"
+      || path[0] === "sxo") {
     return handleDiscoverability(event, auth, path);
   }
 

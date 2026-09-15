@@ -22,7 +22,11 @@
 // then drops out of the Entity Authority pillar and the other four re-weight.
 // An unsampled brand is UNKNOWN, never uncited.
 
-import { runChain, resolveProvider } from "../aiProviders.js";
+import { runChain, resolveProvider, callGeminiGrounded } from "../aiProviders.js";
+import { generatePrompts, classifyPromptKind } from "../../../../src/lib/discoverability/promptTaxonomy.js";
+import { classifyCitation, readsAsRecommendation, contradictsPrice, aggregateStates } from "../../../../src/lib/discoverability/citationStates.js";
+import { competitorsInAnswer, shareOfVoice } from "../../../../src/lib/discoverability/competitorTracking.js";
+import { answerProminence, waviFromSample } from "../../../../src/lib/discoverability/aiVisibility.js";
 
 // "discoverability" is the pillar key this module's runChain()/resolveProvider()
 // calls pass — see PILLAR_KEYS in aiProviders.js and /admin/ai's pillar switcher.
@@ -65,12 +69,45 @@ export function defaultPrompts({ brand = "", topic = "", host = "" } = {}) {
 }
 
 /** Which engine can we actually use here? */
+/**
+ * Engines that actually retrieve from the live web, in preference order.
+ *
+ * Perplexity leads because retrieval-with-citations is the product rather than
+ * a mode of it. Grounded Gemini is the second live engine D4 chose, and having
+ * two matters more than the ordering does: with one, a lapsed key takes the
+ * whole feature to `live: false` and every citation metric silently becomes a
+ * statement about a model's memory.
+ */
+export const LIVE_ENGINES = Object.freeze(["perplexity", "gemini"]);
+
+/** Does this engine read the live web, or answer from its own weights? */
+export function isLiveEngine(engine) {
+  return LIVE_ENGINES.includes(engine);
+}
+
 export function resolveEngine(env = process.env, requested = null) {
   if (requested === "none") return null;
   if (env.PERPLEXITY_API_KEY && (!requested || requested === "perplexity")) return "perplexity";
   if (requested === "perplexity") return null;      // asked for it, no key
+  if (env.GEMINI_API_KEY && (!requested || requested === "gemini")) return "gemini";
+  if (requested === "gemini") return null;          // asked for it, no key
   if (env.DISABLE_AI_CITATION_SAMPLING === "1") return null;
   return "ai-chain";                                 // degraded but honest
+}
+
+/**
+ * Ask grounded Gemini, and treat an ungrounded reply as NOT live.
+ *
+ * 🔴 THIS IS THE LINE THAT KEEPS THE METRIC HONEST. Gemini answers from its own
+ * weights whenever Search returns nothing useful, and says so only by omitting
+ * groundingMetadata. Counting that as a live citation would credit the open web
+ * for a brand the model merely remembers — which is exactly the measurement
+ * this module exists to replace.
+ */
+async function askGemini(prompt, { signal } = {}) {
+  const r = await callGeminiGrounded(prompt, { signal, pillar: PILLAR });
+  if (!r.ok) return { ok: false, error: r.error || "Gemini grounding unavailable" };
+  return { ok: true, text: r.text, citations: r.citations || [], live: Boolean(r.grounded) };
 }
 
 /** Does an answer name the brand? Word-boundary matched to avoid substring hits. */
@@ -161,6 +198,12 @@ async function askAiChain(prompt, { signal } = {}) {
  */
 export async function sampleCitations({
   brand = "", host = "", topic = "", prompts = null,
+  // Declared dimensions. Absent ones are simply not crossed — see
+  // promptTaxonomy.js for why none of them is ever guessed.
+  competitors = [], geography = null, industries = [],
+  // The audited page's own text. Used ONLY to check claims the page states —
+  // see contradictsPrice for why that is deliberately narrow.
+  pageText = "",
   env = process.env, engine = null, fetchImpl = fetch, maxPrompts = MAX_PROMPTS_PER_AUDIT,
   // The audit's wall-clock budget, if it has one. `signal` cuts every in-flight
   // prompt short together; `timeoutMs` lowers the per-call ceiling to fit.
@@ -169,8 +212,22 @@ export async function sampleCitations({
   const chosen = resolveEngine(env, engine);
   if (!chosen) return null;
 
-  const list = (prompts && prompts.length ? prompts : defaultPrompts({ brand, topic, host }))
-    .slice(0, maxPrompts);
+  // ── What we ask ──────────────────────────────────────────────────────────
+  // A caller-supplied list is text somebody wrote, so its intent has to be
+  // guessed; a generated set carries its kind by construction. Both arrive here
+  // as records so everything downstream reads one shape, and `kindConfidence`
+  // records which of the two this was.
+  const list = (prompts && prompts.length
+    ? prompts.map((p) => {
+        if (p && typeof p === "object" && p.prompt) {
+          return { prompt: String(p.prompt), kind: p.kind || null, commercial: Boolean(p.commercial), kindConfidence: 100 };
+        }
+        const guess = classifyPromptKind(p);
+        return { prompt: String(p), kind: guess.kind, commercial: guess.commercial, kindConfidence: guess.confidence };
+      })
+    : generatePrompts({ brand, subject: topic || brand || host, competitors, geography, industries, limit: maxPrompts })
+        .map((p) => ({ ...p, kindConfidence: 100 }))
+  ).slice(0, maxPrompts);
   if (list.length === 0) return null;
 
   // Resolved once per sampling run, not once per prompt: the model id comes
@@ -194,29 +251,63 @@ export async function sampleCitations({
   // every result is reduced by counting, and `runs` is rebuilt in list order
   // below so the stored evidence is unchanged. This alone takes the stage from
   // 75s to ~15s.
-  const settled = await Promise.all(list.map(async (prompt) => {
+  const settled = await Promise.all(list.map(async (entry) => {
+    const prompt = entry.prompt;
     try {
       const r = chosen === "perplexity"
         ? await askPerplexity(prompt, env, fetchImpl, { signal, timeoutMs, model: perplexityModel })
-        : await askAiChain(prompt, { signal });
-      return { prompt, r };
+        : chosen === "gemini"
+          ? await askGemini(prompt, { signal })
+          : await askAiChain(prompt, { signal });
+      return { entry, r };
     } catch (err) {
-      return { prompt, r: { ok: false, error: err?.message || "sampling threw" } };
+      return { entry, r: { ok: false, error: err?.message || "sampling threw" } };
     }
   }));
 
   const runs = [];
   let failures = 0;
 
-  for (const { prompt, r } of settled) {
-    if (!r.ok) { failures += 1; runs.push({ prompt, error: r.error, mention: null, citation: null }); continue; }
+  for (const { entry, r } of settled) {
+    const prompt = entry.prompt;
+    if (!r.ok) {
+      failures += 1;
+      runs.push({ prompt, kind: entry.kind, commercial: entry.commercial, error: r.error, mention: null, citation: null });
+      continue;
+    }
 
     const mention = mentionsBrand(r.text, brand);
     const citation = citesDomain(r.citations, r.text, host);
+    const rivals = competitorsInAnswer({ citations: r.citations, ourHost: host, declared: competitors });
+    const recommended = readsAsRecommendation(r.text, brand, { commercial: entry.commercial });
+    // null means "could not check", and classifyCitation reads it as not-proven
+    // rather than as proven-correct. Stored as-is so the distinction survives.
+    const misrepresented = contradictsPrice(r.text, brand, pageText);
+    const state = classifyCitation({
+      mentioned: mention, cited: citation, commercial: entry.commercial,
+      recommended, misrepresented: misrepresented === true,
+      competitorsPresent: rivals.length,
+    });
     runs.push({
       prompt,
+      kind: entry.kind,
+      commercial: entry.commercial,
+      kindConfidence: entry.kindConfidence,
       mention,
       citation,
+      state,
+      recommended,
+      misrepresented,
+      competitors: rivals,
+      // Null when the brand was absent: that absence is already counted by
+      // MentionRate, and scoring it here too would charge it twice.
+      prominence: answerProminence(r.text, brand),
+      // ⚠️ PER-RUN, NOT PER-ENGINE. Grounded Gemini falls back to its own
+      // weights whenever Search returns nothing useful, so within one sampling
+      // run some answers are retrieved and others remembered. A single
+      // engine-level flag would label the whole set by whichever it was called,
+      // and the two are different measurements.
+      live: r.live !== undefined ? Boolean(r.live) : isLiveEngine(chosen),
       sentiment: mention ? estimateSentiment(r.text, brand) : null,
       citedDomains: (r.citations || [])
         .map((c) => (typeof c === "string" ? c : c?.url || ""))
@@ -233,19 +324,34 @@ export async function sampleCitations({
     // the difference between "we asked and you were absent" and "we could not
     // ask", which must never be scored the same way.
     return {
-      engine: chosen, live: chosen === "perplexity",
+      engine: chosen, live: isLiveEngine(chosen),
       promptCount: 0, mentions: 0, citations: 0, sentiment: null,
       runs, error: runs[0]?.error || "sampling failed",
     };
   }
 
   const sentiments = answered.map((r) => r.sentiment).filter((s) => Number.isFinite(s));
+  const states = aggregateStates(answered);
+  const sov = shareOfVoice(answered, { ourHost: host });
+  // The run is live only where the answers were. A grounded engine that fell
+  // back to recall on every prompt produced a non-live sample, whatever it is
+  // called, and `liveAnswers` is what a reader needs to judge the rest by.
+  const liveAnswers = answered.filter((r) => r.live).length;
   return {
     engine: chosen,
-    live: chosen === "perplexity",
+    live: isLiveEngine(chosen) && liveAnswers > 0,
+    liveAnswers,
     promptCount: answered.length,
     mentions: answered.filter((r) => r.mention).length,
     citations: answered.filter((r) => r.citation).length,
+    // W6.3 — the seven states and the rates built on them. `mentions` and
+    // `citations` are kept as raw counts because citation_footprint and every
+    // stored audit already read them; the rates sit beside, not instead.
+    states,
+    shareOfVoice: sov,
+    // Computed from the runs above, so every component is a measurement this
+    // sample actually took. Unmeasured components redistribute their weight.
+    wavi: waviFromSample({ promptCount: answered.length, states, runs: answered }),
     sentiment: sentiments.length ? sentiments.reduce((a, b) => a + b, 0) / sentiments.length : null,
     runs,
     failures,

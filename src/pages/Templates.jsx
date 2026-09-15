@@ -542,12 +542,25 @@ function DomainField({ id, field, value, onChange }) {
   const [suggestion, setSuggestion] = useState(null);
   const [missed, setMissed] = useState(false);
 
-  const looksLikeDomain = (v) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(v || "").trim());
+  const cleanDomain = (v) => {
+    let s = String(v || "").trim();
+    s = s.replace(/^https?:\/\//i, "").split(/[/?#]/)[0];
+    return s.toLowerCase();
+  };
+
+  const looksLikeDomain = (v) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(cleanDomain(v));
 
   async function maybeResolve() {
     const raw = String(value || "").trim();
-    // Already a domain, or too short to be a name worth a network call.
-    if (!raw || raw.length < 3 || looksLikeDomain(raw)) { setSuggestion(null); setMissed(false); return; }
+    // Already a domain/URL, or too short to be a name worth a network call.
+    if (!raw || raw.length < 3) { setSuggestion(null); setMissed(false); return; }
+    const cleaned = cleanDomain(raw);
+    if (looksLikeDomain(raw)) {
+      if (raw !== cleaned) onChange(cleaned);
+      setSuggestion(null);
+      setMissed(false);
+      return;
+    }
     setLooking(true); setMissed(false);
     try {
       const r = await api.resolveCompany(raw);

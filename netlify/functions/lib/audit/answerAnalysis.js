@@ -18,6 +18,7 @@ import {
   IDEAL_ANSWER_MIN, IDEAL_ANSWER_MAX,
 } from "../../../../src/lib/discoverability/signalScorers.js";
 import { passageIndependence } from "./htmlParse.js";
+import { nullEvidenceCollector } from "./evidenceCollector.js";
 
 /** Below this a passage is too thin to be considered an answer candidate. */
 const MIN_ANSWER_WORDS = 15;
@@ -63,6 +64,7 @@ export function analyseAnswerClarity(parsed, ctx = {}) {
   const signals = {};
   const reasons = {};
   const issues = [];
+  const E = ctx.evidence || nullEvidenceCollector();
 
   const passages = parsed.passages || [];
   const answer = pickAnswerPassage(passages);
@@ -185,6 +187,60 @@ export function analyseAnswerClarity(parsed, ctx = {}) {
       details: structures,
     });
   }
+
+  // ── record what was read ─────────────────────────────────────────────────
+  // Emitted here, once per signal, rather than inside each branch above. The
+  // branches decide the SCORE; the reading itself — which passage, how long,
+  // how far down — is the same whichever branch ran, and duplicating it into
+  // every arm is how one arm ends up silently recording nothing.
+  E.signal("direct_answer_block", {
+    method: "raw_html",
+    section: answer?.heading ? `Passage under “${answer.heading}”` : "Page body",
+    observedValue: answer
+      ? { position_percent: answer.position, word_count: answer.wordCount }
+      : { passages: passages.length, page_word_count: parsed.wordCount ?? 0 },
+    excerpt: answer?.text || "",
+  });
+  E.signal("conciseness", {
+    method: "derived",
+    section: "Primary answer length",
+    observedValue: answer ? answer.wordCount : 0,
+    structured: { ideal_min: IDEAL_ANSWER_MIN, ideal_max: IDEAL_ANSWER_MAX },
+  });
+  E.signal("passage_independence", {
+    // ALWAYS `derived`, never `model_inference` — even when the pipeline is
+    // about to overwrite the value with a model's. This record describes what
+    // THIS function did: a deterministic heuristic over the passage text. When
+    // a model also runs, the pipeline adds its own `model_inference` record
+    // beside this one rather than relabelling this one, so the pre-screen
+    // survives as the only independent check on a model that disagrees with the
+    // page. Letting `ctx.aiEvaluated` change the method here would file a
+    // deterministic reading as a model judgement and lose that check.
+    method: "derived",
+    section: "Primary answer, read in isolation",
+    observedValue: signals.passage_independence ?? null,
+    excerpt: answer?.text || "",
+  });
+  E.signal("question_headings", {
+    method: "raw_html",
+    selector: "h2, h3",
+    section: "Question-shaped headings and visible Q&A",
+    observedValue: { question_headings: qHeadings, faq_pairs: faqCount, headings_total: stats.total || 0 },
+    structured: {
+      questions: (parsed.faqPairs || []).slice(0, 8).map((f) => f.question),
+    },
+  });
+  E.signal("extractable_formatting", {
+    method: "raw_html",
+    selector: "ul, ol, table",
+    section: "Scannable structures",
+    observedValue: {
+      lists: structures.lists ?? 0,
+      tables: structures.tables ?? 0,
+      list_items: structures.listItems ?? 0,
+      page_word_count: parsed.wordCount ?? 0,
+    },
+  });
 
   return {
     signals, reasons, issues,
