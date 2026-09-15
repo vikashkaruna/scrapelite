@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import LocalDirectoryPanel, { matchState } from "./LocalDirectoryPanel.jsx";
+import LocalDirectoryPanel, { matchState, IGNORE_REASONS } from "./LocalDirectoryPanel.jsx";
 import { discoverability } from "../../lib/discoverability/discoverabilityClient.js";
 import { coverageClaim } from "../../lib/discoverability/directorySources.js";
 
@@ -138,5 +138,39 @@ describe("LocalDirectoryPanel", () => {
     expect(screen.getAllByText(/Why this matters:/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Fixed external profile to match truth record/)).toBeTruthy();
     expect(screen.getByText(/Legitimate variance/)).toBeTruthy();
+  });
+});
+
+describe("LocalDirectoryPanel — ignoring sources that do not apply", () => {
+  beforeEach(() => { vi.restoreAllMocks(); toast.mockReset(); });
+
+  it("records an ignore with a reason for the selected truth record", async () => {
+    mockApi();
+    vi.spyOn(discoverability, "listDirectoryIgnores").mockResolvedValue({ ignores: [] });
+    const ignore = vi.spyOn(discoverability, "ignoreDirectorySource").mockResolvedValue({ ignore: {} });
+    render(<LocalDirectoryPanel workspaceId="ws-1" />);
+    await screen.findByText("Justdial");
+    const buttons = await screen.findAllByRole("button", { name: /Not applicable\? Ignore/ });
+    fireEvent.click(buttons[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Ignore source" }));
+    await waitFor(() => expect(ignore).toHaveBeenCalledWith({
+      truth_record_id: "tr-1", source_id: "justdial", reason: IGNORE_REASONS[0], workspace_id: "ws-1",
+    }));
+  });
+
+  it("hides ignored sources until asked, shows why, and restores them", async () => {
+    mockApi();
+    vi.spyOn(discoverability, "listDirectoryIgnores").mockResolvedValue({
+      ignores: [{ source_id: "mca", reason: "Not relevant to our industry", created_at: "2026-09-15" }],
+    });
+    const restore = vi.spyOn(discoverability, "restoreDirectorySource").mockResolvedValue({ restored: true });
+    render(<LocalDirectoryPanel />);
+    expect(await screen.findByText(/2 Applicable · 1 ignored/)).toBeTruthy();
+    expect(screen.queryByText("MCA registry")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show ignored (1)" }));
+    expect(await screen.findByText("MCA registry")).toBeTruthy();
+    expect(screen.getByText("Not relevant to our industry")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(restore).toHaveBeenCalledWith(expect.objectContaining({ truth_record_id: "tr-1", source_id: "mca" })));
   });
 });

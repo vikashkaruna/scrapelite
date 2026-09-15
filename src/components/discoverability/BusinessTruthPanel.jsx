@@ -13,7 +13,9 @@
 // offered no way to create a record at all. Everything below reads the full
 // record the API returns and the field registry the route validates against.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useContext } from "react";
+import { AuthContext } from "../AuthProvider.jsx";
+import { cacheKey, readCache, loadWithCache } from "../../lib/discoverability/tabCache.js";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
@@ -56,34 +58,45 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
   const [formFields, setFormFields] = useState({});
   const [busyVersion, setBusyVersion] = useState(null);
   const [resolveLoading, setResolveLoading] = useState(null);
+  const authContext = useContext(AuthContext);
+  const cacheUserId = currentUser?.id || authContext?.user?.id || null;
 
+  // Paint the last-seen records from localStorage, then refresh from the database.
   const loadRecords = useCallback(async () => {
-    setLoading(true);
+    const key = cacheKey("truth.records", { userId: cacheUserId, workspaceId });
+    if (!readCache(key)) setLoading(true);
     try {
-      const res = await discoverability.listTruthRecords({ workspace_id: workspaceId });
-      const list = res.records || [];
-      setRecords(list);
-      setSelectedId((current) => (current && list.some((r) => r.id === current) ? current : list[0]?.id || ""));
+      await loadWithCache(key,
+        () => discoverability.listTruthRecords({ workspace_id: workspaceId }),
+        (res) => {
+          const list = res?.records || [];
+          setRecords(list);
+          setSelectedId((current) => (current && list.some((r) => r.id === current) ? current : list[0]?.id || ""));
+          setLoading(false);
+        });
     } catch (err) {
       showToast(err.message || "Could not load business truth records", "error");
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, showToast]);
+  }, [workspaceId, showToast, cacheUserId]);
 
   const loadDetail = useCallback(async (recordId) => {
     if (!recordId) { setDetail(null); setDiff(null); return; }
     try {
-      const [full, diffRes] = await Promise.all([
-        discoverability.getTruthRecord(recordId, { workspaceId }),
-        discoverability.truthDiff(recordId, { workspaceId }).catch(() => null),
-      ]);
-      setDetail(full);
-      setDiff(diffRes);
+      await loadWithCache(cacheKey("truth.detail", { userId: cacheUserId, workspaceId }, recordId),
+        async () => {
+          const [full, diffRes] = await Promise.all([
+            discoverability.getTruthRecord(recordId, { workspaceId }),
+            discoverability.truthDiff(recordId, { workspaceId }).catch(() => null),
+          ]);
+          return { full, diffRes };
+        },
+        ({ full, diffRes }) => { setDetail(full); setDiff(diffRes); });
     } catch (err) {
       showToast(err.message || "Could not load the record", "error");
     }
-  }, [workspaceId, showToast]);
+  }, [workspaceId, showToast, cacheUserId]);
 
   useEffect(() => { loadRecords(); }, [loadRecords]);
   useEffect(() => { loadDetail(selectedId); }, [selectedId, loadDetail]);

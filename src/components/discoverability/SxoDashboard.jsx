@@ -8,7 +8,9 @@
 // 5. Template & Portfolio Performance across the 9 axes with "no data" for unaudited subjects (§11.10)
 // 6. Persona-filtered actions (7 personas) + Optimization Experiments tracker with correlation disclaimer (§11.12)
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useContext } from "react";
+import { AuthContext } from "../AuthProvider.jsx";
+import { cacheKey, readCache, loadWithCache } from "../../lib/discoverability/tabCache.js";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
 import { useToast } from "../Toast.jsx";
@@ -113,10 +115,28 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
   const [funnelConfig, setFunnelConfig] = useState({});
   const [savingFunnelConfig, setSavingFunnelConfig] = useState(false);
 
+  const cacheUserId = useContext(AuthContext)?.user?.id || null;
+
+  // Paint the last-seen SXO dashboard for this audit from localStorage, then
+  // refresh every section from the database.
   const loadDashboardData = useCallback(async () => {
     if (!auditId) return;
-    setLoading(true);
+    const key = cacheKey("sxo", { userId: cacheUserId, workspaceId }, `${auditId}:${selectedAxis}`);
+    if (!readCache(key)) setLoading(true);
+    const applySxo = (d) => {
+      const { auditRes, runRes, journeyRes, diagRes, expRes, rollRes, connectionRes, goalRes } = d || {};
+      if (auditRes) setAuditData(auditRes);
+      setSxoRun(runRes?.runs?.[0] || null);
+      if (journeyRes?.funnel) setFunnelData(journeyRes.funnel);
+      if (diagRes?.diagnostics) setDiagnosticsData(diagRes.diagnostics);
+      if (expRes?.experiments) setExperiments(expRes.experiments);
+      if (rollRes?.rollups) setRollups(rollRes.rollups);
+      setConnections(connectionRes?.connections || []);
+      setGoals(goalRes?.goals || []);
+      setLoading(false);
+    };
     try {
+      await loadWithCache(key, async () => {
       const [auditRes, runRes, journeyRes, diagRes, expRes, rollRes, connectionRes, goalRes] = await Promise.all([
         fullAudit ? Promise.resolve(fullAudit) : discoverability.getResults(auditId, { workspaceId }).catch(() => null),
         discoverability.listSxoRuns({ audit_id: auditId, workspace_id: workspaceId, limit: 1 }).catch(() => ({ runs: [] })),
@@ -127,21 +147,14 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
         discoverability.listSxoIntegrations({ workspace_id: workspaceId }).catch(() => ({ connections: [] })),
         discoverability.listSxoConversionGoals({ audit_id: auditId, workspace_id: workspaceId }).catch(() => ({ goals: [] })),
       ]);
-
-      if (auditRes) setAuditData(auditRes);
-      setSxoRun(runRes?.runs?.[0] || null);
-      if (journeyRes?.funnel) setFunnelData(journeyRes.funnel);
-      if (diagRes?.diagnostics) setDiagnosticsData(diagRes.diagnostics);
-      if (expRes?.experiments) setExperiments(expRes.experiments);
-      if (rollRes?.rollups) setRollups(rollRes.rollups);
-      setConnections(connectionRes?.connections || []);
-      setGoals(goalRes?.goals || []);
+      return { auditRes, runRes, journeyRes, diagRes, expRes, rollRes, connectionRes, goalRes };
+      }, applySxo);
     } catch (err) {
       console.warn("[SxoDashboard] Failed to fetch some dashboard data:", err);
     } finally {
       setLoading(false);
     }
-  }, [auditId, workspaceId, selectedAxis, fullAudit]);
+  }, [auditId, workspaceId, selectedAxis, fullAudit, cacheUserId]);
 
   const [evaluatingSxo, setEvaluatingSxo] = useState(false);
 

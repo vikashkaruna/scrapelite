@@ -395,6 +395,14 @@ export const discoverability = {
   deleteDirectoryListing: (id, payload = {}) =>
     req(`/local-directory/listings/${encodeURIComponent(id)}`, "DELETE", payload),
   runLocalCheck: (payload) => req("/local-directory/check", "POST", payload),
+  /** Sources marked not applicable to a truth record (0076). */
+  listDirectoryIgnores: ({ truth_record_id = null, workspace_id = null } = {}) =>
+    req(withQuery("/local-directory/ignores", { truth_record_id, workspace_id })),
+  /** `reason` is REQUIRED — the server refuses an ignore without one. */
+  ignoreDirectorySource: ({ truth_record_id = null, source_id, reason, workspace_id = null }) =>
+    req("/local-directory/ignores", "POST", { truth_record_id, source_id, reason, workspace_id }),
+  restoreDirectorySource: ({ truth_record_id = null, source_id, workspace_id = null }) =>
+    req(`/local-directory/ignores/${encodeURIComponent(source_id)}`, "DELETE", { truth_record_id, workspace_id }),
   listLocalChecks: (params = {}) => {
     const q = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),

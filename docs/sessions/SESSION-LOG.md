@@ -18,6 +18,35 @@
 
 ---
 
+## 2026-09-15 IST — Discoverability tabs: localStorage-first loading, 1.1–1.4 → 5 step numbering, active-audit context, entity approval fix, ignorable directory sources, two-column pillars
+
+> **Branch:** `fix/discoverability-tabs-context`, cut from `origin/staging` @ `5ad8fc3`, then merged with `staging` after PR #179 (pricing consistency) landed · **Delivery:** PR into `staging` (direct pushes are refused by the CodeQL code-scanning rule) · **`main`:** untouched
+> **Migration:** `0076_endpoint_self_approval_and_directory_ignores.sql` — **apply to staging Supabase** before the ignore controls work; the approve fix is a `create or replace` · **Next migration number:** `0077`
+
+### 1. What was asked, and what shipped
+
+| Ask | Shipped |
+|---|---|
+| Tabs don't use localStorage | New `src/lib/discoverability/tabCache.js`. Business Truth, Schema & Trust, SXO, Subject Scores, Entity Graph, Local Directory and History paint their last payload from localStorage, then refresh from the database and overwrite the cache. Keys are scoped by user **and** workspace; sign-out sweeps the prefix (`GuestTrialProvider`). |
+| Number the loop 1.1–1.4, 2–5 | `ClosedLoopRibbon.jsx` — Discover/Score/Diagnose/Recommend are `1.1`–`1.4` (one audit does all four); Implement `2`, Validate `3`, Benchmark `4`, Expand `5`. |
+| Active audit context in brief | New `ActiveAuditContext.jsx` on the Audit page and every workspace tab: `Active audit (id8) domain · profile · device · page type · date/time`. Remembered per user/workspace so switching tabs keeps it. |
+| Entity Relationship "Couldn't save…" on Approve | **Root-caused on real Postgres (PGlite).** Approving an edge approves its proposed endpoints; when a teammate proposed the edge and the approver had proposed an endpoint, the panel sent the ordinary note and the endpoint UPDATE raised `23514 audit_entities_no_self_approval` → 500. Fixed in three places: `0076` returns `endpoint_self_approval` before any write, the route maps it to a 403 with guidance, and the panel sends the single-founder note when the user proposed the edge **or** an endpoint. |
+| Ignore directory sources that don't apply | New table `audit_directory_source_ignores` (reason required, per truth record, `NULLS NOT DISTINCT` arbiter, RLS service-role only). Routes `GET/POST /local-directory/ignores`, `DELETE /local-directory/ignores/{source_id}` (also in `docs/openapi.v1.json`). A NAP check excludes an ignored source from both the scored listings and the configured set. Panel: "Not applicable? Ignore" with reasons, "Show ignored (n)", Restore. |
+| Pillars in two columns, also in reports | `.dsc-pillar-grid` is 2 columns (1 column ≤720px). The PDF pillar breakdown is drawn in two columns; the Markdown report gains a two-column pillar summary table. |
+
+### 2. Verification
+
+- db-verify **76 migrations / 847 assertions / 0 failed** (+4 approve-verdict, +4 ignores assertions; tables 117 → 118).
+- `npm run test:prepush` **9/9 green**; prerender 28 pages / 112 refs present; help center regenerated.
+- New tests: `tabCache.test.js`, `ClosedLoopRibbon.test.jsx`, `ActiveAuditContext.test.jsx`, ignore + founder-note panel tests, ignore-route and endpoint-verdict contract tests. The 9 pre-existing NAP-check contract tests went red on the first draft (the route trusted the ignore lookup to return an array); the route now degrades to "nothing ignored".
+
+### 3. Open items
+
+- **Apply `0076` to staging Supabase** (and to production before `main`).
+- Not browser-verified: every Discoverability screen is signed-in only and needs live Supabase; covered by component/contract tests and db-verify.
+
+---
+
 ## 2026-09-14 21:20 IST — Staging Merged Into Discoverability-P1-P3-implementation and the Result Promoted to Staging
 
 > **Branch:** `Discoverability-P1-P3-implementation` @ `7545a0f` (merge commit) · **`origin/staging`:** fast-forwarded `0ec1df9..7545a0f` · **`main`:** untouched

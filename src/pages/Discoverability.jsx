@@ -38,6 +38,7 @@ import {
 import AuditHistory from "../components/discoverability/AuditHistory.jsx";
 import AuditHeader from "../components/discoverability/AuditHeader.jsx";
 import ClosedLoopRibbon from "../components/discoverability/ClosedLoopRibbon.jsx";
+import ActiveAuditContext from "../components/discoverability/ActiveAuditContext.jsx";
 import BrandLoader from "../components/BrandLoader.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
@@ -605,6 +606,15 @@ export default function Discoverability() {
         auditId={audit?.auditId || null}
         currentStep={!audit ? "discover" : "score"}
       />
+
+      {audit?.auditId && (
+        <ActiveAuditContext
+          auditId={audit.auditId}
+          audit={audit}
+          workspaceId={currentWorkspaceId}
+          showReturnLink={false}
+        />
+      )}
 
       <nav className="dsc-tabs dsc-subnav-tabs" aria-label="Discoverability sections">
         {DISCOVERABILITY_VIEWS.map((v) => {
