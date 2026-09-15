@@ -18,8 +18,9 @@
 
 import { Link } from "react-router";
 import Icon from "./Icon.jsx";
-import { getEffectivePlans } from "../lib/pricingOverrides.js";
-import { applyGlobalDiscount } from "../lib/pricingOverrides.js";
+import { getEffectivePlans, applyGlobalDiscount } from "../lib/pricingOverrides.js";
+import { resolvePlanPrice } from "../lib/planPricing.js";
+import { formatPrice } from "../lib/currencyService.js";
 
 function fmtNum(n) {
   if (n === Infinity) return "Unlimited";
@@ -37,18 +38,13 @@ function fmtBool(b) {
   return b ? "✓" : "—";
 }
 
-// Format a price for the matrix header — per-year figure (one decimal place
-// for fractional dollars, no decimals for whole dollars). Pulls the right
-// annual price for the selected currency, after the global discount.
-function fmtMatrixPrice(plan, currency) {
-  if (plan.id === "free") return "0";
-  const annual = currency === "INR" ? plan.price_inr_annual : plan.price_usd_annual;
-  const base   = currency === "INR" ? plan.price_inr        : plan.price_usd;
-  const raw    = annual ?? base ?? 0;
-  const withDiscount = applyGlobalDiscount(raw);
-  // Round to 1 decimal place, drop trailing .0.
-  const rounded = Math.round(withDiscount * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+// Header price for one plan column. Uses the SAME resolver and formatter as the
+// plan cards on /pricing (resolvePlanPrice + formatPrice), for the billing
+// period the visitor has selected. This used to read the annual price
+// unconditionally, so with the page on its Monthly default the table disagreed
+// with every card above it.
+function matrixPrice(plan, billingPeriod, currency, rates) {
+  return formatPrice(applyGlobalDiscount(resolvePlanPrice(plan, billingPeriod, currency, rates)), currency);
 }
 
 const FEATURE_ROWS = [
@@ -115,7 +111,7 @@ function groupRows(rows) {
   return out;
 }
 
-export default function PricingMatrix({ currentPlanId = null, onSelectPlan, currency = "USD" }) {
+export default function PricingMatrix({ currentPlanId = null, onSelectPlan, currency = "USD", billingPeriod = "monthly", rates }) {
   // Only the 6 ship-today plans (Developer is coming-soon, Enterprise is custom —
   // the matrix would just confuse). The Enterprise row is its own card above.
   const plans = getEffectivePlans().filter((p) => !p.comingSoon);
@@ -129,7 +125,8 @@ export default function PricingMatrix({ currentPlanId = null, onSelectPlan, curr
           <Icon name="columns-3" size={18} /> Compare every plan
         </h2>
         <p className="pricing-matrix-sub">
-          One row per feature. Tap a plan column to scroll back up &amp; pick it.
+          One row per feature. Prices are per month, {billingPeriod === "annual" ? "billed annually" : "billed monthly"}
+          {currency === "INR" ? ", before 18% GST" : ""}. Tap a plan column to scroll back up &amp; pick it.
         </p>
       </header>
 
@@ -146,8 +143,7 @@ export default function PricingMatrix({ currentPlanId = null, onSelectPlan, curr
                 >
                   <div className="pm-plan-name">{p.name}</div>
                   <div className="pm-plan-price">
-                    {currency === "INR" ? "₹" : "$"}
-                    {fmtMatrixPrice(p, currency)}
+                    {matrixPrice(p, billingPeriod, currency, rates)}
                     <span className="pm-plan-period">/mo</span>
                   </div>
                   {p.id === currentPlanId && (

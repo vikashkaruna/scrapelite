@@ -17,7 +17,7 @@
 export const PAGE_SEO = {
   "/pricing": {
     "title": "DatIQ Pricing — Free, Go, Select, Pro, Business, Agency | DatIQ.app",
-    "description": "DatIQ pricing: Free (10 extractions/month), Go ($4.80/mo), Select ($14.40/mo), Pro ($20.40/mo, recommended), Business ($44.40/mo), Agency ($106.80/mo, best value), Developer ($32.40/mo, coming H3 2026). 20% off annual. INR pricing for India.",
+    "description": "DatIQ pricing: Free (10 extractions/month), Go ($4.80/mo), Select ($14.40/mo), Pro ($20.40/mo, recommended), Business ($44.40/mo), Agency ($106.80/mo, best value), Developer ($32.40/mo, coming H3 2026). About 17% off with annual billing. INR pricing for India.",
     "canonical": "https://datiq.app/pricing",
     "jsonLd": [
       {
@@ -348,7 +348,7 @@ export const PAGE_SEO = {
             "name": "How many leads can I extract per month?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "The Free plan includes 10 extractions per month plus a one-time 25-extraction trial credit. Go ($4.80/mo) is 200, Select ($14.40/mo) is 500, Pro ($20.40/mo) is 1,000, Business ($44.40/mo) is 10,000, and Agency ($106.80/mo) is unlimited. Annual billing is around 20% cheaper. You can also batch-process up to 500 URLs in a single run, and enrich and ICP-score bulk account lists of the same size."
+              "text": "The Free plan includes 10 extractions per month plus a one-time 25-extraction trial credit. Go ($4.80/mo) is 200, Select ($14.40/mo) is 500, Pro ($20.40/mo) is 1,000, Business ($44.40/mo) is 10,000, and Agency ($106.80/mo) is unlimited. Annual billing is about 17% cheaper. You can also batch-process up to 500 URLs in a single run, and enrich and ICP-score bulk account lists of the same size."
             }
           },
           {
@@ -712,7 +712,7 @@ export const PAGE_SEO = {
             "name": "How many accounts can I put in one list?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "A bulk list uses your plan's batch allowance: 5 accounts on Free, 20 on Go, 50 on Select, 100 on Pro, 250 on Business and 500 on Agency and Developer. Top-up bundles add capacity without changing plans. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with around 20% off on annual billing and INR pricing available."
+              "text": "A bulk list uses your plan's batch allowance: 5 accounts on Free, 20 on Go, 50 on Select, 100 on Pro, 250 on Business and 500 on Agency and Developer. Top-up bundles add capacity without changing plans. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with about 17% off on annual billing and INR pricing available."
             }
           }
         ]
@@ -801,7 +801,7 @@ export const PAGE_SEO = {
             "name": "Where do the alerts go?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "A signal routing rule sends them to Slack, email, a webhook or HubSpot, with conditions you set - for example, only changes at high materiality or above. Every dispatch is recorded whether it succeeded or not, and an unreachable destination is retried rather than dropped. Watchlists use your plan's scheduled-monitoring allowance, which starts on Select. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with around 20% off on annual billing and INR pricing available."
+              "text": "A signal routing rule sends them to Slack, email, a webhook or HubSpot, with conditions you set - for example, only changes at high materiality or above. Every dispatch is recorded whether it succeeded or not, and an unreachable destination is retried rather than dropped. Watchlists use your plan's scheduled-monitoring allowance, which starts on Select. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with about 17% off on annual billing and INR pricing available."
             }
           }
         ]
@@ -890,7 +890,7 @@ export const PAGE_SEO = {
             "name": "How many audits do I get?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Discoverability audits have their own monthly allowance: 3 on Free, 10 on Go, 25 on Select, 100 on Pro, 500 on Business and 2,000 on Agency. Competitive benchmarks require an allowance of at least 25. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with around 20% off on annual billing and INR pricing available."
+              "text": "Discoverability audits have their own monthly allowance: 3 on Free, 10 on Go, 25 on Select, 100 on Pro, 500 on Business and 2,000 on Agency. Competitive benchmarks require an allowance of at least 25. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with about 17% off on annual billing and INR pricing available."
             }
           }
         ]
@@ -979,7 +979,7 @@ export const PAGE_SEO = {
             "name": "Can I share the research with a candidate?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Publish any result as a report at its own link and choose who can open it - anyone with the link, your workspace, or named email addresses only. Non-public reports are not indexed by search engines, and a link can be permanently revoked. Sharing is free on every plan. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with around 20% off on annual billing and INR pricing available."
+              "text": "Yes. Publish any result as a report at its own link and choose who can open it - anyone with the link, your workspace, or named email addresses only. Non-public reports are not indexed by search engines, and a link can be permanently revoked. Sharing is free on every plan. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with about 17% off on annual billing and INR pricing available."
             }
           }
         ]
@@ -1068,7 +1068,7 @@ export const PAGE_SEO = {
             "name": "Can I control who sees a brief?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Each report has its own visibility: private, anyone with the link, workspace only, named email addresses only, or public. Only public reports are indexable; everything else carries a noindex instruction. A link can be revoked permanently, and reports can carry an expiry date. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with around 20% off on annual billing and INR pricing available."
+              "text": "Yes. Each report has its own visibility: private, anyone with the link, workspace only, named email addresses only, or public. Only public reports are indexable; everything else carries a noindex instruction. A link can be revoked permanently, and reports can carry an expiry date. Free includes 10 extractions and 3 discoverability audits a month with no credit card. Paid plans start at $4.80/month (Go). Select is $14.40/month, Pro $20.40, Business $44.40 and Agency $106.80, with about 17% off on annual billing and INR pricing available."
             }
           }
         ]
