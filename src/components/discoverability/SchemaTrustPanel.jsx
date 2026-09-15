@@ -39,6 +39,7 @@ export default function SchemaTrustPanel({ workspaceId = null }) {
   const [trust, setTrust] = useState(null);
   const [loading, setLoading] = useState(true);
   const [addingTrust, setAddingTrust] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [trustForm, setTrustForm] = useState(EMPTY_FORM);
 
   const loadData = useCallback(async () => {
@@ -46,7 +47,7 @@ export default function SchemaTrustPanel({ workspaceId = null }) {
     try {
       const [schemaRes, trustRes] = await Promise.all([
         discoverability.listSchemaEntities({ workspace_id: workspaceId }).catch(() => ({ entities: [] })),
-        discoverability.listTrustObservations({ workspace_id: workspaceId }).catch(() => ({ observations: [] })),
+        (discoverability.listTrustObservations || discoverability.getTrustObservations)({ workspace_id: workspaceId }).catch(() => ({ observations: [], trust: null })),
       ]);
       setSchemaEntities(schemaRes.entities || []);
       setTrustObservations(trustRes.observations || []);
@@ -64,6 +65,7 @@ export default function SchemaTrustPanel({ workspaceId = null }) {
 
   const handleAddTrust = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
     try {
       await discoverability.saveTrustObservation({
         signal: trustForm.signal,
@@ -78,6 +80,8 @@ export default function SchemaTrustPanel({ workspaceId = null }) {
       loadData();
     } catch (err) {
       showToast(err.message || "Could not record trust observation", "error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -187,7 +191,9 @@ export default function SchemaTrustPanel({ workspaceId = null }) {
               />
             </label>
           </div>
-          <Button size="sm" type="submit">Record Observation</Button>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button size="sm" type="submit" loading={submitting}>Record Observation</Button>
+          </div>
         </form>
       )}
 

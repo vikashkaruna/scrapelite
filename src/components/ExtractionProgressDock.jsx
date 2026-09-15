@@ -15,6 +15,7 @@
 //
 // Done state offers a way back to the result, and is only shown when the user
 // has navigated away from wherever they launched it.
+import { useState, useEffect } from "react";
 import { useExtraction } from "./ExtractionProvider.jsx";
 import { useBatchRun } from "./BatchRunProvider.jsx";
 import { useTemplateRun } from "./TemplateRunProvider.jsx";
@@ -75,6 +76,38 @@ export default function ExtractionProgressDock() {
   const batchJob = batch?.job;
   const tpl = useTemplateRun();
   const tplJob = tpl?.job;
+  const [listJob, setListJob] = useState(null);
+
+  // Auto-dismiss template run dock after completion
+  useEffect(() => {
+    if (tplJob && (tplJob.status === "done" || tplJob.status === "error")) {
+      const timer = setTimeout(() => {
+        tpl?.clearTemplateRun?.();
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [tplJob?.status]);
+
+  // Listen for account intelligence list enrichment progress
+  useEffect(() => {
+    const onListEvent = (e) => {
+      const detail = e?.detail;
+      if (!detail) return;
+      if (detail.status === "dismiss") {
+        setListJob(null);
+        return;
+      }
+      setListJob(detail);
+      if (detail.status === "done" || detail.status === "error") {
+        const timer = setTimeout(() => {
+          setListJob((cur) => (cur === detail ? null : cur));
+        }, 4000);
+        return () => clearTimeout(timer);
+      }
+    };
+    window.addEventListener("datiq:listenrichment", onListEvent);
+    return () => window.removeEventListener("datiq:listenrichment", onListEvent);
+  }, []);
 
   // A batch run takes precedence: it's the longer-lived job, and the two can
   // only overlap if the user launched a single extraction mid-batch.
@@ -141,6 +174,32 @@ export default function ExtractionProgressDock() {
           <span>
             <Icon name="loader" size={12} className="spin" />
             {tplJob.percent || 0}%
+          </span>
+        </div>
+      </DockShell>
+    );
+  }
+
+  // Account intelligence list enrichment progress
+  if (listJob) {
+    const done = listJob.status === "done" || listJob.status === "error";
+    const failed = listJob.status === "error";
+    const total = listJob.total || 1;
+    const processed = listJob.processed || 0;
+    const pct = total ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+    return (
+      <DockShell
+        done={done}
+        title={failed ? "Enrichment failed" : done ? "Account enrichment complete" : "Enriching accounts…"}
+        subtitle={done ? `${processed} of ${total} accounts enriched` : `${listJob.listName || "List"} (${processed} / ${total})`}
+        subtitleIcon={failed ? "alert-circle" : done ? "check" : "layers"}
+        pct={pct}
+        onDismiss={() => setListJob(null)}
+      >
+        <div className="extract-dock-step extract-dock-step-row">
+          <span>
+            <Icon name="loader" size={12} className="spin" />
+            {pct}% ({processed} of {total})
           </span>
         </div>
       </DockShell>

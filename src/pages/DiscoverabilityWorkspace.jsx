@@ -7,6 +7,8 @@ import LocalDirectoryPanel from "../components/discoverability/LocalDirectoryPan
 import SchemaTrustPanel from "../components/discoverability/SchemaTrustPanel.jsx";
 import SubjectScoresPanel from "../components/discoverability/SubjectScoresPanel.jsx";
 import SxoDashboard from "../components/discoverability/SxoDashboard.jsx";
+import ClosedLoopRibbon from "../components/discoverability/ClosedLoopRibbon.jsx";
+import { UNIFIED_DISCOVERABILITY_NAV } from "./Discoverability.jsx";
 import { useWorkspace } from "../components/WorkspaceContext.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -14,12 +16,12 @@ import { useSeo } from "../hooks/useSeo.js";
 import { discoverability } from "../lib/discoverability/discoverabilityClient.js";
 
 export const DISCOVERABILITY_WORKSPACES = Object.freeze([
-  { path: "/discoverability/truth", label: "Business Truth", icon: "database", component: BusinessTruthPanel },
-  { path: "/discoverability/entities", label: "Entity Graph", icon: "share-2", component: EntityGraphPanel },
-  { path: "/discoverability/local", label: "Local Directory", icon: "map-pin", component: LocalDirectoryPanel },
-  { path: "/discoverability/trust", label: "Schema & Trust", icon: "shield-check", component: SchemaTrustPanel },
-  { path: "/discoverability/scores", label: "Subject Scores", icon: "award", component: SubjectScoresPanel },
-  { path: "/discoverability/sxo", label: "SXO & Outcomes", icon: "zap", component: SxoDashboard },
+  { path: "/discoverability/truth", label: "Business Truth", icon: "database", component: BusinessTruthPanel, step: "implement" },
+  { path: "/discoverability/entities", label: "Entity Graph", icon: "share-2", component: EntityGraphPanel, step: "expand" },
+  { path: "/discoverability/local", label: "Local Directory", icon: "map-pin", component: LocalDirectoryPanel, step: "expand" },
+  { path: "/discoverability/trust", label: "Schema & Trust", icon: "shield-check", component: SchemaTrustPanel, step: "implement" },
+  { path: "/discoverability/scores", label: "Subject Scores", icon: "award", component: SubjectScoresPanel, step: "benchmark" },
+  { path: "/discoverability/sxo", label: "SXO & Outcomes", icon: "zap", component: SxoDashboard, step: "validate" },
 ]);
 
 function WorkspaceScreen() {
@@ -59,7 +61,7 @@ function WorkspaceScreen() {
       }
     : {
         workspaceId: currentWorkspaceId,
-        ...(config.path === "/discoverability/truth" ? { currentUser: user } : {}),
+        currentUser: user,
       };
 
   return (
@@ -76,18 +78,40 @@ function WorkspaceScreen() {
           </Link>
         </header>
 
+        <ClosedLoopRibbon auditId={auditId || null} currentStep={config.step || "implement"} />
+
         <nav className="dsc-tabs dsc-subnav-tabs" aria-label="Discoverability workspaces">
-          {DISCOVERABILITY_WORKSPACES.map((item) => (
-            <Link
-              key={item.path}
-              className={`dsc-tab${item.path === config.path ? " dsc-tab-on" : ""}`}
-              to={`${item.path}${auditId ? `?audit=${encodeURIComponent(auditId)}` : ""}`}
-              aria-current={item.path === config.path ? "page" : undefined}
-            >
-              <span className="dsc-tab-label"><Icon name={item.icon} size={15} /> {item.label}</span>
-            </Link>
-          ))}
+          {UNIFIED_DISCOVERABILITY_NAV.map((item) => {
+            const isTabActive = item.path === pathname;
+            const targetUrl = item.path
+              ? `${item.path}${auditId ? `?audit=${encodeURIComponent(auditId)}` : ""}`
+              : (item.id === "history"
+                  ? `/discoverability?view=history${auditId ? `&audit=${encodeURIComponent(auditId)}` : ""}`
+                  : `/discoverability${auditId ? `?audit=${encodeURIComponent(auditId)}` : ""}`);
+            return (
+              <Link
+                key={item.id}
+                className={`dsc-tab${isTabActive ? " dsc-tab-on" : ""}`}
+                to={targetUrl}
+                aria-current={isTabActive ? "page" : undefined}
+              >
+                <span className="dsc-tab-label"><Icon name={item.icon} size={15} /> {item.label}</span>
+              </Link>
+            );
+          })}
         </nav>
+
+        {auditId && (
+          <div className="dsc-active-audit-banner">
+            <div className="dsc-active-audit-info">
+              <Icon name="scan-search" size={16} className="text-accent" />
+              <span>Active Audit Context: <code>{auditId}</code></span>
+            </div>
+            <Link to={`/discoverability?audit=${encodeURIComponent(auditId)}`} className="btn btn-ghost btn-sm">
+              Return to Audit Report &rarr;
+            </Link>
+          </div>
+        )}
 
         <Screen {...screenProps} />
       </div>

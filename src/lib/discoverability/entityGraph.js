@@ -518,10 +518,11 @@ export function canApproveRelation(relation = {}, { proposedBy = null, reviewerI
     blockers.push({ code: "invalid_shape", problems: shape.problems, message: shape.problems[0]?.message || "The endpoints do not fit this relationship." });
   }
 
+  const isSingleFounder = Boolean(relation.singleFounderApproval || (typeof relation.review_note === "string" && relation.review_note.includes("[Single-founder approval]")));
   if (!reviewerId) {
     blockers.push({ code: "no_approver", message: "No approver recorded." });
-  } else if (proposedBy && proposedBy === reviewerId) {
-    blockers.push({ code: "self_approval", message: "You proposed this relationship. Approval means a second person looked." });
+  } else if (proposedBy && proposedBy === reviewerId && !isSingleFounder) {
+    blockers.push({ code: "self_approval", message: "You proposed this relationship. Approval means a second person looked, or record single-founder self-approval." });
   }
 
   if (RELATION_SOURCES[relation.source]?.verifiable && !relation.evidence) {

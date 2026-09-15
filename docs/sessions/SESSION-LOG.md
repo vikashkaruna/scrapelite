@@ -53,6 +53,39 @@
 3. Confirm the Netlify staging deploy for `7545a0f` completed, then walk `/discoverability/truth|entities|local|trust|scores` with a real signed-in account — the rewritten panels are verified by component tests against API-shaped fixtures only.
 4. Another worktree (`.gemini/antigravity/worktrees/Extracta/prospect_engagement_engine_audit`) has local `staging` checked out at `0ec1df9`; it needs `git pull --ff-only`. Left untouched deliberately.
 5. `staging` is one docs-only commit (this record) behind the branch; it will arrive with the next promotion. `main` was not touched.
+## 2026-09-15 01:50 IST — Discoverability Audit 504 Timeout Fixed, Competitor Limit 20 with Smart Entry, Closed-Loop Operating Ribbon, Account 2-Column Redesign & Full Verification Green; Merged to Staging
+
+> **Branch:** `fix_discoverability_audit_bugs` → merged to `staging` · **Target:** `staging`  
+> **Verification:** vitest **432 files / 6,919 passed** (100% green) · db-verify **74 migrations / 833 assertions** · referral 17 · workflows 56 · prerender 28 pages verified · build clean (1.38s).
+
+### 0. Fresh-start orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-15 |
+| **Branch** | `fix_discoverability_audit_bugs` (merged to `staging`) |
+| **Status** | Complete, 100% green, merged to `staging` |
+| **Migrations** | 74 (`0074_single_founder_approval.sql`) |
+| **Handoff** | `docs/sessions/SESSION-HANDOFF-2026-09-14-DISCOVERABILITY-AUDIT-BUGS-AND-ACCOUNT-UX.md` |
+
+### 1. What was fixed and accomplished
+
+- **Discoverability 504 Mobile Crawl Timeout**: Capped synthetic PageSpeed Insights (`vitalsSlice`) to 3.5s in `auditPipeline.js` (CrUX field data responds in ~1.5s; slow synthetic lab runs degrade to `unmeasured` without timing out the Netlify function). Removed invalid `functions.timeout = 26` from `netlify.toml` which caused Netlify TOML parse error.
+- **Competitors Limit 20 & Smart Parsing**: Raised `MAX_COMPETITOR_URLS = 20` in `intakeModel.js`. Enhanced `AuditComposer.jsx` to parse CSV paste, commas, semicolons, multiline URLs, and auto-convert bare company names to `https://<slug>.com` while retaining invalid schemes in `rejected`.
+- **Navigation & Tab Stability**: Unified `UNIFIED_DISCOVERABILITY_NAV` across `/discoverability` and `/discoverability/*`, eliminating tab jumping and layout shifts while preserving active audit contexts (`?audit=...`).
+- **Closed-Loop Operating Ribbon**: Added `ClosedLoopRibbon.jsx` rendering the 8-step cycle (`Discover → Score → Diagnose → Recommend → Implement → Validate → Benchmark → Expand`) across all discoverability screens.
+- **Audit Context & High-Res Logos**: Added active audit banners on workspace screens and integrated high-resolution favicon and Google logo fetching (`FaviconOrLogo`) in `AuditHeader.jsx`.
+- **Consolidated Export Dropdown**: Consolidated export options into `AuditExportMenu` matching Dashboard and Preview; styled Audit History prominently (`variant="secondary"`); added direct Email action in header.
+- **Branded Loader**: Replaced "Re-auditing…" text with DatIQ `BrandLoader` ("Loading audit report…").
+- **SXO & Outcomes**: Handled score variant keys (`scores.seo`, `frameworkScores`, `result.seo_score`) in `SxoDashboard.jsx` to ensure composite master scores render reliably. Added interactive re-evaluation button with busy spinner.
+- **Single-Founder Self-Approval**: Added migration `0074_single_founder_approval.sql` allowing solo founders to approve proposals with audit-trail recording (`[Single-founder approval]`).
+- **Account Page 2-Column Overhaul**: Reorganized `Account.jsx` into the requested 2-column structure (Left: Account Details, Brand Kit, Advanced PDF Background, Integrations, Invoices & Receipts, Danger Zone; Right: Explore Plans CTA, Current Plan, Offers, Coupons, Usage This Month, Agency Plan Features, Usage Alerts, Discoverability Stats, Usage by Role, Quick Stats, Workflow Runs).
+- **Workflow Templates & Runs**: Domain normalization stripping schemes and paths in `Templates.jsx`; 4s auto-dismiss in `ExtractionProgressDock.jsx`; `WorkflowRunHistory.jsx` with instant `localStorage` cache (`datiq.workflowRuns`) and zero horizontal scroll; sticky actions bar alignment in `WorkflowRunPreview.jsx`.
+- **Lists Bulk Enrichment**: Resolved 100% failure rate in `bulkEnrich.js` by parsing `scraped?.html || scraped?.data?.html`; expanded textarea width to 100%; wired progress events to dock.
+- **Watchlists Baseline**: Rendered baseline competitive landscape analysis on first scan when targets are monitored.
+- **Signal Rules & Integrations**: Optimistic caching on create/delete for Signal Rules; marked Slack, Airtable, Notion, and HubSpot as Available; sorted catalog: Available → Beta (Zapier) → Roadmap (Salesforce, Extension).
+
+---
 
 ## 2026-09-14 20:15 IST — Discoverability P1–P3 End-to-End Review: Tenancy Leak, Guest-Quota Bypass and Four Broken Workspace Panels Fixed; Pushed
 

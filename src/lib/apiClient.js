@@ -28,12 +28,33 @@ export function setAuthToken(token) {
  * calls res.json() — cannot handle.
  */
 export function getAuthToken() {
+  if (!_authToken && typeof window !== "undefined") {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && ((key.startsWith("sb-") && key.endsWith("-auth-token")) || key === "supabase.auth.token")) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const token = parsed?.access_token || parsed?.currentSession?.access_token;
+            if (token) {
+              _authToken = token;
+              break;
+            }
+          }
+        }
+      }
+    } catch {
+      /* ignore storage read error */
+    }
+  }
   return _authToken;
 }
 
 async function request(path, method = "GET", body) {
   const headers = { "Content-Type": "application/json" };
-  if (_authToken) headers["Authorization"] = `Bearer ${_authToken}`;
+  const token = getAuthToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const opts = {
     method,

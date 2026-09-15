@@ -128,8 +128,8 @@ describe("normaliseCompetitorUrls", () => {
     expect(r.rejected).toEqual(["http://[bad", "ftp://files.com"]);
   });
 
-  it("reports the overflow rather than keeping the first ten quietly", () => {
-    const many = Array.from({ length: 13 }, (_, i) => `https://c${i}.com`);
+  it("reports the overflow rather than keeping the first batch quietly", () => {
+    const many = Array.from({ length: MAX_COMPETITOR_URLS + 3 }, (_, i) => `https://c${i}.com`);
     const r = normaliseCompetitorUrls(many);
     expect(r.urls).toHaveLength(MAX_COMPETITOR_URLS);
     expect(r.rejected).toHaveLength(3);

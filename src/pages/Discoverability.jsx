@@ -37,20 +37,122 @@ import {
 } from "../components/discoverability/EvidencePanels.jsx";
 import AuditHistory from "../components/discoverability/AuditHistory.jsx";
 import AuditHeader from "../components/discoverability/AuditHeader.jsx";
+import ClosedLoopRibbon from "../components/discoverability/ClosedLoopRibbon.jsx";
+import BrandLoader from "../components/BrandLoader.jsx";
 import { discoverability, describeAuditError } from "../lib/discoverability/discoverabilityClient.js";
 import { downloadTextFile, hostOf } from "../lib/utils.js";
 import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 
-const DISCOVERABILITY_VIEWS = [
+export const UNIFIED_DISCOVERABILITY_NAV = Object.freeze([
   { id: "audit", label: "Audit", icon: "scan-search" },
-  { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
   { id: "truth", label: "Business Truth", icon: "database", path: "/discoverability/truth" },
-  { id: "graph", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
-  { id: "directory", label: "Local Directory", icon: "map-pin", path: "/discoverability/local" },
-  { id: "schema", label: "Schema & Trust", icon: "shield-check", path: "/discoverability/trust" },
-  { id: "subjects", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
+  { id: "entities", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
+  { id: "trust", label: "Schema & Trust", icon: "shield-check", path: "/discoverability/trust" },
+  { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
+  { id: "scores", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
+  { id: "local", label: "Local Directory", icon: "map-pin", path: "/discoverability/local" },
   { id: "history", label: "History", icon: "clock" },
-];
+]);
+
+const DISCOVERABILITY_VIEWS = UNIFIED_DISCOVERABILITY_NAV;
+
+function AuditExportMenu({ onExport, onEmail, emailing }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div className="export-dropdown" ref={ref}>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <Icon name="download" size={14} />
+        <span>Export</span>
+        <Icon name="chevron-down" size={12} />
+      </Button>
+      {open && (
+        <div className="export-dropdown-menu" role="menu">
+          <div className="export-dropdown-section">
+            <div className="export-dropdown-section-label">Report Formats</div>
+            <button
+              type="button"
+              className="export-dropdown-item"
+              onClick={() => { setOpen(false); onExport("pdf"); }}
+            >
+              <Icon name="file-text" size={15} />
+              <span>
+                <b>PDF Report</b>
+                <span className="export-plan-hint">Full executive &amp; technical report</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="export-dropdown-item"
+              onClick={() => { setOpen(false); onExport("markdown"); }}
+            >
+              <Icon name="file-code" size={15} />
+              <span>
+                <b>Markdown Report</b>
+                <span className="export-plan-hint">With copy-ready code constructs</span>
+              </span>
+            </button>
+          </div>
+          <div className="export-dropdown-section">
+            <div className="export-dropdown-section-label">Data Formats</div>
+            <button
+              type="button"
+              className="export-dropdown-item"
+              onClick={() => { setOpen(false); onExport("csv"); }}
+            >
+              <Icon name="table" size={15} />
+              <span>
+                <b>CSV Data</b>
+                <span className="export-plan-hint">Pillars, issues &amp; recommendations</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="export-dropdown-item"
+              onClick={() => { setOpen(false); onExport("json"); }}
+            >
+              <Icon name="code" size={15} />
+              <span>
+                <b>JSON Data</b>
+                <span className="export-plan-hint">Raw structured evidence payload</span>
+              </span>
+            </button>
+          </div>
+          <div className="export-dropdown-section">
+            <button
+              type="button"
+              className="export-dropdown-item"
+              onClick={() => { setOpen(false); onEmail(); }}
+              disabled={emailing}
+            >
+              <Icon name="mail" size={15} />
+              <span>
+                <b>{emailing ? "Sending email…" : "Email PDF Report"}</b>
+                <span className="export-plan-hint">Send directly to your inbox</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Which pillar cards the reader has open, for this browsing session only.
@@ -123,6 +225,7 @@ export default function Discoverability() {
   const [trend, setTrend] = useState(null);
   const [history, setHistory] = useState([]);
   const [running, setRunning] = useState(false);
+  const [loadingAudit, setLoadingAudit] = useState(false);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("overall");
   // A Set, so pillars expand independently — see PillarGrid. Persisted to
@@ -197,7 +300,7 @@ export default function Discoverability() {
   }, [currentWorkspaceId]);
 
   const loadAudit = useCallback(async (id) => {
-    setRunning(true);
+    setLoadingAudit(true);
     setError(null);
     try {
       const scope = { workspaceId: currentWorkspaceId };
@@ -213,7 +316,7 @@ export default function Discoverability() {
     } catch (err) {
       setError(err);
     } finally {
-      setRunning(false);
+      setLoadingAudit(false);
     }
   }, [currentWorkspaceId, loadTrend]);
 
@@ -477,33 +580,31 @@ export default function Discoverability() {
           {user && !showHistory && (
             <Button
               size="sm"
-              variant="ghost"
+              variant="secondary"
               onClick={() => setParams({ view: "history" })}
             >
-              <Icon name="clock" size={14} /> History
+              <Icon name="clock" size={14} /> Audit History
             </Button>
           )}
           {audit && (
             <>
-            <Button size="sm" variant="secondary" onClick={rerun} loading={running}>
-              <Icon name="rotate-cw" size={14} /> Re-audit
-            </Button>
-            <div className="dsc-export">
-              <Button size="sm" variant="ghost" onClick={() => exportReport("markdown")}>
-                <Icon name="file-text" size={14} /> Report
+              <Button size="sm" variant="secondary" onClick={rerun} loading={running}>
+                <Icon name="rotate-cw" size={14} /> Re-audit
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => exportReport("pdf")}>PDF</Button>
-              <Button size="sm" variant="ghost" onClick={() => exportReport("csv")}>CSV</Button>
-              <Button size="sm" variant="ghost" onClick={() => exportReport("json")}>JSON</Button>
               <Button size="sm" variant="ghost" onClick={emailReport} loading={emailingReport}
                 title={`Email the PDF report to ${user?.email || "your account"}`}>
                 <Icon name="mail" size={14} /> Email
               </Button>
-            </div>
+              <AuditExportMenu onExport={exportReport} onEmail={emailReport} emailing={emailingReport} />
             </>
           )}
         </div>
       </header>
+
+      <ClosedLoopRibbon
+        auditId={audit?.auditId || null}
+        currentStep={!audit ? "discover" : "score"}
+      />
 
       <nav className="dsc-tabs dsc-subnav-tabs" aria-label="Discoverability sections">
         {DISCOVERABILITY_VIEWS.map((v) => {
@@ -514,14 +615,16 @@ export default function Discoverability() {
               type="button"
               className={`dsc-tab${isActive ? " dsc-tab-on" : ""}`}
               onClick={() => {
-                if (v.path) {
+                if (v.id === "history") {
+                  setParams({ view: "history", ...(audit?.auditId ? { audit: audit.auditId } : {}) });
+                } else if (v.id === "audit") {
+                  if (location.pathname !== "/discoverability") {
+                    navigate(`/discoverability${audit?.auditId ? `?audit=${encodeURIComponent(audit.auditId)}` : ""}`);
+                  } else {
+                    setParams(audit?.auditId ? { audit: audit.auditId } : {});
+                  }
+                } else if (v.path) {
                   navigate(`${v.path}${audit?.auditId ? `?audit=${encodeURIComponent(audit.auditId)}` : ""}`);
-                  return;
-                }
-                if (v.id === "audit") {
-                  setParams(audit?.auditId ? { audit: audit.auditId } : {});
-                } else {
-                  setParams({ view: v.id, ...(audit?.auditId ? { audit: audit.auditId } : {}) });
                 }
               }}
               aria-current={isActive ? "page" : undefined}
@@ -595,7 +698,13 @@ export default function Discoverability() {
         />
       )}
 
-      {running && !audit && (
+      {loadingAudit && (
+        <div style={{ padding: "48px 0" }}>
+          <BrandLoader title="Loading audit report…" sub="Fetching saved report and evidence panels…" />
+        </div>
+      )}
+
+      {running && !audit && !loadingAudit && (
         <div className="dsc-running">
           <Icon name="radar" size={22} className="dsc-spin" />
           <div>
@@ -605,7 +714,7 @@ export default function Discoverability() {
         </div>
       )}
 
-      {audit && (
+      {audit && !loadingAudit && (
         <>
           {audit.unreachable && (
             <div className="dsc-error" role="alert">

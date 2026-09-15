@@ -108,6 +108,8 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
     }
   }, [auditId, workspaceId, selectedAxis, fullAudit]);
 
+  const [evaluatingSxo, setEvaluatingSxo] = useState(false);
+
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
@@ -115,12 +117,54 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
   // Read-time master composite calculation
   const master = useMemo(() => {
     const source = fullAudit || auditData;
-    const seo = source?.result?.framework_scores?.seo?.score ?? source?.result?.seo_score ?? null;
-    const aeo = source?.result?.framework_scores?.aeo?.score ?? source?.result?.aeo_score ?? null;
-    const geo = source?.result?.framework_scores?.geo?.score ?? source?.result?.geo_score ?? null;
-    const sxo = sxoRun?.sxo_total_score ?? null;
+    const seo = source?.result?.framework_scores?.seo?.score
+      ?? source?.frameworkScores?.seo?.score
+      ?? source?.framework_scores?.seo?.score
+      ?? source?.scores?.seo
+      ?? source?.result?.seo_score
+      ?? source?.seo_score
+      ?? source?.seoScore
+      ?? null;
+    const aeo = source?.result?.framework_scores?.aeo?.score
+      ?? source?.frameworkScores?.aeo?.score
+      ?? source?.framework_scores?.aeo?.score
+      ?? source?.scores?.aeo
+      ?? source?.result?.aeo_score
+      ?? source?.aeo_score
+      ?? source?.aeoScore
+      ?? null;
+    const geo = source?.result?.framework_scores?.geo?.score
+      ?? source?.frameworkScores?.geo?.score
+      ?? source?.framework_scores?.geo?.score
+      ?? source?.scores?.geo
+      ?? source?.result?.geo_score
+      ?? source?.geo_score
+      ?? source?.geoScore
+      ?? null;
+    const sxo = sxoRun?.sxo_total_score
+      ?? source?.result?.sxo_score
+      ?? source?.scores?.sxo
+      ?? source?.sxo_score
+      ?? null;
     return computeMasterScore({ seo, aeo, geo, sxo });
   }, [fullAudit, auditData, sxoRun]);
+
+  const handleReevaluate = async () => {
+    setEvaluatingSxo(true);
+    try {
+      if (onRunSxo) {
+        await onRunSxo();
+      } else if (auditId) {
+        await discoverability.evaluateSxo({ audit_id: auditId, workspace_id: workspaceId });
+        showToast("SXO evaluation refreshed.", "success");
+      }
+      await loadDashboardData();
+    } catch (err) {
+      showToast(err.message || "Failed to evaluate SXO.", "error");
+    } finally {
+      setEvaluatingSxo(false);
+    }
+  };
 
   // Persona-filtered recommendation queue
   const recommendations = useMemo(() => {
@@ -306,8 +350,8 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
               Read-time composite of Discoverability and Experience (D14: 0.25 SEO + 0.20 AEO + 0.20 GEO + 0.35 SXO)
             </p>
           </div>
-          {onRunSxo && (
-            <Button size="sm" onClick={onRunSxo} variant="secondary">
+          {(onRunSxo || auditId) && (
+            <Button size="sm" onClick={handleReevaluate} variant="secondary" loading={evaluatingSxo}>
               <Icon name="rotate-cw" size={14} /> Re-evaluate SXO
             </Button>
           )}

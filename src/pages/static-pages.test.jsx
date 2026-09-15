@@ -211,7 +211,7 @@ describe("F-17 — Integrations page", () => {
     expect(cards.length).toBe(14);
   });
 
-  it("labels the 5 push providers as 'Available (Beta)' and Salesforce/Webhook with the right status (2026-08-11)", async () => {
+  it("labels push providers with the right status (HubSpot, Airtable, Notion, Slack as Available; Zapier as Beta) and Salesforce/Webhook with the right status", async () => {
     const { container } = render(<Tree path="/integrations"><Integrations /></Tree>);
     await act(async () => { await Promise.resolve(); });
 
@@ -219,8 +219,8 @@ describe("F-17 — Integrations page", () => {
     // or renames them gets caught here.
     const labels = Array.from(container.querySelectorAll(".int-status"))
       .map((el) => el.textContent.trim());
-    // 5 push providers → "Available (Beta)"
-    expect(labels.filter((l) => l === "Available (Beta)").length).toBe(5);
+    // Zapier → "Available (Beta)"
+    expect(labels.filter((l) => l === "Available (Beta)").length).toBe(1);
     // Webhook / n8n → "Available" (F-44 — WebhookSetupModal is now shipped,
     // see commit 0e295a4 "real per-user webhook setup (was: marked
     // available, no UI)". This used to be "Coming Soon" before the UI landed.)

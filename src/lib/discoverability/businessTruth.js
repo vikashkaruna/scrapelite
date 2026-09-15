@@ -597,12 +597,13 @@ export function canPromote(version = {}) {
 
   const proposer = version.proposed_by || null;
   const approver = version.reviewed_by || null;
+  const isSingleFounder = Boolean(version.singleFounderApproval || (typeof version.review_note === "string" && version.review_note.includes("[Single-founder approval]")));
   if (!approver) {
     blockers.push({ code: "no_approver", message: "No approver recorded." });
-  } else if (proposer && approver === proposer) {
+  } else if (proposer && approver === proposer && !isSingleFounder) {
     blockers.push({
       code: "self_approval",
-      message: "The approver is the proposer. Approval means a second person looked.",
+      message: "The approver is the proposer. Approval means a second person looked, or record single-founder self-approval.",
     });
   }
 
