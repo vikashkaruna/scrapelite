@@ -18,6 +18,41 @@
 
 ---
 
+## 2026-09-14 21:20 IST — Staging Merged Into Discoverability-P1-P3-implementation and the Result Promoted to Staging
+
+> **Branch:** `Discoverability-P1-P3-implementation` @ `7545a0f` (merge commit) · **`origin/staging`:** fast-forwarded `0ec1df9..7545a0f` · **`main`:** untouched
+> **Verification:** full local gate on the merged tree — vitest **432 files / 6,919 passed** · db-verify **73 migrations / 832 assertions** · referral 17 · workflows 56 · build · check:prerender 28 pages / 112 refs · security · `npm audit` 0 · `build:sql --check` 73 · readiness 6 pass / 1 warn — then the pre-push gate **all green in 256s** (Chromium smoke **159 passed**) on the single push that moved both refs
+
+### 1. Fresh-start orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-14 |
+| **Branch** | `Discoverability-P1-P3-implementation` — contains everything on `staging` |
+| **Merge commit** | `7545a0f` (both `origin/Discoverability-P1-P3-implementation` and `origin/staging` pointed here after the push) |
+| **What staging brought in** | 3 commits: `710607e` fix(auth) clarify staging signup failures, `a0b274d` prerender refresh, `0ec1df9` staging auth handoff |
+| **Status** | Merged, verified, pushed to both refs; this handoff record follows on the branch only |
+| **Deployment** | Pushing `staging` triggers the Netlify branch deploy. Not observed from this session — `staging.datiq.app` is Netlify-edge-gated (401) |
+| **Next migration number** | `0074` |
+
+**Start the next session by:** `git fetch && git log --oneline -3 origin/Discoverability-P1-P3-implementation origin/staging`. Under Node 24: `npm test`, `npm run test:db`.
+
+### 2. What was done
+
+- **Merge:** `git merge origin/staging` produced 30 conflicts, none in source code — staging's auth change (`AuthModal.jsx`, `authErrors.js` + tests) auto-merged cleanly against the Discoverability work.
+  - **28 prerendered pages** (`public/**/index.html`): resolved by taking one side and **regenerating all 28 with `npm run prerender`** from the merged source. They are generated output; hand-merging asset hashes from two builds would have produced pages matching neither.
+  - **`CLAUDE.md`**: kept this branch's header and carried staging's pointer forward as a `Prior (merged in from staging)` line.
+  - **`docs/sessions/SESSION-LOG.md`**: kept every entry from both sides; staging's "Staging signup diagnosis" entry inserted in date order (its commit is 03:03 IST, so directly above the 02:45 IST entry).
+- **Errors/issues found by verification:** none. The merged tree passed every gate first time; +4 tests relative to the pre-merge branch are staging's auth regressions.
+- **Promotion:** one `git push origin HEAD:Discoverability-P1-P3-implementation HEAD:staging`, after confirming both remote refs were ancestors (pure fast-forwards, no force).
+
+### 3. Operator actions and open items
+
+1. **Apply Supabase migrations `0065`–`0073` in order on staging (and later production) before relying on this deploy.** `staging` now carries code that sends `p_audit_limit` (needs `0073`; otherwise guest audits fail open) and reads `discoverability_role` (needs `0067`; otherwise workspace-scoped Discoverability requests return 403 `WORKSPACE_MEMBERSHIP_UNAVAILABLE`).
+2. **Carried from staging's handoff:** a real "Database error saving new user" on staging signup originates in the staging Supabase Auth hook / new-user trigger (project `aubwooslkkrprdxuiyvj`) — inspect Auth logs and repair; client code now reports it accurately.
+3. Confirm the Netlify staging deploy for `7545a0f` completed, then walk `/discoverability/truth|entities|local|trust|scores` with a real signed-in account — the rewritten panels are verified by component tests against API-shaped fixtures only.
+4. Another worktree (`.gemini/antigravity/worktrees/Extracta/prospect_engagement_engine_audit`) has local `staging` checked out at `0ec1df9`; it needs `git pull --ff-only`. Left untouched deliberately.
+5. `staging` is one docs-only commit (this record) behind the branch; it will arrive with the next promotion. `main` was not touched.
 ## 2026-09-15 01:50 IST — Discoverability Audit 504 Timeout Fixed, Competitor Limit 20 with Smart Entry, Closed-Loop Operating Ribbon, Account 2-Column Redesign & Full Verification Green; Merged to Staging
 
 > **Branch:** `fix_discoverability_audit_bugs` → merged to `staging` · **Target:** `staging`  
