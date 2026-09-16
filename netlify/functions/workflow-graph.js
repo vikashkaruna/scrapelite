@@ -12,7 +12,7 @@
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { listLists } from "./lib/bulkStore.js";
 import { listWatchlists, serviceDb } from "./lib/watchlistStore.js";
-import { listRules } from "./lib/ruleStore.js";
+import { listRules, listExecutions } from "./lib/ruleStore.js";
 import { buildWorkflowGraph } from "../../src/lib/workflows/workflowGraph.js";
 
 const CORS = {
@@ -54,14 +54,28 @@ export const handler = async (event) => {
     // counts are treated as 0 by the model, which is the conservative reading:
     // it reports "never fired" rather than silently assuming it did.
     const db = serviceDb();
-    if (db && rules.length) {
-      const { data: execs } = await db
-        .from("rule_executions")
-        .select("rule_id")
-        .in("rule_id", rules.map((r) => r.id));
-      const tally = new Map();
-      for (const e of execs || []) tally.set(e.rule_id, (tally.get(e.rule_id) || 0) + 1);
-      for (const r of rules) r.execution_count = tally.get(r.id) || 0;
+    let executions = [];
+    if (rules.length && typeof listExecutions === "function") {
+      try {
+        const execRes = await listExecutions(userId, { limit: 50 });
+        executions = execRes?.executions || [];
+      } catch {
+        executions = [];
+      }
+
+      if (db) {
+        const { data: execs } = await db
+          .from("rule_executions")
+          .select("rule_id")
+          .in("rule_id", rules.map((r) => r.id));
+        const tally = new Map();
+        for (const e of execs || []) tally.set(e.rule_id, (tally.get(e.rule_id) || 0) + 1);
+        for (const r of rules) r.execution_count = tally.get(r.id) || 0;
+      } else {
+        const tally = new Map();
+        for (const e of executions) tally.set(e.rule_id, (tally.get(e.rule_id) || 0) + 1);
+        for (const r of rules) r.execution_count = tally.get(r.id) || 0;
+      }
     }
     if (db && watchlists.length) {
       const { data: changes } = await db
@@ -73,7 +87,7 @@ export const handler = async (event) => {
       for (const w of watchlists) w.change_count = tally.get(w.id) || 0;
     }
 
-    return json(200, buildWorkflowGraph({ lists, watchlists, rules }));
+    return json(200, buildWorkflowGraph({ lists, watchlists, rules, executions }));
   } catch (err) {
     console.warn("[DatIQ] workflow-graph failed:", err?.message || err);
     return json(502, { error: "Could not assemble the workflow view.", code: "graph_failed" });

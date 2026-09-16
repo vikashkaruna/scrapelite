@@ -2,6 +2,7 @@
 <html lang="en" data-datiq-app="spa">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- ⚠️ Nothing may go between <!DOCTYPE> and <html>. Vite's dev server
          injects the @vitejs/plugin-react refresh preamble at exactly that
          position, so a comment there SWALLOWS the preamble and the dev server
@@ -38,7 +39,6 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="theme-color" content="#4f46e5" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- Primary meta -->
     <title>DatIQ — Intelligence, Connected.</title>
@@ -122,16 +122,29 @@
     {
       "@context": "https://schema.org",
       "@type": "Organization",
+      "@id": "https://datiq.app/#organization",
       "name": "DatIQ",
+      "legalName": "Axiom Minds Private Limited",
       "alternateName": "DatIQ — Intelligence, Connected.",
       "url": "https://datiq.app",
-      "logo": "https://datiq.app/favicon.svg",
-      "description": "DatIQ turns public web signals into structured intelligence and connected workflows through extraction, enrichment, discoverability audits, monitoring and exports.",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://datiq.app/favicon.svg",
+        "width": "512",
+        "height": "512"
+      },
+      "description": "DatIQ turns public web signals into structured intelligence and connected workflows through extraction, enrichment, discoverability audits, competitor monitoring and signal routing.",
       "slogan": "Intelligence, Connected.",
       "sameAs": [
         "https://www.linkedin.com/company/datiq",
-        "https://twitter.com/datiq_app"
+        "https://twitter.com/datiq_app",
+        "https://www.linkedin.com/company/axiom-minds/"
       ],
+      "parentOrganization": {
+        "@type": "Organization",
+        "name": "Axiom Minds Private Limited",
+        "url": "https://axiomminds.ai"
+      },
       "contactPoint": {
         "@type": "ContactPoint",
         "contactType": "customer support",

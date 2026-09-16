@@ -147,4 +147,27 @@ describe("WorkflowRunHistory", () => {
     fireEvent.change(searchInput, { target: { value: "" } });
     expect(screen.getByText("unreachable-site.xyz")).toBeInTheDocument();
   });
+
+  it("renders common Download and Push actions above the table and not on individual rows", async () => {
+    render(
+      <MemoryRouter>
+        <WorkflowRunHistory />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("stripe.com")).toBeInTheDocument();
+    });
+
+    // Header actions contain Download and Push
+    expect(screen.getByRole("button", { name: /^Download/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Push/i })).toBeInTheDocument();
+
+    // Individual rows have Checkbox, View and Re-run, but no row-level ExportMenu
+    const row = screen.getByText("stripe.com").closest("tr");
+    expect(row).toBeInTheDocument();
+    const rowButtons = row.querySelectorAll("button");
+    expect(rowButtons.length).toBe(3);
+  });
 });
+

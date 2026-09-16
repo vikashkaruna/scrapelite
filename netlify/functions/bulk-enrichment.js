@@ -20,6 +20,7 @@ import {
   getIcpRules,
   saveIcpRules,
   processJobChunk,
+  startJob,
   getReviewQueue,
   resolveReviewItem,
 } from "./lib/bulkStore.js";
@@ -128,6 +129,15 @@ async function handlePost(event) {
     }
 
     const res = await processJobChunk(jobId, 8000);
+    return json(200, res);
+  }
+
+  if (action === "start_job") {
+    const { listId } = body;
+    if (!listId) return json(400, { error: "listId is required." });
+
+    const res = await startJob(userId, listId);
+    if (res && res.ok === false) return json(res.status || 400, { error: res.reason });
     return json(200, res);
   }
 
