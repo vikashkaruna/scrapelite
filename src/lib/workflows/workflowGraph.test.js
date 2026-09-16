@@ -145,4 +145,42 @@ describe("buildWorkflowGraph — the broken edges", () => {
     expect(labelForTrigger("watchlist")).toBe("competitor changes");
     expect(labelForTrigger("bulk_enrichment")).toBe("account enrichment");
   });
+
+  it("recognizes watchlist targets from watchlist_targets count and target_count", () => {
+    const g = buildWorkflowGraph({
+      watchlists: [
+        { id: "w1", name: "R1", watchlist_targets: [{ count: 3 }] },
+        { id: "w2", name: "R2", target_count: 5 },
+      ],
+      rules: [
+        { id: "r1", name: "W-Rule", status: "active", trigger_source: "watchlist", action_type: "slack", execution_count: 1 },
+      ],
+    });
+    expect(codes(g)).not.toContain("watchlist_no_targets");
+    expect(codes(g)).not.toContain("rule_upstream_idle");
+  });
+
+  it("synthesizes pipelines linking rules and upstreams with execution info", () => {
+    const g = buildWorkflowGraph({
+      lists: [{ id: "l1", name: "Q4", total_records: 10, completed_records: 10 }],
+      watchlists: [{ id: "w1", name: "Rivals", targets: [{ id: "t" }], change_count: 4 }],
+      rules: [
+        { id: "r1", name: "Watch", status: "active", trigger_source: "watchlist", action_type: "slack", execution_count: 2 },
+      ],
+      executions: [
+        { id: "ex1", rule_id: "r1", status: "delivered", executed_at: "2026-09-16T12:00:00Z" },
+      ],
+    });
+    expect(g.pipelines).toHaveLength(2); // 1 active rule pipeline + 1 unconnected lists pipeline
+    const p1 = g.pipelines.find((p) => p.rule_id === "r1");
+    expect(p1).toMatchObject({
+      name: "Watch",
+      upstream_stage: "Competitor Watchlists",
+      action_type: "slack",
+      health: "healthy",
+      execution_count: 2,
+    });
+    expect(p1.last_execution).toMatchObject({ id: "ex1", status: "delivered" });
+  });
 });
+

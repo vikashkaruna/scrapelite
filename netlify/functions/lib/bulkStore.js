@@ -56,6 +56,22 @@ export async function assertJobOwner(jobId, userId, env = process.env) {
   return !error && !!data;
 }
 
+export async function assertListOwner(listId, userId, env = process.env) {
+  if (ownerless(userId) || !listId) return false;
+  const db = serviceDb(env);
+  if (!db) {
+    const list = _localLists.get(listId);
+    return !!list && list.user_id === userId;
+  }
+  const { data, error } = await db
+    .from("lists")
+    .select("id")
+    .eq("id", listId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !error && !!data;
+}
+
 export async function listLists(userId, env = process.env) {
   if (ownerless(userId)) return { ...NO_OWNER, lists: [] };
   const db = serviceDb(env);
@@ -441,23 +457,40 @@ export async function processJobChunk(jobId, budgetMs = 8000, env = process.env)
 
   const { data: pendingItems, error: itemsErr } = await db
     .from("enrichment_job_items")
-    .select("*, list_records(*)")
+    .select("id, job_id, record_id, status, attempts")
     .eq("job_id", jobId)
     .eq("status", "queued")
     .limit(25);
 
-  if (itemsErr || !pendingItems || pendingItems.length === 0) {
+  if (itemsErr) {
+    console.error("[bulkStore] processJobChunk items error:", itemsErr);
+    return { ok: false, reason: itemsErr.message };
+  }
+
+  if (!pendingItems || pendingItems.length === 0) {
     await db.from("enrichment_jobs").update({ status: "completed" }).eq("id", jobId);
-    await db.from("lists").update({ status: "complete" }).eq("id", job.list_id);
+    await updateListCounters(db, job.list_id);
     return { ok: true, processed: 0, remaining: 0, done: true };
   }
+
+  const recordIds = pendingItems.map((i) => i.record_id).filter(Boolean);
+  const { data: recordsData, error: recFetchErr } = await db
+    .from("list_records")
+    .select("*")
+    .in("id", recordIds);
+
+  if (recFetchErr) {
+    console.error("[bulkStore] processJobChunk recordsData error:", recFetchErr);
+    return { ok: false, reason: recFetchErr.message };
+  }
+  const recordsMap = new Map((recordsData || []).map((r) => [r.id, r]));
 
   const rules = await getIcpRules(job.user_id, "sales", env);
 
   for (const item of pendingItems) {
     if (Date.now() - startTime >= budgetMs) break;
 
-    const rec = item.list_records;
+    const rec = recordsMap.get(item.record_id);
     if (rec) {
       const domain = rec.canonical_domain;
 
@@ -556,11 +589,153 @@ export async function processJobChunk(jobId, budgetMs = 8000, env = process.env)
 
   const done = (pendingCount || 0) === 0;
   await db.from("enrichment_jobs").update({
-    processed_items: job.processed_items + processedCount,
+    processed_items: (job.processed_items || 0) + processedCount,
     status: done ? "completed" : "running",
   }).eq("id", jobId);
 
+  await updateListCounters(db, job.list_id);
+
   return { ok: true, processed: processedCount, remaining: pendingCount || 0, done };
+}
+
+/**
+ * Recomputes and persists aggregate list statistics to public.lists.
+ */
+async function updateListCounters(db, listId) {
+  if (!db || !listId) return;
+  try {
+    const { data: records, error } = await db
+      .from("list_records")
+      .select("status")
+      .eq("list_id", listId);
+    if (error || !records) return;
+
+    const total = records.length;
+    const completed = records.filter((r) => r.status === "complete" || r.status === "partial").length;
+    const failed = records.filter((r) => r.status === "failed").length;
+    const needsReview = records.filter((r) => r.status === "needs_review").length;
+    const isDone = completed + failed + needsReview >= total && total > 0;
+
+    await db.from("lists").update({
+      completed_records: completed,
+      failed_records: failed,
+      needs_review_records: needsReview,
+      status: isDone ? "complete" : "running",
+      updated_at: new Date().toISOString(),
+    }).eq("id", listId);
+  } catch (err) {
+    console.error("[bulkStore] updateListCounters error:", err);
+  }
+}
+
+/**
+ * Initiates or retrieves an active enrichment job for an account list.
+ * Safe fallback so user can always trigger enrichment without re-importing.
+ */
+export async function startJob(userId, listId, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+  if (!listId) return { ok: false, reason: "list_id_required", status: 400 };
+
+  const db = serviceDb(env);
+  if (!db) {
+    const list = _localLists.get(listId);
+    if (!list || list.user_id !== userId) return { ok: false, reason: "list_not_found", status: 404 };
+
+    const activeJob = Array.from(_localJobs.values()).find(
+      (j) => j.list_id === listId && j.user_id === userId && j.status !== "completed"
+    );
+    if (activeJob) return { ok: true, jobId: activeJob.id, total: activeJob.total_items };
+
+    const records = Array.from(_localRecords.values()).filter((r) => r.list_id === listId);
+    const uncompleted = records.filter((r) => r.status !== "complete" && r.status !== "partial");
+    const toQueue = uncompleted.length > 0 ? uncompleted : records;
+
+    const jobId = "job_" + Math.random().toString(36).slice(2, 10);
+    const now = new Date().toISOString();
+
+    toQueue.forEach((rec, idx) => {
+      rec.status = "queued";
+      const itemId = `item_${jobId}_${idx}`;
+      _localJobItems.set(itemId, {
+        id: itemId,
+        job_id: jobId,
+        record_id: rec.id,
+        status: "queued",
+        attempts: 0,
+        created_at: now,
+      });
+    });
+
+    _localJobs.set(jobId, {
+      id: jobId,
+      list_id: listId,
+      user_id: userId,
+      status: "queued",
+      cursor: 0,
+      total_items: toQueue.length,
+      processed_items: 0,
+      created_at: now,
+    });
+
+    list.status = "running";
+    return { ok: true, jobId, total: toQueue.length };
+  }
+
+  const isOwner = await assertListOwner(listId, userId, env);
+  if (!isOwner) return { ok: false, reason: "list_not_found", status: 404 };
+
+  // Check if there is an existing non-completed job
+  const { data: existingJobs } = await db
+    .from("enrichment_jobs")
+    .select("id, status, total_items")
+    .eq("list_id", listId)
+    .eq("user_id", userId)
+    .neq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (existingJobs && existingJobs.length > 0) {
+    return { ok: true, jobId: existingJobs[0].id, total: existingJobs[0].total_items };
+  }
+
+  const { data: records, error: recErr } = await db
+    .from("list_records")
+    .select("id, status")
+    .eq("list_id", listId);
+
+  if (recErr || !records || records.length === 0) {
+    return { ok: false, reason: "no_records_in_list", status: 400 };
+  }
+
+  const uncompleted = records.filter((r) => r.status !== "complete" && r.status !== "partial");
+  const targetRecords = uncompleted.length > 0 ? uncompleted : records;
+
+  const { data: newJob, error: jobErr } = await db
+    .from("enrichment_jobs")
+    .insert({
+      list_id: listId,
+      user_id: userId,
+      status: "queued",
+      total_items: targetRecords.length,
+    })
+    .select()
+    .single();
+
+  if (jobErr) return { ok: false, reason: jobErr.message, status: 500 };
+
+  const targetIds = targetRecords.map((r) => r.id);
+  await db.from("list_records").update({ status: "queued" }).in("id", targetIds);
+
+  const itemsPayload = targetIds.map((recId) => ({
+    job_id: newJob.id,
+    record_id: recId,
+    status: "queued",
+  }));
+  await db.from("enrichment_job_items").insert(itemsPayload);
+
+  await db.from("lists").update({ status: "running" }).eq("id", listId);
+
+  return { ok: true, jobId: newJob.id, total: targetRecords.length };
 }
 
 export async function getReviewQueue(userId, listId = null, env = process.env) {

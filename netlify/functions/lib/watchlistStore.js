@@ -55,16 +55,29 @@ export async function listWatchlists(userId, env = process.env) {
   if (ownerless(userId)) return { ...NO_OWNER, watchlists: [] };
   const db = serviceDb(env);
   if (!db) {
-    const list = Array.from(_localWatchlists.values()).filter((w) => w.user_id === userId);
+    const list = Array.from(_localWatchlists.values())
+      .filter((w) => w.user_id === userId)
+      .map((w) => {
+        const targets = Array.from(_localTargets.values()).filter((t) => t.watchlist_id === w.id);
+        return { ...w, targets, target_count: targets.length };
+      });
     return { ok: true, watchlists: list };
   }
 
-  let q = db.from("watchlists").select("*, watchlist_targets(count)").order("created_at", { ascending: false });
+  let q = db.from("watchlists").select("*, watchlist_targets(id, domain)").order("created_at", { ascending: false });
   q = q.eq("user_id", userId);
 
   const { data, error } = await q;
   if (error) return { ok: false, reason: error.message, watchlists: [] };
-  return { ok: true, watchlists: data || [] };
+  const mapped = (data || []).map((w) => {
+    const targets = Array.isArray(w.watchlist_targets) ? w.watchlist_targets : (w.targets || []);
+    return {
+      ...w,
+      targets,
+      target_count: targets.length,
+    };
+  });
+  return { ok: true, watchlists: mapped };
 }
 
 export async function getWatchlist(watchlistId, userId, env = process.env) {

@@ -10,6 +10,17 @@ DatIQ (this product) is a no-code web intelligence platform for extracting struc
 
 DatIQ.app is the canonical product. The brand is styled "DatIQ" (one word, capital I, capital Q).
 
+## Publisher & Entity Information
+- Product Name: DatIQ
+- Canonical URL: https://datiq.app
+- Legal Name / Publisher: Axiom Minds Private Limited (https://axiomminds.ai)
+- Parent Organization: Axiom Minds Private Limited
+- Contact: hello@datiq.app
+- Official Profiles:
+  - LinkedIn (Product): https://www.linkedin.com/company/datiq
+  - LinkedIn (Publisher): https://www.linkedin.com/company/axiom-minds/
+  - X / Twitter: https://twitter.com/datiq_app
+
 ## What DatIQ Does
 DatIQ runs a five-step loop over the public web: READ (extract structured data from any public page), REASON (run a workflow template that turns those fields into a finished artefact such as an account brief or a competitive comparison), WATCH (re-read chosen pages on a cadence and classify what changed), ACT (route the changes that matter into Slack, email, a webhook or a CRM), and SHARE (publish any result as a report at its own link with a chosen visibility level).
 

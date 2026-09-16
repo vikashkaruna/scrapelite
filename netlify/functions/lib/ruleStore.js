@@ -259,3 +259,25 @@ export async function recordExecution(ruleId, userId, { status, eventPayload, ac
   if (dbErr) return { ok: false, reason: dbErr.message };
   return { ok: true, execution: data };
 }
+
+export async function listExecutions(userId, { limit = 50 } = {}, env = process.env) {
+  const db = serviceDb(env);
+  if (!db) {
+    const list = Array.from(_localExecutions.values())
+      .filter((e) => !userId || e.user_id === userId)
+      .sort((a, b) => new Date(b.executed_at || 0) - new Date(a.executed_at || 0))
+      .slice(0, limit);
+    return { ok: true, executions: list };
+  }
+
+  const { data, error } = await db
+    .from("rule_executions")
+    .select("id, rule_id, user_id, status, event_payload, action_response, error, latency_ms, attempt, executed_at")
+    .eq("user_id", userId)
+    .order("executed_at", { ascending: false })
+    .limit(limit);
+
+  if (error) return { ok: false, reason: error.message, executions: [] };
+  return { ok: true, executions: data || [] };
+}
+

@@ -183,7 +183,9 @@ export default function Home() {
         author: AUTHOR_SCHEMA,
         publisher: {
           "@type": "Organization",
+          "@id": "https://datiq.app/#organization",
           name: "DatIQ",
+          legalName: "Axiom Minds Private Limited",
           url: "https://datiq.app",
           logo: "https://datiq.app/favicon.svg",
         },

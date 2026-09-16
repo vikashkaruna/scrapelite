@@ -66,6 +66,20 @@ export async function processChunk(jobId) {
   return res.json();
 }
 
+export async function startJob(listId) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/bulk-enrichment", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "start_job", listId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to start enrichment job: ${res.status}`);
+  }
+  return res.json();
+}
+
 /**
  * Executes a bulk enrichment job to completion using durable chunking.
  */
