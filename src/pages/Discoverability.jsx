@@ -604,7 +604,9 @@ export default function Discoverability() {
 
       <ClosedLoopRibbon
         auditId={audit?.auditId || null}
-        currentStep={!audit ? "discover" : "score"}
+        isAuditing={running}
+        activeTab={currentView}
+        hasAudit={Boolean(audit)}
       />
 
       {audit?.auditId && (
