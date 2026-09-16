@@ -223,6 +223,175 @@ export default function Workflows() {
             })}
           </section>
 
+          {/* ── SAVED WORKFLOWS (PIPELINES) ─────────────────────────────────── */}
+          <section className="wf-pipelines" style={{ marginTop: 28 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <h2 style={{ fontSize: "1.1rem", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                  <Icon name="git-merge" size={16} /> Saved Workflows & Pipelines
+                  <span className="wf-badge" style={{ background: "var(--surface-2)", color: "var(--text-1)", border: "1px solid var(--border)" }}>
+                    {graph.pipelines?.length || 0}
+                  </span>
+                </h2>
+                <p style={{ margin: "4px 0 0", fontSize: "13px", color: "var(--text-2)" }}>
+                  End-to-end automated pipelines connecting sources, rules, and actions.
+                </p>
+              </div>
+              <Link to="/rules?new=1" className="btn btn-secondary btn-sm">
+                <Icon name="plus" size={13} /> New rule
+              </Link>
+            </div>
+
+            {(!graph.pipelines || graph.pipelines.length === 0) ? (
+              <div className="wf-stage" style={{ textAlign: "center", padding: "28px 16px" }}>
+                <Icon name="git-branch" size={24} style={{ color: "var(--text-muted, #9ca3af)", margin: "0 auto 8px" }} />
+                <p style={{ margin: 0, fontSize: "13px", color: "var(--text-2)" }}>
+                  No automated pipelines configured yet. Create a signal rule to connect your lists or watchlists to actions.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
+                {graph.pipelines.map((p) => {
+                  const isHealthy = p.health === "healthy";
+                  const isPaused = p.health === "paused";
+                  const isDisconnected = p.health === "disconnected";
+                  const badgeCls = isHealthy
+                    ? "wf-badge"
+                    : isPaused
+                    ? "wf-badge wf-sev-info"
+                    : isDisconnected
+                    ? "wf-badge wf-sev-blocking"
+                    : "wf-badge wf-sev-warning";
+                  const badgeStyle = isHealthy
+                    ? { background: "var(--success-soft, #d1fae5)", color: "var(--success, #059669)" }
+                    : {};
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="wf-stage"
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 10,
+                        borderLeft: `3px solid ${
+                          isHealthy
+                            ? "var(--success, #10b981)"
+                            : isPaused
+                            ? "var(--border, #9ca3af)"
+                            : isDisconnected
+                            ? "var(--danger, #ef4444)"
+                            : "var(--warning, #f59e0b)"
+                        }`,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <div>
+                          <strong style={{ fontSize: "14px", display: "block" }}>{p.name}</strong>
+                          <span style={{ fontSize: "12px", color: "var(--text-2)" }}>
+                            Trigger: <b>{labelForTrigger(p.trigger_source)}</b>
+                          </span>
+                        </div>
+                        <span className={badgeCls} style={badgeStyle}>
+                          {p.health_label}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: "12px", background: "var(--surface-2, #f9fafb)", padding: "8px 10px", borderRadius: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div>
+                          <span style={{ color: "var(--text-3)" }}>Upstream: </span>
+                          <span style={{ fontWeight: 500 }}>{p.upstream_stage}</span> — {p.upstream_summary}
+                        </div>
+                        <div>
+                          <span style={{ color: "var(--text-3)" }}>Destination: </span>
+                          <span style={{ fontWeight: 600, textTransform: "uppercase" }}>{p.action_type}</span>
+                          {p.action_config?.to && ` (${p.action_config.to})`}
+                          {p.action_config?.channel && ` (${p.action_config.channel})`}
+                          {p.action_config?.url && ` (${p.action_config.url})`}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto", paddingTop: 6, fontSize: "11px", color: "var(--text-2)" }}>
+                        <span>
+                          {p.execution_count} execution{p.execution_count === 1 ? "" : "s"}
+                          {p.last_execution && ` · Last: ${p.last_execution.status}`}
+                        </span>
+                        {p.fix ? (
+                          <Link to={p.fix.href} className="wf-stage-link">
+                            {p.fix.label} <Icon name="arrow-right" size={11} />
+                          </Link>
+                        ) : (
+                          <Link to={`/rules?rule=${encodeURIComponent(p.rule_id)}`} className="wf-stage-link">
+                            Configure rule <Icon name="arrow-right" size={11} />
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* ── RECENT EXECUTIONS ─────────────────────────────────────────── */}
+          {graph.recent_executions && graph.recent_executions.length > 0 && (
+            <section className="wf-executions" style={{ marginTop: 28 }}>
+              <h2 style={{ fontSize: "1.1rem", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 8 }}>
+                <Icon name="activity" size={16} /> Recent Signal Executions
+              </h2>
+              <div style={{ overflowX: "auto" }}>
+                <table className="dash-table" style={{ width: "100%", fontSize: "12px" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: "160px" }}>Timestamp</th>
+                      <th>Rule</th>
+                      <th style={{ width: "110px" }}>Status</th>
+                      <th style={{ width: "90px" }}>Latency</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {graph.recent_executions.slice(0, 10).map((ex) => {
+                      const ruleNode = graph.nodes?.find((n) => n.id === ex.rule_id);
+                      return (
+                        <tr key={ex.id}>
+                          <td style={{ color: "var(--text-3)", whiteSpace: "nowrap" }}>
+                            {ex.executed_at ? new Date(ex.executed_at).toLocaleString() : "—"}
+                          </td>
+                          <td>
+                            <strong>{ruleNode?.label || ex.rule_id}</strong>
+                          </td>
+                          <td>
+                            <span
+                              className={`wf-badge ${
+                                ex.status === "success" || ex.status === "delivered"
+                                  ? "wf-badge"
+                                  : "wf-sev-blocking"
+                              }`}
+                              style={
+                                ex.status === "success" || ex.status === "delivered"
+                                  ? { background: "var(--success-soft, #d1fae5)", color: "var(--success, #059669)" }
+                                  : {}
+                              }
+                            >
+                              {ex.status}
+                            </span>
+                          </td>
+                          <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                            {ex.latency_ms ? `${ex.latency_ms}ms` : "—"}
+                          </td>
+                          <td style={{ color: ex.error ? "var(--danger, #dc2626)" : "var(--text-2)", maxWidth: "300px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {ex.error || "Dispatched successfully"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
           {/* ── WOULD IT FIRE? ────────────────────────────────────────────
               The question that comes straight after "is it connected", and
               which had no answer anywhere in the product before this. */}

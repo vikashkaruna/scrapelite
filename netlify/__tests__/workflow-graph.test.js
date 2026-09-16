@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   listLists: vi.fn(),
   listWatchlists: vi.fn(),
   listRules: vi.fn(),
+  listExecutions: vi.fn(),
   serviceDb: vi.fn(() => null),
 }));
 
@@ -14,7 +15,10 @@ vi.mock("../functions/lib/bulkStore.js", () => ({ listLists: mocks.listLists }))
 vi.mock("../functions/lib/watchlistStore.js", () => ({
   listWatchlists: mocks.listWatchlists, serviceDb: mocks.serviceDb,
 }));
-vi.mock("../functions/lib/ruleStore.js", () => ({ listRules: mocks.listRules }));
+vi.mock("../functions/lib/ruleStore.js", () => ({
+  listRules: mocks.listRules,
+  listExecutions: mocks.listExecutions,
+}));
 
 let handler;
 beforeEach(async () => {
@@ -24,6 +28,7 @@ beforeEach(async () => {
   mocks.listLists.mockResolvedValue({ lists: [] });
   mocks.listWatchlists.mockResolvedValue({ watchlists: [] });
   mocks.listRules.mockResolvedValue({ rules: [] });
+  mocks.listExecutions.mockResolvedValue({ executions: [] });
   ({ handler } = await import("../functions/workflow-graph.js"));
 });
 afterEach(() => vi.restoreAllMocks());

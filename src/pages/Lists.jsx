@@ -46,13 +46,21 @@ export default function Lists() {
   // Review Queue
   const [reviewItems, setReviewItems] = useState([]);
 
-  // Check if routed from template handoff
+  // Check if routed from template handoff or query parameters (?new=1 or ?list=<id>)
   useEffect(() => {
     if (location.state?.initialDomains) {
       setRawDomains(location.state.initialDomains);
       setShowCreateModal(true);
     }
-  }, [location.state]);
+    const params = new URLSearchParams(location.search);
+    if (params.get("new") === "1") {
+      setShowCreateModal(true);
+    }
+    const listId = params.get("list");
+    if (listId) {
+      setSelectedListId(listId);
+    }
+  }, [location.state, location.search]);
 
   const loadLists = async (silent = false) => {
     if (!silent && lists.length === 0) setLoading(true);
@@ -160,14 +168,14 @@ export default function Lists() {
     }));
 
     try {
-      const jobId = currentList.active_job_id;
+      let jobId = currentList.active_job_id;
       if (!jobId) {
-        const finished = (currentList.jobs || []).length > 0;
-        showToast(finished
-          ? "Every enrichment job for this list has already completed."
-          : "This list has no enrichment job yet — re-import the list to create one.");
-        window.dispatchEvent(new CustomEvent("datiq:listenrichment", { detail: { status: "dismiss" } }));
-        return;
+        // Safe fallback: start / queue an enrichment job for this list
+        const startRes = await bulkApi.startJob(currentList.id);
+        jobId = startRes?.jobId;
+        if (!jobId) {
+          throw new Error(startRes?.reason || "Could not start enrichment job.");
+        }
       }
       await bulkApi.runFullJob(jobId, (p) => {
         setJobProgress(p);
