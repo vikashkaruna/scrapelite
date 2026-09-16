@@ -20,15 +20,16 @@
 
 ## 2026-09-16 IST — Fix 502 Bad Gateway on scheduled cron workers & Admin Monitoring runner registration; Manual approval CI RCA
 
-> **Branch:** `staging` · **Delivery:** Commit to `staging` · **`main`:** untouched
-> **Verification:** `npm run test:contract` (139 files, 2,532 passed) · `npm run build` (vite bundle + prerender asset sync green) · targeted Vitest suites (123 passed) · Node.js handler execution assertions
+> **Branch:** `staging` · **Delivery:** Merged PR #186 into `staging` (merge commit `00693d4c`) · **`main`:** untouched
+> **Verification:** PR #186 Staging Gate green (Test Suites 13m31s, Vulnerabilities, Open Defects, CodeQL, Netlify deploy preview) · `npm run test:contract` (139 files, 2,532 passed) · `npm run build` (vite bundle + prerender asset sync green) · targeted Vitest suites (123 passed) · Node.js handler execution assertions
 
 ### 1. Quick orientation
 
 | Property | Value |
 |---|---|
 | **Date** | 2026-09-16 |
-| **Branch** | `staging` |
+| **Branch** | `staging` (up to date with `origin/staging` at `00693d4c`) |
+| **PR & Commits** | PR #186 merged into `staging`; commit `383ec1ae` (`fix(monitoring): normalize cron return values to prevent 502 Bad Gateway and wire admin runners`) |
 | **Commit focus** | `withJobRun` response normalization, `detailFromResult` metrics extraction, `RUNNABLE` & `JOB_PLATFORM` parity |
 
 ### 2. What was accomplished
