@@ -546,3 +546,29 @@ describe("email report — a wholly new capability, no email feature existed her
     expect(await screen.findByText(/Could not send the email\./i)).toBeInTheDocument();
   });
 });
+
+describe("export dropdown & flow ribbon", () => {
+  it("opens the export dropdown with all format options and shows the closed loop ribbon with audit tab green highlights", async () => {
+    await runAudit();
+    // Verify ribbon renders with audit tab green highlights
+    const ribbonSteps = screen.getAllByRole("link").filter((l) => l.className.includes("closed-loop-step"));
+    expect(ribbonSteps.length).toBe(8);
+    // 1.1 to 1.4 are highlighted green on Audit tab
+    expect(ribbonSteps[0].className).toContain("is-audit-highlight");
+    expect(ribbonSteps[1].className).toContain("is-audit-highlight");
+    expect(ribbonSteps[2].className).toContain("is-audit-highlight");
+    expect(ribbonSteps[3].className).toContain("is-audit-highlight");
+
+    // Click Export button
+    const exportBtn = screen.getByRole("button", { name: /export/i });
+    fireEvent.click(exportBtn);
+
+    // Verify all dropdown options render
+    expect(screen.getByText("Report Formats")).toBeInTheDocument();
+    expect(screen.getByText("PDF Report")).toBeInTheDocument();
+    expect(screen.getByText("Markdown Report")).toBeInTheDocument();
+    expect(screen.getByText("Data Formats")).toBeInTheDocument();
+    expect(screen.getByText("CSV Data")).toBeInTheDocument();
+    expect(screen.getByText("JSON Data")).toBeInTheDocument();
+  });
+});
