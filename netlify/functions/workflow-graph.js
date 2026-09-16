@@ -55,9 +55,13 @@ export const handler = async (event) => {
     // it reports "never fired" rather than silently assuming it did.
     const db = serviceDb();
     let executions = [];
-    if (rules.length) {
-      const execRes = await listExecutions(userId, { limit: 50 });
-      executions = execRes?.executions || [];
+    if (rules.length && typeof listExecutions === "function") {
+      try {
+        const execRes = await listExecutions(userId, { limit: 50 });
+        executions = execRes?.executions || [];
+      } catch {
+        executions = [];
+      }
 
       if (db) {
         const { data: execs } = await db
