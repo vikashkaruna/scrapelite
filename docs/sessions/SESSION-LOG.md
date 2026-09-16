@@ -18,6 +18,44 @@
 
 ---
 
+## 2026-09-16 IST — Fix 502 Bad Gateway on scheduled cron workers & Admin Monitoring runner registration; Manual approval CI RCA
+
+> **Branch:** `staging` · **Delivery:** Commit to `staging` · **`main`:** untouched
+> **Verification:** `npm run test:contract` (139 files, 2,532 passed) · `npm run build` (vite bundle + prerender asset sync green) · targeted Vitest suites (123 passed) · Node.js handler execution assertions
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-16 |
+| **Branch** | `staging` |
+| **Commit focus** | `withJobRun` response normalization, `detailFromResult` metrics extraction, `RUNNABLE` & `JOB_PLATFORM` parity |
+
+### 2. What was accomplished
+
+- **Root-cause and fix 502 Bad Gateway on scheduled crons:**
+  - Netlify Function handlers v1 (synchronous serverless) require `{ statusCode: number, body: string }`.
+  - Runners for `signal-retry`, `bulk-runner`, `sxo-analytics-import-worker`, and `watchlist-monitor` returned plain data objects without `statusCode`.
+  - Netlify treated responses as malformed proxy responses, returning HTTP 502 Bad Gateway and triggering 3 consecutive attempts on every 5-minute schedule.
+  - Updated `withJobRun` in `netlify/functions/lib/jobControl.js` to normalize non-prewrapped responses into `{ statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(...) }`.
+- **Fix `job_runs.detail` metric persistence:**
+  - Updated `detailFromResult` in `jobControl.js` to extract scalar fields directly from raw runner objects so `job_runs.detail` is populated with run statistics instead of `{}`.
+- **Admin monitoring runner registration:**
+  - Wired `sxo-analytics-import-worker` and `prompt-monitor` into `RUNNABLE` in `netlify/functions/admin-monitoring.js` and added their `"db"` classification in `JOB_PLATFORM` (in both `admin-monitoring.js` and `AdminMonitoring.jsx`).
+  - Added parity test in `admin-monitoring.test.js` ensuring every manual-runnable job in `AUTOMATION_JOBS` is wired into `RUNNABLE`.
+- **RCA on GitHub CI Manual Approval failure (PR #184 / Run #35088279238):**
+  - Diagnosed `HTTP 410 Issues has been disabled in this repository` from `trstringer/manual-approval@v1` because GitHub Issues is disabled in the repository settings.
+  - Diagnosed why production deployment happened anyway: Netlify continuous deployment (auto-publishing) is enabled on `main` in Netlify, bypassing the phase gate workflow. Provided step-by-step resolution instructions.
+
+### 3. Verification evidence
+
+- `npm run test:contract`: 139 files / 2,532 passed (including `jobControl.test.js`, `admin-monitoring.test.js`, `workflow-engines.test.js`, `sxo-analytics-import-worker.test.js`).
+- Targeted tests: 123 tests passing in 3.7s.
+- Node.js direct handler invocation: all 5 scheduled handlers verified returning `{ statusCode: 200, headers: ..., body: ... }`.
+- Production build: `npm run build` passed cleanly, 28 prerendered pages synchronized.
+
+---
+
 ## 2026-09-15 IST — Discoverability tabs: localStorage-first loading, 1.1–1.4 → 5 step numbering, active-audit context, entity approval fix, ignorable directory sources, two-column pillars
 
 > **Branch:** `fix/discoverability-tabs-context`, cut from `origin/staging` @ `5ad8fc3`, then merged with `staging` after PR #179 (pricing consistency) landed · **Delivery:** PR into `staging` (direct pushes are refused by the CodeQL code-scanning rule) · **`main`:** untouched

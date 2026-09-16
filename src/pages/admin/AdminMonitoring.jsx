@@ -39,11 +39,18 @@ const PLATFORMS = ["all", "netlify", "db"];
 // netlify/functions/admin-monitoring.js. Audit entries are addressed to a
 // job id, so a quick lookup here is enough to bucket them by platform.
 const JOB_PLATFORM = {
-  "scheduled-runner":  "netlify",
-  "reengagement":      "netlify",
-  "billing-lifecycle": "db",
-  "billing-purge":     "db",
-  "health-monitor":    "db",
+  "scheduled-runner":        "netlify",
+  "prompt-monitor":          "db",
+  "reengagement":            "netlify",
+  "billing-lifecycle":       "db",
+  "billing-purge":           "db",
+  "health-monitor":          "db",
+  "discoverability-monitor": "db",
+  "watchlist-monitor":       "db",
+  "bulk-runner":             "db",
+  "signal-retry":            "db",
+  "workflow-orchestrator-cron": "netlify",
+  "sxo-analytics-import-worker": "db",
 };
 function jobPlatform(jobId) {
   return JOB_PLATFORM[jobId] || "netlify";
