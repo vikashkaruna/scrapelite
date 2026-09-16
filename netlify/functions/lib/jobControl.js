@@ -305,6 +305,14 @@ function detailFromResult(result) {
     } catch {
       out.body = result.body.slice(0, 300);
     }
+  } else {
+    // Direct result object returned by runner (not pre-wrapped in statusCode/body)
+    for (const [k, v] of Object.entries(result)) {
+      if (k === "statusCode" || k === "headers") continue;
+      if (v === null || ["string", "number", "boolean"].includes(typeof v)) {
+        out[k] = typeof v === "string" ? v.slice(0, 300) : v;
+      }
+    }
   }
   return out;
 }
@@ -330,6 +338,7 @@ export function withJobRun(job, fn) {
       await recordSkippedRun(job, "disabled_by_operator", trigger);
       return {
         statusCode: 200,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ok: true, job, skipped: true, reason: "disabled_by_operator",
           message: `${job} is stopped by an operator — no work was done.`,
@@ -339,9 +348,21 @@ export function withJobRun(job, fn) {
 
     const handle = await startJobRun(job, trigger);
     try {
-      const result = await fn(event, context);
-      await finishJobRun(handle, { status: "success", detail: detailFromResult(result) });
-      return result;
+      const rawResult = await fn(event, context);
+      await finishJobRun(handle, { status: "success", detail: detailFromResult(rawResult) });
+
+      // If the wrapped function already returned a Netlify-compatible response object, pass it through.
+      if (rawResult && typeof rawResult === "object" && typeof rawResult.statusCode === "number") {
+        return rawResult;
+      }
+
+      // Otherwise normalize to a valid Netlify v1 response object so the serverless runtime
+      // does not reject the return value with a 502 Bad Gateway (malformed proxy response).
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json" },
+        body: typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult ?? {}),
+      };
     } catch (err) {
       await finishJobRun(handle, { status: "error", error: err?.message || String(err) });
       throw err;
