@@ -35,18 +35,6 @@ const EXPLORE_ITEMS = [
   { label: "Plans & Pricing", icon: "tag", path: "/pricing" },
   { label: "Integrations",    icon: "zap", path: "/integrations" },
   {
-    group: "Workflows",
-    items: [
-      // First in the group on purpose: it is the only entry that explains how
-      // the other three relate, and the reported confusion was precisely that
-      // a user had no way to see what was going on across them.
-      { label: "Overview",       icon: "share-2", path: "/workflows" },
-      { label: "Account Lists",  icon: "users",   path: "/lists" },
-      { label: "Watchlists",     icon: "eye",     path: "/watchlists" },
-      { label: "Signal Rules",   icon: "share-2", path: "/rules" },
-    ],
-  },
-  {
     group: "Resources",
     items: [
       { label: "Use Cases",      icon: "target",      path: "/use-cases" },
@@ -62,7 +50,7 @@ const EXPLORE_ITEMS = [
   { label: "About DatIQ", icon: "info", path: "/about" },
 ];
 
-const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/lists", "/watchlists", "/rules", "/workflows", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca", "/faq"];
+const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca", "/faq"];
 
 function ExploreItem({ item, onNavigate }) {
   return item.external ? (
@@ -108,7 +96,7 @@ function ExploreDropdown({ onNavigate }) {
 }
 
 // ── User account dropdown ─────────────────────────────────────────
-function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onLists, onWatchlists, onRules, onSwitchRole, onSignOut, onSignIn }) {
+function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onWorkflows, onLists, onWatchlists, onRules, onSwitchRole, onSignOut, onSignIn }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const { workspaces, currentWorkspaceId, setCurrentWorkspaceId } = useWorkspace();
@@ -200,7 +188,21 @@ function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onLi
             </div>
           )}
           {user && (
-            <>
+            <button className="nav-dropdown-item" role="menuitem"
+              onClick={() => { setOpen(false); onSchedules(); }}>
+              <span className="nav-dd-icon"><Icon name="calendar-clock" size={14} /></span>
+              Schedules &amp; Monitors
+            </button>
+          )}
+          {user && (
+            <div className="nav-dropdown-group">
+              <div className="nav-dropdown-divider" />
+              <div className="nav-dropdown-section">Workflows</div>
+              <button className="nav-dropdown-item" role="menuitem"
+                onClick={() => { setOpen(false); onWorkflows?.(); }}>
+                <span className="nav-dd-icon"><Icon name="share-2" size={14} /></span>
+                Overview
+              </button>
               <button className="nav-dropdown-item" role="menuitem"
                 onClick={() => { setOpen(false); onLists?.(); }}>
                 <span className="nav-dd-icon"><Icon name="users" size={14} /></span>
@@ -214,15 +216,11 @@ function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onLi
               <button className="nav-dropdown-item" role="menuitem"
                 onClick={() => { setOpen(false); onRules?.(); }}>
                 <span className="nav-dd-icon"><Icon name="share-2" size={14} /></span>
-                Signal Routing
+                Signal Rules
               </button>
-              <button className="nav-dropdown-item" role="menuitem"
-                onClick={() => { setOpen(false); onSchedules(); }}>
-                <span className="nav-dd-icon"><Icon name="calendar-clock" size={14} /></span>
-                Schedules &amp; monitors
-              </button>
-            </>
+            </div>
           )}
+          <div className="nav-dropdown-divider" />
           <button className="nav-dropdown-item" role="menuitem"
             onClick={() => { setOpen(false); onAccount(); }}>
             <span className="nav-dd-icon"><Icon name="user" size={14} /></span>
@@ -364,8 +362,29 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
               {user && (
                 <button className="mobile-nav-item" onClick={() => { onSchedules(); onClose(); }}>
                   <span className="mobile-nav-icon"><Icon name="calendar-clock" size={17} /></span>
-                  Schedules &amp; monitors
+                  Schedules &amp; Monitors
                 </button>
+              )}
+              {user && (
+                <div className="mobile-nav-group">
+                  <div className="mobile-nav-group-label">Workflows</div>
+                  <button className="mobile-nav-subitem" onClick={() => go("/workflows")}>
+                    <Icon name="share-2" size={14} />
+                    Overview
+                  </button>
+                  <button className="mobile-nav-subitem" onClick={() => go("/lists")}>
+                    <Icon name="users" size={14} />
+                    Account Lists
+                  </button>
+                  <button className="mobile-nav-subitem" onClick={() => go("/watchlists")}>
+                    <Icon name="eye" size={14} />
+                    Watchlists
+                  </button>
+                  <button className="mobile-nav-subitem" onClick={() => go("/rules")}>
+                    <Icon name="share-2" size={14} />
+                    Signal Rules
+                  </button>
+                </div>
               )}
               <button className="mobile-nav-item" onClick={() => { onAccount(); onClose(); }}>
                 <span className="mobile-nav-icon"><Icon name="user" size={17} /></span>
@@ -498,10 +517,11 @@ export default function TopBar() {
               user={user} persona={persona}
               onWorkspace={() => navigate("/workspace")}
               onAccount={() => navigate("/account")}
+              onSchedules={() => navigate("/schedules")}
+              onWorkflows={() => navigate("/workflows")}
               onLists={() => navigate("/lists")}
               onWatchlists={() => navigate("/watchlists")}
               onRules={() => navigate("/rules")}
-              onSchedules={() => navigate("/schedules")}
               onSwitchRole={handleSwitchRole}
               onSignOut={handleSignOut}
               onSignIn={() => openAuth("signin")}
