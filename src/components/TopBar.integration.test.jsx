@@ -346,3 +346,92 @@ describe("Workspace moved into the signed-in user menu (2026-08-28)", () => {
     expect(workspaceIdx).toBeLessThan(schedulesIdx);
   });
 });
+
+describe("Workflows menu section moved from Explore to below Schedules & Monitors in user menu", () => {
+  it("is absent from the Explore dropdown menu", async () => {
+    render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    act(() => fireEvent.click(screen.getByRole("button", { name: /explore/i })));
+    const exploreMenu = document.querySelector(".nav-explore-menu");
+    expect(exploreMenu).not.toBeNull();
+    expect(exploreMenu.textContent).not.toMatch(/workflows/i);
+    expect(exploreMenu.textContent).not.toMatch(/account lists/i);
+    expect(exploreMenu.textContent).not.toMatch(/watchlists/i);
+    expect(exploreMenu.textContent).not.toMatch(/signal rules/i);
+  });
+
+  it("appears in the user dropdown, with section header and items listed below 'Schedules & Monitors'", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    act(() => fireEvent.click(screen.getByTitle("Your account")));
+    const desktopMenu = document.querySelector(".user-dropdown-menu");
+    expect(desktopMenu).not.toBeNull();
+    const section = desktopMenu.querySelector(".nav-dropdown-section");
+    expect(section).not.toBeNull();
+    expect(section.textContent.trim()).toBe("Workflows");
+
+    const items = Array.from(desktopMenu.querySelectorAll(".nav-dropdown-item")).map((b) => b.textContent.trim());
+    const schedulesIdx = items.findIndex((t) => /schedules.*monitors/i.test(t));
+    const overviewIdx = items.findIndex((t) => /^overview$/i.test(t));
+    const listsIdx = items.findIndex((t) => /^account lists$/i.test(t));
+    const watchlistsIdx = items.findIndex((t) => /^watchlists$/i.test(t));
+    const rulesIdx = items.findIndex((t) => /^signal rules$/i.test(t));
+
+    expect(schedulesIdx).toBeGreaterThanOrEqual(0);
+    expect(overviewIdx).toBeGreaterThan(schedulesIdx);
+    expect(listsIdx).toBeGreaterThan(overviewIdx);
+    expect(watchlistsIdx).toBeGreaterThan(listsIdx);
+    expect(rulesIdx).toBeGreaterThan(watchlistsIdx);
+  });
+
+  it("clicking Overview in the user dropdown navigates to /workflows", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+        <Routes>
+          <Route path="*" element={<LocationProbe />} />
+        </Routes>
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    act(() => fireEvent.click(screen.getByTitle("Your account")));
+    const desktopMenu = document.querySelector(".user-dropdown-menu");
+    const overviewBtn = Array.from(desktopMenu.querySelectorAll("button")).find(
+      (b) => /^overview$/i.test(b.textContent.trim()),
+    );
+    act(() => fireEvent.click(overviewBtn));
+    expect(screen.getByTestId("location").textContent).toBe("/workflows");
+  });
+
+  it("appears in mobile nav user section below Schedules & Monitors", async () => {
+    setAuthUser();
+    render(
+      <Providers>
+        <TopBar />
+      </Providers>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    const userSection = document.querySelectorAll(".mobile-nav-section")[1];
+    expect(userSection).toBeTruthy();
+    const groupLabel = userSection.querySelector(".mobile-nav-group-label");
+    expect(groupLabel).toBeTruthy();
+    expect(groupLabel.textContent.trim()).toBe("Workflows");
+
+    const subitems = Array.from(userSection.querySelectorAll(".mobile-nav-subitem")).map((b) => b.textContent.trim());
+    expect(subitems).toContain("Overview");
+    expect(subitems).toContain("Account Lists");
+    expect(subitems).toContain("Watchlists");
+    expect(subitems).toContain("Signal Rules");
+  });
+});
+

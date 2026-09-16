@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import ClosedLoopRibbon, { CLOSED_LOOP_STEPS, stepNumber } from "./ClosedLoopRibbon.jsx";
 
@@ -25,5 +25,66 @@ describe("ClosedLoopRibbon numbering", () => {
     expect(links[0].className).toMatch(/is-complete/);
     expect(links[2].getAttribute("aria-current")).toBe("step");
     expect(links[4].getAttribute("href")).toBe("/discoverability/truth?audit=a-1");
+  });
+
+  it("highlights entire 1.1 Discover to 1.4 Recommend in green when on the Audit tab", () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={["/discoverability"]}>
+        <ClosedLoopRibbon activeTab="audit" auditId="a-1" hasAudit={true} />
+      </MemoryRouter>,
+    );
+    const steps = container.querySelectorAll(".closed-loop-step");
+    // 1.1 to 1.4 are highlighted green
+    for (let i = 0; i < 4; i++) {
+      expect(steps[i].className).toContain("is-audit-highlight");
+      expect(steps[i].className).toContain("is-complete");
+    }
+    // Steps 2 to 5 are not in green audit highlight
+    for (let i = 4; i < 8; i++) {
+      expect(steps[i].className).not.toContain("is-audit-highlight");
+    }
+    // Guide card displays audit complete summary
+    expect(screen.getByText(/Step 1: Audit Complete/)).toBeTruthy();
+  });
+
+  it("progressively highlights 1.1 to 1.4 while auditing is in progress", async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(
+        <MemoryRouter initialEntries={["/discoverability"]}>
+          <ClosedLoopRibbon isAuditing={true} activeTab="audit" />
+        </MemoryRouter>,
+      );
+      // Initially 1.1 is in progress
+      let steps = container.querySelectorAll(".closed-loop-step");
+      expect(steps[0].className).toContain("is-auditing");
+      expect(screen.getByText(/Crawl & Discover/)).toBeTruthy();
+
+      // Advance to step 1.2
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      steps = container.querySelectorAll(".closed-loop-step");
+      expect(steps[0].className).toContain("is-audit-highlight");
+      expect(steps[1].className).toContain("is-auditing");
+
+      // Advance to step 1.3
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      steps = container.querySelectorAll(".closed-loop-step");
+      expect(steps[1].className).toContain("is-audit-highlight");
+      expect(steps[2].className).toContain("is-auditing");
+
+      // Advance to step 1.4
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2800);
+      });
+      steps = container.querySelectorAll(".closed-loop-step");
+      expect(steps[2].className).toContain("is-audit-highlight");
+      expect(steps[3].className).toContain("is-auditing");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
