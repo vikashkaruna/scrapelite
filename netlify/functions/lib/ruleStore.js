@@ -171,6 +171,50 @@ export async function createRule(userId, { name, trigger_source, conditions = []
     .select()
     .single();
 
+    if (error) return { ok: false, reason: error.message };
+  return { ok: true, rule: data };
+}
+
+export async function updateRule(userId, ruleId, updates = {}, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+
+  if (updates.action_type || updates.action_config) {
+    const destination = await validateActionConfig(updates.action_type, updates.action_config);
+    if (!destination.ok) return { ok: false, reason: destination.reason, status: 400 };
+  }
+
+  const db = serviceDb(env);
+  const now = new Date().toISOString();
+
+  if (!db) {
+    const existing = _localRules.get(ruleId);
+    if (!existing || existing.user_id !== userId) {
+      return { ok: false, reason: "Rule not found or unauthorized", status: 404 };
+    }
+    const updated = {
+      ...existing,
+      ...updates,
+      updated_at: now,
+    };
+    _localRules.set(ruleId, updated);
+    return { ok: true, rule: updated };
+  }
+
+  const payload = {
+    ...updates,
+    updated_at: now,
+  };
+  delete payload.id;
+  delete payload.user_id;
+
+  const { data, error } = await db
+    .from("signal_rules")
+    .update(payload)
+    .eq("id", ruleId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
   if (error) return { ok: false, reason: error.message };
   return { ok: true, rule: data };
 }

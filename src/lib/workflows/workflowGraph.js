@@ -261,6 +261,12 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [], ex
 
     const lastExec = executions.find((e) => e.rule_id === r.id) || null;
 
+    const upstreamItems = isWatchlist
+      ? watchlists.map((w) => ({ id: w.id, name: w.name, meta: `${getTargetCount(w)} tracked`, href: `/watchlists?id=${encodeURIComponent(w.id)}` }))
+      : isBulk
+      ? lists.map((l) => ({ id: l.id, name: l.name, meta: `${l.completed_records || 0}/${l.total_records || 0} enriched`, href: `/lists?list=${encodeURIComponent(l.id)}` }))
+      : [{ id: "templates", name: "Workflow Templates", meta: "Explore catalogue", href: "/templates?filter=workflows" }];
+
     pipelines.push({
       id: r.id,
       name: r.name,
@@ -272,9 +278,11 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [], ex
       health_label: healthLabel,
       upstream_stage: upstreamStage,
       upstream_summary: upstreamSummary,
+      upstream_items: upstreamItems,
       execution_count: r.execution_count || 0,
       last_execution: lastExec,
       rule_id: r.id,
+      conditions: r.conditions || [],
       conditions_count: (r.conditions || []).length,
     });
   }

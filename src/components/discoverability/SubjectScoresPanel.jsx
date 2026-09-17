@@ -70,10 +70,11 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
           return { subjRes, graphRes, scoreRes };
         },
         ({ subjRes, graphRes, scoreRes }) => {
+          const isApprovedEntity = (e) => (e?.state || e?.status || "").toLowerCase() === "approved";
           const list = (subjRes?.subjects || []).filter((s) => SUBJECT_SCORES[s.subject_kind]);
           setSubjects(list);
           setAllEntities(graphRes?.entities || []);
-          setEntities((graphRes?.entities || []).filter((e) => e.state === "approved"));
+          setEntities((graphRes?.entities || []).filter(isApprovedEntity));
           setScores(scoreRes?.scores || []);
           setSelectedSubjectId((current) => (
             current && list.some((s) => s.id === current) ? current : list[0]?.id || ""
@@ -144,8 +145,9 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
   const latestScore = subjectScores[0] || null;
   const spec = currentSubject ? SUBJECT_SCORES[currentSubject.subject_kind] : null;
   const components = currentSubject ? componentsFor(currentSubject.subject_kind, latestScore) : [];
+  const isApproved = (e) => (e?.state || e?.status || "").toLowerCase() === "approved";
   const eligibleEntities = entities.filter((e) => (SCORABLE_ENTITY_TYPES[newKind] || []).includes(e.entity_type));
-  const pendingEntities = allEntities.filter((e) => (SCORABLE_ENTITY_TYPES[newKind] || []).includes(e.entity_type) && e.state !== "approved");
+  const pendingEntities = allEntities.filter((e) => (SCORABLE_ENTITY_TYPES[newKind] || []).includes(e.entity_type) && !isApproved(e));
   const thin = latestScore && (latestScore.score === null || Number(latestScore.coverage) < THIN_COVERAGE);
 
   return (
@@ -188,7 +190,7 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
               <select className="dsc-input" value={newEntityId} onChange={(e) => setNewEntityId(e.target.value)} required>
                 <option value="">Select approved entity…</option>
                 {eligibleEntities.map((e) => (
-                  <option key={e.id} value={e.id}>{e.name} ({e.entity_type})</option>
+                  <option key={e.id} value={e.id}>{e.name} ({e.entity_type}) — Approved</option>
                 ))}
                 {pendingEntities.map((e) => (
                   <option key={e.id} value="" disabled>{e.name} ({e.entity_type}) — Pending Approval</option>

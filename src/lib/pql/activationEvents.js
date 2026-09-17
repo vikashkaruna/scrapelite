@@ -74,6 +74,10 @@ export const TEMPLATE_CONDITION = Object.freeze({
   customer_proof_extractor: null,
   bulk_icp_enrichment:      null,
   ai_visibility_brief:      null,
+  recruiter_talent_sourcing: null,
+  market_landscape_map: null,
+  agency_client_teardown: null,
+  continuous_account_signal: null,
 });
 
 const RECRUITER_CAPABILITIES = Object.freeze(["leadership", "contacts", "social"]);

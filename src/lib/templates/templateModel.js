@@ -300,16 +300,37 @@ export function countUnits(template, input) {
 export function estimateCredits(template, input = {}) {
   const cost = { ...DEFAULT_CREDIT_COST, ...(template?.credit_cost || {}) };
   const units = countUnits(template, input);
-  const pages = Math.round(units * (cost.pages_per_unit ?? 1));
-  const aiCalls = Math.round(units * (cost.ai_calls_per_unit ?? 1));
+  const extraPages = Number(input?.extra_subpages || 0);
+  const customFieldsCount = Array.isArray(input?.custom_fields)
+    ? input.custom_fields.length
+    : (typeof input?.custom_fields === "string" && input.custom_fields.trim()
+        ? input.custom_fields.split(",").map((s) => s.trim()).filter(Boolean).length
+        : 0);
+
+  const basePages = Math.round(units * (cost.pages_per_unit ?? 1));
+  const pages = basePages + (Number.isFinite(extraPages) && extraPages > 0 ? extraPages * units : 0);
+
+  const baseAiCalls = Math.round(units * (cost.ai_calls_per_unit ?? 1));
+  const extraAiCalls = customFieldsCount > 0 ? Math.ceil(customFieldsCount / 3) * units : 0;
+  const aiCalls = baseAiCalls + extraAiCalls;
 
   const breakdown = [];
   if (cost.base > 0) breakdown.push({ unit: "run", quantity: 1, credits: cost.base, label: "Workflow setup" });
   if (pages > 0 && cost.per_page > 0) {
-    breakdown.push({ unit: "page", quantity: pages, credits: pages * cost.per_page, label: "Pages fetched" });
+    breakdown.push({
+      unit: "page",
+      quantity: pages,
+      credits: pages * cost.per_page,
+      label: extraPages > 0 ? `Pages fetched (${basePages} base + ${extraPages * units} custom)` : "Pages fetched",
+    });
   }
   if (aiCalls > 0 && cost.per_ai_call > 0) {
-    breakdown.push({ unit: "ai_call", quantity: aiCalls, credits: aiCalls * cost.per_ai_call, label: "AI analysis" });
+    breakdown.push({
+      unit: "ai_call",
+      quantity: aiCalls,
+      credits: aiCalls * cost.per_ai_call,
+      label: customFieldsCount > 0 ? `AI analysis (${baseAiCalls} base + ${extraAiCalls} custom fields)` : "AI analysis",
+    });
   }
 
   return {

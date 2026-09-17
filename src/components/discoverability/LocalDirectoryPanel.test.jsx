@@ -173,4 +173,35 @@ describe("LocalDirectoryPanel — ignoring sources that do not apply", () => {
     fireEvent.click(screen.getByRole("button", { name: "Restore" }));
     await waitFor(() => expect(restore).toHaveBeenCalledWith(expect.objectContaining({ truth_record_id: "tr-1", source_id: "mca" })));
   });
+
+  it("filters directory cards by search query", async () => {
+    mockApi({ checks: [{ id: "chk-1" }], full: storedCheck });
+    render(<LocalDirectoryPanel />);
+    expect(await screen.findByText("Google Business Profile")).toBeInTheDocument();
+    expect(screen.getAllByText("Justdial").length).toBeGreaterThan(0);
+
+    const searchInput = screen.getByPlaceholderText(/Search directory sources/);
+    fireEvent.change(searchInput, { target: { value: "Justdial" } });
+
+    expect(screen.getAllByText("Justdial").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Google Business Profile")).toBeNull();
+  });
+
+  it("filters directory cards by status tab and displays collapsible details", async () => {
+    mockApi({ checks: [{ id: "chk-1" }], full: storedCheck });
+    render(<LocalDirectoryPanel />);
+    expect(await screen.findByText("Google Business Profile")).toBeInTheDocument();
+
+    // Filter by Mismatches
+    const mismatchTab = screen.getByRole("button", { name: /Mismatches/ });
+    fireEvent.click(mismatchTab);
+
+    // Justdial has match_score: 55, mismatched: ["phone"] -> mismatch
+    expect(screen.getAllByText("Justdial").length).toBeGreaterThan(0);
+    // GBP has match_score: 100, mismatched: [] -> match, so filtered out
+    expect(screen.queryByText("Google Business Profile")).toBeNull();
+
+    // Findings collapsible details
+    expect(screen.getAllByText("Finding details, field diffs & correction actions").length).toBeGreaterThan(0);
+  });
 });

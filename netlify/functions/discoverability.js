@@ -2845,6 +2845,16 @@ async function businessTruthRoute(userId, method, path, body, event) {
         return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
       }
 
+      if (verb === "delete") {
+        const delRes = await store.deleteTruthVersion(userId, id, subId, { workspaceId });
+        if (!delRes.ok) {
+          if (delRes.notFound) return notFound("Version not found.");
+          if (delRes.refused) return bad(delRes.refused, { code: "CANNOT_DELETE_CANONICAL" });
+          return json(500, { error: delRes.error || "Could not delete version." });
+        }
+        return json(200, { ok: true, deleted: true });
+      }
+
       const TARGET = { submit: "pending_review", reject: "rejected", withdraw: "draft" };
       const next = TARGET[verb];
       if (!next) return notFound("Unknown endpoint.");

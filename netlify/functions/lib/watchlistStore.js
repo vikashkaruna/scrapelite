@@ -56,7 +56,7 @@ export async function listWatchlists(userId, env = process.env) {
   const db = serviceDb(env);
   if (!db) {
     const list = Array.from(_localWatchlists.values())
-      .filter((w) => w.user_id === userId)
+      .filter((w) => w.user_id === userId && w.status !== "archived")
       .map((w) => {
         const targets = Array.from(_localTargets.values()).filter((t) => t.watchlist_id === w.id);
         return { ...w, targets, target_count: targets.length };
@@ -65,7 +65,7 @@ export async function listWatchlists(userId, env = process.env) {
   }
 
   let q = db.from("watchlists").select("*, watchlist_targets(id, domain)").order("created_at", { ascending: false });
-  q = q.eq("user_id", userId);
+  q = q.eq("user_id", userId).neq("status", "archived");
 
   const { data, error } = await q;
   if (error) return { ok: false, reason: error.message, watchlists: [] };
@@ -78,6 +78,126 @@ export async function listWatchlists(userId, env = process.env) {
     };
   });
   return { ok: true, watchlists: mapped };
+}
+
+export async function updateWatchlist(userId, watchlistId, { name, description, cadence, domains }, env = process.env) {
+  if (ownerless(userId) || !watchlistId) return { ok: false, reason: "Unauthorized or missing id" };
+  const db = serviceDb(env);
+  const now = new Date().toISOString();
+
+  if (!db) {
+    const wl = _localWatchlists.get(watchlistId);
+    if (!wl || wl.user_id !== userId) return { ok: false, reason: "Watchlist not found" };
+    if (name !== undefined) wl.name = name;
+    if (description !== undefined) wl.description = description;
+    if (cadence !== undefined) wl.cadence = cadence;
+    wl.updated_at = now;
+    _localWatchlists.set(watchlistId, wl);
+
+    if (Array.isArray(domains)) {
+      const cleanDomains = domains.map(normalizeDomain).filter(Boolean);
+      for (const [tId, t] of _localTargets.entries()) {
+        if (t.watchlist_id === watchlistId && !cleanDomains.includes(t.domain)) {
+          _localTargets.delete(tId);
+        }
+      }
+      const existingDomainSet = new Set(
+        Array.from(_localTargets.values()).filter((t) => t.watchlist_id === watchlistId).map((t) => t.domain)
+      );
+      for (const d of cleanDomains) {
+        if (!existingDomainSet.has(d)) {
+          const targetId = "target_" + Math.random().toString(36).slice(2, 10);
+          _localTargets.set(targetId, {
+            id: targetId,
+            watchlist_id: watchlistId,
+            domain: d,
+            company_name: d.split(".")[0].toUpperCase(),
+            status: "active",
+            created_at: now,
+          });
+        }
+      }
+    }
+    const targets = Array.from(_localTargets.values()).filter((t) => t.watchlist_id === watchlistId);
+    return { ok: true, watchlist: wl, targets };
+  }
+
+  const updatePayload = { updated_at: now };
+  if (name !== undefined) updatePayload.name = name;
+  if (description !== undefined) updatePayload.description = description;
+  if (cadence !== undefined) updatePayload.cadence = cadence;
+
+  const { data: wl, error: wlErr } = await db
+    .from("watchlists")
+    .update(updatePayload)
+    .eq("id", watchlistId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (wlErr) return { ok: false, reason: wlErr.message };
+
+  if (Array.isArray(domains)) {
+    const cleanDomains = domains.map(normalizeDomain).filter(Boolean);
+    const { data: existingTargets } = await db
+      .from("watchlist_targets")
+      .select("id, domain")
+      .eq("watchlist_id", watchlistId);
+
+    const existingDomains = (existingTargets || []).map((t) => t.domain);
+    const toRemove = (existingTargets || []).filter((t) => !cleanDomains.includes(t.domain));
+    const toAdd = cleanDomains.filter((d) => !existingDomains.includes(d));
+
+    if (toRemove.length > 0) {
+      await db
+        .from("watchlist_targets")
+        .delete()
+        .in("id", toRemove.map((t) => t.id));
+    }
+    if (toAdd.length > 0) {
+      const targetsPayload = toAdd.map((d) => ({
+        watchlist_id: watchlistId,
+        domain: d,
+        company_name: d.split(".")[0].toUpperCase(),
+        status: "active",
+      }));
+      await db.from("watchlist_targets").insert(targetsPayload);
+    }
+  }
+
+  const { data: updatedTargets } = await db
+    .from("watchlist_targets")
+    .select("*")
+    .eq("watchlist_id", watchlistId);
+
+  return { ok: true, watchlist: wl, targets: updatedTargets || [] };
+}
+
+export async function deleteWatchlist(userId, watchlistId, env = process.env) {
+  if (ownerless(userId) || !watchlistId) return { ok: false, reason: "Unauthorized or missing id" };
+  const db = serviceDb(env);
+  const now = new Date().toISOString();
+
+  if (!db) {
+    const wl = _localWatchlists.get(watchlistId);
+    if (!wl || wl.user_id !== userId) return { ok: false, reason: "Watchlist not found" };
+    wl.status = "archived";
+    wl.updated_at = now;
+    _localWatchlists.set(watchlistId, wl);
+    return { ok: true, archived: true };
+  }
+
+  // Soft delete preserves audit trails, snapshots, and field changes
+  const { data, error } = await db
+    .from("watchlists")
+    .update({ status: "archived", updated_at: now })
+    .eq("id", watchlistId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true, archived: true, watchlist: data };
 }
 
 export async function getWatchlist(watchlistId, userId, env = process.env) {

@@ -5,6 +5,7 @@
 // objective facts from AI strategic interpretations, with user feedback.
 
 import { useState, useEffect } from "react";
+import { Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -16,7 +17,7 @@ import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
 
 export default function Watchlists() {
   const showToast = useToast();
-  const { user } = useAuth();
+  const { user, authLoading } = useAuth();
 
   const cachedWatchlists = readPageCache("watchlists")?.data || [];
   const [watchlists, setWatchlists] = useState(cachedWatchlists);
@@ -30,6 +31,18 @@ export default function Watchlists() {
   const [description, setDescription] = useState("");
   const [cadence, setCadence] = useState("daily");
   const [domainsInput, setDomainsInput] = useState("");
+
+  // Edit Watchlist modal
+  const [editingWatchlist, setEditingWatchlist] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editCadence, setEditCadence] = useState("daily");
+  const [editDomainsInput, setEditDomainsInput] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Delete Watchlist modal
+  const [deletingWatchlist, setDeletingWatchlist] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const loadWatchlists = async (silent = false) => {
     if (!silent && watchlists.length === 0) setLoading(true);
@@ -56,6 +69,11 @@ export default function Watchlists() {
 
   useEffect(() => {
     loadWatchlists();
+    const params = new URLSearchParams(window.location.search);
+    const targetId = params.get("id") || params.get("w");
+    if (targetId) {
+      setSelectedId(targetId);
+    }
   }, []);
 
   useEffect(() => {
@@ -143,6 +161,82 @@ export default function Watchlists() {
     }
   };
 
+  const openEditModal = (e, wl) => {
+    if (e) e.stopPropagation();
+    setEditingWatchlist(wl);
+    setEditName(wl.name || "");
+    setEditDescription(wl.description || "");
+    setEditCadence(wl.cadence || "daily");
+    const existingDomains = (wl.targets || []).map((t) => t.domain || t).filter(Boolean);
+    setEditDomainsInput(existingDomains.join("\n"));
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    if (!editName.trim()) {
+      showToast("Please provide a name for this watchlist.");
+      return;
+    }
+    const domains = editDomainsInput
+      .split(/[\r\n,]+/)
+      .map((d) => d.trim())
+      .filter(Boolean);
+
+    setEditSaving(true);
+    try {
+      await watchlistApi.updateWatchlist({
+        watchlistId: editingWatchlist.id,
+        name: editName,
+        description: editDescription,
+        cadence: editCadence,
+        domains,
+      });
+      showToast("Watchlist updated successfully.");
+      setEditingWatchlist(null);
+      loadWatchlists(true);
+      if (selectedId === editingWatchlist.id) {
+        loadCurrentWatchlist(editingWatchlist.id);
+      }
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const openDeleteModal = (e, wl) => {
+    if (e) e.stopPropagation();
+    setDeletingWatchlist(wl);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingWatchlist) return;
+    setDeleteLoading(true);
+    try {
+      await watchlistApi.deleteWatchlist(deletingWatchlist.id);
+      showToast(`Watchlist "${deletingWatchlist.name}" removed.`);
+      if (selectedId === deletingWatchlist.id) {
+        setSelectedId(null);
+      }
+      setDeletingWatchlist(null);
+      loadWatchlists(true);
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="container" style={{ padding: "40px 20px" }}>
+        <div style={{ height: 32, width: 280, background: "var(--surface-2)", borderRadius: "var(--r, 6px)", marginBottom: 12 }} />
+        <div style={{ height: 20, width: 450, background: "var(--surface-2)", borderRadius: "var(--r, 6px)", marginBottom: 24 }} />
+        <div style={{ height: 180, width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r, 8px)" }} />
+      </div>
+    );
+  }
+
   // These endpoints are signed-in only: they return 401 rather than another
   // tenant's rows. Render the reason, not the client SDK's thrown error.
   if (!user) {
@@ -168,7 +262,7 @@ export default function Watchlists() {
       {selectedId && currentWatchlist ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div className="card" style={{ padding: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
               <div>
                 <button
                   className="btn btn-ghost btn-sm"
@@ -177,15 +271,29 @@ export default function Watchlists() {
                 >
                   ← Back to all watchlists
                 </button>
-                <h2 style={{ margin: 0, fontSize: "1.4rem" }}>{currentWatchlist.name}</h2>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <h2 style={{ margin: 0, fontSize: "1.4rem" }}>{currentWatchlist.name}</h2>
+                  <Link to="/workflows" style={{ textDecoration: "none" }}>
+                    <span className="wrh-pill" style={{ background: "var(--surface-2)", color: "var(--accent)", border: "1px solid var(--border)", display: "inline-flex", alignItems: "center", gap: 4, fontSize: "11px" }}>
+                      <Icon name="git-merge" size={11} /> Referenced in Workflows
+                    </span>
+                  </Link>
+                </div>
                 <p style={{ margin: "4px 0 0 0", color: "var(--text-2)", fontSize: "0.85rem" }}>
                   Cadence: <strong>{currentWatchlist.cadence}</strong> · {currentWatchlist.targets?.length || 0} competitors tracked
+                  {currentWatchlist.description ? ` · ${currentWatchlist.description}` : ""}
                 </p>
               </div>
-              <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <Button variant="secondary" onClick={handleCheckNow} disabled={checking}>
                   <Icon name={checking ? "loader" : "zap"} size={14} className={checking ? "spin" : undefined} />
                   {checking ? "Checking…" : "Check now"}
+                </Button>
+                <Button variant="secondary" onClick={() => openEditModal(null, currentWatchlist)}>
+                  <Icon name="edit" size={14} /> Edit
+                </Button>
+                <Button variant="ghost" onClick={() => openDeleteModal(null, currentWatchlist)} style={{ color: "var(--danger, #dc2626)" }}>
+                  <Icon name="trash-2" size={14} />
                 </Button>
               </div>
             </div>
@@ -386,18 +494,43 @@ export default function Watchlists() {
                 <div
                   key={w.id}
                   className="wrh-row wrh-row-interactive"
-                  style={{ padding: 16, border: "1px solid var(--border)", borderRadius: 8 }}
+                  style={{ padding: 16, border: "1px solid var(--border)", borderRadius: "var(--r, 8px)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}
                   onClick={() => setSelectedId(w.id)}
                 >
                   <div>
-                    <h3 style={{ margin: "0 0 4px 0", fontSize: "1.1rem" }}>{w.name}</h3>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <h3 style={{ margin: "0 0 2px 0", fontSize: "1.1rem" }}>{w.name}</h3>
+                      <Link to="/workflows" onClick={(e) => e.stopPropagation()} style={{ textDecoration: "none" }}>
+                        <span className="wrh-pill" style={{ background: "var(--surface-2)", color: "var(--accent)", border: "1px solid var(--border)", display: "inline-flex", alignItems: "center", gap: 4, fontSize: "11px" }}>
+                          <Icon name="git-merge" size={11} /> Referenced in Workflows
+                        </span>
+                      </Link>
+                    </div>
                     <span style={{ fontSize: "0.84rem", color: "var(--text-2)" }}>
-                      Cadence: {w.cadence} · {w.description || "Active tracking"}
+                      Cadence: <strong>{w.cadence}</strong> · {w.description || "Active tracking"} · {w.targets?.length || w.target_count || 0} competitors
                     </span>
                   </div>
-                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <span className="wrh-pill wrh-pill-succeeded">{w.status}</span>
-                    <span style={{ color: "var(--accent)" }}>View intelligence →</span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={(e) => openEditModal(e, w)}
+                      style={{ padding: "4px 8px", fontSize: "12px" }}
+                      title="Edit watchlist"
+                    >
+                      <Icon name="edit" size={12} /> Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => openDeleteModal(e, w)}
+                      style={{ padding: "4px 8px", color: "var(--danger, #dc2626)" }}
+                      title="Delete watchlist"
+                    >
+                      <Icon name="trash-2" size={13} />
+                    </Button>
+                    <span style={{ color: "var(--accent)", fontSize: "0.88rem", marginLeft: 4 }}>View intelligence →</span>
                   </div>
                 </div>
               ))}
@@ -484,6 +617,143 @@ export default function Watchlists() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT MODAL ──────────────────────────────────────────────── */}
+      {editingWatchlist && (
+        <div
+          className="error-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setEditingWatchlist(null)}
+        >
+          <div className="error-modal card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
+            <h2>Edit Competitor Watchlist</h2>
+            <p style={{ color: "var(--text-2)", fontSize: "0.88rem" }}>
+              Update monitored domains, monitoring cadence, or description.
+            </p>
+
+            <form onSubmit={handleUpdate}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, margin: "18px 0" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                    Watchlist Name
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                    Description
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+                    placeholder="Optional description"
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                    Monitoring Cadence
+                  </label>
+                  <select
+                    value={editCadence}
+                    onChange={(e) => setEditCadence(e.target.value)}
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+                  >
+                    <option value="hourly">Hourly (High-frequency)</option>
+                    <option value="daily">Daily (Recommended)</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                    Competitor Domains (one per line)
+                  </label>
+                  <textarea
+                    rows={5}
+                    className="input"
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border)",
+                      fontFamily: "monospace",
+                      fontSize: "0.85rem",
+                    }}
+                    value={editDomainsInput}
+                    onChange={(e) => setEditDomainsInput(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+                <Button variant="ghost" type="button" onClick={() => setEditingWatchlist(null)} disabled={editSaving}>
+                  Cancel
+                </Button>
+                <Button variant="primary" type="submit" disabled={editSaving}>
+                  {editSaving ? "Saving…" : "Save Changes"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE MODAL ──────────────────────────────────────────────── */}
+      {deletingWatchlist && (
+        <div
+          className="error-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setDeletingWatchlist(null)}
+        >
+          <div className="error-modal card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <h2 style={{ color: "var(--danger, #dc2626)" }}>Delete Watchlist</h2>
+            <p style={{ color: "var(--text-1)", fontSize: "0.92rem", marginTop: 8 }}>
+              Are you sure you want to delete <strong>{deletingWatchlist.name}</strong>?
+            </p>
+            <div style={{
+              marginTop: 12,
+              padding: 12,
+              background: "var(--surface-2)",
+              borderRadius: "var(--r, 8px)",
+              fontSize: "0.84rem",
+              color: "var(--text-2)",
+              border: "1px solid var(--border)"
+            }}>
+              <Icon name="shield-check" size={14} style={{ color: "var(--accent)", marginRight: 6, verticalAlign: "middle" }} />
+              <strong>Audit Trail Preservation:</strong> Historical change observations, snapshots, and signal execution records will be preserved for compliance audits.
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+              <Button variant="ghost" onClick={() => setDeletingWatchlist(null)} disabled={deleteLoading}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleDelete}
+                disabled={deleteLoading}
+                style={{ background: "var(--danger, #dc2626)", borderColor: "var(--danger, #dc2626)" }}
+              >
+                {deleteLoading ? "Deleting…" : "Delete Watchlist"}
+              </Button>
+            </div>
           </div>
         </div>
       )}
