@@ -206,4 +206,66 @@ describe("workspace-scoped audit reads", () => {
     expect(calls[0].path).not.toContain("rpc/audit_target_trend");
     expect(rows).toEqual([expect.objectContaining({ audit_id: "audit-1", final_score: 78 })]);
   });
+
+  it("falls back to direct DB update when rpc/approve_entity fails", async () => {
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const path = String(url).replace("https://db.test/", "");
+      const body = init?.body ? JSON.parse(init.body) : null;
+      calls.push({ path, method: init?.method, body });
+
+      if (path.startsWith("audit_entities?id=eq.entity-1")) {
+        // getEntity check or patch response
+        return {
+          ok: true, status: 200,
+          text: async () => JSON.stringify([{ id: "entity-1", name: "Acme", state: "proposed", user_id: "user-1" }]),
+        };
+      }
+      if (path === "rpc/approve_entity") {
+        // Simulate RPC failure / 500
+        return { ok: false, status: 500, text: async () => JSON.stringify({ error: "RPC missing or forbidden" }) };
+      }
+      return { ok: true, status: 200, text: async () => JSON.stringify([]) };
+    });
+    calls = [];
+
+    const res = await store.approveEntity("user-1", "entity-1");
+    expect(res.ok).toBe(true);
+    expect(res.fallback).toBe(true);
+
+    const patchCall = calls.find((c) => c.path.startsWith("audit_entities?id=eq.entity-1") && c.method === "PATCH");
+    expect(patchCall).toBeDefined();
+    expect(patchCall.body.state).toBe("approved");
+    expect(patchCall.body.reviewed_by).toBe("user-1");
+    expect(patchCall.body.review_note).toContain("[Single-founder approval]");
+  });
+
+  it("falls back to direct DB update when rpc/approve_entity_relationship fails", async () => {
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const path = String(url).replace("https://db.test/", "");
+      const body = init?.body ? JSON.parse(init.body) : null;
+      calls.push({ path, method: init?.method, body });
+
+      if (path.startsWith("audit_entity_relationships?id=eq.rel-1")) {
+        return {
+          ok: true, status: 200,
+          text: async () => JSON.stringify([{ id: "rel-1", subject_id: "e1", object_id: "e2", state: "proposed", user_id: "user-1" }]),
+        };
+      }
+      if (path === "rpc/approve_entity_relationship") {
+        return { ok: false, status: 500, text: async () => JSON.stringify({ error: "RPC 500" }) };
+      }
+      return { ok: true, status: 200, text: async () => JSON.stringify([{ id: "e1", state: "approved" }]) };
+    });
+    calls = [];
+
+    const res = await store.approveEntityRelationship("user-1", "rel-1");
+    expect(res.ok).toBe(true);
+    expect(res.fallback).toBe(true);
+
+    const patchCall = calls.find((c) => c.path.startsWith("audit_entity_relationships?id=eq.rel-1") && c.method === "PATCH");
+    expect(patchCall).toBeDefined();
+    expect(patchCall.body.state).toBe("approved");
+    expect(patchCall.body.reviewed_by).toBe("user-1");
+    expect(patchCall.body.review_note).toContain("[Single-founder approval]");
+  });
 });

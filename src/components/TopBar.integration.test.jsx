@@ -135,6 +135,8 @@ describe("I-24 — TopBar: Explore dropdown", () => {
     // Items in the flat list (subset — pin the most important to avoid coupling
     // to cosmetic reorders).
     expect(screen.getByText(/plans & pricing/i)).toBeInTheDocument();
+    expect(screen.getByText(/integrations/i)).toBeInTheDocument();
+    expect(screen.getByText(/^templates$/i)).toBeInTheDocument();
     expect(screen.getByText(/use cases/i)).toBeInTheDocument();
     expect(screen.getByText(/contact us/i)).toBeInTheDocument();
     expect(screen.getByText(/about datiQ/i)).toBeInTheDocument();

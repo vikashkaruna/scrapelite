@@ -52,6 +52,62 @@ export async function createList({ name, description, domains, persona }) {
   return res.json();
 }
 
+export async function updateList({ listId, name, description }) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/bulk-enrichment", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "update_list", listId, name, description }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to update list: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteList(listId) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/bulk-enrichment", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "delete_list", listId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to delete list: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updateAccountRecord({ recordId, updates }) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/bulk-enrichment", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "update_record", recordId, updates }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to update record: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteAccountRecord(recordId) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/bulk-enrichment", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "delete_record", recordId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to delete record: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function processChunk(jobId) {
   const headers = await authHeaders();
   const res = await fetch("/api/bulk-enrichment", {

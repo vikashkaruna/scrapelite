@@ -4,8 +4,8 @@ import { validateTemplate, estimateCredits, validateInput, capabilityFor } from 
 import { PERSONAS } from "../personaConfig.js";
 
 describe("seed templates", () => {
-  it("ships seven — six launch templates plus the positioning brief", () => {
-    expect(SEED_TEMPLATES).toHaveLength(7);
+  it("ships eleven — launch templates plus recruiter, market research, agency, and workflow intelligence", () => {
+    expect(SEED_TEMPLATES).toHaveLength(11);
   });
 
   it("every seed is a valid template definition", () => {
@@ -27,8 +27,8 @@ describe("seed templates", () => {
     }
   });
 
-  it("all seven seed templates are published including bulk_icp_enrichment", () => {
-    expect(PUBLISHED_SEEDS).toHaveLength(7);
+  it("all seed templates are published including bulk_icp_enrichment", () => {
+    expect(PUBLISHED_SEEDS).toHaveLength(11);
     expect(seedByKey("bulk_icp_enrichment").status).toBe("published");
   });
 

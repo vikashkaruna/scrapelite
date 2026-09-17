@@ -5,7 +5,7 @@
 // review low-confidence extractions, and export qualified account tables.
 
 import { useState, useEffect, useMemo } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation, useNavigate, Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import DomainListInput from "../components/DomainListInput.jsx";
 import Button from "../components/Button.jsx";
@@ -21,7 +21,7 @@ export default function Lists() {
   const location = useLocation();
   const navigate = useNavigate();
   const showToast = useToast();
-  const { user } = useAuth();
+  const { user, authLoading } = useAuth();
 
   const [activeTab, setActiveTab] = useState("lists"); // "lists" | "rules" | "review"
   const [selectedListId, setSelectedListId] = useState(null);
@@ -37,6 +37,23 @@ export default function Lists() {
   const [listName, setListName] = useState("");
   const [rawDomains, setRawDomains] = useState("");
   const [selectedPersona, setSelectedPersona] = useState("sales");
+
+  // Edit List Modal
+  const [editingList, setEditingList] = useState(null);
+  const [editListName, setEditListName] = useState("");
+  const [editListDesc, setEditListDesc] = useState("");
+
+  // Delete List Modal
+  const [deletingList, setDeletingList] = useState(null);
+
+  // Curate Account Record Modal
+  const [curatingRecord, setCuratingRecord] = useState(null);
+  const [curateCompanyName, setCurateCompanyName] = useState("");
+  const [curateIndustry, setCurateIndustry] = useState("");
+  const [curateEmployees, setCurateEmployees] = useState("");
+  const [curateIcpScore, setCurateIcpScore] = useState("");
+  const [curateNotes, setCurateNotes] = useState("");
+  const [curateSaving, setCurateSaving] = useState(false);
 
   // ICP Rules
   const [rules, setRules] = useState(null);
@@ -226,6 +243,105 @@ export default function Lists() {
     }
   };
 
+  const openEditListModal = (e, l) => {
+    e.stopPropagation();
+    setEditingList(l);
+    setEditListName(l.name || "");
+    setEditListDesc(l.description || "");
+  };
+
+  const handleSaveListEdit = async (e) => {
+    e.preventDefault();
+    if (!editingList) return;
+    try {
+      await bulkApi.updateList({
+        listId: editingList.id,
+        name: editListName.trim(),
+        description: editListDesc.trim(),
+      });
+      showToast("Account list updated.");
+      setEditingList(null);
+      loadLists(true);
+      if (currentList && currentList.id === editingList.id) {
+        loadCurrentList(editingList.id);
+      }
+    } catch (err) {
+      showToast(err.message || "Failed to update list");
+    }
+  };
+
+  const openDeleteListModal = (e, l) => {
+    e.stopPropagation();
+    setDeletingList(l);
+  };
+
+  const handleConfirmDeleteList = async () => {
+    if (!deletingList) return;
+    const listId = deletingList.id;
+    try {
+      await bulkApi.deleteList(listId);
+      showToast("List deleted. Historical audit trails preserved.");
+      setDeletingList(null);
+      if (selectedListId === listId) {
+        setSelectedListId(null);
+        setCurrentList(null);
+      }
+      loadLists(true);
+    } catch (err) {
+      showToast(err.message || "Failed to delete list");
+    }
+  };
+
+  const openCurateModal = (r) => {
+    setCuratingRecord(r);
+    const enc = r.enriched_data || {};
+    setCurateCompanyName(enc.company_name || "");
+    setCurateIndustry(enc.industry || "");
+    setCurateEmployees(enc.employee_count || "");
+    setCurateIcpScore(r.icp_score != null ? String(r.icp_score) : "");
+    setCurateNotes(r.curation_notes || "");
+  };
+
+  const handleSaveCuration = async (e) => {
+    e.preventDefault();
+    if (!curatingRecord) return;
+    setCurateSaving(true);
+    try {
+      const updates = {
+        enriched_data: {
+          company_name: curateCompanyName.trim(),
+          industry: curateIndustry.trim(),
+          employee_count: curateEmployees ? Number(curateEmployees) || curateEmployees : null,
+        },
+        icp_score: curateIcpScore ? Math.min(100, Math.max(0, Number(curateIcpScore))) : null,
+        curation_notes: curateNotes.trim(),
+      };
+      await bulkApi.updateAccountRecord({
+        recordId: curatingRecord.id,
+        updates,
+      });
+      showToast("Account record curated and saved to database.");
+      setCuratingRecord(null);
+      if (selectedListId) loadCurrentList(selectedListId);
+    } catch (err) {
+      showToast(err.message || "Failed to save curation");
+    } finally {
+      setCurateSaving(false);
+    }
+  };
+
+  const handleDeleteRecord = async (recordId) => {
+    if (!window.confirm("Remove this account from the list?")) return;
+    try {
+      await bulkApi.deleteAccountRecord(recordId);
+      showToast("Account removed from list.");
+      if (selectedListId) loadCurrentList(selectedListId);
+      loadLists(true);
+    } catch (err) {
+      showToast(err.message || "Failed to remove account");
+    }
+  };
+
   const handleTestSample = () => {
     if (!rules) return;
     // Built from the enricher's real vocabulary, never hand-written here. The
@@ -237,6 +353,16 @@ export default function Lists() {
     const evalRes = evaluateIcp(sampleFields, rules.criteria, rules.threshold);
     setSamplePreview(evalRes);
   };
+
+  if (authLoading) {
+    return (
+      <div className="container" style={{ padding: "40px 20px", opacity: 0.6 }}>
+        <div style={{ height: 28, width: 220, background: "var(--surface-2)", borderRadius: 6, marginBottom: 12 }} />
+        <div style={{ height: 16, width: 360, background: "var(--surface-2)", borderRadius: 6, marginBottom: 24 }} />
+        <div style={{ height: 240, background: "var(--surface-2)", borderRadius: 8 }} />
+      </div>
+    );
+  }
 
   // These endpoints are signed-in only: they return 401 rather than another
   // tenant's rows. Render the reason, not the client SDK's thrown error.
@@ -352,6 +478,7 @@ export default function Lists() {
                       <th style={{ padding: "10px 12px" }}>Employees</th>
                       <th style={{ padding: "10px 12px" }}>ICP Score</th>
                       <th style={{ padding: "10px 12px" }}>Status</th>
+                      <th style={{ padding: "10px 12px", textAlign: "right" }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -361,9 +488,16 @@ export default function Lists() {
                       return (
                         <tr key={r.id} style={{ borderBottom: "1px solid var(--border)" }}>
                           <td style={{ padding: "12px", fontWeight: 600 }}>
-                            <a href={`https://${r.canonical_domain}`} target="_blank" rel="noreferrer">
-                              {r.canonical_domain}
-                            </a>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <a href={`https://${r.canonical_domain}`} target="_blank" rel="noreferrer">
+                                {r.canonical_domain}
+                              </a>
+                              {r.curated && (
+                                <span className="wrh-pill" style={{ background: "var(--accent-soft)", color: "var(--accent)", fontSize: "10px", fontWeight: 600, padding: "2px 6px" }}>
+                                  Curated
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td style={{ padding: "12px" }}>{enc.company_name || "—"}</td>
                           <td style={{ padding: "12px" }}>{enc.industry || "—"}</td>
@@ -388,6 +522,26 @@ export default function Lists() {
                               {r.status}
                             </span>
                           </td>
+                          <td style={{ padding: "12px", textAlign: "right" }}>
+                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => openCurateModal(r)}
+                                style={{ padding: "3px 8px", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: 4 }}
+                                title="Manually curate or override account details"
+                              >
+                                <Icon name="edit" size={11} /> Curate
+                              </button>
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => handleDeleteRecord(r.id)}
+                                style={{ padding: "3px 6px", color: "var(--danger, #dc2626)" }}
+                                title="Remove account"
+                              >
+                                <Icon name="trash-2" size={13} />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}
@@ -410,25 +564,82 @@ export default function Lists() {
                 </div>
               ) : (
                 <div className="lists-grid" style={{ display: "grid", gap: 14 }}>
-                  {lists.map((l) => (
-                    <div
-                      key={l.id}
-                      className="wrh-row wrh-row-interactive"
-                      style={{ padding: 16, border: "1px solid var(--border)", borderRadius: 8 }}
-                      onClick={() => setSelectedListId(l.id)}
-                    >
-                      <div>
-                        <h3 style={{ margin: "0 0 4px 0", fontSize: "1.1rem" }}>{l.name}</h3>
-                        <span style={{ fontSize: "0.84rem", color: "var(--text-2)" }}>
-                          {l.total_records} accounts · {l.completed_records} enriched · {l.needs_review_records} in review
-                        </span>
+                  {lists.map((l) => {
+                    const hasActiveJob = l.active_job && l.active_job.status !== "completed";
+                    const processed = l.active_job?.processed_items ?? l.completed_records ?? 0;
+                    const total = l.active_job?.total_items ?? l.total_records ?? 0;
+                    const remaining = Math.max(0, total - processed);
+                    const estMinutes = Math.max(1, Math.ceil((remaining * 4) / 60));
+
+                    return (
+                      <div
+                        key={l.id}
+                        className="wrh-row wrh-row-interactive"
+                        style={{ padding: 16, border: "1px solid var(--border)", borderRadius: "var(--r, 10px)", display: "flex", flexDirection: "column", gap: 8 }}
+                        onClick={() => setSelectedListId(l.id)}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+                          <div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <h3 style={{ margin: "0 0 2px 0", fontSize: "1.1rem" }}>{l.name}</h3>
+                              <Link to="/workflows" onClick={(e) => e.stopPropagation()} style={{ textDecoration: "none" }}>
+                                <span className="wrh-pill" style={{ background: "var(--surface-2)", color: "var(--accent)", border: "1px solid var(--border)", display: "inline-flex", alignItems: "center", gap: 4, fontSize: "11px" }}>
+                                  <Icon name="git-merge" size={11} /> Referenced in Workflows
+                                </span>
+                              </Link>
+                            </div>
+                            {l.description && (
+                              <p style={{ margin: "2px 0 4px", fontSize: "12px", color: "var(--text-2)" }}>{l.description}</p>
+                            )}
+                            <span style={{ fontSize: "0.84rem", color: "var(--text-2)" }}>
+                              {l.total_records} accounts · {l.completed_records} enriched · {l.needs_review_records} in review
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <span className={`wrh-pill wrh-pill-${l.status}`}>{l.status}</span>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={(e) => openEditListModal(e, l)}
+                              style={{ padding: "4px 8px", fontSize: "12px" }}
+                              title="Edit list"
+                            >
+                              <Icon name="edit" size={12} /> Edit
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => openDeleteListModal(e, l)}
+                              style={{ padding: "4px 8px", color: "var(--danger, #dc2626)" }}
+                              title="Delete list"
+                            >
+                              <Icon name="trash-2" size={13} />
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Active background enrichment indicator */}
+                        {hasActiveJob && (
+                          <div style={{
+                            background: "var(--accent-soft, #eef2ff)",
+                            border: "1px solid var(--accent, #4f46e5)",
+                            borderRadius: "var(--r, 8px)",
+                            padding: "6px 12px",
+                            fontSize: "12px",
+                            color: "var(--accent)",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}>
+                            <Icon name="rotate-cw" size={13} />
+                            <span>
+                              <strong>Enriching in background:</strong> {processed}/{total} accounts processed · Started at {new Date(l.active_job.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · Est. completion in ~{estMinutes} min
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                        <span className={`wrh-pill wrh-pill-${l.status}`}>{l.status}</span>
-                        <span style={{ color: "var(--accent)" }}>View list →</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -658,6 +869,108 @@ export default function Lists() {
                 <Button variant="primary" type="submit" disabled={dedupedPreview.count === 0}>
                   Create List ({dedupedPreview.count} accounts)
                 </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT LIST MODAL ─────────────────────────────────────────────── */}
+      {editingList && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div className="card" style={{ width: "100%", maxWidth: 480, padding: 24, background: "var(--surface)", borderRadius: "var(--r, 14px)", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: "1.15rem", display: "flex", alignItems: "center", gap: 8 }}>
+                <Icon name="edit" size={16} /> Edit Account List
+              </h3>
+              <Button variant="ghost" size="sm" onClick={() => setEditingList(null)}><Icon name="x" size={16} /></Button>
+            </div>
+            <form onSubmit={handleSaveListEdit}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>List Name</label>
+                  <input type="text" className="input" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }} value={editListName} onChange={(e) => setEditListName(e.target.value)} required />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>Description</label>
+                  <textarea rows={3} className="input" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }} value={editListDesc} onChange={(e) => setEditListDesc(e.target.value)} />
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <Button variant="ghost" onClick={() => setEditingList(null)}>Cancel</Button>
+                <Button variant="primary" type="submit">Save Changes</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE LIST MODAL ───────────────────────────────────────────── */}
+      {deletingList && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div className="card" style={{ width: "100%", maxWidth: 460, padding: 24, background: "var(--surface)", borderRadius: "var(--r, 14px)", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--danger, #dc2626)", marginBottom: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--danger-soft, #fee2e2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Icon name="alert-triangle" size={18} />
+              </div>
+              <h3 style={{ margin: 0, fontSize: "1.15rem" }}>Delete Account List?</h3>
+            </div>
+            <p style={{ fontSize: "0.9rem", color: "var(--text-2)", lineHeight: 1.5, margin: "0 0 12px" }}>
+              Are you sure you want to delete <strong>{deletingList.name}</strong>? This will remove the list and its account records.
+            </p>
+            <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r, 8px)", padding: "10px 12px", fontSize: "0.82rem", color: "var(--text-2)", marginBottom: 16 }}>
+              <Icon name="shield-check" size={14} style={{ color: "var(--success, #10b981)", verticalAlign: "-2px", marginRight: 6 }} />
+              <strong>Audit Trail Preserved:</strong> Historical enrichment jobs and compliance run records remain archived.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <Button variant="ghost" onClick={() => setDeletingList(null)}>Cancel</Button>
+              <Button variant="danger" onClick={handleConfirmDeleteList} style={{ background: "var(--danger, #dc2626)", color: "#fff" }}>Delete List</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CURATE ACCOUNT MODAL ─────────────────────────────────────────── */}
+      {curatingRecord && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div className="card" style={{ width: "100%", maxWidth: 520, padding: 24, background: "var(--surface)", borderRadius: "var(--r, 14px)", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1.15rem", display: "flex", alignItems: "center", gap: 8 }}>
+                  <Icon name="edit" size={16} /> Curate Account
+                </h3>
+                <span style={{ fontSize: "12px", color: "var(--text-2)" }}>{curatingRecord.canonical_domain}</span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setCuratingRecord(null)}><Icon name="x" size={16} /></Button>
+            </div>
+            <form onSubmit={handleSaveCuration}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: 4 }}>Company Name</label>
+                  <input type="text" className="input" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }} value={curateCompanyName} onChange={(e) => setCurateCompanyName(e.target.value)} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: 4 }}>Industry</label>
+                    <input type="text" className="input" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }} value={curateIndustry} onChange={(e) => setCurateIndustry(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: 4 }}>Employee Count</label>
+                    <input type="number" className="input" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }} value={curateEmployees} onChange={(e) => setCurateEmployees(e.target.value)} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: 4 }}>ICP Fit Score (0-100%)</label>
+                  <input type="number" min="0" max="100" className="input" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }} value={curateIcpScore} onChange={(e) => setCurateIcpScore(e.target.value)} placeholder="e.g. 85" />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: 4 }}>Curation Notes</label>
+                  <textarea rows={2} className="input" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }} value={curateNotes} onChange={(e) => setCurateNotes(e.target.value)} placeholder="Reason for manual override or qualification details..." />
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <Button variant="ghost" onClick={() => setCuratingRecord(null)} disabled={curateSaving}>Cancel</Button>
+                <Button variant="primary" type="submit" disabled={curateSaving}>{curateSaving ? "Saving..." : "Save Curation"}</Button>
               </div>
             </form>
           </div>

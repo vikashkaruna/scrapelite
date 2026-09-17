@@ -259,6 +259,9 @@ export const discoverability = {
   withdrawTruthVersion: (recordId, versionId, { workspaceId = null } = {}) =>
     req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/withdraw`, "POST",
       withWorkspace({}, workspaceId)),
+  deleteTruthVersion: (recordId, versionId, { workspaceId = null } = {}) =>
+    req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/delete`, "POST",
+      withWorkspace({}, workspaceId)),
   /** `note` is REQUIRED — the server refuses a rejection without a reason. */
   rejectTruthVersion: (recordId, versionId, note, { workspaceId = null } = {}) =>
     req(`/business-truth/${encodeURIComponent(recordId)}/versions/${encodeURIComponent(versionId)}/reject`, "POST",

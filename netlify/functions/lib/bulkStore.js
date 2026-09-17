@@ -76,7 +76,10 @@ export async function listLists(userId, env = process.env) {
   if (ownerless(userId)) return { ...NO_OWNER, lists: [] };
   const db = serviceDb(env);
   if (!db) {
-    const userLists = Array.from(_localLists.values()).filter((l) => l.user_id === userId);
+    const userLists = Array.from(_localLists.values()).filter((l) => l.user_id === userId).map((l) => {
+      const activeJob = Array.from(_localJobs.values()).find((j) => j.list_id === l.id && j.status !== "completed") || null;
+      return { ...l, active_job: activeJob };
+    });
     return { ok: true, lists: userLists };
   }
 
@@ -85,7 +88,23 @@ export async function listLists(userId, env = process.env) {
 
   const { data, error } = await q;
   if (error) return { ok: false, reason: error.message, lists: [] };
-  return { ok: true, lists: data || [] };
+
+  // Fetch active enrichment jobs to report real-time background progress
+  const { data: activeJobs } = await db
+    .from("enrichment_jobs")
+    .select("id, list_id, status, total_items, processed_items, created_at, updated_at")
+    .eq("user_id", userId)
+    .in("status", ["processing", "running", "queued", "pending"]);
+
+  const listsWithJobs = (data || []).map((list) => {
+    const activeJob = (activeJobs || []).find((j) => j.list_id === list.id) || null;
+    return {
+      ...list,
+      active_job: activeJob,
+    };
+  });
+
+  return { ok: true, lists: listsWithJobs };
 }
 
 export async function getList(listId, userId, env = process.env) {
@@ -798,4 +817,133 @@ export async function resolveReviewItem(userId, { reviewId, action, resolvedValu
 
   await db.from("list_records").update({ status: "complete" }).eq("id", item.record_id);
   return { ok: true, item };
+}
+
+export async function updateList(userId, listId, { name, description }, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+  const db = serviceDb(env);
+  const now = new Date().toISOString();
+
+  if (!db) {
+    const list = _localLists.get(listId);
+    if (!list || list.user_id !== userId) return { ok: false, reason: "List not found or unauthorized", status: 404 };
+    if (name) list.name = name.trim();
+    if (description !== undefined) list.description = description;
+    list.updated_at = now;
+    return { ok: true, list };
+  }
+
+  const updates = { updated_at: now };
+  if (name) updates.name = name.trim();
+  if (description !== undefined) updates.description = description;
+
+  const { data, error } = await db
+    .from("lists")
+    .update(updates)
+    .eq("id", listId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true, list: data };
+}
+
+export async function deleteList(userId, listId, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+  const db = serviceDb(env);
+
+  if (!db) {
+    const list = _localLists.get(listId);
+    if (list && list.user_id === userId) {
+      _localLists.delete(listId);
+      for (const [id, rec] of _localRecords.entries()) {
+        if (rec.list_id === listId) _localRecords.delete(id);
+      }
+    }
+    return { ok: true };
+  }
+
+  await db.from("list_records").delete().eq("list_id", listId);
+  const { error } = await db.from("lists").delete().eq("id", listId).eq("user_id", userId);
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true };
+}
+
+export async function updateRecord(userId, recordId, updates = {}, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+  const db = serviceDb(env);
+  const now = new Date().toISOString();
+
+  if (!db) {
+    const rec = _localRecords.get(recordId);
+    if (!rec) return { ok: false, reason: "Record not found", status: 404 };
+    const list = _localLists.get(rec.list_id);
+    if (!list || list.user_id !== userId) return { ok: false, reason: "Unauthorized", status: 403 };
+
+    rec.curated = true;
+    rec.curated_at = now;
+    if (updates.icp_score !== undefined) rec.icp_score = updates.icp_score;
+    if (updates.curation_notes !== undefined) rec.curation_notes = updates.curation_notes;
+    rec.enriched_data = { ...(rec.enriched_data || {}), ...(updates.enriched_data || {}) };
+    rec.updated_at = now;
+    return { ok: true, record: rec };
+  }
+
+  const { data: currentRec, error: fetchErr } = await db
+    .from("list_records")
+    .select("*, lists!inner(user_id)")
+    .eq("id", recordId)
+    .single();
+
+  if (fetchErr || !currentRec) return { ok: false, reason: "Record not found", status: 404 };
+  if (currentRec.lists?.user_id !== userId) return { ok: false, reason: "Unauthorized", status: 403 };
+
+  const mergedData = { ...(currentRec.enriched_data || {}), ...(updates.enriched_data || {}) };
+  const updatePayload = {
+    curated: true,
+    curated_at: now,
+    enriched_data: mergedData,
+    updated_at: now,
+  };
+  if (updates.icp_score !== undefined) updatePayload.icp_score = updates.icp_score;
+  if (updates.curation_notes !== undefined) updatePayload.curation_notes = updates.curation_notes;
+
+  const { data, error } = await db
+    .from("list_records")
+    .update(updatePayload)
+    .eq("id", recordId)
+    .select()
+    .single();
+
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true, record: data };
+}
+
+export async function deleteRecord(userId, recordId, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+  const db = serviceDb(env);
+
+  if (!db) {
+    const rec = _localRecords.get(recordId);
+    if (!rec) return { ok: true };
+    const list = _localLists.get(rec.list_id);
+    if (!list || list.user_id !== userId) return { ok: false, reason: "Unauthorized", status: 403 };
+    _localRecords.delete(recordId);
+    return { ok: true };
+  }
+
+  const { data: currentRec } = await db
+    .from("list_records")
+    .select("id, lists!inner(user_id)")
+    .eq("id", recordId)
+    .single();
+
+  if (!currentRec || currentRec.lists?.user_id !== userId) {
+    return { ok: false, reason: "Unauthorized", status: 403 };
+  }
+
+  const { error } = await db.from("list_records").delete().eq("id", recordId);
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true };
 }

@@ -427,6 +427,251 @@ export const SEED_TEMPLATES = [
     plan_entitlement: "extract.batch",
     min_plan: "go",
   },
+
+  {
+    template_key: "recruiter_talent_sourcing",
+    related_key: "leadership",
+    status: TEMPLATE_STATUS.PUBLISHED,
+    title: "Talent Sourcing & Culture Signals",
+    persona: "recruiter",
+    summary:
+      "Extract leadership team profiles, engineering tech stack, hiring signals, and culture notes directly from company career and about pages.",
+    input_schema: {
+      fields: [
+        {
+          name: "domain",
+          kind: "domain",
+          required: true,
+          label: "Company domain",
+          placeholder: "stripe.com",
+          help: "We inspect their career, about, and engineering pages.",
+        },
+        {
+          name: "target_department",
+          kind: "choice",
+          label: "Target department",
+          default: "engineering",
+          options: [
+            { value: "engineering", label: "Engineering & Product" },
+            { value: "leadership", label: "Executive Leadership" },
+            { value: "sales", label: "Sales & Go-to-Market" },
+          ],
+        },
+      ],
+    },
+    extraction_schema: {
+      fields: [
+        { name: "company_name", group: "identity" },
+        { name: "leadership", group: "people" },
+        { name: "hiring_roles", group: "signals" },
+        { name: "tech_stack", group: "technology" },
+        { name: "culture_values", group: "identity" },
+        { name: "office_locations", group: "firmographics" },
+      ],
+    },
+    output_schema: {
+      blocks: [
+        { kind: "summary", title: "Talent & Culture Summary" },
+        { kind: "fields", title: "Key Contacts & Department Leaders", groups: ["people", "identity"] },
+        { kind: "list", title: "Hiring Signals & Active Roles", from: "hiring_roles" },
+        { kind: "fields", title: "Engineering & Infrastructure", groups: ["technology", "firmographics"] },
+        { kind: "sources", title: "Where this came from" },
+      ],
+    },
+    prompt_bundle: {
+      extract:
+        "From this company's public site and careers page, extract: company name, leadership profiles, " +
+        "active open hiring roles, visible technology stack / tooling requirements, workplace culture values, " +
+        "and physical / remote office locations. Return null for anything not verified in the source.",
+      summarize:
+        "Write a concise talent intelligence brief detailing hiring momentum, executive leaders, and key culture values.",
+    },
+    credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 2, ai_calls_per_unit: 1 },
+    plan_entitlement: "template.run",
+    min_plan: "free",
+  },
+
+  {
+    template_key: "market_landscape_map",
+    related_key: "mission",
+    status: TEMPLATE_STATUS.PUBLISHED,
+    title: "Market Landscape & Tech Stack Map",
+    persona: "market-research",
+    summary:
+      "Map market positioning, ecosystem partner integrations, target customer segments, and technology infrastructure from public domains.",
+    input_schema: {
+      fields: [
+        {
+          name: "domain",
+          kind: "domain",
+          required: true,
+          label: "Company domain",
+          placeholder: "snowflake.com",
+          help: "Inspect homepage, solutions, and integrations directory.",
+        },
+        {
+          name: "depth",
+          kind: "choice",
+          label: "Analysis depth",
+          default: "standard",
+          options: [
+            { value: "standard", label: "Standard overview" },
+            { value: "ecosystem", label: "Deep ecosystem & integrations" },
+          ],
+        },
+      ],
+    },
+    extraction_schema: {
+      fields: [
+        { name: "company_name", group: "identity" },
+        { name: "industry", group: "firmographics" },
+        { name: "positioning_claim", group: "positioning" },
+        { name: "target_segment", group: "commercial" },
+        { name: "integrations", group: "technology" },
+        { name: "evidence_proof", group: "evidence" },
+      ],
+    },
+    output_schema: {
+      blocks: [
+        { kind: "summary", title: "Market Landscape Executive Summary" },
+        { kind: "fields", title: "Positioning & Market Categorization", groups: ["identity", "positioning", "commercial"] },
+        { kind: "fields", title: "Ecosystem & Technology", groups: ["technology", "evidence"] },
+        { kind: "sources", title: "Where this came from" },
+      ],
+    },
+    prompt_bundle: {
+      extract:
+        "Extract market categorization, core positioning tagline, target customer segments, named ecosystem integrations, " +
+        "and customer evidence proofs from the public website. Never invent unverified claims.",
+      summarize:
+        "Provide an objective market research teardown of the company's positioning and technical moat.",
+    },
+    credit_cost: { base: 2, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 2 },
+    plan_entitlement: "template.run",
+    min_plan: "free",
+  },
+
+  {
+    template_key: "agency_client_teardown",
+    related_key: "pricing",
+    status: TEMPLATE_STATUS.PUBLISHED,
+    title: "Client Onboarding & Competitive Teardown",
+    persona: "agency",
+    summary:
+      "Run an instant multi-page audit on a prospective client or competitor: value proposition, pricing structure, conversion architecture, and market proof.",
+    input_schema: {
+      fields: [
+        {
+          name: "domain",
+          kind: "domain",
+          required: true,
+          label: "Company domain",
+          placeholder: "airtable.com",
+          help: "Inspect homepage, pricing, and product landing pages.",
+        },
+        {
+          name: "report_type",
+          kind: "choice",
+          label: "Teardown focus",
+          default: "teardown",
+          options: [
+            { value: "teardown", label: "Full 360° Teardown" },
+            { value: "audit", label: "Conversion & Messaging Audit" },
+          ],
+        },
+      ],
+    },
+    extraction_schema: {
+      fields: [
+        { name: "company_name", group: "identity" },
+        { name: "value_proposition", group: "positioning" },
+        { name: "pricing_tiers", group: "commercial" },
+        { name: "target_customer", group: "commercial" },
+        { name: "call_to_actions", group: "gtm" },
+        { name: "social_proof", group: "evidence" },
+      ],
+    },
+    output_schema: {
+      blocks: [
+        { kind: "summary", title: "Strategic Teardown Brief" },
+        { kind: "fields", title: "Positioning & Funnel Architecture", groups: ["positioning", "gtm"] },
+        { kind: "fields", title: "Commercial Model & Proof", groups: ["commercial", "evidence"] },
+        { kind: "recommendations", title: "Agency Action Items" },
+        { kind: "sources", title: "Where this came from" },
+      ],
+    },
+    prompt_bundle: {
+      extract:
+        "Extract value proposition, pricing tiers and packaging, primary CTAs, conversion journey elements, " +
+        "and verifiable social proof/case studies from this website. Never invent or guess details; return null if not explicitly found.",
+      summarize:
+        "Provide a comprehensive client onboarding teardown highlighting strengths, positioning gaps, and immediate opportunities.",
+    },
+    credit_cost: { base: 2, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 2 },
+    plan_entitlement: "template.run",
+    min_plan: "free",
+  },
+
+  {
+    template_key: "continuous_account_signal",
+    related_key: "custom",
+    status: TEMPLATE_STATUS.PUBLISHED,
+    title: "Automated Account Intelligence & Signal Routing",
+    persona: "sales",
+    tags: ["workflows", "signals", "automation"],
+    summary:
+      "Continuously monitor target accounts for key commercial triggers (pricing shifts, leadership departures, new product lines) and route into signal pipelines.",
+    input_schema: {
+      fields: [
+        {
+          name: "domain",
+          kind: "domain",
+          required: true,
+          label: "Target company domain",
+          placeholder: "datadog.com",
+          help: "Monitor corporate updates and commercial triggers.",
+        },
+        {
+          name: "trigger_type",
+          kind: "choice",
+          label: "Signal trigger type",
+          default: "pricing_change",
+          options: [
+            { value: "pricing_change", label: "Pricing / Packaging Shifts" },
+            { value: "leadership_move", label: "Executive Leadership Moves" },
+            { value: "product_launch", label: "New Product / Feature Rollouts" },
+          ],
+        },
+      ],
+    },
+    extraction_schema: {
+      fields: [
+        { name: "company_name", group: "identity" },
+        { name: "pricing_model", group: "commercial" },
+        { name: "leadership", group: "people" },
+        { name: "detected_changes", group: "signals" },
+        { name: "action_recommendation", group: "signals" },
+      ],
+    },
+    output_schema: {
+      blocks: [
+        { kind: "summary", title: "Signal Analysis Summary" },
+        { kind: "fields", title: "Account State", groups: ["identity", "commercial", "people"] },
+        { kind: "list", title: "Detected Signals", from: "detected_changes" },
+        { kind: "sources", title: "Source Evidence" },
+      ],
+    },
+    prompt_bundle: {
+      extract:
+        "Extract current company commercial state, pricing model, key leadership, and detected corporate changes. " +
+        "Recommend downstream workflow actions based strictly on verified changes. Never invent unverified claims; return null if not explicitly stated.",
+      summarize:
+        "Summarize detected account movements and recommend signal rule routing criteria.",
+    },
+    credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 2, ai_calls_per_unit: 1 },
+    plan_entitlement: "template.run",
+    min_plan: "free",
+  },
 ];
 
 /** Only the templates a user can actually run today. */

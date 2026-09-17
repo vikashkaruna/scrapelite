@@ -52,6 +52,34 @@ export async function createWatchlist({ name, description, cadence, domains }) {
   return res.json();
 }
 
+export async function updateWatchlist({ watchlistId, name, description, cadence, domains }) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/watchlists", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "update", watchlistId, name, description, cadence, domains }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to update watchlist: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteWatchlist(watchlistId) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/watchlists", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "delete", watchlistId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to delete watchlist: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function recordChange({ watchlistId, targetId, targetDomain, field, category, oldValue, newValue }) {
   const headers = await authHeaders();
   const res = await fetch("/api/watchlists", {
