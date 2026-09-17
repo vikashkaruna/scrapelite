@@ -170,6 +170,8 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
   const [ignoreReason, setIgnoreReason] = useState(IGNORE_REASONS[0]);
   const [busyIgnoreId, setBusyIgnoreId] = useState(null);
   const [showIgnored, setShowIgnored] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const cacheUserId = useContext(AuthContext)?.user?.id || null;
 
   // Paint the last-seen schema and truth records from localStorage, then refresh from the database.
@@ -370,12 +372,50 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
   const tiersPresent = Array.from(new Set(allSources.map((s) => s.tier).filter(Boolean)));
   const ignoredById = new Map(ignores.map((i) => [i.source_id, i]));
   const tierSources = selectedTier === "all" ? allSources : allSources.filter((s) => s.tier === selectedTier);
+
+  // Status counts across all sources
+  const statusCounts = {
+    all: allSources.length - ignoredById.size,
+    mismatch: 0,
+    match: 0,
+    ignored: ignoredById.size,
+  };
+  allSources.forEach((src) => {
+    if (!ignoredById.has(src.id)) {
+      const match = selectedCheck?.matches?.find((m) => (m.source_id || m.sourceId) === src.id);
+      const state = matchState(match);
+      if (state === "mismatch") statusCounts.mismatch++;
+      if (state === "match") statusCounts.match++;
+    }
+  });
+
   // Ignored sources sink to the bottom and are hidden until asked for, so the
   // list shows what still needs attention first.
+  const shouldIncludeIgnored = showIgnored || statusFilter === "ignored";
   const displayedSources = [
     ...tierSources.filter((s) => !ignoredById.has(s.id)),
-    ...(showIgnored ? tierSources.filter((s) => ignoredById.has(s.id)) : []),
-  ];
+    ...(shouldIncludeIgnored ? tierSources.filter((s) => ignoredById.has(s.id)) : []),
+  ].filter((src) => {
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const name = (src.label || "").toLowerCase();
+      const tier = (TIER_LABELS[src.tier] || src.tier || "").toLowerCase();
+      const portal = (DIRECTORY_PORTALS[src.id]?.portalName || "").toLowerCase();
+      if (!name.includes(q) && !tier.includes(q) && !portal.includes(q)) {
+        return false;
+      }
+    }
+    if (statusFilter !== "all") {
+      const isIgnored = ignoredById.has(src.id);
+      if (statusFilter === "ignored") return isIgnored;
+      if (isIgnored) return false;
+      const match = selectedCheck?.matches?.find((m) => (m.source_id || m.sourceId) === src.id);
+      const state = matchState(match);
+      if (statusFilter === "mismatch") return state === "mismatch";
+      if (statusFilter === "match") return state === "match";
+    }
+    return true;
+  });
 
   return (
     <div className="dsc-local-surface" style={{ display: "grid", gap: "1.5rem" }}>
@@ -422,13 +462,154 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
           </p>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "1.15fr 0.85fr", gap: "1.5rem" }}>
-          {/* Matches & Listings */}
-          <div className="dsc-panel" style={{ padding: "1.25rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
-              <h3 style={{ fontSize: "1rem", fontWeight: 600, margin: 0 }}>
-                Directory Sources ({allSources.length - ignoredById.size} Applicable{ignoredById.size > 0 ? ` · ${ignoredById.size} ignored` : ""})
-              </h3>
+        <div style={{ display: "grid", gap: "20px" }}>
+          {/* Section 1: Findings & Correction Packs (Uncluttered, collapsible details, field diffs, action guidance) */}
+          <div className="dsc-panel" style={{ padding: "18px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Icon name="alert-triangle" size={18} style={{ color: (selectedCheck?.findings || []).length > 0 ? "var(--color-warning, #f59e0b)" : "var(--color-success, #10b981)" }} />
+                <h3 style={{ fontSize: "16px", fontWeight: 600, margin: 0 }}>
+                  Local Findings & Mismatches ({(selectedCheck?.findings || []).length})
+                </h3>
+              </div>
+              {(selectedCheck?.findings || []).length > 0 && (
+                <span style={{ fontSize: "12px", color: "var(--text-sub)" }}>
+                  {(selectedCheck.findings.filter((f) => !f.resolved_at)).length} open · {(selectedCheck.findings.filter((f) => f.resolved_at)).length} resolved
+                </span>
+              )}
+            </div>
+
+            {(selectedCheck?.findings || []).length === 0 ? (
+              <p style={{ color: "var(--text-sub)", fontSize: "13px", margin: 0, padding: "8px 0" }}>
+                No active mismatches detected. Run a NAP check to audit directory listings.
+              </p>
+            ) : (
+              <div style={{ display: "grid", gap: "12px" }}>
+                {selectedCheck.findings.map((f) => {
+                  const meta = LOCAL_FINDING_CODES[f.code] || schema?.finding_codes?.[f.code] || {};
+                  const title = meta.title || f.title || "Discrepancy detected";
+                  const sourceKey = f.sourceId || f.source_id;
+                  const matchedSource = sourceKey ? (schema?.sources || DIRECTORY_SOURCES).find((s) => s.id === sourceKey) : null;
+                  const sourceName = matchedSource?.label || (sourceKey ? sourceKey : null);
+                  const why = meta.why || f.why || null;
+
+                  return (
+                    <div
+                      key={f.id}
+                      style={{
+                        padding: "14px",
+                        background: "var(--bg)",
+                        borderRadius: "var(--r-md)",
+                        border: "1px solid var(--border)",
+                        display: "grid",
+                        gap: "10px",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", flexWrap: "wrap" }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                            <span className="dsc-badge" style={{ fontWeight: 700, fontSize: "13px", fontFamily: "var(--font-mono, monospace)" }}>
+                              {f.code}
+                            </span>
+                            <span style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)" }}>
+                              {title}
+                            </span>
+                          </div>
+                          {sourceName && (
+                            <div style={{ fontSize: "12px", color: "var(--text-sub)", marginTop: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
+                              <Icon name="map-pin" size={12} />
+                              <span>Directory Source: <strong>{sourceName}</strong></span>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          {f.resolved_at && (
+                            <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "var(--r-pill)", background: "rgba(16, 185, 129, 0.12)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.25)" }}>
+                              Resolved
+                            </span>
+                          )}
+                          <span className={`dsc-pill dsc-pill-${f.severity}`}>{f.severity}</span>
+                        </div>
+                      </div>
+
+                      {/* Collapsible Details */}
+                      <details open style={{ display: "grid", gap: "8px" }}>
+                        <summary style={{ cursor: "pointer", fontSize: "12px", color: "var(--accent)", fontWeight: 500, userSelect: "none" }}>
+                          Finding details, field diffs & correction actions
+                        </summary>
+
+                        <div style={{ display: "grid", gap: "8px", marginTop: "8px" }}>
+                          {f.detail && (
+                            <p style={{ fontSize: "13px", color: "var(--text)", margin: 0 }}>
+                              {f.detail}
+                            </p>
+                          )}
+
+                          {(f.fields || []).length > 0 && (
+                            <div style={{ fontSize: "12px", color: "var(--text-sub)" }}>
+                              Fields: {f.fields.join(", ")}
+                            </div>
+                          )}
+
+                          {why && (
+                            <div style={{ fontSize: "12px", color: "var(--text-sub)", padding: "8px 12px", background: "var(--surface)", borderRadius: "var(--r)", borderLeft: "3px solid var(--accent)" }}>
+                              <strong>Why this matters:</strong> {why}
+                            </div>
+                          )}
+
+                          {f.resolved_at ? (
+                            <div style={{ fontSize: "12px", marginTop: "4px", color: "var(--text-sub)", display: "flex", alignItems: "center", gap: "6px" }}>
+                              <Icon name="check" size={14} style={{ color: "var(--color-success, #10b981)" }} />
+                              <span>Resolved ({String(f.resolution || "").replace(/_/g, " ")})</span>
+                              {f.resolution === "listing_updated" && <span style={{ fontStyle: "italic" }}>— External listing amended</span>}
+                              {f.resolution === "not_a_conflict" && <span style={{ fontStyle: "italic" }}>— Accepted as valid business exception</span>}
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: "6px", paddingTop: "8px", borderTop: "1px solid var(--border)" }}>
+                              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleResolveFinding(f.id, "listing_updated")}
+                                  title="Listing Updated: Confirms the external directory profile has been edited to match your business truth record. Restores NAP consistency."
+                                >
+                                  Listing Updated
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleResolveFinding(f.id, "not_a_conflict")}
+                                  title="Not a Conflict: Marks this discrepancy as an acceptable, legitimate business exception (e.g. statutory registered office vs trading branch)."
+                                >
+                                  Not a Conflict
+                                </Button>
+                              </div>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px", marginTop: "6px", fontSize: "11px", color: "var(--text-sub)" }}>
+                                <span>• <strong>Listing Updated:</strong> Fixed external profile to match truth record.</span>
+                                <span>• <strong>Not a Conflict:</strong> Legitimate variance (e.g. registered office).</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </details>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Directory Sources & Intelligence (Spacious card grid with search and status filter bar) */}
+          <div className="dsc-panel" style={{ padding: "18px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
+              <div>
+                <h3 style={{ fontSize: "16px", fontWeight: 600, margin: 0 }}>
+                  Directory Sources ({allSources.length - ignoredById.size} Applicable{ignoredById.size > 0 ? ` · ${ignoredById.size} ignored` : ""})
+                </h3>
+                <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-sub)" }}>
+                  Declared profiles and automated verification targets across directories and official registers.
+                </p>
+              </div>
               {ignoredById.size > 0 && (
                 <button
                   type="button"
@@ -439,19 +620,88 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                   {showIgnored ? "Hide ignored" : `Show ignored (${ignoredById.size})`}
                 </button>
               )}
+            </div>
+
+            {/* Search and Status Filter Bar */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px", padding: "12px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                {/* Search input */}
+                <div style={{ position: "relative", flex: "1 1 260px" }}>
+                  <Icon name="search" size={14} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "var(--text-sub)", pointerEvents: "none" }} />
+                  <input
+                    type="text"
+                    className="dsc-input"
+                    placeholder="Search directory sources by name or portal..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ paddingLeft: "32px", width: "100%", fontSize: "13px" }}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-sub)", fontSize: "12px" }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Status filter segmented buttons */}
+                <div style={{ display: "flex", gap: "4px", background: "var(--surface)", padding: "3px", borderRadius: "var(--r-pill)", border: "1px solid var(--border)", flexWrap: "wrap" }}>
+                  {[
+                    { id: "all", label: "All", count: statusCounts.all },
+                    { id: "mismatch", label: "Mismatches", count: statusCounts.mismatch },
+                    { id: "match", label: "Matched", count: statusCounts.match },
+                    { id: "ignored", label: "Ignored", count: statusCounts.ignored },
+                  ].map((tab) => {
+                    const isSel = statusFilter === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => {
+                          setStatusFilter(tab.id);
+                          if (tab.id === "ignored") setShowIgnored(true);
+                        }}
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: "var(--r-pill)",
+                          border: "none",
+                          background: isSel ? "var(--accent)" : "transparent",
+                          color: isSel ? "#fff" : "var(--text-sub)",
+                          fontSize: "12px",
+                          fontWeight: isSel ? 600 : 500,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "5px",
+                        }}
+                      >
+                        <span>{tab.label}</span>
+                        <span style={{ fontSize: "10px", opacity: 0.85 }}>({tab.count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Tier Filter Pills */}
               {tiersPresent.length > 1 && (
-                <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "11px", color: "var(--text-sub)", textTransform: "uppercase", fontWeight: 600 }}>Tiers:</span>
                   <button
                     type="button"
                     onClick={() => setSelectedTier("all")}
                     style={{
                       cursor: "pointer",
                       border: "1px solid var(--border)",
-                      background: selectedTier === "all" ? "var(--accent)" : "var(--bg)",
+                      background: selectedTier === "all" ? "var(--accent)" : "var(--surface)",
                       color: selectedTier === "all" ? "#fff" : "var(--text-sub)",
-                      padding: "0.15rem 0.45rem",
-                      fontSize: "0.725rem",
-                      borderRadius: "999px",
+                      padding: "2px 8px",
+                      fontSize: "11px",
+                      borderRadius: "var(--r-pill)",
+                      fontWeight: selectedTier === "all" ? 600 : 500,
                     }}
                   >
                     All ({allSources.length})
@@ -467,11 +717,12 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                         style={{
                           cursor: "pointer",
                           border: "1px solid var(--border)",
-                          background: isSel ? "var(--accent)" : "var(--bg)",
+                          background: isSel ? "var(--accent)" : "var(--surface)",
                           color: isSel ? "#fff" : "var(--text-sub)",
-                          padding: "0.15rem 0.45rem",
-                          fontSize: "0.725rem",
-                          borderRadius: "999px",
+                          padding: "2px 8px",
+                          fontSize: "11px",
+                          borderRadius: "var(--r-pill)",
+                          fontWeight: isSel ? 600 : 500,
                         }}
                       >
                         {TIER_LABELS[tierKey] || tierKey} ({count})
@@ -482,7 +733,8 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
               )}
             </div>
 
-            <div style={{ display: "grid", gap: "0.75rem" }}>
+            {/* Grid of Directory Source Cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "14px" }}>
               {displayedSources.map((src) => {
                 const match = selectedCheck?.matches?.find((m) => (m.source_id || m.sourceId) === src.id);
                 const existingListing = listings.find((l) => (l.source_id || l.sourceId) === src.id);
@@ -495,21 +747,21 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                     key={src.id}
                     style={{
                       display: "grid",
-                      gap: "0.5rem",
-                      padding: "0.75rem",
+                      gap: "10px",
+                      padding: "14px",
                       background: "var(--bg)",
-                      borderRadius: "var(--r)",
+                      borderRadius: "var(--r-md)",
                       border: "1px solid var(--border)",
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: "0.875rem", display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                        <div style={{ fontWeight: 600, fontSize: "14px", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                           <span>{src.label}</span>
                           <span
                             style={{
-                              fontSize: "0.7rem",
-                              padding: "0.1rem 0.4rem",
+                              fontSize: "11px",
+                              padding: "1px 6px",
                               borderRadius: "4px",
                               background: "var(--surface)",
                               border: "1px solid var(--border)",
@@ -520,7 +772,7 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                             {TIER_LABELS[src.tier] || src.tier}
                           </span>
                         </div>
-                        <div style={{ fontSize: "0.75rem", color: "var(--text-sub)", marginTop: "0.2rem" }}>
+                        <div style={{ fontSize: "12px", color: "var(--text-sub)", marginTop: "3px" }}>
                           Acquisition: <strong>{String(src.acquisition || "").replace(/_/g, " ")}</strong>
                         </div>
                       </div>
@@ -534,7 +786,7 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                             {MATCH_LABELS[matchState(match)]}
                           </span>
                         ) : (
-                          <span style={{ fontSize: "0.75rem", color: "var(--text-sub)", fontStyle: "italic" }}>
+                          <span style={{ fontSize: "12px", color: "var(--text-sub)", fontStyle: "italic" }}>
                             Unchecked (excluded)
                           </span>
                         )}
@@ -543,7 +795,7 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
 
                     {/* Applicability — ignore a source that does not fit this business */}
                     {ignored ? (
-                      <div className="dsc-dir-ignored" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", fontSize: "0.75rem", color: "var(--text-sub)", flexWrap: "wrap" }}>
+                      <div className="dsc-dir-ignored" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", fontSize: "12px", color: "var(--text-sub)", flexWrap: "wrap", padding: "6px 10px", background: "var(--surface)", borderRadius: "var(--r-sm)" }}>
                         <span>
                           <Icon name="eye-off" size={12} /> Ignored: <strong>{ignored.reason}</strong>
                           {ignored.created_at ? ` · ${new Date(ignored.created_at).toLocaleDateString()}` : ""}
@@ -553,14 +805,14 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                         </Button>
                       </div>
                     ) : ignoringSourceId === src.id ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", fontSize: "0.75rem" }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", fontSize: "12px", padding: "8px", background: "var(--surface)", borderRadius: "var(--r-sm)" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                           Why doesn't it apply?
                           <select
                             className="dsc-input"
                             value={ignoreReason}
                             onChange={(e) => setIgnoreReason(e.target.value)}
-                            style={{ fontSize: "0.75rem", padding: "0.2rem 0.4rem", width: "auto" }}
+                            style={{ fontSize: "12px", padding: "3px 6px", width: "auto" }}
                             aria-label={`Reason to ignore ${src.label}`}
                           >
                             {IGNORE_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -576,7 +828,7 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
-                          style={{ fontSize: "0.7rem" }}
+                          style={{ fontSize: "11px" }}
                           onClick={() => { setIgnoringSourceId(src.id); setIgnoreReason(IGNORE_REASONS[0]); }}
                           title="Mark this directory as not applicable to this business. It will be excluded from NAP checks; you can restore it any time."
                         >
@@ -587,18 +839,18 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
 
                     {/* Portal link & Action Guidance */}
                     {!ignored && portal && (
-                      <div style={{ fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.35rem", padding: "0.35rem 0.5rem", background: "var(--surface)", borderRadius: "var(--r)" }}>
+                      <div style={{ fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", padding: "6px 10px", background: "var(--surface)", borderRadius: "var(--r-sm)", border: "1px solid var(--border)" }}>
                         <a
                           href={portal.portalUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}
                           title={`Configure on ${portal.portalName}`}
                         >
                           <Icon name="external" size={12} />
                           Configure on {portal.portalName}
                         </a>
-                        <span style={{ color: "var(--text-sub)", fontSize: "0.7rem" }}>
+                        <span style={{ color: "var(--text-sub)", fontSize: "11px" }}>
                           {portal.actionHint}
                         </span>
                       </div>
@@ -606,8 +858,8 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
 
                     {/* Declared URL provision */}
                     {ignored ? null : existingListing?.listing_url && !isEditing ? (
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", fontSize: "0.75rem", background: "var(--surface)", padding: "0.35rem 0.5rem", borderRadius: "var(--r)" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", overflow: "hidden" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", fontSize: "12px", background: "var(--surface)", padding: "6px 10px", borderRadius: "var(--r-sm)", border: "1px solid var(--border)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", overflow: "hidden" }}>
                           <Icon name="link" size={12} style={{ flexShrink: 0, color: "var(--text-sub)" }} />
                           <span style={{ color: "var(--text-sub)", flexShrink: 0 }}>Listing URL:</span>
                           <a
@@ -632,14 +884,14 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                         </Button>
                       </div>
                     ) : (
-                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                         <input
                           type="url"
                           className="dsc-input"
                           placeholder={portal ? `Enter listing URL (e.g. ${portal.portalUrl}...)` : "Enter listing URL (https://...)"}
                           value={urlInputs[src.id] ?? existingListing?.listing_url ?? ""}
                           onChange={(e) => setUrlInputs({ ...urlInputs, [src.id]: e.target.value })}
-                          style={{ fontSize: "0.75rem", padding: "0.25rem 0.5rem", flex: 1 }}
+                          style={{ fontSize: "12px", padding: "4px 8px", flex: 1 }}
                         />
                         <Button
                           size="sm"
@@ -660,115 +912,6 @@ export default function LocalDirectoryPanel({ workspaceId = null }) {
                 );
               })}
             </div>
-          </div>
-
-          {/* Findings & Correction Packs */}
-          <div className="dsc-panel" style={{ padding: "1.25rem" }}>
-            <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.75rem" }}>
-              Local Findings & Mismatches ({(selectedCheck?.findings || []).length})
-            </h3>
-            {(selectedCheck?.findings || []).length === 0 ? (
-              <p style={{ color: "var(--text-sub)", fontSize: "0.875rem" }}>
-                No active mismatches detected. Run a NAP check to audit directory listings.
-              </p>
-            ) : (
-              <div style={{ display: "grid", gap: "0.75rem" }}>
-                {selectedCheck.findings.map((f) => {
-                  const meta = LOCAL_FINDING_CODES[f.code] || schema?.finding_codes?.[f.code] || {};
-                  const title = meta.title || f.title || "Discrepancy detected";
-                  const sourceKey = f.sourceId || f.source_id;
-                  const matchedSource = sourceKey ? (schema?.sources || DIRECTORY_SOURCES).find((s) => s.id === sourceKey) : null;
-                  const sourceName = matchedSource?.label || (sourceKey ? sourceKey : null);
-                  const why = meta.why || f.why || null;
-
-                  return (
-                    <div
-                      key={f.id}
-                      style={{
-                        padding: "0.75rem",
-                        background: "var(--bg)",
-                        borderRadius: "var(--r)",
-                        border: "1px solid var(--border)",
-                        display: "grid",
-                        gap: "0.5rem",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
-                            <span className="dsc-badge" style={{ fontWeight: 700, fontSize: "0.8125rem", fontFamily: "var(--font-mono, monospace)" }}>
-                              {f.code}
-                            </span>
-                            <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>
-                              {title}
-                            </span>
-                          </div>
-                          {sourceName && (
-                            <div style={{ fontSize: "0.75rem", color: "var(--text-sub)", marginTop: "0.25rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                              <Icon name="map-pin" size={12} />
-                              <span>Directory Source: <strong>{sourceName}</strong></span>
-                            </div>
-                          )}
-                        </div>
-                        <span className={`dsc-pill dsc-pill-${f.severity}`}>{f.severity}</span>
-                      </div>
-
-                      {f.detail && (
-                        <p style={{ fontSize: "0.8125rem", color: "var(--text-sub)", margin: 0 }}>
-                          {f.detail}
-                        </p>
-                      )}
-
-                      {(f.fields || []).length > 0 && (
-                        <div style={{ fontSize: "0.75rem", color: "var(--text-sub)" }}>
-                          Fields: {f.fields.join(", ")}
-                        </div>
-                      )}
-
-                      {why && (
-                        <div style={{ fontSize: "0.75rem", color: "var(--text-sub)", padding: "0.375rem 0.5rem", background: "var(--surface)", borderRadius: "var(--r)", borderLeft: "3px solid var(--accent)" }}>
-                          <strong>Why this matters:</strong> {why}
-                        </div>
-                      )}
-
-                      {f.resolved_at ? (
-                        <div style={{ fontSize: "0.75rem", marginTop: "0.25rem", color: "var(--text-sub)", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                          <Icon name="check" size={14} style={{ color: "var(--color-success, #10b981)" }} />
-                          <span>Resolved ({String(f.resolution || "").replace(/_/g, " ")})</span>
-                          {f.resolution === "listing_updated" && <span style={{ fontStyle: "italic" }}>— External listing amended</span>}
-                          {f.resolution === "not_a_conflict" && <span style={{ fontStyle: "italic" }}>— Accepted as valid business exception</span>}
-                        </div>
-                      ) : (
-                        <div style={{ marginTop: "0.25rem", paddingTop: "0.5rem", borderTop: "1px solid var(--border)" }}>
-                          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleResolveFinding(f.id, "listing_updated")}
-                              title="Listing Updated: Confirms the external directory profile has been edited to match your business truth record. Restores NAP consistency."
-                            >
-                              Listing Updated
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleResolveFinding(f.id, "not_a_conflict")}
-                              title="Not a Conflict: Marks this discrepancy as an acceptable, legitimate business exception (e.g. statutory registered office vs trading branch)."
-                            >
-                              Not a Conflict
-                            </Button>
-                          </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginTop: "0.375rem", fontSize: "0.7rem", color: "var(--text-sub)" }}>
-                            <span>• <strong>Listing Updated:</strong> Fixed external profile to match truth record.</span>
-                            <span>• <strong>Not a Conflict:</strong> Legitimate variance (e.g. registered office).</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         </div>
       )}

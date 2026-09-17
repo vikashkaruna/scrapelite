@@ -34,6 +34,7 @@ function Brand({ onClick }) {
 const EXPLORE_ITEMS = [
   { label: "Plans & Pricing", icon: "tag", path: "/pricing" },
   { label: "Integrations",    icon: "zap", path: "/integrations" },
+  { label: "Templates",       icon: "layout-list", path: "/templates" },
   {
     group: "Resources",
     items: [
@@ -50,7 +51,7 @@ const EXPLORE_ITEMS = [
   { label: "About DatIQ", icon: "info", path: "/about" },
 ];
 
-const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca", "/faq"];
+const EXPLORE_ACTIVE_PATHS = ["/pricing", "/integrations", "/templates", "/use-cases", "/vs/", "/about", "/blog", "/contact", "/gallery", "/p/", "/changelog", "/for-", "/extract-", "/dmca", "/faq"];
 
 function ExploreItem({ item, onNavigate }) {
   return item.external ? (
@@ -442,7 +443,6 @@ export default function TopBar() {
   const mainLinks = [
     { to: "/",            label: "Extract",     icon: "globe",     match: (p) => p === "/" || p === "/preview" || p === "/batch" },
     { to: "/discoverability", label: "Discover", icon: "scan-search", match: (p) => p === "/discoverability" },
-    { to: "/templates",   label: "Templates",   icon: "layout-list", match: (p) => p.startsWith("/templates") },
     { to: "/dashboard",   label: "Dashboard",   icon: "grid",      match: (p) => p === "/dashboard" },
     // Workspace moved into the signed-in user menu (2026-08-28), same
     // reasoning already applied to Schedules below: it's a destination people

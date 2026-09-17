@@ -17,6 +17,10 @@ import {
   listLists,
   getList,
   createList,
+  updateList,
+  deleteList,
+  updateRecord,
+  deleteRecord,
   getIcpRules,
   saveIcpRules,
   processJobChunk,
@@ -144,6 +148,38 @@ async function handlePost(event) {
   if (action === "save_rules") {
     const { persona, name, criteria, threshold } = body;
     const res = await saveIcpRules(userId, { persona, name, criteria, threshold });
+    if (res && res.ok === false) return json(res.status || 400, { error: res.reason });
+    return json(200, res);
+  }
+
+  if (action === "update_list") {
+    const { listId, name, description } = body;
+    if (!listId) return json(400, { error: "listId is required." });
+    const res = await updateList(userId, listId, { name, description });
+    if (res && res.ok === false) return json(res.status || 400, { error: res.reason });
+    return json(200, res);
+  }
+
+  if (action === "delete_list") {
+    const { listId } = body;
+    if (!listId) return json(400, { error: "listId is required." });
+    const res = await deleteList(userId, listId);
+    if (res && res.ok === false) return json(res.status || 400, { error: res.reason });
+    return json(200, res);
+  }
+
+  if (action === "update_record") {
+    const { recordId, updates } = body;
+    if (!recordId) return json(400, { error: "recordId is required." });
+    const res = await updateRecord(userId, recordId, updates || {});
+    if (res && res.ok === false) return json(res.status || 400, { error: res.reason });
+    return json(200, res);
+  }
+
+  if (action === "delete_record") {
+    const { recordId } = body;
+    if (!recordId) return json(400, { error: "recordId is required." });
+    const res = await deleteRecord(userId, recordId);
     if (res && res.ok === false) return json(res.status || 400, { error: res.reason });
     return json(200, res);
   }

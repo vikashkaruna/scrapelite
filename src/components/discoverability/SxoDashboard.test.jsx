@@ -234,6 +234,27 @@ describe("SxoDashboard (§11.15 / Deliverable 4.8)", () => {
     })));
   });
 
+  it("renders uncluttered Analytics Summary Card in Overview and segmented switcher in Architecture tab", async () => {
+    render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} />);
+
+    // Overview tab: summary card visible
+    expect(screen.getByText("Configured Provider")).toBeInTheDocument();
+    expect(screen.getByText("Event Ingestion")).toBeInTheDocument();
+    const configSetupBtn = screen.getByRole("button", { name: /Configure Setup/i });
+    expect(configSetupBtn).toBeInTheDocument();
+
+    // Click Configure Setup -> switches to Architecture tab with segmented switcher
+    fireEvent.click(configSetupBtn);
+    expect(screen.getByRole("button", { name: /1\. Provider Credentials/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /2\. Aggregate Event Import/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /3\. Conversion Goals/i })).toBeInTheDocument();
+    expect(screen.getByText("1/3 Provider Credentials")).toBeInTheDocument();
+
+    // Switch to step 2
+    fireEvent.click(screen.getByRole("button", { name: /2\. Aggregate Event Import/i }));
+    expect(screen.getByText("2/3 Aggregate Import")).toBeInTheDocument();
+  });
+
   it("provides Section A and Section B subnavigation switching", async () => {
     render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} />);
 

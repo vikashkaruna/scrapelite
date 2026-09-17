@@ -110,6 +110,7 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
   const [goalOutcome, setGoalOutcome] = useState("lead");
   const [goalBusy, setGoalBusy] = useState(false);
   const [activeSection, setActiveSection] = useState("all");
+  const [activeSetupSegment, setActiveSetupSegment] = useState("credentials");
   const [recalculatingRollup, setRecalculatingRollup] = useState(false);
   const [showFunnelConfig, setShowFunnelConfig] = useState(false);
   const [funnelConfig, setFunnelConfig] = useState({});
@@ -672,15 +673,228 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
 
         {/* ── REGION 2: Analytics setup, aggregate import and goals ── */}
         <section className="dsc-card" aria-labelledby="analytics-setup-heading" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
-          <h3 id="analytics-setup-heading" style={{ margin: "0 0 6px", fontSize: "17px", display: "flex", alignItems: "center", gap: "8px" }}>
-            <Icon name="plug" size={18} /> Analytics Setup & Outcomes
-          </h3>
-          <p style={{ margin: "0 0 16px", fontSize: "13px", color: "var(--text-2)" }}>
-            Save encrypted provider credentials, import aggregate-only event counts, and define the outcome this audit should optimize. Saved credentials are marked configured until a real provider sync verifies them.
-          </p>
+          {activeSection === "all" ? (
+            /* Elegant compact Analytics Summary Card for Overview tab */
+            <div style={{ display: "grid", gap: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div
+                    style={{
+                      width: "38px",
+                      height: "38px",
+                      borderRadius: "var(--r-md)",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--accent)",
+                    }}
+                  >
+                    <Icon name="plug" size={20} />
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <h3 id="analytics-setup-heading" style={{ margin: 0, fontSize: "17px", fontWeight: 600 }}>
+                        Analytics Setup & Outcomes
+                      </h3>
+                      {connections.length > 0 ? (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            padding: "2px 8px",
+                            borderRadius: "var(--r-pill)",
+                            background: "rgba(16, 185, 129, 0.12)",
+                            color: "#10b981",
+                            border: "1px solid rgba(16, 185, 129, 0.25)",
+                          }}
+                        >
+                          ● {connections.length} Connected
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            padding: "2px 8px",
+                            borderRadius: "var(--r-pill)",
+                            background: "var(--bg)",
+                            color: "var(--text-3)",
+                            border: "1px solid var(--border)",
+                          }}
+                        >
+                          Not Connected
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ margin: "2px 0 0", fontSize: "13px", color: "var(--text-2)" }}>
+                      Encrypted provider credentials, aggregate-only events, and conversion target instrumentation.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setActiveSection("architecture");
+                    setActiveSetupSegment("credentials");
+                  }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  <Icon name="sliders" size={14} /> Configure Setup
+                </Button>
+              </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
-            <form onSubmit={handleConnect} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
+                <div style={{ padding: "12px 14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: "4px" }}>
+                    Configured Provider
+                  </div>
+                  <div style={{ fontSize: "15px", fontWeight: 600, color: "var(--text)" }}>
+                    {connections.length > 0 ? connections.map((c) => c.provider.toUpperCase()).join(", ") : "None Configured"}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--text-2)", marginTop: "2px" }}>
+                    {connections.length > 0 ? `${connections.length} active encrypted credential` : "GA4, PostHog, or custom source"}
+                  </div>
+                </div>
+
+                <div style={{ padding: "12px 14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: "4px" }}>
+                    Event Ingestion
+                  </div>
+                  <div style={{ fontSize: "15px", fontWeight: 600, color: "var(--text)" }}>
+                    {Object.values(importCounts).filter(Boolean).length > 0
+                      ? `${Object.values(importCounts).filter(Boolean).length} Events Queued`
+                      : "Aggregate Only"}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--text-2)", marginTop: "2px" }}>
+                    10 privacy-preserving event stages
+                  </div>
+                </div>
+
+                <div style={{ padding: "12px 14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: "4px" }}>
+                    Conversion Goals
+                  </div>
+                  <div style={{ fontSize: "15px", fontWeight: 600, color: "var(--text)" }}>
+                    {goals.length > 0
+                      ? `${goals[0].name}${goals.length > 1 ? ` (+${goals.length - 1})` : ""}`
+                      : "None Defined"}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--text-2)", marginTop: "2px" }}>
+                    {goals.length > 0 ? `Target outcome: ${goals[0].outcome_type}` : "Optimize audit recommendations"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Clean Segmented Switcher for Architecture tab */
+            <div style={{ display: "grid", gap: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+                <div>
+                  <h3 id="analytics-setup-heading" style={{ margin: "0 0 6px", fontSize: "17px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Icon name="plug" size={18} /> Analytics Setup & Outcomes
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "13px", color: "var(--text-2)" }}>
+                    Save encrypted provider credentials, import aggregate-only event counts, and define the outcome this audit should optimize.
+                  </p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontSize: "11px", color: "var(--text-3)" }}>Step:</span>
+                  <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "var(--r-pill)", background: "var(--bg)", border: "1px solid var(--border)" }}>
+                    {activeSetupSegment === "credentials" ? "1/3 Provider Credentials" : activeSetupSegment === "import" ? "2/3 Aggregate Import" : "3/3 Conversion Goals"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Segmented Switcher Tabs */}
+              <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid var(--border)", paddingBottom: "12px", flexWrap: "wrap" }}>
+                {[
+                  { id: "credentials", label: "1. Provider Credentials", icon: "shield", count: connections.length },
+                  { id: "import", label: "2. Aggregate Event Import", icon: "upload-cloud", count: Object.values(importCounts).filter(Boolean).length },
+                  { id: "goals", label: "3. Conversion Goals", icon: "target", count: goals.length },
+                ].map((seg) => {
+                  const isActive = activeSetupSegment === seg.id;
+                  return (
+                    <button
+                      key={seg.id}
+                      type="button"
+                      onClick={() => setActiveSetupSegment(seg.id)}
+                      style={{
+                        padding: "8px 14px",
+                        background: isActive ? "var(--accent)" : "var(--bg)",
+                        color: isActive ? "#fff" : "var(--text)",
+                        border: isActive ? "1px solid var(--accent)" : "1px solid var(--border)",
+                        borderRadius: "var(--r-pill)",
+                        fontSize: "12px",
+                        fontWeight: isActive ? 600 : 500,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <Icon name={seg.icon} size={13} />
+                      <span>{seg.label}</span>
+                      {seg.count > 0 && (
+                        <span
+                          style={{
+                            padding: "1px 6px",
+                            borderRadius: "10px",
+                            fontSize: "10px",
+                            background: isActive ? "rgba(255,255,255,0.25)" : "var(--surface)",
+                            color: isActive ? "#fff" : "var(--text-2)",
+                          }}
+                        >
+                          {seg.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Form containers: In architecture tab, active form gets full width and comfortable spacing. In overview tab, preserved in DOM for accessibility. */}
+          <div
+            style={
+              activeSection === "all"
+                ? {
+                    position: "absolute",
+                    width: "1px",
+                    height: "1px",
+                    padding: 0,
+                    margin: "-1px",
+                    overflow: "hidden",
+                    clip: "rect(0, 0, 0, 0)",
+                    whiteSpace: "nowrap",
+                    border: 0,
+                  }
+                : { marginTop: "16px" }
+            }
+          >
+            <form
+              onSubmit={handleConnect}
+              style={
+                activeSection === "architecture" && activeSetupSegment === "credentials"
+                  ? { display: "grid", gap: "12px", padding: "18px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }
+                  : {
+                      position: "absolute",
+                      width: "1px",
+                      height: "1px",
+                      padding: 0,
+                      margin: "-1px",
+                      overflow: "hidden",
+                      clip: "rect(0, 0, 0, 0)",
+                      whiteSpace: "nowrap",
+                      border: 0,
+                    }
+              }
+            >
               <strong>Provider credentials</strong>
               <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Provider
                 <select value={provider} onChange={(e) => setProvider(e.target.value)} aria-label="Analytics provider">
@@ -733,56 +947,90 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
               </div>
             </form>
 
-          <form onSubmit={handleImport} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-            <strong>Aggregate event import</strong>
-            <span style={{ color: "var(--text-3)", fontSize: "12px" }}>No visitor identifiers, IP addresses, or raw sessions are accepted.</span>
-            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Source
-              <select value={importProvider} onChange={(e) => { setImportProvider(e.target.value); setImportKey(newImportKey(e.target.value, auditId)); }} aria-label="Import source">
-                <option value="custom">Manual aggregate</option>
-                {ANALYTICS_PROVIDERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-            </label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px" }}>
-              {IMPORT_EVENTS.map(([eventName, label, stage, hint]) => (
-                <label key={eventName} style={{ display: "grid", gap: "4px", fontSize: "12px" }} title={`${label} (${stage}): ${hint}`}>
-                  <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>{label}</span>
-                    <span style={{ fontSize: "10px", color: "var(--accent)", background: "var(--surface)", padding: "1px 5px", borderRadius: "3px", border: "1px solid var(--border)" }}>
-                      {stage}
+            <form
+              onSubmit={handleImport}
+              style={
+                activeSection === "architecture" && activeSetupSegment === "import"
+                  ? { display: "grid", gap: "12px", padding: "18px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }
+                  : {
+                      position: "absolute",
+                      width: "1px",
+                      height: "1px",
+                      padding: 0,
+                      margin: "-1px",
+                      overflow: "hidden",
+                      clip: "rect(0, 0, 0, 0)",
+                      whiteSpace: "nowrap",
+                      border: 0,
+                    }
+              }
+            >
+              <strong>Aggregate event import</strong>
+              <span style={{ color: "var(--text-3)", fontSize: "12px" }}>No visitor identifiers, IP addresses, or raw sessions are accepted.</span>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Source
+                <select value={importProvider} onChange={(e) => { setImportProvider(e.target.value); setImportKey(newImportKey(e.target.value, auditId)); }} aria-label="Import source">
+                  <option value="custom">Manual aggregate</option>
+                  {ANALYTICS_PROVIDERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px" }}>
+                {IMPORT_EVENTS.map(([eventName, label, stage, hint]) => (
+                  <label key={eventName} style={{ display: "grid", gap: "4px", fontSize: "12px" }} title={`${label} (${stage}): ${hint}`}>
+                    <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>{label}</span>
+                      <span style={{ fontSize: "10px", color: "var(--accent)", background: "var(--surface)", padding: "1px 5px", borderRadius: "3px", border: "1px solid var(--border)" }}>
+                        {stage}
+                      </span>
                     </span>
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    aria-label={label}
-                    placeholder={hint}
-                    value={importCounts[eventName] ?? ""}
-                    onChange={(e) => setImportCounts((current) => ({ ...current, [eventName]: e.target.value }))}
-                  />
-                </label>
-              ))}
-            </div>
-            <Button size="sm" type="submit" disabled={importBusy}>{importBusy ? "Queueing…" : "Queue aggregate import"}</Button>
-          </form>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      aria-label={label}
+                      placeholder={hint}
+                      value={importCounts[eventName] ?? ""}
+                      onChange={(e) => setImportCounts((current) => ({ ...current, [eventName]: e.target.value }))}
+                    />
+                  </label>
+                ))}
+              </div>
+              <Button size="sm" type="submit" disabled={importBusy}>{importBusy ? "Queueing…" : "Queue aggregate import"}</Button>
+            </form>
 
-          <form onSubmit={handleCreateGoal} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-            <strong>Conversion goals</strong>
-            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Goal name
-              <input value={goalName} onChange={(e) => setGoalName(e.target.value)} placeholder="Qualified demo request" />
-            </label>
-            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Outcome type
-              <select value={goalOutcome} onChange={(e) => setGoalOutcome(e.target.value)}>
-                <option value="lead">Lead</option><option value="sale">Sale</option><option value="booking">Booking</option><option value="signup">Signup</option><option value="qualified_outcome">Qualified outcome</option>
-              </select>
-            </label>
-            <Button size="sm" type="submit" disabled={goalBusy}>{goalBusy ? "Saving…" : "Add goal"}</Button>
-            <div style={{ display: "grid", gap: "5px", fontSize: "12px" }}>
-              {goals.length === 0 ? <span style={{ color: "var(--text-3)" }}>No conversion goals defined.</span> : goals.map((goal) => <span key={goal.id}><strong>{goal.name}</strong> · {goal.outcome_type}</span>)}
-            </div>
-          </form>
-        </div>
-      </section>
+            <form
+              onSubmit={handleCreateGoal}
+              style={
+                activeSection === "architecture" && activeSetupSegment === "goals"
+                  ? { display: "grid", gap: "12px", padding: "18px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }
+                  : {
+                      position: "absolute",
+                      width: "1px",
+                      height: "1px",
+                      padding: 0,
+                      margin: "-1px",
+                      overflow: "hidden",
+                      clip: "rect(0, 0, 0, 0)",
+                      whiteSpace: "nowrap",
+                      border: 0,
+                    }
+              }
+            >
+              <strong>Conversion goals</strong>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Goal name
+                <input value={goalName} onChange={(e) => setGoalName(e.target.value)} placeholder="Qualified demo request" />
+              </label>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Outcome type
+                <select value={goalOutcome} onChange={(e) => setGoalOutcome(e.target.value)}>
+                  <option value="lead">Lead</option><option value="sale">Sale</option><option value="booking">Booking</option><option value="signup">Signup</option><option value="qualified_outcome">Qualified outcome</option>
+                </select>
+              </label>
+              <Button size="sm" type="submit" disabled={goalBusy}>{goalBusy ? "Saving…" : "Add goal"}</Button>
+              <div style={{ display: "grid", gap: "5px", fontSize: "12px" }}>
+                {goals.length === 0 ? <span style={{ color: "var(--text-3)" }}>No conversion goals defined.</span> : goals.map((goal) => <span key={goal.id}><strong>{goal.name}</strong> · {goal.outcome_type}</span>)}
+              </div>
+            </form>
+          </div>
+        </section>
 
       {/* ── REGION 2: 6 Layer Scores ── */}
       <section className="dsc-card" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>

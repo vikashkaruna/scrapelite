@@ -48,6 +48,24 @@ export async function createRule({ name, trigger_source, conditions, action_type
   return res.json();
 }
 
+export async function updateRule(ruleId, updates) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/signal-rules", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      action: "update",
+      ruleId,
+      updates,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to update signal rule: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function deleteRule(ruleId) {
   const headers = await authHeaders();
   const res = await fetch("/api/signal-rules", {

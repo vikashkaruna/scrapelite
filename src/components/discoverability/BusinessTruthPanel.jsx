@@ -58,6 +58,8 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
   const [formFields, setFormFields] = useState({});
   const [busyVersion, setBusyVersion] = useState(null);
   const [resolveLoading, setResolveLoading] = useState(null);
+  const [deletingVersion, setDeletingVersion] = useState(null);
+  const [deleteVersionBusy, setDeleteVersionBusy] = useState(false);
   const authContext = useContext(AuthContext);
   const cacheUserId = currentUser?.id || authContext?.user?.id || null;
 
@@ -199,6 +201,34 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
       }
     } finally {
       setBusyVersion(null);
+    }
+  };
+
+  const handleCopyVersion = (version) => {
+    const seed = {};
+    const fields = version.fields_json || {};
+    for (const id of PROPOSAL_FIELDS) {
+      const val = fields[id];
+      seed[id] = factValue(typeof val === "object" ? val : { value: val });
+    }
+    if (!seed.canonical_domain && record?.canonical_domain) seed.canonical_domain = record.canonical_domain;
+    setFormFields(seed);
+    setProposing(true);
+    showToast(`Copied facts from v${version.version_no} into proposal form.`, "check");
+  };
+
+  const confirmDeleteVersion = async () => {
+    if (!deletingVersion || !record?.id) return;
+    setDeleteVersionBusy(true);
+    try {
+      await discoverability.deleteTruthVersion(record.id, deletingVersion.id, { workspaceId });
+      showToast(`Version v${deletingVersion.version_no} removed.`, "check");
+      setDeletingVersion(null);
+      refresh();
+    } catch (err) {
+      showToast(err.message || "Failed to delete version", "error");
+    } finally {
+      setDeleteVersionBusy(false);
     }
   };
 
@@ -403,13 +433,21 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
                               </div>
                             )}
                           </div>
-                          {v.state === "draft" && (
-                            <Button size="sm" variant="secondary" onClick={() => handleSubmit(v)} loading={busyVersion === v.id}>
-                              Submit for Review
+                          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => handleCopyVersion(v)}
+                              title="Copy facts from this version to propose a new draft"
+                            >
+                              <Icon name="copy" size={13} /> Copy to New
                             </Button>
-                          )}
-                          {v.state === "pending_review" && (
-                            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                            {v.state === "draft" && (
+                              <Button size="sm" variant="secondary" onClick={() => handleSubmit(v)} loading={busyVersion === v.id}>
+                                Submit for Review
+                              </Button>
+                            )}
+                            {v.state === "pending_review" && (
                               <Button
                                 size="sm" variant="secondary"
                                 onClick={() => handlePromote(v)}
@@ -422,8 +460,19 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
                               >
                                 Approve & Promote
                               </Button>
-                            </div>
-                          )}
+                            )}
+                            {v.state !== "approved" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setDeletingVersion(v)}
+                                style={{ color: "var(--danger, #dc2626)", padding: "4px 8px" }}
+                                title="Delete this unapproved or superseded version"
+                              >
+                                <Icon name="trash-2" size={13} />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -488,6 +537,32 @@ export default function BusinessTruthPanel({ workspaceId = null, currentUser = n
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {deletingVersion && (
+        <div className="error-backdrop" role="dialog" aria-modal="true" onClick={() => setDeletingVersion(null)}>
+          <div className="error-modal card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <h3 style={{ color: "var(--danger, #dc2626)", margin: "0 0 8px 0" }}>Delete Version v{deletingVersion.version_no}</h3>
+            <p style={{ color: "var(--text-1)", fontSize: "0.9rem", margin: "0 0 12px 0" }}>
+              Are you sure you want to delete this {deletingVersion.state} version?
+            </p>
+            <div style={{ padding: 12, background: "var(--surface-2)", borderRadius: "var(--r, 6px)", fontSize: "0.82rem", color: "var(--text-2)", marginBottom: 16 }}>
+              <Icon name="shield-check" size={14} style={{ color: "var(--accent)", marginRight: 6, verticalAlign: "middle" }} />
+              <strong>Audit Notice:</strong> Historical approved canonical records remain preserved in the permanent compliance audit log.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button variant="ghost" onClick={() => setDeletingVersion(null)} disabled={deleteVersionBusy}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={confirmDeleteVersion}
+                loading={deleteVersionBusy}
+                style={{ background: "var(--danger, #dc2626)", borderColor: "var(--danger, #dc2626)" }}
+              >
+                Delete Version
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
