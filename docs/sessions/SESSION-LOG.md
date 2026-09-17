@@ -18,6 +18,65 @@
 
 ---
 
+## 2026-09-17 IST — Workflows orchestration engine, Templates expansion, Navigation update, Curation, Discoverability UX & E2E smoke tests
+
+> **Branch:** `staging` · **Delivery:** Merged to `staging` (via PR #193, PR #195) · **`main`:** untouched
+> **Verification:** Vitest test suites green (90/90 feature tests, 13/13 template seeds, 18/18 activation events, 17/17 TopBar integration) · `npm run build` green (vite bundle 5.15s + prerender sync) · GitHub Actions Staging Gate & Netlify staging deployments green
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-17 |
+| **Branch** | `staging` |
+| **Commit HEAD** | `7d967f80` |
+| **Target** | `staging` / `https://staging.datiq.app` |
+| **Active Focus** | 10 comprehensive fixes across Workflows, Navigation, Templates, Lists, Watchlists, Signal Rules, Discoverability (Business Truth, SXO, Entity Graph, Local Directory), and CI E2E smoke testing. |
+
+### 2. What was accomplished
+
+- **/workflows flash/crash fix & end-to-end orchestration UI:**
+  - Resolved screen flash/crash on `/workflows` with `authLoading` guards and error boundary.
+  - Built multi-step orchestration graph (`src/lib/workflows/workflowGraph.js`) chaining Account Lists, Competitor Watchlists, Signal Rules, and downstream targets.
+  - Added workflow create, edit, and soft-delete modals preserving audit trails.
+- **Navigation:** Moved Templates into Explore dropdown menu immediately following Integrations (stays public).
+- **Templates & Workflows cross-linkage:** Added Workflows banner on `/templates` and `/templates?filter=workflows` filter tab.
+- **Referenced workflows across Lists, Watchlists, and Signal Rules:** Added linked workflows display, soft deletion preserving audit history, and fixed `"trash-2"` icon.
+- **Account Intelligence Lists enrichment & manual curation:**
+  - Background enrichment jobs in progress show start timestamp and estimated completion time in table.
+  - Added inline manual curation/field overrides per account row, saved to DB with "Curated" badge.
+- **Templates library expansion & dynamic credits:**
+  - Added 4 new seed templates (`recruiter_talent_sourcing`, `market_landscape_map`, `agency_client_teardown`, `continuous_account_signal`).
+  - Added dynamic credit calculation and interactive customization drawer.
+- **Business Truth records versioning:** Recreate new versions by copying an existing version as starting draft, and soft-delete past versions with audit trails.
+- **SXO & Entity Graph:**
+  - Compact Analytics Summary Card in Overview ("all") and segmented step switcher in Architecture ("architecture") tab.
+  - Direct DB update fallback in `auditStore.js` for single-founder/solo-operator approvals when RPC fails; updated Subject Scores label.
+- **Local Directory:** Refactored cramped 2-column layout into readable, searchable cards with collapsible finding details and filter tabs.
+- **CI E2E Smoke Test Fix:** Updated `e2e/smoke/home.spec.js` asserting TopBar nav order (`Extract / Discover / Dashboard`) and verifying Templates is present in the Explore dropdown menu.
+
+### 3. Verification evidence
+
+- `npm run test -- --run src/pages/Workflows.test.jsx`: 3/3 passed
+- `npm run test -- --run src/components/TopBar.integration.test.jsx`: 17/17 passed
+- `npm run test -- --run src/pages/Watchlists.test.jsx`: 3/3 passed
+- `npm run test -- --run src/components/discoverability/BusinessTruthPanel.test.jsx`: 14/14 passed
+- `npm run test -- --run src/components/discoverability/SxoDashboard.test.jsx`: 14/14 passed
+- `npm run test -- --run src/components/discoverability/LocalDirectoryPanel.test.jsx`: 15/15 passed
+- `npm run test -- --run src/components/discoverability/SubjectScoresPanel.test.jsx`: 9/9 passed
+- `npm run test -- --run netlify/__tests__/audit/auditStore.test.js`: 15/15 passed
+- `npm run test -- --run src/pages/Templates.customization.test.jsx`: 4/4 passed
+- `npm run test -- --run src/pages/Templates.handoff.test.jsx`: 6/6 passed
+- `npm run test -- --run src/lib/templates/seedTemplates.test.js`: 13/13 passed
+- `npm run test -- --run src/lib/pql/activationEvents.test.js`: 18/18 passed
+- `npm run build`: built in 5.15s, 0 errors, 28 prerendered pages synced.
+- **GitHub Actions & Deployments**:
+  - Pull Request #193 merged into `staging` (`37f79178`).
+  - Pull Request #195 merged into `staging` (`7d967f80`).
+  - Netlify deployment verified live on `https://staging.datiq.app` / `https://staging--datiqapp.netlify.app`.
+
+---
+
 ## 2026-09-16 IST — Fix 502 Bad Gateway on scheduled cron workers & Admin Monitoring runner registration; Manual approval CI RCA
 
 > **Branch:** `staging` · **Delivery:** Commit to `staging` · **`main`:** untouched
