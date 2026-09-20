@@ -64,6 +64,8 @@ export default function ProgrammaticRoute() {
             <Icon name={route.icon} size={12} />
             {route.kind === "persona"
               ? `For ${route.personaLabel}`
+              : route.kind === "industry"
+              ? `${route.industryLabel}`
               : `Extract ${route.intentLabel}`}
           </span>
           <h1 className="pr-title">{route.h1}</h1>

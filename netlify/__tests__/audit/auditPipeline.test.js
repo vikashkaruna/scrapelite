@@ -316,6 +316,15 @@ describe("a markdown fragment must never displace a real document", () => {
     expect(r.evidence.heading_outline.map((h) => h.text)).toContain("Loaded after hydration");
   });
 
+  it("preserves head signals from raw document when rendered document strips them", async () => {
+    const STRIPPED_RENDERED = `<!doctype html><html><body><h2>Loaded after hydration</h2><p>Content that only exists once JavaScript has run on this page.</p></body></html>`;
+    scrapeChain.mockResolvedValue({ ok: true, source: "firecrawl", html: STRIPPED_RENDERED });
+    const r = await runAudit("https://example.com/", baseOpts);
+    expect(r.issues.map((i) => i.code)).not.toContain("TA-12");
+    expect(r.issues.map((i) => i.code)).not.toContain("TA-06");
+    expect(r.evidence.heading_outline.map((h) => h.text)).toContain("Loaded after hydration");
+  });
+
   it("reports head signals as unmeasured when BOTH sides are fragments", async () => {
     // Neither source is a document, so the absence of a viewport is OUR blind
     // spot, not the page's defect. Unmeasured, not a finding — the same rule

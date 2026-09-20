@@ -1091,6 +1091,10 @@ const SEGMENT_LABELS = {
   "for-sales": "For sales",
   "for-seo": "For SEO",
   "for-ci": "For competitive intelligence",
+  "for-finance": "For finance",
+  "for-healthcare": "For healthcare",
+  "for-retail": "For retail",
+  "for-legal": "For legal",
   "seo-audit": "SEO audit",
   "faq": "FAQ",
 };

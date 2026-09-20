@@ -322,6 +322,44 @@ export async function fetchSitemapUrls(declared = [], opts = {}) {
   return { fetched: true, urls, reason: null, truncated, documentsRead };
 }
 
+/**
+ * Preserve head-level signals (viewport, canonical, JSON-LD) from rawHtml
+ * when an upstream rendered document has stripped or omitted them.
+ */
+export function preserveHeadSignals(primary = "", raw = "") {
+  if (!primary || !raw) return primary;
+  let out = primary;
+
+  const rawHeadMatch = raw.match(/<head\b[^>]*>([\s\S]*?)<\/head\s*>/i);
+  if (rawHeadMatch) {
+    if (!/<head\b/i.test(out)) {
+      if (/<body\b/i.test(out)) {
+        out = out.replace(/<body\b/i, `${rawHeadMatch[0]}<body`);
+      } else if (/<html\b[^>]*>/i.test(out)) {
+        out = out.replace(/<html\b[^>]*>/i, `$&${rawHeadMatch[0]}`);
+      } else {
+        out = `${rawHeadMatch[0]}\n${out}`;
+      }
+    } else {
+      if (!/<meta\b[^>]*name\s*=\s*["']?viewport["']?/i.test(out)) {
+        const vp = raw.match(/<meta\b[^>]*name\s*=\s*["']?viewport["']?[^>]*>/i);
+        if (vp) out = out.replace(/<head\b[^>]*>/i, `$&${vp[0]}`);
+      }
+      if (!/<link\b[^>]*rel\s*=\s*["']?canonical["']?/i.test(out)) {
+        const can = raw.match(/<link\b[^>]*rel\s*=\s*["']?canonical["']?[^>]*>/i);
+        if (can) out = out.replace(/<head\b[^>]*>/i, `$&${can[0]}`);
+      }
+      if (!/<script\b[^>]*type\s*=\s*["']?application\/ld\+json["']?/i.test(out)) {
+        const jsonLdBlocks = raw.match(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script\s*>/gi);
+        if (jsonLdBlocks && jsonLdBlocks.length) {
+          out = out.replace(/<\/head\s*>/i, `${jsonLdBlocks.join("\n")}\n</head>`);
+        }
+      }
+    }
+  }
+  return out;
+}
+
 export async function collectPage(url, opts = {}) {
   const env = opts.env || process.env;
   const headless = isHeadlessAvailable(env);
@@ -361,7 +399,7 @@ export async function collectPage(url, opts = {}) {
   let primaryHtml;
   let primarySource;
   if (renderedIsDocument) {
-    primaryHtml = renderedHtml;
+    primaryHtml = preserveHeadSignals(renderedHtml, rawHtml);
     primarySource = "rendered";
   } else if (rawIsDocument) {
     primaryHtml = rawHtml;

@@ -19,7 +19,7 @@ DatIQ.app is the canonical product. The brand is styled "DatIQ" (one word, capit
 - Official Profiles:
   - LinkedIn (Product): https://www.linkedin.com/company/datiq
   - LinkedIn (Publisher): https://www.linkedin.com/company/axiom-minds/
-  - X / Twitter: https://twitter.com/datiq_app
+  - X / Twitter: https://twitter.com/DatIQApp
 
 ## What DatIQ Does
 DatIQ runs a five-step loop over the public web: READ (extract structured data from any public page), REASON (run a workflow template that turns those fields into a finished artefact such as an account brief or a competitive comparison), WATCH (re-read chosen pages on a cadence and classify what changed), ACT (route the changes that matter into Slack, email, a webhook or a CRM), and SHARE (publish any result as a report at its own link with a chosen visibility level).
@@ -134,6 +134,12 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - For sales teams: https://datiq.app/for-sales
 - For SEO teams: https://datiq.app/for-seo
 - For competitive intelligence: https://datiq.app/for-ci
+
+## Industry landing pages
+- For financial services & FinTech: https://datiq.app/for-finance
+- For healthcare & life sciences: https://datiq.app/for-healthcare
+- For e-commerce & retail: https://datiq.app/for-retail
+- For legal & compliance: https://datiq.app/for-legal
 
 ## Programmatic SEO pages
 - Extract pricing from any page: https://datiq.app/extract-pricing

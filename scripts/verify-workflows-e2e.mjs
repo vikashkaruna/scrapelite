@@ -142,7 +142,8 @@ function whereFrom(params, values) {
 function columnsFrom(params) {
   const sel = params.get("select");
   if (!sel || sel === "*") return "*";
-  const cols = sel.split(",").map((c) => c.trim()).filter((c) => c && !c.includes("("));
+  const cleaned = sel.replace(/\b\w+\([^)]*\)/g, "");
+  const cols = cleaned.split(",").map((c) => c.trim()).filter(Boolean);
   return cols.length ? cols.join(", ") : "*";
 }
 

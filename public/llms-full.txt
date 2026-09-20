@@ -367,6 +367,12 @@ Extract article structures, FAQs, and key topics from top-ranking pages to infor
 - For SEO teams: https://datiq.app/for-seo
 - For competitive intelligence: https://datiq.app/for-ci
 
+### Industry landing pages
+- For financial services & FinTech: https://datiq.app/for-finance
+- For healthcare & life sciences: https://datiq.app/for-healthcare
+- For e-commerce & retail: https://datiq.app/for-retail
+- For legal & compliance: https://datiq.app/for-legal
+
 ### Use case detail pages
 - Lead generation: https://datiq.app/use-cases/lead-generation
 - Competitor research: https://datiq.app/use-cases/competitor-research
