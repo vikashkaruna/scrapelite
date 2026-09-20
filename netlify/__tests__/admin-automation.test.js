@@ -247,6 +247,29 @@ describe("admin-automation — POST (actions)", () => {
     expect(r.statusCode).toBe(200);
   });
 
+  it("delete: deletes workflow_runs and workflow_events", async () => {
+    setSupabase();
+    setAdminSecret();
+    const token = await makeAdminToken();
+    const deletedCalls = [];
+    fetchMock.mockImplementation(async (url, init) => {
+      deletedCalls.push({ url: String(url), method: init?.method });
+      return okJson([{ id: "wfe_x", state: "failed" }]);
+    });
+    const h = await loadHandler();
+    const r = await h({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: '{"action":"delete","event_id":"wfe_x"}',
+    });
+    expect(r.statusCode).toBe(200);
+    const body = JSON.parse(r.body);
+    expect(body.ok).toBe(true);
+    expect(body.deleted).toBe(true);
+    expect(deletedCalls.some((c) => c.url.includes("/workflow_runs?event_id=eq.wfe_x") && c.method === "DELETE")).toBe(true);
+    expect(deletedCalls.some((c) => c.url.includes("/workflow_events?id=eq.wfe_x") && c.method === "DELETE")).toBe(true);
+  });
+
   it("returns 400 on unknown action", async () => {
     setSupabase();
     setAdminSecret();

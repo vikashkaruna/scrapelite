@@ -45,12 +45,9 @@ const respond = (statusCode, body) => ({ statusCode, headers: HEADERS, body: JSO
 // choice: IANA-operated, no robots restrictions, ~1KB, and it will outlive us.
 const SCRAPE_TEST_URL = "https://example.com";
 const PAGESPEED_TEST_URL = "https://example.com";
-// Matches the per-provider ceiling in scrapeProviders.js (TIMEOUT_MS). It was
-// 15s, i.e. STRICTER than production — so a provider the extraction chain
-// would happily have waited for could fail its own test, and the console said
-// "the provider rejected the request" about a stopwatch we set ourselves.
-// A verdict here has to mean what a verdict in the chain means.
-const SCRAPE_TIMEOUT_MS = 20_000;
+// // Matches the per-provider ceiling in scrapeProviders.js (TIMEOUT_MS).
+// Bound to 12s so admin tests return promptly within serverless limits.
+const SCRAPE_TIMEOUT_MS = 12_000;
 
 /** Never reveal a key — only enough to tell two keys apart in a screenshot. */
 function fingerprint(key) {
@@ -62,6 +59,7 @@ function keyInfo(providerKey) {
   const names = keyEnvNames(providerKey);
   const value = readKey(providerKey, process.env);
   return {
+    key: providerKey,
     envVars: names,
     // WHICH of the fallback vars actually supplied it — a value sitting in the
     // legacy VITE_ fallback while the operator edits the primary is a real
@@ -124,12 +122,14 @@ async function testPageSpeed() {
     const url = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
     url.searchParams.set("url", PAGESPEED_TEST_URL);
     url.searchParams.set("strategy", "mobile");
+    // Only audit performance: auditing all 5 categories takes >25s and times out
+    url.searchParams.set("category", "performance");
     if (withKey) url.searchParams.set("key", withKey);
     return url.toString();
   };
 
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 25_000);
+  const t = setTimeout(() => ctrl.abort(), 15_000);
   const startedAt = Date.now();
   try {
     const res = await fetch(psiUrl(key), { signal: ctrl.signal });

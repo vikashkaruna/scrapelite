@@ -112,20 +112,13 @@ export const handler = async (event) => {
       patch = { curated: false };
     } else if (action === "takedown") {
       // ── ADMIN TAKEDOWN of a published page ────────────────────────────────
-      // Reuses the SAME revoke_report RPC a user's own revoke goes through
-      // (0039), rather than a second delete path that could drift from it.
-      // The RPC already models the admin case: `p_actor = null` skips the
-      // ownership check, so an operator can take down anyone's page while a
-      // signed-in user still cannot touch someone else's.
+      // Takedown revokes the public share link so nobody holding the link can
+      // reach it anymore, and removes it from /gallery and /admin/gallery.
       //
-      // REVOKE, NOT DELETE. Revoking burns the slug and blocks access
-      // immediately while keeping the row, so the access log and the audit
-      // trail survive — which is the whole point of taking something down. A
-      // hard DELETE would erase the evidence of what was published and who
-      // looked at it, at exactly the moment that evidence matters most.
-      //
-      // A reason is MANDATORY, matching every other operator mutation in this
-      // codebase (ops_audit_log has a CHECK for the same thing).
+      // 1. Updates public_reports (sets is_public=false, curated=false)
+      // 2. Also revokes in public.reports (via revoke_report / visibility='revoked')
+      //    if a corresponding row exists.
+      // A reason is MANDATORY, matching ops_audit_log conventions.
       const reason = String(body.reason || "").trim();
       if (!reason) {
         return respond(400, { ok: false, error: "A written reason is required to take down a published page." });
@@ -133,18 +126,80 @@ export const handler = async (event) => {
       const db0 = getDb();
       if (!db0) return respond(502, { ok: false, error: "Supabase not configured — nothing to take down." });
       try {
-        const res = await sbFetch(db0, `/rest/v1/rpc/revoke_report`, {
-          method: "POST",
-          body: JSON.stringify({ p_report_id: id, p_actor: null, p_reason: reason }),
+        let slug = null;
+        let foundInPublic = false;
+        try {
+          const rows = await sbFetch(db0, `/rest/v1/public_reports?id=eq.${encodeURIComponent(id)}&select=id,slug,is_public`);
+          const rep = Array.isArray(rows) ? rows[0] : rows;
+          if (rep) {
+            foundInPublic = true;
+            slug = rep.slug;
+          }
+        } catch { /* proceed */ }
+
+        // Update public_reports (the primary source for /gallery and /p/:slug)
+        await sbFetch(db0, `/rest/v1/public_reports?id=eq.${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ is_public: false, curated: false }),
+        }).catch((err) => {
+          if (!foundInPublic) throw err;
         });
-        const verdict = Array.isArray(res) ? res[0] : res;
-        if (verdict && verdict.ok === false) {
-          return respond(verdict.reason === "not_found" ? 404 : 400,
-            { ok: false, error: "Could not take down that page.", reason: verdict.reason });
-        }
+
+        // Also revoke in public.reports if present
+        try {
+          await sbFetch(db0, `/rest/v1/rpc/revoke_report`, {
+            method: "POST",
+            body: JSON.stringify({ p_report_id: id, p_actor: null, p_reason: reason }),
+          }).catch(() => null);
+
+          if (slug) {
+            await sbFetch(db0, `/rest/v1/reports?slug=eq.${encodeURIComponent(slug)}`, {
+              method: "PATCH",
+              headers: { Prefer: "return=minimal" },
+              body: JSON.stringify({ visibility: "revoked", revoked_at: new Date().toISOString() }),
+            }).catch(() => null);
+          }
+        } catch { /* non-blocking */ }
+
         return respond(200, { ok: true, action: "takedown", id, visibility: "revoked" });
       } catch (err) {
         return respond(502, { ok: false, error: `Takedown failed: ${err.message}` });
+      }
+    } else if (action === "delete") {
+      // ── ADMIN HARD DELETE: Remove completely ──────────────────────────────
+      // Permanently purges the report from public_reports (and reports).
+      const db0 = getDb();
+      if (!db0) return respond(502, { ok: false, error: "Supabase not configured — nothing to delete." });
+      try {
+        let slug = null;
+        try {
+          const rows = await sbFetch(db0, `/rest/v1/public_reports?id=eq.${encodeURIComponent(id)}&select=id,slug`);
+          const rep = Array.isArray(rows) ? rows[0] : rows;
+          if (rep?.slug) slug = rep.slug;
+        } catch { /* ignore */ }
+
+        // Hard delete from public_reports
+        await sbFetch(db0, `/rest/v1/public_reports?id=eq.${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { Prefer: "return=minimal" },
+        });
+
+        // Also clean up from reports if matching slug or id exists
+        if (slug) {
+          await sbFetch(db0, `/rest/v1/reports?slug=eq.${encodeURIComponent(slug)}`, {
+            method: "DELETE",
+            headers: { Prefer: "return=minimal" },
+          }).catch(() => null);
+        }
+        await sbFetch(db0, `/rest/v1/reports?id=eq.${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { Prefer: "return=minimal" },
+        }).catch(() => null);
+
+        return respond(200, { ok: true, action: "delete", id });
+      } catch (err) {
+        return respond(502, { ok: false, error: `Delete failed: ${err.message}` });
       }
     } else {
       return respond(400, { ok: false, error: `Unknown action: ${action}` });

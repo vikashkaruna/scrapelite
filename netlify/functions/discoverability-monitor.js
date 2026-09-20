@@ -304,7 +304,7 @@ export async function runSchedule(schedule, opts = {}) {
   return summary;
 }
 
-export const handler = async () => withJobRun(JOB_ID, async () => {
+export const handler = withJobRun(JOB_ID, async () => {
   const due = await store.dueSchedules(new Date(), MAX_SCHEDULES_PER_RUN);
   const results = [];
 

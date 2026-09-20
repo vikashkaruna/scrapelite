@@ -88,10 +88,10 @@ const JOB_PLATFORM = {
   "watchlist-monitor":       "db",
   "bulk-runner":             "db",
   "signal-retry":            "db",
+  "sxo-analytics-import-worker": "db",
   // The orchestrator's own work is an outbound POST to n8n; the queue read is
   // incidental. Classified by what it primarily does, not what it touches.
   "workflow-orchestrator-cron": "netlify",
-  "sxo-analytics-import-worker": "db",
 };
 
 function jobPlatform(jobId) {
