@@ -30,6 +30,10 @@ describe("classifyUrl", () => {
     expect(classifyUrl("https://x.com/alternatives/apify")).toContain("comparison");
     expect(classifyUrl("https://x.com/use-cases/lead-generation")).toContain("use_case");
     expect(classifyUrl("https://x.com/industries/healthcare")).toContain("industry");
+    expect(classifyUrl("https://datiq.app/for-finance")).toContain("industry");
+    expect(classifyUrl("https://datiq.app/for-healthcare")).toContain("industry");
+    expect(classifyUrl("https://datiq.app/for-retail")).toContain("industry");
+    expect(classifyUrl("https://datiq.app/for-legal")).toContain("industry");
     expect(classifyUrl("https://x.com/category/scrapers")).toContain("category");
   });
 
