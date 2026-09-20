@@ -16,8 +16,8 @@ const LEGAL_LINKS = [
 ];
 
 const SOCIALS = [
-  { name: "linkedin", href: "https://linkedin.com", label: "LinkedIn" },
-  { name: "twitter", href: "https://twitter.com", label: "Twitter / X" },
+  { name: "linkedin", href: "https://www.linkedin.com/company/datiq", label: "LinkedIn" },
+  { name: "twitter", href: "https://twitter.com/DatIQApp", label: "Twitter / X" },
 ];
 
 const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "1.0.0";

@@ -18,6 +18,46 @@
 
 ---
 
+## 2026-09-20 IST — Discoverability audit improvements & Industry landing pages: Mobile parity, Organization schema, sameAs profile parity, and 4 industry routes
+
+> **Branch:** `staging` · **Delivery:** Merged to `staging` (via PR #206) · **Target:** `staging` deploy / `main` promotion
+> **Verification:** 100% test suites green (Unit: 4002 passed across 243 files, Contract: 2552 passed across 142 files, Database: 847 schema + 17 referral + 56 workflows passed, E2E Smoke: 159 passed) · Build clean (32 prerendered pages synced, 64 sitemap URLs) · GitHub Actions Staging Gate & Netlify deploy previews green
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-20 |
+| **Branch** | `staging` |
+| **PR** | [#206 (Merged)](https://github.com/vikashkaruna/scrapelite/pull/206) |
+| **Target** | `staging` / `https://staging.datiq.app` → `main` / `https://datiq.app` |
+| **Active Focus** | Resolved all 8 Discoverability audit findings: mobile parity preservation in fetchLayer, official sameAs profile parity, Organization schema injection across help center & FAQ, and 4 dedicated industry routes. |
+
+### 2. What was accomplished
+
+- **Head Signals Preservation (`fetchLayer.js`) — TA-12, TA-06, TA-15, EA-01, Mobile Parity:**
+  - Headless scraping engines (Firecrawl / Spider) often strip `<head>` or wrap raw HTML in minimal `<html><body>` shells, losing `<meta name="viewport">`, `<link rel="canonical">`, and `<script type="application/ld+json">`.
+  - Added `preserveHeadSignals(primary, raw)` in `fetchLayer.js` to splice essential head signals from the original raw response into `primaryHtml` if missing in `renderedHtml`.
+  - Fixes mobile parity calculation (`signals.mobile_parity = 100`), eliminating the `MOBILE_PARITY_MISSING` penalty and resolving TA-12, TA-06, TA-15, and EA-01 downstream.
+- **Organization Schema & Profile Parity (`Footer.jsx`, `index.html`) — EA-01, EA-03:**
+  - Removed generic placeholder links in `Footer.jsx`, updating them to official profiles: LinkedIn (`https://www.linkedin.com/company/datiq`) and Twitter / X (`https://twitter.com/DatIQApp`).
+  - Removed `https://github.com/vikashkaruna/scrapelite` from `sameAs` array in `index.html` and prerendered pages.
+  - Replaced `https://twitter.com/datiq_app` with canonical `https://twitter.com/DatIQApp` and updated `twitter:site` to `@DatIQApp`.
+- **Structured Data in Static & Help Center Pages — TA-15, EA-01:**
+  - Updated `shell()` generator in `docs/build-help.mjs` to emit JSON-LD `@graph` (`Organization`, `TechArticle`, `BreadcrumbList`) and OpenGraph / Twitter tags across all 25 static help pages in `public/help/`.
+  - Injected complete `Organization` JSON-LD schema into `public/faq/index.html`.
+- **Industry Landing Pages — AC-11:**
+  - Added 4 industry programmatic routes to `src/lib/programmaticRoutes.js`: `/for-finance`, `/for-healthcare`, `/for-retail`, `/for-legal`.
+  - Updated `src/pages/ProgrammaticRoute.jsx`, `src/App.jsx`, `src/lib/pageSeo.js`, and `scripts/site-routes.mjs`.
+  - Prerendered static pages to `public/for-*/index.html` and updated `public/sitemap.xml` (now 64 total URLs).
+- **Answer Engine Citations & llms.txt — EA-08:**
+  - Updated `public/llms.txt` and `public/llms-full.txt` with the 4 industry pages and official Twitter profile.
+- **Tooling & Pre-push Fixes:**
+  - Fixed `columnsFrom` in `scripts/verify-workflows-e2e.mjs` to strip embedded PostgREST relation syntax before comma-splitting.
+  - Fixed `scripts/pre-push.sh` terminal color `tput` error handling and Node 24 nvm selection.
+
+---
+
 ## 2026-09-20 IST — Admin production fixes: Gallery takedown & complete deletion, AI provider test timeouts, Automation event cleanup, and Monitoring job runners
 
 > **Branch:** `staging` · **Delivery:** Merged to `staging` (via PR #199) · **Target:** `main` promotion
