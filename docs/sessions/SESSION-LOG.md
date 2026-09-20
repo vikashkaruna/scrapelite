@@ -18,6 +18,47 @@
 
 ---
 
+## 2026-09-20 IST — Admin production fixes: Gallery takedown & complete deletion, AI provider test timeouts, Automation event cleanup, and Monitoring job runners
+
+> **Branch:** `staging` · **Delivery:** Merged to `staging` (via PR #199) · **Target:** `main` promotion
+> **Verification:** Vitest test suites green (141/141 contract test files, 2,540/2,540 passed; 240/240 unit test files, 3,979/3,979 passed) · `npm run build` green (vite bundle 1.28s + 28 prerender pages synced) · GitHub Actions Staging Gate & Netlify staging deployments green
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-20 |
+| **Branch** | `staging` |
+| **Commit HEAD** | `65591fa7` |
+| **Target** | `staging` / `https://staging.datiq.app` → `main` / `https://datiq.app` |
+| **Active Focus** | Resolved 4 critical production administrative issues observed on https://datiq.app across Gallery, AI Data Services, Automation, and Monitoring Runners. |
+
+### 2. What was accomplished
+
+- **/admin/gallery takedown & delete:**
+  - `admin-gallery.js`'s `takedown` action updated to directly set `is_public: false, curated: false` on `public_reports` without 404-failing if `reports` table lookup returns not found.
+  - Added administrative `delete` action purging reports from both `public_reports` and `reports`.
+  - Added Delete button with confirmation modal in `AdminGallery.jsx` (`ReportRow`) and wired `onDeleted` callback.
+- **/admin/ai provider test timeouts:**
+  - Added `category=performance` to `testPageSpeed` in `admin-provider-test.js`, cutting audit time from >25s down to 2–5s with a 15s timeout.
+  - Bounded `SCRAPE_TIMEOUT_MS` to 12s so Jina/Firecrawl admin probes fail fast within serverless limits.
+- **/admin/automation failed event cleanup:**
+  - Implemented `action: "delete"` with `deleteEvent(db, eventId)` in `admin-automation.js`, deleting child runs from `workflow_runs` and the parent event from `workflow_events`.
+  - Added Delete button in `AdminAutomation.jsx` (`EventDetail`) for failed, cancelled, and done events with UI list cleanup.
+- **/admin/monitoring runner execution fix:**
+  - Fixed higher-order function bug in `discoverability-monitor.js` and `prompt-monitor.js` where `export const handler = async () => withJobRun(...)` returned an uninvoked function rather than executing the job wrapper.
+  - Added `prompt-monitor` and `sxo-analytics-import-worker` to `RUNNABLE` and `JOB_PLATFORM` in `admin-monitoring.js`.
+
+### 3. Verification evidence
+
+- `npm run test:contract`: 141/141 files, 2,540/2,540 passed
+- `npm run test:unit`: 240/240 files, 3,979/3,979 passed
+- `npm run prerender`: 28 rendered, 28 written, 0 failed
+- `npm run build`: built in 1.28s
+- GitHub Actions Staging Gate on PR #199: 8/8 checks green, Netlify deploy preview verified.
+
+---
+
 ## 2026-09-17 IST — Workflows orchestration engine, Templates expansion, Navigation update, Curation, Discoverability UX & E2E smoke tests
 
 > **Branch:** `staging` · **Delivery:** Merged to `staging` (via PR #193, PR #195) · **`main`:** untouched

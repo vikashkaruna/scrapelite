@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Claude session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-15 (later) — DISCOVERABILITY TABS PAINT FROM LOCALSTORAGE AND REFRESH FROM THE DATABASE; STEP RIBBON NUMBERED 1.1–1.4 → 2–5; ACTIVE-AUDIT CONTEXT BAR; ENTITY-RELATIONSHIP APPROVE CRASH FIXED; DIRECTORY SOURCES CAN BE IGNORED; PILLARS IN TWO COLUMNS (SCREEN, PDF, MARKDOWN). Pricing consistency PR #179 merged to `staging`. Branch `fix/discoverability-tabs-context` → PR into `staging`. 🔴 Apply migration `0076` to staging Supabase. db-verify 76 migrations / 847 assertions. Next migration number `0077`. Detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) (newest entry).**
+> **Last updated: 2026-09-20 — ADMIN PRODUCTION ISSUES RESOLVED (Gallery takedown & hard delete, PageSpeed / Jina AI test timeouts bounded, failed automation events deletion & FK cleanup, and discoverability / prompt monitor runner invocation fixes). 100% test green (2,540 contract tests, 3,979 unit tests); build & prerender clean (28 pages); Staging Gate CI passed on PR #199. Detail: [docs/sessions/SESSION-LOG.md](docs/sessions/SESSION-LOG.md) and [docs/sessions/SESSION-HANDOFF-2026-09-20-ADMIN-PRODUCTION-FIXES.md](docs/sessions/SESSION-HANDOFF-2026-09-20-ADMIN-PRODUCTION-FIXES.md).**
 >
 > ⚠️ **Approving an edge approves its proposed endpoints, so self-approval has two halves.** A teammate's edge between entities YOU proposed used to raise a raw `23514` (shown as a failed save); `0076` returns `endpoint_self_approval` instead. ⚠️ **`tabCache.js` is paint-only** — keys scoped by user + workspace, swept on sign-out; never decide anything from a cached payload.
 >

@@ -135,6 +135,28 @@ async function cancelEvent(db, eventId, reason) {
   return { ok: true, event: Array.isArray(rows) ? rows[0] : null };
 }
 
+async function deleteEvent(db, eventId) {
+  // First clean up associated runs
+  await fetch(
+    `${db.base}/workflow_runs?event_id=eq.${encodeURIComponent(eventId)}`,
+    {
+      method: "DELETE",
+      headers: { ...db.headers, Prefer: "return=minimal" },
+    }
+  ).catch(() => null);
+
+  const res = await fetch(
+    `${db.base}/workflow_events?id=eq.${encodeURIComponent(eventId)}`,
+    {
+      method: "DELETE",
+      headers: { ...db.headers, Prefer: "return=representation" },
+    }
+  );
+  if (!res.ok) return { ok: false, error: `supabase ${res.status}` };
+  const rows = await res.json().catch(() => []);
+  return { ok: true, deleted: true, event_id: eventId, event: Array.isArray(rows) ? rows[0] : null };
+}
+
 // ── Pipeline Configuration ─────────────────────────────────────────────
 export const DEFAULT_PIPELINE_CONFIG = {
   mode: "event_driven", // "event_driven" | "scheduled" | "paused"
@@ -238,6 +260,11 @@ async function handlePost(event) {
   if (action === "cancel") {
     if (!body.event_id) return bad(400, "missing event_id");
     const r = await cancelEvent(db, body.event_id, body.reason);
+    return r.ok ? ok(r) : bad(500, r.error);
+  }
+  if (action === "delete") {
+    if (!body.event_id) return bad(400, "missing event_id");
+    const r = await deleteEvent(db, body.event_id);
     return r.ok ? ok(r) : bad(500, r.error);
   }
   if (action === "dispatch") {

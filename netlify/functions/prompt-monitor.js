@@ -79,8 +79,7 @@ export async function runOnce(now = Date.now(), env = process.env) {
   return { ran, failed, due: due.length, engine };
 }
 
-export const handler = async () =>
-  withJobRun(JOB_ID, async () => {
-    const result = await runOnce();
-    return { statusCode: 200, body: JSON.stringify(result) };
-  });
+export const handler = withJobRun(JOB_ID, async () => {
+  const result = await runOnce();
+  return { statusCode: 200, body: JSON.stringify(result) };
+});

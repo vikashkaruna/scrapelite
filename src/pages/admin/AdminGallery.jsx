@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  fetchGalleryReports, curateGalleryReport, uncurateGalleryReport, takedownGalleryReport,
+  fetchGalleryReports, curateGalleryReport, uncurateGalleryReport, takedownGalleryReport, deleteGalleryReport,
 } from "../../lib/adminConfigService.js";
 import { PERSONAS, PERSONA_BY_ID } from "../../lib/personaConfig.js";
 import PublicReportArticle from "../../components/PublicReportArticle.jsx";
@@ -27,8 +27,9 @@ function timeAgo(iso) {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-function ReportRow({ report, onCurated, onUncurated, onTakenDown }) {
+function ReportRow({ report, onCurated, onUncurated, onTakenDown, onDeleted }) {
   const [takedown, setTakedown] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [reason, setReason] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [persona, setPersona] = useState(report.persona || "");
@@ -59,6 +60,20 @@ function ReportRow({ report, onCurated, onUncurated, onTakenDown }) {
       onTakenDown?.(report.id);
     } catch (e) {
       showToast(e.message || "Takedown failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    setBusy(true);
+    try {
+      await deleteGalleryReport(report.id);
+      showToast("Report permanently deleted and removed completely.");
+      setConfirmDelete(false);
+      onDeleted?.(report.id);
+    } catch (e) {
+      showToast(e.message || "Delete failed.");
     } finally {
       setBusy(false);
     }
@@ -139,8 +154,11 @@ function ReportRow({ report, onCurated, onUncurated, onTakenDown }) {
             PUBLICLY READABLE at its own link. Takedown REVOKES the link — the
             customer's live share stops working for everyone holding it.
             Someone tidying the showcase must not be one misclick from that. */}
-        <Button variant="danger" size="sm" onClick={() => setTakedown(true)} disabled={busy}>
+        <Button variant="danger" size="sm" onClick={() => { setTakedown(true); setConfirmDelete(false); }} disabled={busy}>
           Take down
+        </Button>
+        <Button variant="danger" size="sm" onClick={() => { setConfirmDelete(true); setTakedown(false); }} disabled={busy}>
+          Delete
         </Button>
       </div>
 
@@ -165,6 +183,23 @@ function ReportRow({ report, onCurated, onUncurated, onTakenDown }) {
               {busy ? "Taking down…" : "Revoke the link"}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => { setTakedown(false); setReason(""); }} disabled={busy}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="admin-gallery-takedown">
+          <p>
+            <Icon name="alert-triangle" size={14} />{" "}
+            <strong>Permanently delete this report?</strong> This removes the report completely from the database and public gallery. This action cannot be undone.
+          </p>
+          <div className="admin-gallery-takedown-actions">
+            <Button variant="danger" size="sm" onClick={handleDelete} disabled={busy}>
+              {busy ? "Deleting…" : "Delete completely"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)} disabled={busy}>
               Cancel
             </Button>
           </div>
@@ -291,6 +326,7 @@ export default function AdminGallery() {
               // described no longer resolves, so leaving a row that offers to
               // curate it would be offering something that cannot happen.
               onTakenDown={(id) => setReports((rs) => rs.filter((x) => x.id !== id))}
+              onDeleted={(id) => setReports((rs) => rs.filter((x) => x.id !== id))}
             />
           ))}
         </div>
