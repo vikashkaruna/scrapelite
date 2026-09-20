@@ -230,4 +230,16 @@ describe("index.html wiring", () => {
     const scriptSrc = csp.split(";").find((d) => d.trim().startsWith("script-src"));
     expect(scriptSrc).toContain("https://www.googletagmanager.com");
   });
+
+  it("permits plausible.io in the CSP", () => {
+    const toml = readFileSync(join(ROOT, "netlify.toml"), "utf8");
+    const csp = toml.match(/Content-Security-Policy = "([^"]+)"/)[1];
+    const scriptSrc = csp.split(";").find((d) => d.trim().startsWith("script-src"));
+    expect(scriptSrc).toContain("https://plausible.io");
+  });
+
+  it("loads Plausible tracking snippet in index.html", () => {
+    expect(INDEX).toContain('src="https://plausible.io/js/pa-Eg7Xhgb7lalkDtpfmY-qf.js"');
+    expect(INDEX).toContain("window.plausible");
+  });
 });
