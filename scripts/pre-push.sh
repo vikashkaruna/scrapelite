@@ -199,9 +199,11 @@ fi
 # ── Run the test suites ───────────────────────────────────────────────
 # tput may not exist in non-TTY environments (CI smoke, backgrounded
 # shells). Use plain escape codes when it does, otherwise fall back.
-if [ -t 1 ] && command -v tput >/dev/null 2>&1; then
-  C_OK="$(tput setaf 2)"; C_ERR="$(tput setaf 1)"; C_DIM="$(tput dim)"
-  C_RST="$(tput sgr0)"
+if [ -t 1 ] && command -v tput >/dev/null 2>&1 && tput setaf 2 >/dev/null 2>&1; then
+  C_OK="$(tput setaf 2 2>/dev/null || echo '\033[32m')"
+  C_ERR="$(tput setaf 1 2>/dev/null || echo '\033[31m')"
+  C_DIM="$(tput dim 2>/dev/null || echo '\033[2m')"
+  C_RST="$(tput sgr0 2>/dev/null || echo '\033[0m')"
 else
   C_OK='\033[32m'; C_ERR='\033[31m'; C_DIM='\033[2m'; C_RST='\033[0m'
 fi
