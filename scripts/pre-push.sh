@@ -34,7 +34,12 @@
 
 set -euo pipefail
 
-# ── Is the INSTALLED hook the current one? ─────────────────────────────
+# Ensure Node 24 is used if nvm is present
+if [ -s "${HOME:-}/.nvm/nvm.sh" ]; then
+  export NVM_DIR="${HOME}/.nvm"
+  . "${NVM_DIR}/nvm.sh" 2>/dev/null || true
+  nvm use 24.17.0 >/dev/null 2>&1 || nvm use 24 >/dev/null 2>&1 || true
+fi
 # .git/hooks/pre-push is a COPY of this file, made by `npm run
 # ci:install-hook`. Nothing re-copies it when this script changes, so the
 # installed hook silently rots — and a rotted hook does not announce
