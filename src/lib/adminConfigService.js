@@ -303,3 +303,16 @@ export async function uncurateGalleryReport(id) {
   if (!res.ok) throw new Error(data.error || `Uncurate failed (${res.status})`);
   return data;
 }
+
+/** Permanently delete a report completely from the database. */
+export async function deleteGalleryReport(id) {
+  const res = await fetch(GALLERY_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ action: "delete", id }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.error || `Delete failed (${res.status})`);
+  return data;
+}
+

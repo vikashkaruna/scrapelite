@@ -220,4 +220,70 @@ describe("admin-gallery — takedown", () => {
   it("still requires an id", async () => {
     expect((await post({ action: "takedown", reason: "spam" })).statusCode).toBe(400);
   });
+
+  it("successful takedown patches public_reports is_public=false and curated=false", async () => {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "sk";
+    const calls = [];
+    fetchMock.mockImplementation(async (url, init) => {
+      calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(init.body) : null });
+      if (url.includes("select=id,slug,is_public")) {
+        return new Response(JSON.stringify([{ id: "r1", slug: "slug-1", is_public: true }]), { status: 200 });
+      }
+      return new Response(null, { status: 204 });
+    });
+
+    const r = await post({ action: "takedown", id: "r1", reason: "violates TOS" });
+    expect(r.statusCode).toBe(200);
+    const body = JSON.parse(r.body);
+    expect(body.ok).toBe(true);
+    expect(body.action).toBe("takedown");
+
+    // Check patch on public_reports
+    const patchCall = calls.find((c) => c.url.includes("public_reports?id=eq.r1") && c.method === "PATCH");
+    expect(patchCall).toBeTruthy();
+    expect(patchCall.body).toEqual({ is_public: false, curated: false });
+  });
 });
+
+describe("admin-gallery — delete", () => {
+  const post = async (body) => {
+    const { handler } = await import("../functions/admin-gallery.js");
+    return handler({
+      httpMethod: "POST",
+      headers: { authorization: `Bearer ${makeAdminToken()}` },
+      body: JSON.stringify(body),
+    });
+  };
+
+  it("delete requires an id", async () => {
+    const r = await post({ action: "delete" });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it("successful delete calls DELETE on public_reports and reports", async () => {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "sk";
+    const calls = [];
+    fetchMock.mockImplementation(async (url, init) => {
+      calls.push({ url, method: init?.method });
+      if (url.includes("select=id,slug")) {
+        return new Response(JSON.stringify([{ id: "r1", slug: "slug-1" }]), { status: 200 });
+      }
+      return new Response(null, { status: 204 });
+    });
+
+    const r = await post({ action: "delete", id: "r1" });
+    expect(r.statusCode).toBe(200);
+    const body = JSON.parse(r.body);
+    expect(body.ok).toBe(true);
+    expect(body.action).toBe("delete");
+
+    const deletePub = calls.find((c) => c.url.includes("public_reports?id=eq.r1") && c.method === "DELETE");
+    expect(deletePub).toBeTruthy();
+
+    const deleteRepSlug = calls.find((c) => c.url.includes("reports?slug=eq.slug-1") && c.method === "DELETE");
+    expect(deleteRepSlug).toBeTruthy();
+  });
+});
+
