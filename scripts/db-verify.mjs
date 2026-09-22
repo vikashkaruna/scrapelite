@@ -2744,8 +2744,20 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   eq("🔴 approving an edge approves its ENDPOINTS in the same statement",
     (await q(`select id from public.audit_entities where id in ($1,$2) and state='approved'`, [acme, cloud])).length, 2);
 
-  eq("approval is idempotent",
-    (await one(`select public.approve_entity_relationship($1,$2) as r`, [owns, mate])).r, "ok");
+  // 0077 sharpened the verdict: a second approval now reports `already_approved`
+  // rather than a bare `ok`. IDEMPOTENCY IS UNCHANGED AND THAT IS THE POINT —
+  // the row is not re-written, nothing errors, and auditStore maps
+  // `already_approved` to { ok: true }, so the HTTP layer still answers 200 and
+  // a double-click is still a no-op. The verdict only became precise enough for
+  // a stale UI to say "already approved" instead of claiming it just did it.
+  eq("approval is idempotent — second call reports already_approved",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`, [owns, mate])).r, "already_approved");
+  // The half that actually matters: re-approving must not disturb the audit
+  // trail. If the second call overwrote reviewed_by/review_note, "who approved
+  // this and why" would silently change on every stray click.
+  eq("...and the second call does not overwrite the original review record",
+    (await one(`select state, reviewed_by, review_note from public.audit_entity_relationships where id=$1`, [owns])),
+    { state: "approved", reviewed_by: mate, review_note: "Confirmed from the filings." });
 
   // An endpoint somebody explicitly rejected blocks the edge — reviving it
   // silently would undo their decision.

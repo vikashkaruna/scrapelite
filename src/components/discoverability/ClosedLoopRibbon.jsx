@@ -3,22 +3,40 @@
 // Numbering is HIERARCHICAL on purpose. Running an audit performs Discover,
 // Score, Diagnose and Recommend in one pass, so those four are sub-steps of
 // stage 1 (1.1–1.4) rather than four separate things the user must do. The
-// remaining stages are distinct acts: 2 Implement → 3 Validate → 4 Benchmark
-// → 5 Expand.
+// remaining stages are distinct acts following the audit → revenue loop:
+//
+//   2 Implement   — Business Truth (canonical facts)
+//   3 Verify      — Schema & Trust (structured data correctness)
+//   4 Build       — Entity Graph + Local Directory (knowledge foundation)
+//   5 Score       — Subject Scores (BDS / PDS / SFS)
+//   6 Validate    — SXO & Outcomes (journey friction + conversions)
+//                   ↻ loops back to step 1 (Re-audit)
+//
+// Schema & Trust used to share step 2 with Business Truth — that collapsed two
+// distinct acts. Entity Graph used to come AFTER Subject Scores, which is
+// backwards: you can't score a subject until the entity exists. The order
+// here puts the foundation (truth → schema → graph → local → scores) before
+// the validation (sxo) so each step has its prerequisites satisfied.
 
+// Imports
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
 import Icon from "../Icon.jsx";
+import "./ClosedLoopRibbon.css";
+
+// Note: isAuditTab is defined later with history handling.
+
 
 export const CLOSED_LOOP_STEPS = Object.freeze([
-  { id: "discover", number: "1.1", group: "audit", label: "Discover", icon: "scan-search", path: "/discoverability" },
-  { id: "score", number: "1.2", group: "audit", label: "Score", icon: "bar-chart-2", path: "/discoverability" },
-  { id: "diagnose", number: "1.3", group: "audit", label: "Diagnose", icon: "alert-triangle", path: "/discoverability" },
-  { id: "recommend", number: "1.4", group: "audit", label: "Recommend", icon: "list-checks", path: "/discoverability" },
-  { id: "implement", number: "2", group: "implement", label: "Implement", icon: "database", path: "/discoverability/truth" },
-  { id: "validate", number: "3", group: "validate", label: "Validate", icon: "zap", path: "/discoverability/sxo" },
-  { id: "benchmark", number: "4", group: "benchmark", label: "Benchmark", icon: "award", path: "/discoverability/scores" },
-  { id: "expand", number: "5", group: "expand", label: "Expand", icon: "share-2", path: "/discoverability/entities" },
+  { id: "discover",   number: "1.1", group: "audit",     label: "Discover",  icon: "scan-search",    path: "/discoverability" },
+  { id: "score",      number: "1.2", group: "audit",     label: "Score",     icon: "bar-chart-2",    path: "/discoverability" },
+  { id: "diagnose",   number: "1.3", group: "audit",     label: "Diagnose",  icon: "alert-triangle", path: "/discoverability" },
+  { id: "recommend",  number: "1.4", group: "audit",     label: "Recommend", icon: "list-checks",    path: "/discoverability" },
+  { id: "implement",  number: "2",   group: "implement", label: "Implement", icon: "database",       path: "/discoverability/truth" },
+  { id: "verify",     number: "3",   group: "verify",    label: "Verify",    icon: "shield-check",   path: "/discoverability/trust" },
+  { id: "build",      number: "4",   group: "build",     label: "Build",     icon: "share-2",        path: "/discoverability/entities" },
+  { id: "score_subj", number: "5",   group: "score",     label: "Score",     icon: "award",          path: "/discoverability/scores" },
+  { id: "validate",   number: "6",   group: "validate",  label: "Validate",  icon: "zap",            path: "/discoverability/sxo" },
 ]);
 
 /** Display number for a step id ("1.2", "3", …), or null for an unknown id. */
@@ -48,20 +66,24 @@ const STEP_GUIDES = {
     auditingHint: "Auditing in progress… Generating copy-ready fixes ranked by impact across search & AI engines.",
   },
   implement: {
-    title: "Implement Truth & Schema",
-    hint: "Establish canonical facts in Business Truth, self-approve records, and verify schema trust.",
+    title: "Implement Business Truth",
+    hint: "Establish canonical facts (brand, product, service, location) and self-approve records. Each becomes the source of truth the rest of the loop measures against.",
+  },
+  verify: {
+    title: "Verify Schema & Trust",
+    hint: "Validate structured-data correctness and trust signals. Schema trust is what makes facts claimable to answer engines — and what lets us tell a valid declared fact from a machine-readable false statement.",
+  },
+  build: {
+    title: "Build Entity Graph & Local Directory",
+    hint: "Declare entities, draw verified relationships, and extend directory presence. The graph is the knowledge foundation Subject Scores run against.",
+  },
+  score_subj: {
+    title: "Score Subjects (BDS / PDS / SFS)",
+    hint: "Compute entity-level Brand, Product, and Service scores. Subject scores feed the rollups that SXO aggregates.",
   },
   validate: {
-    title: "Validate SXO Outcomes",
-    hint: "Re-evaluate SXO journey friction, conversion funnels, and calculate master composite.",
-  },
-  benchmark: {
-    title: "Competitive Benchmark",
-    hint: "Compare visibility velocity against competitors and track trend history.",
-  },
-  expand: {
-    title: "Expand Graph & Local",
-    hint: "Scale knowledge graph relationships, entity connections, and local directories.",
+    title: "Validate SXO & Outcomes",
+    hint: "Re-evaluate SXO journey friction, conversion funnels, and calculate master composite. Then close the loop and Re-audit.",
   },
 };
 
@@ -96,7 +118,7 @@ export default function ClosedLoopRibbon({
   }, [isAuditing]);
 
   const isAuditTab = useMemo(() => {
-    if (activeTab === "audit") return true;
+    if (activeTab === "audit" || activeTab === "history") return true;
     if (!activeTab && !currentStep && (location.pathname === "/discoverability" || location.pathname === "/discoverability/")) {
       return true;
     }
@@ -109,10 +131,14 @@ export default function ClosedLoopRibbon({
     }
     if (currentStep) return currentStep;
     const path = location.pathname;
-    if (path.includes("/truth") || path.includes("/trust")) return "implement";
+    // Map each workspace route to its closed-loop step. Order matters only in
+    // the sense that more specific paths should appear before less specific —
+    // but every test path below is unique to a step, so simple inclusion works.
+    if (path.includes("/truth")) return "implement";
+    if (path.includes("/trust")) return "verify";
+    if (path.includes("/entities") || path.includes("/local")) return "build";
+    if (path.includes("/scores")) return "score_subj";
     if (path.includes("/sxo")) return "validate";
-    if (path.includes("/scores")) return "benchmark";
-    if (path.includes("/entities") || path.includes("/local")) return "expand";
     return "discover";
   }, [isAuditing, auditStepIdx, currentStep, location.pathname]);
 
@@ -153,10 +179,17 @@ export default function ClosedLoopRibbon({
 
   return (
     <div className="dsc-closed-loop-wrapper">
+      {/* The loop is the product thesis, so it is named on screen rather than
+          left for the user to infer from eight numbered pills. The steps stay
+          at the top and the tabs sit below them, unchanged. */}
+      <div className="closed-loop-title">
+        <Icon name="refresh-cw" size={12} aria-hidden="true" />
+        <span>Discoverability to Revenue Loop</span>
+      </div>
       <div
         className="closed-loop-ribbon"
         role="navigation"
-        aria-label="Closed-loop operating process"
+        aria-label="Discoverability to Revenue Loop"
       >
         {CLOSED_LOOP_STEPS.map((s, idx) => {
           const isAuditStep = s.group === "audit";
@@ -237,6 +270,24 @@ export default function ClosedLoopRibbon({
             </div>
           );
         })}
+
+        {/* 🔴 The backlink is what makes this a LOOP rather than a checklist.
+            Without it the ribbon reads as "do these nine things and stop",
+            which is the opposite of the point: validating SXO outcomes is what
+            tells you what to re-audit. It links to the audit surface and is
+            highlighted whenever the user is on Audit or History, so the cycle
+            is visibly closed from the place the next pass starts. */}
+        <div className="closed-loop-step-wrapper closed-loop-loopback">
+          <span className="closed-loop-arrow closed-loop-arrow-back" aria-hidden="true">&crarr;</span>
+          <Link
+            to={`/discoverability${auditId ? `?audit=${encodeURIComponent(auditId)}` : ""}`}
+            className={`closed-loop-step closed-loop-reaudit${isAuditTab ? " is-audit-highlight is-complete" : ""}`}
+            title="Close the loop: re-audit and measure what changed"
+          >
+            <Icon name="refresh-cw" size={12} />
+            <span>Re-audit</span>
+          </Link>
+        </div>
       </div>
 
       <div className={`closed-loop-next-card${guideInfo.isAuditComplete ? " is-audit-complete" : ""}`}>

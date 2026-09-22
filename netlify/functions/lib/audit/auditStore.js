@@ -1515,6 +1515,14 @@ export async function approveEntity(userId, entityId, {
     ? note
     : "[Single-founder approval] Self-approved by solo operator and recorded in audit trail.";
 
+  // 🔴 2026-09-22 — STOP SWALLOWING VERDICTS. The previous version dropped
+  // self_approval and unknown verdicts on the floor and fell through to a
+  // raw DB PATCH. When the constraint refused the PATCH the caller saw a
+  // generic 23514 message; when the constraint passed it the caller saw
+  // success against the user's stated intent. Either way the verdict the
+  // RPC carefully constructed never reached the route's VERDICTS map. Now
+  // every verdict the RPC returns propagates up unchanged — `already_approved`
+  // and `ok` are both success; everything else is an actionable refusal.
   let verdict = null;
   try {
     const r = await rest("rpc/approve_entity", {
@@ -1523,16 +1531,22 @@ export async function approveEntity(userId, entityId, {
     });
     if (r.ok) {
       verdict = typeof r.data === "string" ? r.data : r.data?.approve_entity || "unknown";
-      if (verdict === "ok") return { ok: true };
-      if (verdict && verdict !== "unknown" && verdict !== "error" && verdict !== "self_approval") {
+      if (verdict === "ok" || verdict === "already_approved") {
+        return { ok: true, verdict };
+      }
+      if (verdict && verdict !== "unknown" && verdict !== "error") {
         return { ok: false, verdict };
       }
     }
   } catch (_rpcErr) {
-    // Fallback directly if RPC invocation fails
+    // Fallback directly if RPC invocation fails — but only on transport / 5xx,
+    // NOT on a verdict refusal. A catch here means fetch itself threw, which
+    // is what we want the direct PATCH to retry around.
   }
 
-  // Fallback: Direct DB update if RPC fails, throws 500, or disallows solo operator
+  // Fallback: Direct DB update if RPC was unreachable / 5xx. The PATCH must
+  // still pass audit_entities_no_self_approval; the route now reports the
+  // resulting error with the same verdict machinery.
   const patchRes = await rest(
     `audit_entities?id=eq.${encodeURIComponent(entityId)}&${ownerOrWorkspace(userId, workspaceId)}`,
     {
@@ -1551,7 +1565,27 @@ export async function approveEntity(userId, entityId, {
     return { ok: true, fallback: true, entity: patchRes.data[0] };
   }
 
-  return { ok: false, error: patchRes?.error || "Could not approve entity", verdict };
+  // PATCH failed: parse the PostgREST error body for a structured verdict.
+  // 23514 = check_violation; 42501 = insufficient_privilege (RLS refused);
+  // anything else stays as a generic error with the original PostgREST message
+  // attached so the operator can debug from server logs.
+  const fallbackVerdict = (() => {
+    const code = patchRes?.code || patchRes?.error?.code;
+    const message = (patchRes?.error?.message || patchRes?.message || "").toLowerCase();
+    if (code === "23514" || message.includes("audit_entities_no_self_approval") || message.includes("check constraint")) {
+      return "check_violation";
+    }
+    if (code === "42501" || message.includes("row-level security") || message.includes("permission denied")) {
+      return "rls_denied";
+    }
+    return null;
+  })();
+
+  return {
+    ok: false,
+    error: patchRes?.error?.message || patchRes?.error || "Could not approve entity",
+    verdict: fallbackVerdict || verdict,
+  };
 }
 
 /** Approve an edge and its endpoints, atomically. Verdict returned unchanged with direct DB fallback. */
@@ -1568,6 +1602,9 @@ export async function approveEntityRelationship(userId, relationshipId, {
     ? note
     : "[Single-founder approval] Self-approved by solo operator and recorded in audit trail.";
 
+  // 🔴 2026-09-22 — same verdict-propagation fix as approveEntity. The previous
+  // code dropped self_approval AND endpoint_self_approval silently; the route
+  // has a VERDICTS map for both, so the only thing that needed fixing was here.
   let verdict = null;
   try {
     const r = await rest("rpc/approve_entity_relationship", {
@@ -1576,8 +1613,10 @@ export async function approveEntityRelationship(userId, relationshipId, {
     });
     if (r.ok) {
       verdict = typeof r.data === "string" ? r.data : r.data?.approve_entity_relationship || "unknown";
-      if (verdict === "ok") return { ok: true };
-      if (verdict && verdict !== "unknown" && verdict !== "error" && verdict !== "self_approval" && verdict !== "endpoint_self_approval") {
+      if (verdict === "ok" || verdict === "already_approved") {
+        return { ok: true, verdict };
+      }
+      if (verdict && verdict !== "unknown" && verdict !== "error") {
         return { ok: false, verdict };
       }
     }
@@ -1633,7 +1672,27 @@ export async function approveEntityRelationship(userId, relationshipId, {
     return { ok: true, fallback: true, relationship: patchRes.data[0] };
   }
 
-  return { ok: false, error: patchRes?.error || "Could not approve relationship", verdict };
+  // PATCH failed: same verdict-from-PostgREST-error parsing as approveEntity.
+  // The endpoint-self-approval case in particular would otherwise surface as a
+  // generic "Could not approve relationship" while the route's VERDICTS map
+  // has a perfectly good entry for it — same root cause, same fix.
+  const fallbackVerdict = (() => {
+    const code = patchRes?.code || patchRes?.error?.code;
+    const message = (patchRes?.error?.message || patchRes?.message || "").toLowerCase();
+    if (code === "23514" || message.includes("audit_rel_no_self_approval") || message.includes("audit_entities_no_self_approval") || message.includes("check constraint")) {
+      return "check_violation";
+    }
+    if (code === "42501" || message.includes("row-level security") || message.includes("permission denied")) {
+      return "rls_denied";
+    }
+    return null;
+  })();
+
+  return {
+    ok: false,
+    error: patchRes?.error?.message || patchRes?.error || "Could not approve relationship",
+    verdict: fallbackVerdict || verdict,
+  };
 }
 
 /**

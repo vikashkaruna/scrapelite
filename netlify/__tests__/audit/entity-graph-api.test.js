@@ -315,7 +315,14 @@ describe("approving a relationship", () => {
     storeMock.approveEntityRelationship = vi.fn(async () => ({ ok: false, verdict: "self_approval" }));
     const res = await call("POST", "entity-graph/relationships/r-1/approve");
     expect(res.statusCode).toBe(403);
-    expect(parse(res).error).toMatch(/second person/i);
+    // Assert the REMEDY, not the wording. The refusal is only useful if it
+    // tells the user what to do next — ask a teammate, or record a
+    // single-founder confirmation. An earlier version of this test pinned the
+    // literal phrase "second person", which went red when the message was
+    // rewritten to be MORE actionable. A message may be reworded; it may not
+    // drop the remedy.
+    expect(parse(res).error).toMatch(/teammate|single-founder/i);
+    expect(parse(res).code).toBe("SELF_APPROVAL");
   });
 
   it("🔴 turns a rejected endpoint into 409, naming why", async () => {
