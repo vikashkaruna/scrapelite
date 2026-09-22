@@ -341,7 +341,7 @@ invoice before anyone is billed on them.
 | # | Surface | State |
 |---|---|---|
 | **L0** | Enrichment | ✅ metered at `runChain` via `extract.js`'s request context |
-| **L0b** | Guests on `/api/ai` | ✅ draws the `single` guest bucket, **failing open on infrastructure and closed on an absent account** |
+| **L0b** | Guests on `/api/ai` | ✅ **CHECKS** the `single` guest bucket, does not spend from it — see below. Fails open on infrastructure, closed on an exhausted bucket |
 | **L1** | Scheduled Discoverability | ✅ pool checked **before** `createAudit()`; schedule **paused with a recorded reason** when short |
 | **L2** | Prompt monitors | ✅ 2/prompt; a short account **records a skipped run with its reason** and advances its clock |
 | **L3** | Bulk enrichment | ✅ per-chunk pool check, per-row charge from actuals, `enrichment_jobs.paused_reason` added so a paused job says why |
@@ -352,6 +352,16 @@ invoice before anyone is billed on them.
 
 **1. There are FIVE choke points, not four.** Recorded in §5 above. The
 metering plan and the §1 recount disagreed by 3 credits per audit.
+
+**1b. `/api/ai` must CHECK the guest bucket, not consume it.** The obvious
+reading of L0b — "charge a guest credit here too" — would have halved the
+trial silently. One extraction from the browser is `/api/extract`, which
+already charges, **plus** an `/api/ai` call for the summary and usually a
+second for link tagging. Consuming at each would have taken a guest from ten
+extractions to three or four while `GuestTrialBanner` went on advertising ten:
+the server and the UI disagreeing about the same number, with no error
+anywhere. A **read** closes the leak exactly — once the ten credits are gone
+the AI endpoint stops too — and charges nothing twice.
 
 **2. A balance of zero is not the same as no balance, and conflating them
 would have taken the product down the day `0078` was applied.** These gates

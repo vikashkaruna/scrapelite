@@ -33,7 +33,7 @@ import { runChain, keyPresence } from "./lib/aiProviders.js";
 import { publicFailure, logChainFailure } from "./lib/aiFailure.js";
 import { AI_AREA_KEYS, MODEL_TIER } from "../../src/lib/providerRegistry.js";
 import { DENY_STATUS, denyBody, resolveRequestEntitlement, checkCapability } from "./lib/requireEntitlement.js";
-import { consumeGuestCredit } from "./lib/guestUsage.js";
+import { peekGuestCredit } from "./lib/guestUsage.js";
 import { meterContext, flush as flushMeter } from "./lib/creditMeter.js";
 import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
 import { createDeadline } from "./lib/audit/deadline.js";
@@ -181,38 +181,35 @@ export const handler = async (event) => {
   // The gate above is explicitly "signed-in users only; guests are
   // unaffected", which was true and was the leak: /api/ai is a real provider
   // call, and an anonymous caller could make it as many times as they liked.
-  // /api/extract has charged the same bucket since the guest-identity work
-  // landed; this endpoint simply never did.
   //
-  // ⚠️ THE ASYMMETRY IS DELIBERATE AND IS NOT A COMPROMISE. consumeGuestCredit
-  // fails OPEN when the ledger is unreachable — a Supabase blip must not take
-  // AI enrichment down — but "no account" is a KNOWN state with a known
-  // bucket, not an infrastructure failure, so an exhausted guest is refused.
+  // 🔴 IT CHECKS THE BUCKET, IT DOES NOT SPEND FROM IT.
+  // One extraction from the browser is /api/extract — which charges a guest
+  // credit — PLUS a /api/ai call for the summary and often another for link
+  // tagging. Consuming here as well would have taken a guest from ten
+  // extractions to three or four, silently, while GuestTrialBanner went on
+  // advertising ten. A read closes the leak exactly (once the ten credits are
+  // gone, this endpoint stops too) without charging one extraction twice.
   //
-  // It sits below the entitlement and key-presence gates for the reason
-  // extract.js's own gate order documents: everything able to decline without
-  // doing work must sit above the charge, or a refusal costs the caller a
-  // credit.
-  const guestUsage = await consumeGuestCredit(event, "single", { verifiedUserId });
+  // ⚠️ FAILS OPEN on anything undeterminable — no cookie, no row, no database
+  // — and closed only on a count at or over the limit. "No account" is a
+  // known state with a known bucket; an unreachable Supabase is not.
+  const guestUsage = await peekGuestCredit(event, "single", { verifiedUserId });
   if (!guestUsage.allowed) {
-    return respond(
-      429,
-      {
-        error: "You've used your free AI requests. Sign in to continue — it's free and takes a moment.",
-        code: guestUsage.reason || "single_limit_reached",
-        remaining: 0,
-      },
-      guestUsage.cookie ? { "Set-Cookie": guestUsage.cookie } : {},
-    );
+    return respond(429, {
+      error: "You've used your free AI requests. Sign in to continue — it's free and takes a moment.",
+      code: guestUsage.reason || "single_limit_reached",
+      remaining: 0,
+    });
   }
 
   const meter = meterContext({ caller: "api-ai", userId: verifiedUserId });
-  // Single exit below this line: it carries the guest cookie so the identity
-  // survives the round trip, and it flushes the meter so no return path can
-  // forget the charge.
+  // Single exit below this line so no return path can forget the charge.
+  // No Set-Cookie here: the peek above never mints an identity, because
+  // /api/extract owns that and a second minter would hand the same browser
+  // two identities and two fresh buckets.
   const reply = async (statusCode, body) => {
     await flushMeter(meter);
-    return respond(statusCode, body, guestUsage.cookie ? { "Set-Cookie": guestUsage.cookie } : {});
+    return respond(statusCode, body);
   };
 
   // Budgeted from the REQUEST, not from the chain: entitlement resolution and
