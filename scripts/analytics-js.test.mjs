@@ -50,6 +50,11 @@ function run({ hostname = "datiq.app", pathname = "/", runtime, stored, isSpa = 
         return node;
       },
       addEventListener() {},
+      // PostHog's stub inserts array.js before the first <script> on the page.
+      // In a real document that always exists (analytics.js is itself one), so
+      // the sandbox has to model it or the stub throws and the loader silently
+      // reports "PostHog did not load" for the wrong reason.
+      getElementsByTagName: () => [{ parentNode: { insertBefore: (n) => injected.push(n) } }],
     },
     fetch: () => Promise.resolve({}),
     Blob: class {},
@@ -72,6 +77,7 @@ function run({ hostname = "datiq.app", pathname = "/", runtime, stored, isSpa = 
     gtagSrc: scripts.map((s) => s._src).filter(Boolean),
     api: sandbox.__datiqConsent,
     loaded: scripts.some((s) => (s._src || "").includes("googletagmanager.com")),
+    posthogLoaded: scripts.some((s) => (s._src || "").includes("posthog.com")),
   };
 }
 
@@ -222,6 +228,21 @@ describe("index.html wiring", () => {
     expect(INDEX).toMatch(/<html[^>]*data-datiq-app=/);
   });
 
+  it("🔴 permits PostHog's asset origin in the CSP", () => {
+    // PostHog loads array.js from <region>-assets.i.posthog.com, NOT from the
+    // api_host. Without this the SDK is blocked by the browser and PostHog
+    // records nothing at all — with only a console violation to show for it,
+    // on a surface nobody watches. The inline snippet this replaced would have
+    // shipped to datiq.app and captured zero events for exactly this reason.
+    const toml = readFileSync(join(ROOT, "netlify.toml"), "utf8");
+    const csp = toml.match(/Content-Security-Policy = "([^"]+)"/)[1];
+    const scriptSrc = csp.split(";").find((d) => d.trim().startsWith("script-src"));
+    expect(scriptSrc).toContain("https://us-assets.i.posthog.com");
+    // connect-src carries the event beacon; it already wildcards https:.
+    const connectSrc = csp.split(";").find((d) => d.trim().startsWith("connect-src"));
+    expect(connectSrc).toMatch(/https:/);
+  });
+
   it("permits googletagmanager.com in the CSP", () => {
     // Without this the tag is blocked by the browser and GA records nothing,
     // with only a console violation to show for it.
@@ -241,5 +262,83 @@ describe("index.html wiring", () => {
   it("loads Plausible tracking snippet in index.html", () => {
     expect(INDEX).toContain('src="https://plausible.io/js/pa-Eg7Xhgb7lalkDtpfmY-qf.js"');
     expect(INDEX).toContain("window.plausible");
+  });
+});
+
+describe("analytics.js — PostHog is gated on the same consent as gtag.js", () => {
+  // 🔴 PostHog's snippet initialises on execution: it writes a distinct_id and
+  // starts capturing the moment it runs. Pasted into <head> — which is how it
+  // arrived — it therefore tracks every visitor BEFORE the banner renders,
+  // including the ones who then click Decline. That contradicts the consent
+  // banner and the DPDP section of /privacy, and it fails silently: the only
+  // symptom is data that should not exist.
+
+  it("does not load before the visitor has chosen", () => {
+    const r = run({});
+    expect(r.posthogLoaded).toBe(false);
+    expect(r.api.posthogActive()).toBe(false);
+  });
+
+  it("🔴 does not load for a stored DENIAL", () => {
+    const r = run({ stored: { analytics: "denied" } });
+    expect(r.posthogLoaded).toBe(false);
+    expect(r.api.posthogActive()).toBe(false);
+  });
+
+  it("loads when consent was already granted", () => {
+    const r = run({ stored: { analytics: "granted" } });
+    expect(r.posthogLoaded).toBe(true);
+    expect(r.api.posthogActive()).toBe(true);
+  });
+
+  it("loads only after the consent bridge receives an Allow choice", () => {
+    const r = run({});
+    expect(r.api.posthogActive()).toBe(false);
+    r.sandbox.localStorage.setItem("datiq.consent", JSON.stringify({ analytics: "granted" }));
+    r.api.set("granted");
+    expect(r.api.posthogActive()).toBe(true);
+  });
+
+  it("never loads on /admin", () => {
+    // The operator console must not leak internal path names into a
+    // third-party product-analytics property, same rule as the Google tag.
+    const r = run({ pathname: "/admin/revenue", stored: { analytics: "granted" } });
+    expect(r.posthogLoaded).toBe(false);
+  });
+
+  it("never loads on localhost by default", () => {
+    const r = run({ hostname: "localhost", stored: { analytics: "granted" } });
+    expect(r.posthogLoaded).toBe(false);
+  });
+
+  it("treats an EMPTY posthogKey as deliberately disabled", () => {
+    const r = run({ runtime: { posthogKey: "" }, stored: { analytics: "granted" } });
+    expect(r.posthogLoaded).toBe(false);
+  });
+
+  it("uses a runtime-supplied key and host when present", () => {
+    const r = run({
+      runtime: { posthogKey: "phc_staging", posthogHost: "https://eu.i.posthog.com" },
+      stored: { analytics: "granted" },
+    });
+    expect(r.posthogLoaded).toBe(true);
+    expect(r.sandbox.posthog._i[0][0]).toBe("phc_staging");
+    expect(r.sandbox.posthog._i[0][1].api_host).toBe("https://eu.i.posthog.com");
+  });
+
+  it("🔴 opts out and clears its cookies when consent is withdrawn", () => {
+    const r = run({ stored: { analytics: "granted" } });
+    expect(r.api.posthogActive()).toBe(true);
+    let optedOut = false;
+    r.sandbox.posthog.opt_out_capturing = () => { optedOut = true; };
+    r.sandbox.posthog.reset = () => {};
+    r.api.set("denied");
+    expect(optedOut).toBe(true);
+  });
+
+  it("🔴 is NOT pasted into index.html — one consent gate, not two", () => {
+    // A second copy in <head> would run before this file's gate and re-open
+    // exactly the hole this suite exists to close.
+    expect(INDEX).not.toMatch(/posthog\.init/i);
   });
 });
