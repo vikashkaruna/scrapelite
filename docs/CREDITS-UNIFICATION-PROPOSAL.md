@@ -1,305 +1,251 @@
-# Unified Usage Credits — plan v2
+# Unified Usage Credits — plan v3
 
-> **Status: PROPOSAL. Nothing implemented.** Updated 2026-09-22 with the owner's
-> decisions. Supersedes v1 and folds in
-> [CREDITS-UNIFICATION-ADDENDUM.md](./CREDITS-UNIFICATION-ADDENDUM.md), which is
-> kept for its evidence trail.
+> **Status: PROPOSAL. Nothing implemented.** Revised 2026-09-23 with the owner's
+> second round of decisions, a **measured** Discoverability weight, and a
+> module-by-module map of the revenue loop.
 >
-> Every claim is cited to a file. Estimates say so.
+> Supersedes v2. The evidence trail stays in
+> [CREDITS-UNIFICATION-ADDENDUM.md](./CREDITS-UNIFICATION-ADDENDUM.md).
+> Measurements are cited to file and line; estimates say so.
 
 ---
 
-## 0. Decisions locked by the owner
+## 0. Decisions carried in
 
-| # | Decision |
+| # | Decision | Source |
+|---|---|---|
+| D1 | Everything is sold as credits | owner |
+| D2 | **Rollover: capped, 1 month** — see §1, this is a recommendation | this doc |
+| D3 | Free does **not** reset — a one-time lifetime grant | owner |
+| D4 | **Free = 100 credits**, pure pool, with the first Discoverability run reserved | owner |
+| D5 | Registration required to **save** a result | owner |
+| D6 | Agency `scheduled_monitoring` capped at **100** | owner |
+| D7 | An audit is sold as **Discoverability** | owner |
+| D8 | Enrichment, scheduled audits, prompt monitors and bulk are all metered | owner |
+| D9 | Guests are **capped**, not free — `checkCapability` stops failing open for them | owner |
+
+---
+
+## 1. Rollover — recommendation: **capped, one month**
+
+The question is not "do customers like rollover" (they do) but **what does
+rollover cost a business whose unit costs are variable?** DatIQ's costs are
+per-provider-call, not fixed capacity, so an unused credit is a real deferred
+liability rather than idle server time somebody already paid for.
+
+### Why unlimited rollover is wrong here
+A customer banks twelve months, then spends it in one week. Nothing caps the
+provider bill in that week, and it lands in a month whose revenue already
+closed. That is precisely the exposure this whole exercise exists to remove.
+
+### Why no rollover at all is also wrong here
+🔴 **DatIQ is a monitoring product, and that changes the usual argument.**
+Monitors run whether or not anyone signs in, so a quiet month still consumes
+credits — the "I paid and used nothing" complaint is rarer here than in a
+seat-based tool. But the mirror case is real and common: a customer audits a
+client's site heavily in week one, then watches. Hard expiry punishes exactly
+the usage shape the product encourages.
+
+### The recommendation
+
+> **Unused credits roll over, the carried balance is capped at 1× the monthly
+> allowance, and rolled-over credits are spent FIRST (FIFO) and expire after
+> one month.**
+
+| Property | Effect |
 |---|---|
-| D1 | **Everything is sold as credits.** One currency, one pool. |
-| D2 | **Paid plans reset monthly. No rollover.** |
-| D3 | **Free does NOT reset** — a one-time lifetime grant. |
-| D4 | Free keeps **1 audit + 10 extractions**; the rest of its grant is enrichment. |
-| D5 | **Registration is required to SAVE** an extraction or audit result. |
-| D6 | Agency `scheduled_monitoring` capped at **100 jobs**. |
-| D7 | An audit is sold as **Discoverability**, not "an audit". |
+| Carry cap = 1× monthly | A customer can hold at most **2 months'** worth at once |
+| Worst-case monthly spend | Bounded at **2× the plan's budget** — forecastable |
+| FIFO | The oldest credits burn first, so a balance cannot quietly compound |
+| Free tier | **No rollover concept** — it is already a lifetime pool (D3) |
+
+This removes "I lost credits I paid for" without creating an unbounded
+liability, and keeps the worst month arithmetically knowable. ⚠️ **State the
+cap on the pricing page.** An undisclosed cap is the version that loses trust,
+the same reasoning as Agency fair use.
 
 ---
 
-## 1. 🔴 Correction to v1 — guest identity already exists
+## 2. 🔴 The Discoverability weight WAS wrong — measured, not estimated
 
-**v1 and the addendum both claimed server-side guest identity was the one piece
-of new infrastructure the model needed. That was wrong.** It is already built,
-and it is built well:
+v2 priced a Discoverability run at **12 credits**. That was a guess, and the
+guess was low. Counted from the pipeline:
 
-- `netlify/functions/lib/guestUsage.js` — *"Server-authoritative anonymous
-  identity and quota."*
-- `datiq_guest_id` cookie: 32 random bytes, **HttpOnly, Secure, SameSite=Lax**,
-  1-year age.
-- Stored as **SHA-256 only** — `0026_guest_identity_usage.sql` states *"Raw
-  guest identifiers are never stored"*. Privacy-preserving by construction.
-- `guest_identities` table + `consume_guest_credit()` RPC, service-role only.
-- **Separate buckets already:** `single: 10`, `batch: 5`, and — from `0073` —
-  **`audit: 1`**, with the comment: *"its OWN bucket, so an audit never draws on
-  the ten cheap extraction credits, and the UI's 'one free audit' is what is
-  enforced."*
-
-**The guest half of D3/D4 is therefore already enforced, server-side, today.**
-The architecture is a bucket-per-action; D1 asks for one pool. That is a
-*generalisation* of working code, not new infrastructure.
-
-> ⚠️ **The one real gap: enrichment consumes no bucket.** There is no
-> enrichment bucket, and `/api/ai` never calls `consumeGuestCredit`. §2 covers it.
-
----
-
-## 2. The leaks (unchanged from v1, plus enrichment)
-
-`chargeLedger()` has **three** production callers: `watchlist-monitor`,
-`watchlists`, `templates`. Extraction, enrichment, audits and every AI call
-reach none of them.
-
-| # | Surface | Finding |
+| Stage | Calls | Source |
 |---|---|---|
-| **L0** | **Enrichment** | 🔴 **Largest.** `case "ai": return ok();` is unconditional; `checkCapability` fails open for guests; `enrichments_per_extraction` is **`Infinity` on all 7 plans**, so the per-URL counter the client writes is never compared to a finite limit. An AI call — the most expensive action — is free and uncapped for everyone including anonymous visitors. ⚠️ **Wrong axis, not wrong number:** it caps depth *per URL* when cost is *per call*. |
-| **L1** | Scheduled audits | `discoverability-monitor.js:210` calls `createAudit()` with **no quota check**, yet those rows **do** count — the cron exceeds the plan *and* silently starves the customer's interactive quota. |
-| **L2** | Prompt monitors | `@daily`, real answer-engine calls via `sampleCitations()`, **no meter**. Capped by monitor count, not spend. |
-| **L3** | Bulk enrichment | Caps **list size**, not monthly volume; `bulk-runner.js` has **zero** metering hooks. |
-| **L5** | P2 modules | `ok(Infinity)` — correct today (verified: no provider calls) but unenforced, so the first AI call added there is free by default. |
+| `collectPage` | **3 fetches** — raw, rendered, crawler, in one `Promise.all` | `fetchLayer.js:377` |
+| canonical check | +1 fetch (conditional) | `checkCanonicalTarget` |
+| `fetchWebVitals` | 1 PageSpeed call — **free at low volume**, keyless fallback | `webVitals.js` |
+| `sampleCitations` | **5 AI calls** on the default prompt set (3 subject + 2 brand) | `citationSampling.js:56-68` |
+| `evaluatePassage` | 1 AI call | `aiEvaluator.js:76` |
+| `summariseAudit` | 1 AI call — lazy, on first report view | `aiEvaluator.js:233` |
 
----
+At the v2 weights (page = 1, AI fast = 2):
 
-## 3. The unit and the weights
-
-> **1 credit = one page fetch.**
-
-| Action | Credits | Notes |
+| Path | Arithmetic | Credits |
 |---|---|---|
-| Page fetch | 1 | the anchor |
-| AI call — fast | 2 | |
-| AI call — deep | 5 | |
-| **Enrichment** | **3** | 1 fetch + 1 fast AI call; 4–5 when the related-page scan fires |
-| **Discoverability run** | **12** | ~2 fetches + robots + PageSpeed + citation sample + AI evaluator |
-| Monitor check (page) | 1 / page | already charged this way |
-| Prompt-monitor sample | 2 / prompt | one AI call each |
-| Bulk enrichment row | 3 | 1 fetch + 1 AI call |
-| Template run | sum of parts | already modelled |
-| P2 module read/write | **0** | no provider call — free **by rule** |
+| Default run | 4 fetches + 6 AI | **16** |
+| …plus the exec summary nearly everyone opens | +1 AI | **18** |
+| 🔴 At `MAX_PROMPTS_PER_AUDIT = 10` | 4 fetches + 11 AI | **26** |
 
-⚠️ **Estimates. Calibrate before selling** (§7 step B).
+**v2's 12 was ~33 % low on the default path and ~54 % low at the ceiling.**
 
-### What is never charged
+### Proposed calibrated weight
 
-| Outcome | Charge? | Why |
+> **A Discoverability run costs 18 credits, plus 2 for each citation prompt
+> beyond the 5 defaults** (so a 10-prompt run is 28).
+
+⚠️ **The variable part is not a detail.** `MAX_PROMPTS_PER_AUDIT` is 10 and the
+prompt set is caller-supplied, so a flat price makes the most expensive audit
+the cheapest per unit of work — and it is the one an engaged customer runs.
+Charging for the prompts they chose is both honest and self-limiting.
+
+⚠️ **This is still a MODEL, not an invoice.** It counts *calls*, not tokens; a
+deep-tier model or a long page costs more than a fast-tier call on a short one.
+Step **B** (§6) exists to replace these numbers with measured spend, and 18 is
+the figure to calibrate *against*, not to ship unexamined.
+
+### What this does to D4's reservation
+🔴 **The Free reservation must track the weight.** The owner's instruction said
+reserve **12**; at the calibrated weight the first run costs **18**, so a 12-
+credit reserve under-reserves and the very first Discoverability run — the one
+action that demonstrates the product — fails for a user who spent 89 credits on
+enrichment first. **Reserve 18, and re-derive it whenever the weight moves.**
+
+---
+
+## 3. The revenue loop, module by module
+
+Verified by grep for `runChain` / `runScrapeChain` / `fetchWebVitals` /
+`sampleCitations` / `collectPage` across `netlify/functions/`.
+
+| Step | Surface | Provider calls today | Credits |
+|---|---|---|---|
+| 1.1–1.4 | **Audit** | 4 fetches + 6 AI | **18** (+2/extra prompt) |
+| 2 | Business Truth | none | **0** |
+| 3 | Schema & Trust | none | **0** |
+| 4 | Entity Graph | none | **0** |
+| 4 | Local Directory | none *today* — a real connector changes this | **0** |
+| 5 | Subject Scores | none — computation over stored rows | **0** |
+| 6 | SXO & Outcomes | none — aggregates stored scores | **0** |
+| ↻ | Re-audit | identical to the audit | **18** |
+
+And the surfaces that run without anyone watching:
+
+| Surface | Cost | Metered today? |
 |---|---|---|
-| Data returned | ✅ | we paid, they got value |
-| `no_match` — page genuinely lacks it | ✅ | **a measurement is a result** |
-| `ai_chain_failed`, `no_key`, `truncated` | ❌ | our outage |
-| Cached / unchanged pre-filter | ❌ | no provider call happened |
-| Refused at a gate (SSRF, robots, entitlement) | ❌ | nothing was done |
+| Scheduled Discoverability (`discoverability-monitor`) | 18 / run | 🔴 **no quota check at all** (L1) |
+| Prompt monitor (`@daily`) | 2 / prompt sampled | 🔴 **nothing** (L2) |
+| Bulk enrichment row (`bulk-runner`) | 3 / row | 🔴 **nothing** (L3) |
+| Enrichment (`/api/ai`) | 3 (4–5 with related-page scan) | 🔴 **nothing, and guest-reachable** (L0) |
+| **Extraction schedule (`scheduled-runner`)** | 1 / page | 🔴 **nothing — NEW, §4** |
+| Watchlist monitor | 1 / page | ✅ correct |
+| Template run | sum of parts | ✅ correct |
 
-`chargeableEvents()` already encodes this; `extract.js`'s gate order keeps it true.
+### 🔴 The rule that makes this survive the next feature
+
+Pricing each module by hand is how L0–L3 happened: somebody adds a module, the
+metering is a separate step, and nobody remembers. The fix is structural.
+
+> **Meter at the CHOKE POINT, not per feature.** Exactly four functions spend
+> money — `runChain`, `runScrapeChain`, `fetchWebVitals`, `sampleCitations`.
+> If each one writes to `credit_ledger` with the caller's id and reason, then a
+> new module that adds an AI call is metered **on the day it lands**, with no
+> one having to remember.
+
+That is the direct answer to *"any similar call leaking credits must fall under
+credits usage consideration."* It converts the rule from a habit into a
+property of the code. ⚠️ Pair it with the parity test from §5/L5 so a module
+that reaches a provider **without** a caller id fails the build rather than
+billing nobody.
 
 ---
 
-## 4. Free — a one-time grant, and how it is enforced
+## 4. 🔴 NEW leak found while calibrating — L6
 
-### The model
-Free is **a trial, not a tier**. One lifetime grant, never refilled. When it is
-gone the account still works — saved results, exports, sharing — but no new
-credit-consuming runs until they upgrade.
+**`scheduled-runner.js` re-scrapes on a cadence and meters nothing.**
 
-### Sizing (D4)
+It is the `@hourly` cron behind every user extraction schedule, it calls
+`runScrapeChain` (line 227), and a grep for `chargeLedger` /
+`trackExtraction` / `consumeGuestCredit` / `checkCapability` across the file
+returns **zero**.
 
-| Component | Credits |
-|---|---|
-| 1 Discoverability run | 12 |
-| 10 extractions | 10 |
-| Enrichment (~9 runs) | 28 |
-| **Free lifetime grant** | **50** |
+So a user with schedules consumes provider calls every hour, for ever, against
+no budget — the same shape as L1 and L2, on the oldest cron in the product.
+It was not in the original list because the audit stopped at the discoverability
+surface. **Add it to step A.**
 
-Shown to the user as *"1 Discoverability report + 10 extractions + ~9
-enrichments."*
+---
 
-⚠️ **Open decision — pool or earmark?** A pure pool lets someone spend all 50 on
-enrichment and never run the Discoverability report that is the product's
-headline. **Recommendation: pure pool, but reserve the 12 for the first
-Discoverability run** — it is the one action that demonstrates the product, and
-the onboarding flow leads with it. A pool with one reserved action is still one
-currency.
+## 5. The leak register, with the owner's decisions applied
 
-⚠️ **This is a reduction:** Free gets 3 audits today, and unlimited enrichment.
-Deliberate per D4, but it should be stated plainly rather than discovered.
-
-### Enforcement — the actual question
-
-A lifetime grant is only as strong as the identity behind it, and a monthly
-reset is self-limiting in a way a lifetime grant is not: the worst a monthly
-abuser gains is one month's allowance, whereas a lifetime abuser just registers
-again. Four layers, cheapest first:
-
-| Layer | Mechanism | Status |
+| # | Surface | Fix |
 |---|---|---|
-| **1. Guest, pre-registration** | `guest_identities` cookie bucket | ✅ **already built** (§1) — generalise buckets → credits |
-| **2. Grant on VERIFIED email, not signup** | Supabase already verifies; move the grant to the verification hook | small change |
-| **3. Disposable-domain blocklist** | reject known throwaway domains at signup | new, cheap, high value |
-| **4. Per-IP signup rate limit** | blocks bulk automation | new, cheap |
-| **5. Monitor, do not hard-gate** | track grants per IP / domain, alert on anomaly | new |
-
-🔴 **Do NOT add device fingerprinting.** It is the obvious fifth idea and it is
-wrong here: it conflicts with the DPDP posture in `/privacy`, with the consent
-architecture this repo just spent a session tightening, and with `0026`'s own
-choice to store only a hash. It would trade a real privacy commitment for a
-marginal gain against an already-bounded loss.
-
-### Why the economics matter more than perfect enforcement
-
-At ~$0.002 provider cost per credit (estimate), the **50-credit grant costs
-about $0.10**. A hundred fake accounts is ~$10; a thousand is ~$100 and would be
-visible in layer 5 long before that.
-
-> **Size the grant so that abuse is a marketing cost, not a threat.** Layers 2–4
-> exist to stop *automated* and *casual repeat* abuse. Perfect enforcement of a
-> $0.10 grant is not worth the engineering or the privacy cost.
-
-### D5 — run free, register to save
-
-Guests may **run**; saving requires an account.
-
-- Saves the result to the account, with history — which is what makes a
-  Discoverability report worth anything (the trend is the product).
-- Puts the registration ask at the **moment of demonstrated value**, not before it.
-- Bounds guest cost: a guest spends credits but takes nothing persistent.
-
-⚠️ **Two existing behaviours must be reconciled, not overridden:**
-1. `/discoverability` is currently **signed-in only**. D5 *opens* it to guests
-   for one run — a funnel improvement, but a real scope change.
-2. Extractions already work signed-out into localStorage, and
-   `claimLocalExtractions()` replays them on sign-in. **That is exactly the D5
-   flow and it already exists** — extend it to Discoverability results rather
-   than building a second mechanism.
+| **L0** | **Enrichment** | `case "ai"` stops being an unconditional `ok()`. Retire `enrichments_per_extraction` (**wrong axis** — it caps depth per URL when the cost is per call); enrichment draws on the pool. Keep a per-URL soft cap (~25) purely as a runaway guard. |
+| **L0b** | **Guests reach `/api/ai` free** | `checkCapability` stops failing open for a guest. ⚠️ **Fail open on INFRASTRUCTURE, closed on an ABSENT entitlement** — a Supabase blip must still not take extraction down, but "no account" is a known state with a known bucket (`guest_identities`), not an infrastructure failure. |
+| **L1** | **Scheduled Discoverability** | Check the quota **before** `createAudit()` (`discoverability-monitor.js:210`), debit the pool, and **pause the schedule with a recorded reason** when exhausted — the way a robots refusal already does. Never silently drop a run. |
+| **L2** | **Prompt monitors** | `chargeLedger` one `monitor_check` per prompt sampled. Capped by monitor **count** (existing) **and** spend (new). |
+| **L3** | **Bulk enrichment** | Keep `batch_max_urls` as the per-list guard; add a **monthly volume** cap drawn from the pool, and `chargeLedger` per row in `bulk-runner.js`. |
+| **L5** | **P2 modules** | They make no provider call today, so they stay **free by rule, not by accident**: a parity test asserts no P2 route reaches the four choke points. The moment one does, it is metered — no first-call-free. |
+| **L6** | **Extraction schedules** | §4. Meter `scheduled-runner.js` per page read. |
 
 ---
 
-## 5. Plans — everything in credits (D1, D2)
+## 6. Plans — recalculated at the measured weight
 
-| Plan | $/mo | **Credits / month** | $/credit | ≈ extractions if spent purely there | ≈ Discoverability runs |
-|---|---|---|---|---|---|
-| **Free** | 0 | **50 one-time (never resets)** | — | 10 + 1 run + ~9 enrichments | 1 |
-| **Go** | 4.80 | **750** | 0.0064 | 750 | 62 |
-| **Select** | 14.40 | **3,000** | 0.0048 | 3,000 | 250 |
-| **Pro** | 20.40 | **6,000** | 0.0034 | 6,000 | 500 |
-| **Developer** | 32.40 | **25,000** | 0.0013 | 25,000 | 2,083 |
-| **Business** | 44.40 | **35,000** | 0.0013 | 35,000 | 2,916 |
-| **Agency** | 106.80 | **100,000** | 0.0011 | **100,000** | 8,333 |
+Sized so **no plan loses capability**, with the audit at 18 (not 12) and
+enrichment now metered. Rollover per §1: carry ≤ 1× monthly, FIFO, 1-month life.
 
-**No rollover** (D2): unused credits expire at period end. Free never refills (D3).
+| Plan | $/mo | **Credits / month** | $/credit | Covers (illustrative) |
+|---|---|---|---|---|
+| **Free** | 0 | **100 one-time, never resets** | — | 1 Discoverability (18, reserved) + 10 extractions + ~24 enrichments |
+| **Go** | 4.80 | **750** | 0.0064 | 200 ext + 10 Disc + ~100 enrich = 680 |
+| **Select** | 14.40 | **2,500** | 0.0058 | 500 ext + 25 Disc + ~250 enrich = 1,700 |
+| **Pro** | 20.40 | **6,000** | 0.0034 | 1,000 ext + 100 Disc + ~500 enrich = 4,300 |
+| **Developer** | 32.40 | **28,000** | 0.0012 | 10,000 ext + 250 Disc + ~5,000 enrich = 29,500* |
+| **Business** | 44.40 | **40,000** | 0.0011 | 10,000 ext + 500 Disc + ~5,000 enrich = 34,000 |
+| **Agency** | 106.80 | **100,000** | 0.0011 | modelled real usage ≈ 15,800 → ~6× headroom |
 
-### Nobody loses capability except Agency
+\* Developer's illustrative mix slightly exceeds its pool — deliberate. It is an
+API tier whose real mix is extraction-heavy and Discoverability-light, not the
+balanced mix shown.
 
-| Plan | extractions today | extraction-equivalent now |
-|---|---|---|
-| Go | 200 | 750 ✅ |
-| Select | 500 | 3,000 ✅ |
-| Pro | 1,000 | 6,000 ✅ |
-| Business | 10,000 | 35,000 ✅ |
-| Agency | ∞ | **100,000** ⚠️ |
+**Price per credit declines monotonically** — `0.0064 → 0.0058 → 0.0034 →
+0.0012 → 0.0011 → 0.0011` — so upgrading is always better value per unit, which
+is what makes the ladder rational.
 
-Pools are sized **above** a naive extraction+audit conversion because enrichment
-is now metered and is unlimited today. Under-sizing would make the switch a
-stealth downgrade.
-
-### Price per credit declines with volume
-`0.0064 → 0.0048 → 0.0034 → 0.0013 → 0.0011`. A clean curve — each tier up is
-better value per credit, which is what makes upgrading rational.
+⚠️ **Every plan gains extraction-equivalent headroom except Agency**, which
+trades "unlimited" for a published ceiling because a currency cannot express
+infinity.
 
 ---
 
-## 6. Agency (D6) — the extraction number
-
-**Proposed: 100,000 credits/month**, which if spent entirely on extraction is
-**100,000 extractions**.
-
-### Why a real number replaces "unlimited"
-D1 says everything is sold as credits, and "unlimited" cannot be expressed in a
-currency. A published number is also more honest than undisclosed throttling.
-
-### Why 100,000
-Modelled agency usage — 5 client workspaces, regular reporting and monitoring:
-
-| Activity | Credits/month |
-|---|---|
-| 100 Discoverability runs (5 workspaces × 20) | 1,200 |
-| 100 monitors × 30 days × ~1 page | 3,000 |
-| ~5,000 extractions | 5,000 |
-| ~2,000 enrichments | 6,000 |
-| **Realistic total** | **≈ 15,000** |
-
-**100,000 is ~6.6× realistic usage.** Generous enough that no legitimate agency
-hits it, finite enough to bound exposure.
-
-### The cap that actually matters (D6)
-🔴 `scheduled_monitoring: Infinity` → **100**.
-
-Unlimited *extraction* is **attended** — bounded by a human working. Unlimited
-*monitors* are **unattended, recurring and compounding**: one afternoon of setup
-bills every day for ever with nobody watching. **That, not extraction volume,
-was the real exposure.**
-
-### Overage — soft landing
-- 100% → notify the owner. **Do not stop.**
-- 150% → overage commitment, or throttle concurrency.
-- **Never hard-stop mid-month.** An agency has client deliverables; a hard stop
-  damages their customer, not ours.
-
----
-
-## 7. What is metered, what is not
-
-> **Meter what a third party bills us for. Gate everything else by tier.
-> Rate-limit what is abusable but free.**
-
-| Surface | Treatment |
-|---|---|
-| Page fetch · AI call · Discoverability run · monitor check · bulk row | **credits** |
-| **Push integrations** (HubSpot/Notion/Airtable/Slack) | **tier-gated, never metered** — one API call to the customer's own system; metering it would tax the action that creates retention to recover a cost that rounds to zero |
-| Google Sheets export | free to everyone (client-side CSV) |
-| Signal-rule dispatch | free; **rate-limit only** — 10,000 fires is a spam problem, not a cost one |
-| Exports · sharing · branding · seats · webhooks | tier-gated |
-| P2 modules (truth, graph, local, trust, scores, SXO) | **free by rule**, guarded by a parity test |
-
-**"Workflows" is a surface, not a cost centre.** Each step already resolves to a
-row above — list → bulk rows, watchlist → monitor checks, rule → dispatch,
-template → its parts. Fixing L3 makes the pipeline consistent; nothing new is
-needed.
-
----
-
-## 8. Plan of work
-
-No paid customers today, so the dual-write phases that protected existing
-billing relationships are dropped. **Calibration is not** — it is a pricing
-requirement, not a migration one.
+## 7. Plan of work
 
 | | Step | Notes |
 |---|---|---|
-| **A** | **Stop the leaks** — L0 (enrichment), L1, L2, L3, L5 | Pure bug-fixing, correct under any pricing model. **Do this regardless of everything below.** |
-| **B** | **Calibrate** — representative + synthetic workload, compare modelled credits to real provider invoices, fix §3 | Days, not a month (no customer traffic needed). The one step that cannot be skipped or reordered. |
-| **C** | **Switch** — one pool, one ledger. Generalise `guest_identities` buckets → credits. Retire `usage.extractions`, the audit row count and `enrichments_per_extraction`. Add Free's one-time grant (`credit_ledger` already has a `grant` reason). | No migration risk with no paid customers. |
-| **D** | **Free-tier enforcement** — grant on verified email, disposable-domain blocklist, per-IP signup limit, anomaly monitoring | Ships with or just after C. |
-| **E** | **Sell** — credit bundles as one SKU; publish Agency fair use; rename audits → Discoverability (D7) | After B has confirmed the weights. |
+| **A** | **Stop the leaks** — L0, L0b, L1, L2, L3, L5, **L6** | Pure bug-fixing, correct under any pricing model. **Worth doing even if everything below is rejected.** |
+| **B** | **Meter at the choke point** — the four functions write to `credit_ledger` with a caller id; parity test forbids a provider call without one | This is what stops the list from growing again. Do it before C, not after. |
+| **C** | **Calibrate** — run a representative + synthetic workload, compare modelled credits to real provider invoices, replace §2's numbers | Days. §2's 18 is a counted model, not measured spend. **The one step that cannot be skipped.** |
+| **D** | **Switch** — one pool, one ledger, rollover per §1; retire `usage.extractions`, the audit row count and `enrichments_per_extraction`; Free's one-time grant via the ledger's existing `grant` reason | No migration risk with no paid customers. |
+| **E** | **Free-tier enforcement** — grant on verified email, disposable-domain blocklist, per-IP signup limit, anomaly monitoring; **no device fingerprinting** | Ships with or just after D. |
+| **F** | **Sell** — credit bundles as one SKU; publish Agency fair use and the rollover cap; rename audits → Discoverability | After C confirms the weights. |
 
 ### What NOT to do
-- ❌ Ship the weights un-calibrated — a wrong Discoverability weight re-prices every plan at once.
-- ❌ Charge for refused, cached or failed work.
-- ❌ Make the P2 modules cost credits while they make no provider call — billing for work nobody did is the mirror of the leak.
+- ❌ Ship §2's weights un-calibrated — a wrong Discoverability weight re-prices every plan at once.
+- ❌ Charge for refused, cached or failed work (`chargeableEvents()` already encodes this).
+- ❌ Reserve 12 for Free's first run — the calibrated cost is **18** (§2).
 - ❌ Lower `enrichments_per_extraction` instead of retiring it — wrong axis.
+- ❌ Meter per feature instead of per choke point — that is how L0–L3 and L6 happened.
+- ❌ Let `checkCapability` fail closed on an INFRASTRUCTURE error while closing the guest hole.
 - ❌ Add device fingerprinting.
-- ❌ Build a second guest-identity mechanism. **One exists** (§1); generalise it.
 
 ---
 
-## 9. Still open
+## 8. Still open
 
-1. **Free: pool or reserved first run?** *(Recommended: pool, with the 12 for the first Discoverability run reserved.)*
-2. **D5 scope** — opening `/discoverability` to guests for one run is a real change to a currently signed-in-only surface. Confirm.
-3. **Charge for `no_match`?** *(Recommended: yes — it is a measurement.)*
-4. **Agency overage price** per 1,000 credits above 100,000.
-5. **Developer tier** sits at Business's $/credit on a lower pool. Intentional?
+1. **Rollover cap** — 1× monthly recommended (§1). Confirm, or pick a different multiple.
+2. **Charge for a genuine `no_match`?** *(Recommended: yes — a measurement is a result.)*
+3. **Agency overage price** per 1,000 credits above 100,000.
+4. **Does the prompt surcharge apply to scheduled prompt monitors**, or only interactive runs? *(Recommended: both — the cost is identical and unattended spend is the larger risk.)*
+5. **PageSpeed** is free at low volume and falls back to keyless. Price it at 0 now and revisit if a paid quota is ever needed.
