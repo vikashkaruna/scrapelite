@@ -1,8 +1,9 @@
 # Unified Usage Credits — plan v5 (decision-complete)
 
-> **Status: PROPOSAL — DECISION-COMPLETE. Nothing implemented.** Every open
-> question is now answered; §7 records the last four. Ready to hand to an
-> implementer once step C has confirmed the weights.
+> **Status: STEPS A, B and D ARE IMPLEMENTED (2026-09-23). C, E, F and G are
+> not.** Every decision is settled; §7 records the last four. §8 records what
+> shipped, the two places implementation proved this document wrong, and why
+> the remaining steps are still gated on C.
 >
 > Supersedes v4. Evidence trail:
 > [CREDITS-UNIFICATION-ADDENDUM.md](./CREDITS-UNIFICATION-ADDENDUM.md).
@@ -253,10 +254,26 @@ declared-and-never-read failure this schema has already produced four times.
 
 ### The structural rule
 
-> **Meter at the CHOKE POINT, not per feature.** Exactly four functions spend
-> money — `runChain`, `runScrapeChain`, `fetchWebVitals`, `sampleCitations`.
-> Each writes to `credit_ledger` with the caller's id and a reason, so a new
-> module that adds an AI call is metered **the day it lands**.
+> **Meter at the CHOKE POINT, not per feature.** ~~Exactly four functions~~
+> **Five** spend money — `runChain`, `runScrapeChain`, `fetchWebVitals`,
+> `sampleCitations`, **and `fetchLayer`'s three direct fetches**. Each writes
+> to `credit_ledger` with the caller's id and a reason, so a new module that
+> adds an AI call is metered **the day it lands**.
+
+🔴 **THE "FOUR" WAS WRONG, AND §1 ALREADY KNEW IT.** Three of the four fetches
+a Discoverability run makes never touch `runScrapeChain`: the raw HTML read,
+the robots.txt read behind the crawler check and the canonical HEAD all call
+`fetchPublicUrl` directly. Under the four-choke-point model an audit would have
+been charged **16** against the **19** this same document prices it at — the
+recount in §1 and the metering plan here disagreed with each other, and the
+recount was right.
+
+⚠️ **`fetchPublicUrl` ITSELF IS THE WRONG BOUNDARY**, which is why the fifth
+choke point sits one layer up. It has nine callers and two of them must never
+be charged: `complianceEngine`'s robots read (a request refused at a gate does
+no billable work) and `scrapeProviders`' own direct adapter (already charged by
+`runScrapeChain`, so metering both would double-bill every extraction).
+`fetchLayer` is the narrowest boundary containing only audit spend.
 
 Pricing modules by hand is precisely how L0–L3 and L6 happened. A parity test
 asserts no provider call reaches a choke point **without a caller id**, so a
@@ -314,3 +331,79 @@ module that would bill nobody fails the build.
 **Nothing in this plan is open.** The remaining dependency is step **C**:
 §1 counts provider *calls*, not tokens, and those numbers should meet a real
 invoice before anyone is billed on them.
+
+---
+
+## 8. What shipped — steps A, B and D (2026-09-23)
+
+### The register is closed
+
+| # | Surface | State |
+|---|---|---|
+| **L0** | Enrichment | ✅ metered at `runChain` via `extract.js`'s request context |
+| **L0b** | Guests on `/api/ai` | ✅ draws the `single` guest bucket, **failing open on infrastructure and closed on an absent account** |
+| **L1** | Scheduled Discoverability | ✅ pool checked **before** `createAudit()`; schedule **paused with a recorded reason** when short |
+| **L2** | Prompt monitors | ✅ 2/prompt; a short account **records a skipped run with its reason** and advances its clock |
+| **L3** | Bulk enrichment | ✅ per-chunk pool check, per-row charge from actuals, `enrichment_jobs.paused_reason` added so a paused job says why |
+| **L5** | P2 modules | ✅ free by rule, guarded by the parity test |
+| **L6** | Extraction schedules | ✅ 1/page, filed as `monitor_check` |
+
+### 🔴 Two things implementation proved this document wrong about
+
+**1. There are FIVE choke points, not four.** Recorded in §5 above. The
+metering plan and the §1 recount disagreed by 3 credits per audit.
+
+**2. A balance of zero is not the same as no balance, and conflating them
+would have taken the product down the day `0078` was applied.** These gates
+ship *before* step G starts granting monthly allowances, so on apply day
+`credit_available()` correctly reads **0 for every account** — and a gate
+reading 0 as "refuse" would have paused every schedule, every prompt monitor
+and every bulk job at once.
+
+`credit_status()` answers `enforced`, which is simply *has this account ever
+been granted credits*. `affords()` says **yes** in three cases and only one of
+them is about credits:
+
+| Case | Meaning |
+|---|---|
+| `degraded` | we could not read it (blip, or `0078` not applied here) |
+| `!enforced` | this account is not on the credit system at all |
+| `ok` | they genuinely have the credits |
+
+⚠️ **It arms itself.** The first grant to an account turns enforcement on for
+that account — there is no flag to remember to flip and no window where it is
+half on. `CREDITS_ENFORCEMENT_DISABLED=1` is the break-glass, read from the
+environment so that, unlike a database flag, it cannot itself fail open.
+
+### Also found while wiring it
+
+- **Watchlist monitoring under-charged and its metadata was discarded.** It
+  built its own ledger row from `s.pages`, which excluded the discovery crawl —
+  so the first run against every new target read a page nobody paid for. And
+  its `metadata` never arrived: `chargeLedger()` passes `p_meta: {}`
+  unconditionally, so `watchlist_id` / `target_id` / `domain` were assembled
+  and dropped one call later. Both fixed by moving it onto the choke point.
+- **Charges are buffered and flushed once per request.** `runChain` is a serial
+  fallback inside an 8s budget that has already caused one production 504;
+  awaiting a Supabase round-trip per provider call would spend the customer's
+  deadline on our bookkeeping. A choke point records synchronously and the
+  request flushes once, collapsing a 40-page run to ~3 ledger rows.
+  ⚠️ A request killed before its flush loses the charge, and that is the right
+  direction — under-billing for our own crash is the error we are willing to
+  make.
+
+### What is NOT done, and why
+
+**C, E, F and G are untouched, and that is the plan's own ordering rather than
+a shortcut.** §6 puts calibration before the switch, and the first line of
+"What NOT to do" is *"❌ Ship §1 un-calibrated — a wrong Discoverability weight
+re-prices every plan at once."*
+
+§1 counts provider **calls**, not tokens. Those counts are now measured against
+the real pipeline and enforced by test, but they have still never met a
+provider invoice. **Step C is an operator/finance step**: take a month of real
+invoices, divide by the calls in the ledger, and confirm or correct §1. The
+ledger now produces exactly the data that pass needs, which it could not before.
+
+Until then the metering runs, the leaks are closed, and **nobody is charged**,
+because no allowance has been granted and `enforced` is false everywhere.

@@ -56,6 +56,7 @@
 import { createHash } from "node:crypto";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
+import { meterContext, flush as flushMeter } from "./lib/creditMeter.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
 import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
@@ -378,8 +379,19 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   // `auditProfile` is passed only when it was EXPLICITLY chosen. Sending the
   // "balanced" fallback would look identical to a deliberate choice of the
   // neutral lens and would stop the goal and the page from ever settling it.
+  //
+  // ⚠️ ONE METERING CONTEXT FOR BOTH PATHS, AND IT CARRIES `userId` WHICH IS
+  // NULL FOR A GUEST. That is recorded rather than skipped: the ledger row
+  // carries a null user with `caller: "discoverability"` attached, so guest
+  // spend stays countable even though there is no account to bill it to.
+  const meter = meterContext({
+    caller: "discoverability",
+    userId: userId || null,
+    workspaceId: options.workspaceId || null,
+  });
   const pipelineOptions = {
     deadline,
+    meter,
     deviceProfile: options.deviceProfile,
     auditProfile: options.auditProfileExplicit ? options.auditProfile : null,
     auditType: options.auditType,
@@ -398,8 +410,13 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
     try {
       result = await runAudit(rawUrl, pipelineOptions);
     } catch (err) {
+      await flushMeter(meter);
       return { ok: false, statusCode: 502, headers: guestHeaders, body: { error: "The audit could not be completed.", code: "AUDIT_FAILED" } };
     }
+    // Flushed the moment the run ends, success or failure — the providers
+    // have already been paid by then, and a later exit path that forgot would
+    // lose the record of work we actually did.
+    await flushMeter(meter);
     const auditId = `guest-${Date.now()}`;
     return {
       ok: true, statusCode: 200, headers: guestHeaders,
@@ -454,8 +471,10 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
     result = await runAudit(rawUrl, pipelineOptions);
   } catch (err) {
     await store.markAuditFailed(auditId, err?.message);
+    await flushMeter(meter);
     return { ok: false, statusCode: 502, body: { error: "The audit could not be completed.", code: "AUDIT_FAILED", auditId } };
   }
+  await flushMeter(meter);
 
   const persisted = await store.persistResult(userId, auditId, result, {
     workspaceId: options.workspaceId || null,

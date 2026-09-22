@@ -53,7 +53,7 @@ import { extractPageContent } from "./lib/pageContent.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
 import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
 import { serviceDb } from "./lib/watchlistStore.js";
-import { chargeLedger } from "./lib/templateStore.js";
+import { meterContext, flush as flushMeter } from "./lib/creditMeter.js";
 import { dispatchSignal } from "./lib/signalDispatch.js";
 import { extractSnapshot, snapshotHash, diffSnapshots, discoverPages, MAX_DISCOVERED_PAGES } from "../../src/lib/watchlist/snapshotModel.js";
 import { buildChangeRecord, MATERIALITY } from "../../src/lib/watchlist/materialityModel.js";
@@ -90,7 +90,7 @@ export function isDue(target, cadence, now = Date.now()) {
 }
 
 /** Read one page and turn it into a snapshot. Never throws. */
-async function snapshotPage(page, deadlineAt) {
+async function snapshotPage(page, deadlineAt, meter) {
   const url = page.url;
 
   // SSRF guard before any outbound call, exactly as extract.js orders it.
@@ -115,7 +115,7 @@ async function snapshotPage(page, deadlineAt) {
 
   let scraped;
   try {
-    scraped = await runScrapeChain(url, { deadlineAt });
+    scraped = await runScrapeChain(url, { deadlineAt, meter });
   } catch (e) {
     return { ok: false, reason: `fetch_failed: ${e.message}` };
   }
@@ -166,7 +166,7 @@ async function snapshotPage(page, deadlineAt) {
  * keeps the distinction visible: the UI can present them as suggestions to
  * prune, rather than silently mixing them in with the user's own choices.
  */
-async function discoverPagesFor(db, target, deadlineAt) {
+async function discoverPagesFor(db, target, deadlineAt, meter) {
   const url = `https://${target.domain}`;
 
   try {
@@ -187,7 +187,7 @@ async function discoverPagesFor(db, target, deadlineAt) {
 
   let scraped;
   try {
-    scraped = await runScrapeChain(url, { deadlineAt });
+    scraped = await runScrapeChain(url, { deadlineAt, meter });
   } catch (e) {
     return { ok: false, reason: `fetch_failed: ${e.message}`, added: 0 };
   }
@@ -207,7 +207,7 @@ async function discoverPagesFor(db, target, deadlineAt) {
 }
 
 /** Everything one target needs, in one pass. Returns a per-target summary. */
-async function processTarget(db, watchlist, target, deadlineAt) {
+async function processTarget(db, watchlist, target, deadlineAt, meter) {
   const summary = { domain: target.domain, pages: 0, changes: 0, alerts: 0, discovered: 0, errors: [] };
 
   let { data: pages } = await db
@@ -220,7 +220,7 @@ async function processTarget(db, watchlist, target, deadlineAt) {
   // what we found in this same run, so a newly added competitor produces a
   // baseline on the first tick rather than waiting a whole cadence.
   if (!pages || pages.length === 0) {
-    const found = await discoverPagesFor(db, target, deadlineAt);
+    const found = await discoverPagesFor(db, target, deadlineAt, meter);
     summary.discovered = found.added;
     if (!found.ok) summary.errors.push(`discovery ${target.domain}: ${found.reason}`);
     if (found.added > 0) {
@@ -233,7 +233,7 @@ async function processTarget(db, watchlist, target, deadlineAt) {
   for (const page of pages || []) {
     if (Date.now() >= deadlineAt) break;
 
-    const snap = await snapshotPage(page, deadlineAt);
+    const snap = await snapshotPage(page, deadlineAt, meter);
     if (!snap.ok) {
       summary.errors.push(`${page.url}: ${snap.reason}`);
       // A robots refusal is a standing decision, not a transient error, so the
@@ -373,35 +373,41 @@ async function run() {
       if (!isDue(target, wl.cadence, now)) continue;
 
       totals.targets += 1;
-      const s = await processTarget(db, wl, target, deadlineAt);
+      const meter = meterContext({
+        caller: "watchlist-monitor",
+        userId: wl.user_id,
+        kindMap: { page_fetch: "monitor_page" },
+        // One context per TARGET, so the ledger keeps one row per target per
+        // run rather than one per watchlist — which is the granularity the
+        // hand-rolled charge already had and the one a customer can read.
+      });
+      meter.buffer.length = 0;
+      const s = await processTarget(db, wl, target, deadlineAt, meter);
       totals.pages += s.pages;
       totals.discovered += s.discovered || 0;
       totals.changes += s.changes;
       totals.alerts += s.alerts;
       if (s.errors.length) totals.errors.push(...s.errors.slice(0, 3));
 
-      // The BRD is explicit that credits attach to cost-bearing actions, and
-      // names monitoring frequency as one of them. One entry per target per
-      // run, charged for the pages actually read — a target we could not fetch
-      // costs the customer nothing.
-      if (s.pages > 0) {
-        try {
-          await chargeLedger([{
-            user_id: wl.user_id,
-            reason: "monitor_check",
-            unit: "monitor_check",
-            credits: s.pages,
-            quantity: s.pages,
-            metadata: { watchlist_id: wl.id, target_id: target.id, domain: target.domain },
-          }]);
-          totals.credits += s.pages;
-        } catch (e) {
-          // Ledger trouble must not stop monitoring; it is recorded and the run
-          // continues, matching withJobRun's own "bookkeeping never breaks the
-          // job" rule one level down.
-          totals.errors.push(`ledger: ${e.message}`);
-        }
-      }
+      // ── THE HAND-ROLLED CHARGE IS GONE; THE CHOKE POINT OWNS IT NOW ─────
+      // This used to build its own ledger row from `s.pages`. Two things were
+      // wrong with that, and both are the reason §5's rule says to meter at
+      // the choke point rather than per feature:
+      //
+      //   1. IT MISSED THE DISCOVERY CRAWL. discoverPagesFor() runs its own
+      //      scrape chain against a newly added target, and `s.pages` counts
+      //      only the pages snapshotted afterwards — so the first run on every
+      //      target read a page nobody was charged for.
+      //   2. ITS `metadata` NEVER REACHED THE LEDGER. chargeLedger() passes
+      //      `p_meta: {}` unconditionally, so watchlist_id, target_id and
+      //      domain were assembled here and discarded one call later — the
+      //      declared-and-never-written shape this schema has produced before.
+      //
+      // The kindMap keeps the ledger reading `monitor_check` at 1 credit per
+      // page, which is what it recorded before: same price, same reason, now
+      // counting every page actually read.
+      const charged = await flushMeter(meter);
+      totals.credits += charged.charged || 0;
     }
   }
 

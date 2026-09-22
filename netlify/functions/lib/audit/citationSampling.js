@@ -27,6 +27,7 @@ import { generatePrompts, classifyPromptKind } from "../../../../src/lib/discove
 import { classifyCitation, readsAsRecommendation, contradictsPrice, aggregateStates } from "../../../../src/lib/discoverability/citationStates.js";
 import { competitorsInAnswer, shareOfVoice } from "../../../../src/lib/discoverability/competitorTracking.js";
 import { answerProminence, waviFromSample } from "../../../../src/lib/discoverability/aiVisibility.js";
+import { record as meterRecord } from "../creditMeter.js";
 
 // "discoverability" is the pillar key this module's runChain()/resolveProvider()
 // calls pass — see PILLAR_KEYS in aiProviders.js and /admin/ai's pillar switcher.
@@ -208,6 +209,11 @@ export async function sampleCitations({
   // The audit's wall-clock budget, if it has one. `signal` cuts every in-flight
   // prompt short together; `timeoutMs` lowers the per-call ceiling to fit.
   signal = null, timeoutMs = null,
+  // The metering context. Citation sampling is the single most expensive
+  // stage of an audit — five AI calls by default, ten at the ceiling — and it
+  // is also the stage a cron runs unattended, which is why D12 charges it at
+  // the same rate either way.
+  meter = null,
 } = {}) {
   const chosen = resolveEngine(env, engine);
   if (!chosen) return null;
@@ -270,6 +276,17 @@ export async function sampleCitations({
 
   for (const { entry, r } of settled) {
     const prompt = entry.prompt;
+    // ── CHOKE POINT 4 of 4 ────────────────────────────────────────────────
+    // Charged PER PROMPT THAT ANSWERED, which is what makes §1's "+2 for each
+    // prompt beyond the default five" fall out of the arithmetic instead of
+    // needing a rule of its own: a 10-prompt audit records ten calls and is
+    // charged 20, a 5-prompt audit records five and is charged 10. The
+    // surcharge IS charging from actuals.
+    //
+    // ⚠️ A prompt the engine never answered charges nothing — a citation
+    // state we could not measure is not a measurement, and the scorer already
+    // excludes it rather than reading it as "not cited".
+    meterRecord(meter, { kind: "ai_fast", failed: !r.ok, meta: { engine: chosen, kind: entry.kind || null } });
     if (!r.ok) {
       failures += 1;
       runs.push({ prompt, kind: entry.kind, commercial: entry.commercial, error: r.error, mention: null, citation: null });
