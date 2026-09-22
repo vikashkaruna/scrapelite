@@ -381,7 +381,6 @@ async function run() {
         // run rather than one per watchlist — which is the granularity the
         // hand-rolled charge already had and the one a customer can read.
       });
-      meter.buffer.length = 0;
       const s = await processTarget(db, wl, target, deadlineAt, meter);
       totals.pages += s.pages;
       totals.discovered += s.discovered || 0;
