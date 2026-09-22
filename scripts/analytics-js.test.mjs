@@ -77,7 +77,14 @@ function run({ hostname = "datiq.app", pathname = "/", runtime, stored, isSpa = 
     gtagSrc: scripts.map((s) => s._src).filter(Boolean),
     api: sandbox.__datiqConsent,
     loaded: scripts.some((s) => (s._src || "").includes("googletagmanager.com")),
-    posthogLoaded: scripts.some((s) => (s._src || "").includes("posthog.com")),
+    posthogLoaded: scripts.some((s) => {
+      try {
+        const host = new URL(s._src || "").hostname;
+        return host === "posthog.com" || host.endsWith(".posthog.com");
+      } catch {
+        return false;
+      }
+    }),
   };
 }
 
