@@ -2789,6 +2789,34 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   eq("0075: ...and entity state is updated to approved",
     (await one(`select state from public.audit_entities where id=$1`, [soloNode])).state, "approved");
 
+  // ── 0075's CONSTRAINT, exercised DIRECTLY — not through the RPC ──────────
+  // 🔴 2026-09-23. Staging refused a self-approval whose note carried the
+  // marker with a raw 23514 on audit_entities_no_self_approval, which is the
+  // 0056 constraint — 0075 had not been applied there. The RPC assertions
+  // above could not catch it, because if 0075 is missing the FUNCTION is
+  // missing too and the route falls through to a direct PATCH. These pin the
+  // constraint itself, which is the layer that fallback actually meets.
+  {
+    const patchNode = await mkEntity("brand", "Direct Patch Brand");
+    const refused = await throws(
+      `update public.audit_entities
+          set state='approved', reviewed_by=$2, reviewed_at=now(), review_note='Looks right to me.'
+        where id=$1`, [patchNode, owner]);
+    check("🔴 0075: a direct self-approval WITHOUT the marker is still refused by the constraint",
+      Boolean(refused && /audit_entities_no_self_approval/.test(refused)),
+      `\n      got=${JSON.stringify(refused)}`);
+
+    const allowed = await throws(
+      `update public.audit_entities
+          set state='approved', reviewed_by=$2, reviewed_at=now(),
+              review_note='[Single-founder approval] Self-approved by solo operator and recorded in audit trail.'
+        where id=$1`, [patchNode, owner]);
+    eq("🔴 0075: a direct self-approval WITH the marker is permitted — the exact row staging refused",
+      allowed, null);
+    eq("0075: ...and that direct patch really did approve it",
+      (await one(`select state from public.audit_entities where id=$1`, [patchNode])).state, "approved");
+  }
+
   // ── 0076 Endpoint self-approval is a VERDICT, never a raw CHECK violation ──
   // Reproduced before the fix: a teammate proposed the edge, the reviewer had
   // proposed its endpoints, and the endpoint UPDATE raised 23514 — which the
