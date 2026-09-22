@@ -1,10 +1,10 @@
-# Unified Usage Credits — plan v4
+# Unified Usage Credits — plan v5 (decision-complete)
 
-> **Status: PROPOSAL. Nothing implemented.** Revised 2026-09-23 with the owner's
-> final decisions, a dynamic actual-usage counter design, and the top-up /
-> add-on model rebuilt around credits.
+> **Status: PROPOSAL — DECISION-COMPLETE. Nothing implemented.** Every open
+> question is now answered; §7 records the last four. Ready to hand to an
+> implementer once step C has confirmed the weights.
 >
-> Supersedes v3. Evidence trail:
+> Supersedes v4. Evidence trail:
 > [CREDITS-UNIFICATION-ADDENDUM.md](./CREDITS-UNIFICATION-ADDENDUM.md).
 > Measurements cite file and line; estimates say so.
 
@@ -28,6 +28,10 @@
 | D12 | **The prompt surcharge applies to scheduled monitors AND interactive runs** |
 | D13 | **Agency overage is sold per 1,000 credits** above 100,000 |
 | D14 | The balance is computed from **actual usage**, not an estimate |
+| D15 | **Extractions Bundle is removed** — see §4.3 and ⚠️ §4.6 |
+| D16 | **Scheduled Monitor stays**, revised to slot-only at $5 |
+| D17 | **Deep-tier AI stays at 5** — settled, not a placeholder |
+| D18 | **Credit Packs ship** as proposed (§4.4) |
 
 ---
 
@@ -40,7 +44,7 @@
 | Page fetch | 1 | the anchor |
 | **PageSpeed (CrUX/PSI) call** | **1** | D11 — was 0 in v3 |
 | AI call — fast | 2 | |
-| AI call — deep | 5 | |
+| AI call — deep | **5** | D17 — settled as a pricing decision, not a placeholder |
 | Enrichment | 3 | 1 fetch + 1 fast AI; 4–5 when the related-page scan fires |
 | **Discoverability run** | **19** | recount below |
 | Citation prompt beyond the 5 defaults | **+2 each** | D12 — same rate scheduled or interactive |
@@ -181,9 +185,9 @@ This is the clarifying distinction, and it decides the whole section:
 
 | Today's bundle | Verdict | Why |
 |---|---|---|
-| **Extractions Bundle** ($9 / 100 extractions) | 🔴 **Retire → Credit Pack** | Pure consumption. Also mispriced: $0.09/credit is **14× Go's plan rate**. |
+| **Extractions Bundle** ($9 / 100 extractions) | 🔴 **REMOVED — D15** | Pure consumption. Also mispriced: $0.09/credit is **14× Go's plan rate**. Replaced by Credit Packs. |
 | **Batch Pack** ($9 / 50 URLs) | ✅ **Keep** | Caps list *size* — a runner guard, not spend |
-| **Scheduled Monitor** ($5 / URL / month) | ✅ **Keep, with a correction** | Buys the **slot**. ⚠️ Its runs draw on the pool — state this plainly or customers will expect the runs to be included |
+| **Scheduled Monitor** ($5 / URL / month) | ✅ **KEEP, REVISED — D16** | Buys the **slot only**, at the unchanged $5. ⚠️ Its runs draw on the pool, so it now buys strictly less than it appeared to — **say so on the pricing page**, or customers will reasonably expect the runs included |
 | **Extra Workspace** ($19) | ✅ **Keep** | Pure capacity, no provider call |
 
 **And on Discoverability specifically:** under credits, `L.audits` is retired
@@ -191,7 +195,7 @@ and a run is pure consumption — so **there is no Discoverability add-on to
 build. Buying credits *is* buying Discoverability capacity.** That is a real
 simplification of the question rather than a dodge.
 
-### 4.4 Proposed Credit Packs
+### 4.4 Credit Packs — shipping (D18)
 
 Anchored at ~**3× the Select plan rate**, with volume breaks — expensive enough
 that upgrading usually wins, cheap enough to be a reasonable answer to "I hit my
@@ -203,10 +207,9 @@ cap on the 20th".
 | Medium | **2,000** | $29 | 0.0145 | 105 | 2,000 |
 | Large | **10,000** | $119 | 0.0119 | 526 | 10,000 |
 
-⚠️ **This is far more generous than today's bundle** ($9 buys 500 credits
-instead of 100 extractions) — because today's bundle is priced 14× above the
-plans it sits beside, which is not a pricing decision anyone made deliberately.
-**Confirm the direction before it ships.**
+✅ **Confirmed (D18).** This is ~5× more generous per dollar than the bundle it
+replaces — deliberately, because that bundle sat at $0.09/credit, **14× Go's
+plan rate**, which was never a decision anyone made.
 
 ### 4.5 Capacity add-ons — proposed credit consequences
 
@@ -219,6 +222,30 @@ plans it sits beside, which is not a pricing decision anyone made deliberately.
 > The rule stated once: **an add-on buys the RIGHT to do something; the doing
 > still costs credits.** A monitor slot that included its own runs would be a
 > second, unmetered budget — which is exactly the shape of L1, L2 and L6.
+
+### 4.6 🔴 Removing the bundle is one line — `bonusExtractions` is not
+
+Deleting `extractions-bundle` from `TOPUP_BUNDLES` is trivial. **The field it
+grants is not the bundle's**, and three other things write it:
+
+| Writer | What it is | Must become |
+|---|---|---|
+| `redeem_referral_code` → `entitlements.bonus_extractions` (`0029:179-189`) | **the referral reward, both sides** | a credit **grant** |
+| `admin-users.js:276` → `user_metadata.bonus_extractions` | admin coupon grant | a credit **grant** |
+| `BillingProvider.js:503` — coupon `type === "extractions"` | bonus-extraction coupons | a credit **grant** |
+
+And `BillingProvider.js:150` sums all three into the quota
+(`entitlements + user_metadata + subscription`), while `creditEstimator.js:31`
+and two banners read it for display.
+
+⚠️ **Remove the bundle without migrating these and the referral programme
+silently stops rewarding anything** — both sides still get a row written, the
+quota reader is gone, and nothing errors. That is the exact
+declared-and-never-read failure this schema has already produced four times.
+
+**Each one maps cleanly to a credit grant** (`credit_ledger` already has a
+`grant` reason), so this is a translation, not a redesign — but it is
+**required work in step E, not a follow-up.**
 
 ---
 
@@ -255,11 +282,11 @@ module that would bill nobody fails the build.
 |---|---|---|
 | **A** | **Stop the leaks** — L0, L0b, L1, L2, L3, L5, L6 | Pure bug-fixing, correct under any pricing model. **Worth doing even if everything below is rejected.** |
 | **B** | **Meter at the choke point** + parity test | Stops the list growing again. Before C, not after. |
-| **C** | **Calibrate** — representative + synthetic workload against real provider invoices; replace §1 | §1 counts *calls*, not tokens. **The one step that cannot be skipped.** |
+| **C** | **Calibrate** — representative + synthetic workload against real provider invoices; replace §1 | §1 counts *calls*, not tokens. **The one step that cannot be skipped.** ⚠️ The deep-tier ratio is settled at 5 (D17) — calibration reports it if it is materially off, but does not re-open it by default. |
 | **D** | **Dynamic counter** — `expires_at` on grants, balance as a SUM, 60 s UX cache, charge from actuals | §2. Every model it needs already exists. |
 | **E** | **Switch** — one pool; retire `usage.extractions`, the audit row count, `enrichments_per_extraction`; Free's grant via the ledger's `grant` reason | No migration risk with no paid customers. |
 | **F** | **Free-tier enforcement** — grant on verified email, disposable-domain blocklist, per-IP signup limit, monitoring; **no device fingerprinting** | With or just after E. |
-| **G** | **Sell** — Credit Packs replace the Extractions Bundle; capacity add-ons stay; publish Agency fair use, the overage rate and the rollover cap; audits → Discoverability | After C confirms the weights. |
+| **G** | **Sell** — Credit Packs ship (D18); Extractions Bundle removed (D15) **with §4.6's grant migration done**; Scheduled Monitor relabelled slot-only (D16); publish Agency fair use, the overage rate and the rollover cap; audits → Discoverability | After C confirms the weights. |
 
 ### What NOT to do
 - ❌ Ship §1 un-calibrated — a wrong Discoverability weight re-prices every plan at once.
@@ -268,14 +295,22 @@ module that would bill nobody fails the build.
 - ❌ Reserve less than **19** for Free's first run.
 - ❌ Let a capacity add-on include its own runs — that is a second unmetered budget.
 - ❌ Keep a bundle that sells consumption alongside credits — two currencies for one thing.
+- ❌ Remove the Extractions Bundle without migrating `bonusExtractions`' three other writers (§4.6) — that silently kills the referral reward.
 - ❌ Meter per feature instead of per choke point.
 - ❌ Let `checkCapability` fail closed on an INFRASTRUCTURE error.
 - ❌ Add device fingerprinting.
 
 ---
 
-## 7. Still open
+## 7. Resolved — the last four
 
-1. **Credit Pack pricing direction** (§4.4) — the proposal is ~5× more generous per dollar than today's bundle, because today's is 14× above plan rate. Confirm.
-2. **Does the Scheduled Monitor add-on stay at $5** once its runs are visibly drawn from the pool? It is now buying strictly less than it appeared to.
-3. **Deep-tier AI at 5** is a placeholder ratio — step C should measure it against fast-tier spend rather than assume 2.5×.
+| Question | Decision |
+|---|---|
+| Credit Pack pricing direction | **Ship as proposed** (D18). ~5× more generous than the bundle it replaces, because that bundle was 14× plan rate. |
+| Does Scheduled Monitor stay at $5 now it buys strictly less? | **Yes, unchanged** (D16) — but the slot-only semantics must be stated on the pricing page. |
+| Is deep-tier AI at 5 a placeholder? | **No — settled** (D17). Calibration reports it if materially off; it does not re-open by default. |
+| Does the Extractions Bundle survive? | **No — removed** (D15), with §4.6's grant migration as required work. |
+
+**Nothing in this plan is open.** The remaining dependency is step **C**:
+§1 counts provider *calls*, not tokens, and those numbers should meet a real
+invoice before anyone is billed on them.
