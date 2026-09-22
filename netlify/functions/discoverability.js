@@ -2950,6 +2950,8 @@ async function businessTruthRoute(userId, method, path, body, event) {
 //   GET    /entity-graph/schema                    types, predicates, states
 //   GET    /entity-graph?truth_record_id=          the graph, with its conflicts
 //   POST   /entity-graph/entities                  propose an entity
+//   PATCH  /entity-graph/entities/:id              edit in place -> back to review
+//   DELETE /entity-graph/entities/:id              cascades its relationships
 //   POST   /entity-graph/entities/:id/reject       reason required
 //   POST   /entity-graph/relationships             propose a relationship
 //   POST   /entity-graph/relationships/:id/approve approve it AND its endpoints
@@ -3055,6 +3057,48 @@ async function entityGraphRoute(userId, method, path, body, event) {
       return created.ok
         ? json(201, { entity: created.entity })
         : json(500, { error: "Could not create the entity.", detail: created.error });
+    }
+
+    // 🔴 EDIT IN PLACE — the UI used to "edit" by POSTing a fresh entity, which
+    // left the original behind and produced a duplicate on every Save. The id
+    // must stay stable: audit_entity_relationships cascades on its endpoints,
+    // so replacing the row would take every edge drawn to it as well.
+    if (id && !verb && method === "PATCH") {
+      if ("entity_type" in body && !ENTITY_TYPES[body.entity_type]) {
+        return bad(`Unknown entity type "${body.entity_type}".`, { code: "INVALID_REQUEST", allowed: ENTITY_TYPE_IDS });
+      }
+      if ("name" in body) {
+        const nm = typeof body.name === "string" ? body.name.replace(/\s+/g, " ").trim() : "";
+        if (!nm) return bad("An entity needs a name.", { code: "INVALID_REQUEST" });
+        body.name = nm;
+      }
+      const r = await store.updateEntity(userId, id, {
+        name: body.name,
+        description: "description" in body ? body.description : undefined,
+        canonicalDomain: "canonical_domain" in body
+          ? normalizeFieldValue("canonical_domain", body.canonical_domain)
+          : undefined,
+        entityType: body.entity_type,
+      }, { workspaceId });
+      if (r.ok) return json(200, { entity: r.entity, requiresReview: true });
+      if (r.notFound) return notFound("Entity not found.");
+      if (r.verdict === "rejected") {
+        return json(409, {
+          error: "This entity was rejected. Propose it again rather than editing the rejection back into review.",
+          code: "REJECTED",
+        });
+      }
+      return json(500, { error: r.error || "Could not update the entity." });
+    }
+
+    // 🔴 DELETING AN ENTITY TAKES ITS EDGES WITH IT (0056 cascades both
+    // endpoints). The response reports how many went, so the UI can tell the
+    // truth about what just happened rather than a bare "deleted".
+    if (id && !verb && method === "DELETE") {
+      const r = await store.deleteEntity(userId, id, { workspaceId });
+      if (r.ok) return json(200, { deleted: true, deletedRelationships: r.deletedRelationships || 0 });
+      if (r.notFound) return notFound("Entity not found.");
+      return json(500, { error: r.error || "Could not delete the entity." });
     }
 
     if (id && verb === "approve" && method === "POST") {

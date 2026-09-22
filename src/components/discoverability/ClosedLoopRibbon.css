@@ -1,9 +1,31 @@
 .closed-loop-ribbon {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem; /* 8px */
-  justify-content: center;
+  /* 🔴 ONE ROW, ALWAYS. Wrapping re-ordered the loop VISUALLY even though the
+     DOM order was correct — "Re-audit" landed between 5 Score and 6 Validate
+     on a narrow viewport, which reads as a tenth step in the wrong place. A
+     loop that renders out of order is worse than one that scrolls, because the
+     order IS the message. Below the fold width the row scrolls horizontally
+     instead of re-flowing. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  gap: 0.375rem;
+  justify-content: flex-start;
   margin-bottom: 1rem;
+  padding-bottom: 2px; /* room for the scrollbar so it never clips the pills */
+}
+
+/* Centre it while it fits; once it overflows, flex-start keeps step 1.1 at the
+   left edge rather than hiding it off-screen. */
+@media (min-width: 1100px) {
+  .closed-loop-ribbon { justify-content: center; }
+}
+
+.closed-loop-ribbon::-webkit-scrollbar { height: 4px; }
+.closed-loop-ribbon::-webkit-scrollbar-thumb {
+  background: var(--border, #d1d5db);
+  border-radius: 2px;
 }
 
 .closed-loop-step-wrapper {
@@ -12,13 +34,17 @@
 }
 
 .closed-loop-step {
+  /* shrink-to-fit rather than wrap; min-width:0 lets a long label ellipsis
+     instead of forcing the row wider than the viewport. */
   flex: 0 1 auto;
-  min-width: 5rem; /* approx 80px */
-  padding: 0.25rem 0.5rem;
-  margin: 0.125rem;
+  min-width: 0;
+  padding: 0.25rem 0.45rem;
+  margin: 0;
   text-align: center;
   white-space: nowrap;
 }
+
+.closed-loop-step-wrapper { flex: 0 0 auto; }
 
 /* Adjust arrow positioning for wrapped rows */
 .closed-loop-arrow {
@@ -26,10 +52,8 @@
 }
 
 @media (max-width: 480px) {
-  .closed-loop-step {
-    font-size: 0.75rem;
-    min-width: 4rem;
-  }
+  .closed-loop-step { font-size: 0.7rem; padding: 0.2rem 0.35rem; }
+  .closed-loop-arrow { margin: 0 0.1rem; }
 }
 
 /* ── Loop title ───────────────────────────────────────────────────────────

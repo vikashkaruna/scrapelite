@@ -217,7 +217,7 @@ describe("workspace-scoped audit reads", () => {
         // getEntity check or patch response
         return {
           ok: true, status: 200,
-          text: async () => JSON.stringify([{ id: "entity-1", name: "Acme", state: "proposed", user_id: "user-1" }]),
+          text: async () => JSON.stringify([{ id: "entity-1", name: "Acme", state: "proposed", user_id: "user-1", proposed_by: "user-1" }]),
         };
       }
       if (path === "rpc/approve_entity") {
@@ -248,7 +248,7 @@ describe("workspace-scoped audit reads", () => {
       if (path.startsWith("audit_entity_relationships?id=eq.rel-1")) {
         return {
           ok: true, status: 200,
-          text: async () => JSON.stringify([{ id: "rel-1", subject_id: "e1", object_id: "e2", state: "proposed", user_id: "user-1" }]),
+          text: async () => JSON.stringify([{ id: "rel-1", subject_id: "e1", object_id: "e2", state: "proposed", user_id: "user-1", proposed_by: "user-1" }]),
         };
       }
       if (path === "rpc/approve_entity_relationship") {
@@ -267,5 +267,44 @@ describe("workspace-scoped audit reads", () => {
     expect(patchCall.body.state).toBe("approved");
     expect(patchCall.body.reviewed_by).toBe("user-1");
     expect(patchCall.body.review_note).toContain("[Single-founder approval]");
+  });
+});
+
+describe("reviewNoteFor — a solo operator's own note must not cost them the approval", () => {
+  const MARKER = "[Single-founder approval]";
+
+  // 🔴 THE BUG THIS PINS. approve_entity (0075/0077) permits a self-approval
+  // only when the note carries the single-founder marker, and the old code
+  // applied that marker ONLY when no note was given. So the behaviour was
+  // exactly backwards: approving your own entity silently worked, and
+  // approving it WITH a note was refused 403 "You proposed this entity."
+  // Someone who explained their reasoning was punished for it.
+
+  it("🔴 keeps the marker when the proposer ALSO types a note", () => {
+    const out = store.reviewNoteFor("Checked against the filings.", { selfApproval: true });
+    expect(out).toContain(MARKER);
+    // Their own words are the audit trail — appended to, never replaced.
+    expect(out).toContain("Checked against the filings.");
+  });
+
+  it("still attests when the proposer types nothing", () => {
+    expect(store.reviewNoteFor(null, { selfApproval: true })).toContain(MARKER);
+    expect(store.reviewNoteFor("   ", { selfApproval: true })).toContain(MARKER);
+  });
+
+  it("does not double-stamp a note that already carries the marker", () => {
+    const already = `${MARKER} Reviewed by the owner.`;
+    expect(store.reviewNoteFor(already, { selfApproval: true })).toBe(already);
+    expect(store.reviewNoteFor(already, { selfApproval: true }).match(/\[Single-founder approval\]/g))
+      .toHaveLength(1);
+  });
+
+  it("🔴 NEVER relabels a teammate's approval as single-founder", () => {
+    // The marker asserts that one person reviewed their own work. Adding it to
+    // a different reviewer's note would erase the fact that two people looked,
+    // which is the one thing the approval gate exists to record.
+    expect(store.reviewNoteFor("Confirmed independently.", { selfApproval: false }))
+      .toBe("Confirmed independently.");
+    expect(store.reviewNoteFor(null, { selfApproval: false })).toBeNull();
   });
 });

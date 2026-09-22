@@ -169,19 +169,60 @@ describe("EntityGraphPanel — 2026-09-22 approval error banners", () => {
 describe("EntityGraphPanel — 2026-09-22 inline edit", () => {
   beforeEach(() => { vi.restoreAllMocks(); toast.mockReset(); });
 
-  it("🔴 opens an inline edit form on an entity and re-proposes with the edited fields", async () => {
+  it("🔴 edits an entity IN PLACE — it must not re-propose a duplicate", async () => {
+    // This test used to assert the opposite, and the opposite was the bug:
+    // saving an edit called proposeEntity, which POSTs a SECOND row and leaves
+    // the original, so every Save produced a duplicate. The id has to stay
+    // stable regardless — relationships cascade on their endpoints, so
+    // replacing the node would silently take its edges with it.
     mockApi({ entities: [{ id: "e1", name: "Acme", entity_type: "brand", state: "proposed", description: "Original" }] });
     const proposeEntity = vi.spyOn(discoverability, "proposeEntity").mockResolvedValue({ entity: {} });
+    const updateEntity = vi.spyOn(discoverability, "updateEntity").mockResolvedValue({ entity: {} });
     render(<EntityGraphPanel workspaceId="ws-1" />);
-    // The new Edit button (pencil) sits next to Approve.
     fireEvent.click(await screen.findByTitle(/Edit entity/));
-    // Update the name in the inline form.
     const nameInput = (await screen.findAllByDisplayValue("Acme"))
       .find((el) => el.tagName === "INPUT");
     fireEvent.change(nameInput, { target: { value: "Acme Updated" } });
-    fireEvent.click(await screen.findByRole("button", { name: /Save Edits/ }));
-    await waitFor(() => expect(proposeEntity).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Acme Updated", entity_type: "brand", workspace_id: "ws-1",
-    })));
+    fireEvent.click(await screen.findByRole("button", { name: /^Save$/ }));
+
+    await waitFor(() => expect(updateEntity).toHaveBeenCalledWith(
+      "e1",
+      expect.objectContaining({ name: "Acme Updated", entity_type: "brand" }),
+      expect.objectContaining({ workspaceId: "ws-1" }),
+    ));
+    // The half that actually prevents the duplicate.
+    expect(proposeEntity).not.toHaveBeenCalled();
+  });
+
+  it("🔴 deleting an entity warns that its relationships go too", async () => {
+    // 0056 cascades both endpoints, so a delete takes every edge with it. A
+    // confirm that does not say so hides the part the user would want back.
+    mockApi({
+      entities: [
+        { id: "e1", name: "Acme", entity_type: "brand", state: "approved" },
+        { id: "e2", name: "Cloud", entity_type: "product", state: "approved" },
+      ],
+      relationships: [
+        { id: "r1", subject_id: "e1", object_id: "e2", predicate: "owns", state: "approved" },
+      ],
+    });
+    const deleteEntity = vi.spyOn(discoverability, "deleteEntity")
+      .mockResolvedValue({ deleted: true, deletedRelationships: 1 });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<EntityGraphPanel workspaceId="ws-1" />);
+
+    const del = (await screen.findAllByRole("button", { name: /^Delete$/ }))[0];
+    fireEvent.click(del);
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringMatching(/1 relationship/));
+    await waitFor(() => expect(deleteEntity).toHaveBeenCalledWith("e1", { workspaceId: "ws-1" }));
+  });
+
+  it("does not delete when the confirm is dismissed", async () => {
+    mockApi({ entities: [{ id: "e1", name: "Acme", entity_type: "brand", state: "approved" }] });
+    const deleteEntity = vi.spyOn(discoverability, "deleteEntity").mockResolvedValue({ deleted: true });
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<EntityGraphPanel workspaceId="ws-1" />);
+    fireEvent.click((await screen.findAllByRole("button", { name: /^Delete$/ }))[0]);
+    expect(deleteEntity).not.toHaveBeenCalled();
   });
 });
