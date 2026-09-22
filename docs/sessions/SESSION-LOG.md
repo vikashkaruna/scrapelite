@@ -18,6 +18,82 @@
 
 ---
 
+## 2026-09-23 — Unified credits (steps A+B+D), and entity approval was reporting a raw Postgres dump
+
+**Branches:** `claude/entity-approval-diagnosis` → PR [#212](https://github.com/vikashkaruna/scrapelite/pull/212) **MERGED** · `claude/credits-unification` → PR [#214](https://github.com/vikashkaruna/scrapelite/pull/214).
+
+### 1. Entity approval — two defects, and the fix does not make it work
+
+Reported live mid-session: Approve returned a raw PostgREST envelope, `details`
+blob and all.
+
+🔴 **The verdict parser read a shape production never produces.** `rest()`
+returns the failed body as **text**; the parser read `patchRes.error.code` and
+`.error.message` off that string, so `code` was `undefined`, `message` was
+`""`, every branch missed, and the route fell through to its generic 500 with
+the raw envelope as the message. **The test covering it passed an OBJECT and
+was green the whole time.**
+
+🔴 **`0075` is not applied to staging, and the refusal proves it rather than
+suggesting it.** `0075`'s constraint permits a self-approval whose
+`review_note` carries `[Single-founder approval]`; the refused row carried it;
+`0056`'s original has no such clause. A database that refuses that row is
+running `0056`'s. `approve_entity()` is missing for the same reason, which is
+why the RPC fell through to the PATCH at all.
+
+New verdicts `approval_fn_missing` / `stale_constraint` — both **our
+deployment, not the user's decision**. Client gets one operator-fault sentence
+with no internals (the `aiFailureCopy` split); the server log names the
+migration. db-verify **+3** assertions exercising the CONSTRAINT directly
+rather than through the RPC — the layer the fallback PATCH meets, and one the
+RPC assertions structurally could not cover, because when `0075` is missing the
+function is missing too.
+
+⚠️ **OPERATOR ACTION OUTSTANDING: apply `0074`–`0077`** —
+[DB-MIGRATION-RUNBOOK.md §4f](../DB-MIGRATION-RUNBOOK.md). All four are
+idempotent. Verify by reading `pg_constraint`, not the deploy status.
+
+### 2. Credits — steps A, B and D
+
+[CREDITS-UNIFICATION-PROPOSAL.md §8](../CREDITS-UNIFICATION-PROPOSAL.md).
+**Nobody is charged:** no allowance granted, `enforced` false everywhere.
+
+**Three places implementation proved the proposal wrong:**
+
+1. 🔴 **Five choke points, not four** — and §1 already knew. Three of an
+   audit's four fetches never touch `runScrapeChain`. Under four, an audit
+   bills 16 against the 19 the same document prices it at. `fetchPublicUrl` is
+   the wrong boundary (nine callers, two must stay free); `fetchLayer` meters
+   its own three.
+2. 🔴 **A balance of zero is not the same as no balance.** These gates ship
+   before allowances are granted, so on `0078` apply-day every account reads 0
+   — a gate treating that as "refuse" would have paused every schedule,
+   monitor and bulk job at once. `credit_status().enforced` separates them and
+   **arms itself** on the first grant.
+3. 🔴 **`/api/ai` must CHECK the guest bucket, not consume it.** The obvious
+   reading of L0b would have taken a guest from ten extractions to three or
+   four while `GuestTrialBanner` went on advertising ten.
+
+**Also found:** watchlist monitoring under-charged (its hand-rolled row
+excluded the discovery crawl, so the first run on every target read an unbilled
+page) **and** discarded its metadata (`chargeLedger()` passes `p_meta: {}`
+unconditionally). Both fixed by moving it onto the choke point.
+
+**Not done, deliberately:** C, E, F, G. §6 orders calibration before the
+switch, and §1 counts provider *calls*, not tokens — never yet against an
+invoice. **Step C is an operator/finance pass**: a month of invoices ÷ the
+calls now in the ledger, which is data that did not exist before this session.
+
+**Verified:** vitest **447 files / 7,121 passed** · db-verify **78 migrations /
+884 assertions** (+35) · referral 17 · workflows 56 · pre-push gate green
+including e2e smoke **159/159**. Guards confirmed RED first: the FIFO balance
+against a naive implementation (**70** vs 100, **−30** vs 0), the self-arming
+rule, and the approval parser against the exact live error body.
+
+🔴 **`0078` has only met WASM Postgres.** ⚠️ Next migration: `0079`.
+
+---
+
 ## 2026-09-22 — Discoverability revenue loop completed; PostHog put behind consent; credit-metering audit
 
 > **Branch:** `claude/discoverability-loop-completion` → **PR #210** to `staging`
