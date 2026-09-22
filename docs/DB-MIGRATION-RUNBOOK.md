@@ -465,6 +465,99 @@ mean an unmeasurable subject gets stored as a real zero, which is unrecoverable 
 
 ---
 
+## 4f. 🔴 Applying `0074`–`0077` — Entity Graph approval is BROKEN without them
+
+> **Status, 2026-09-23: `0075` is NOT applied to staging, and this was proved
+> from a live error rather than assumed.**
+
+A staging approval of an entity the operator had proposed themselves was
+refused with:
+
+```
+23514  new row for relation "audit_entities"
+       violates check constraint "audit_entities_no_self_approval"
+```
+
+— on a row whose `review_note` **did** begin with `[Single-founder approval]`.
+
+That is conclusive. `0075`'s constraint permits exactly that row:
+
+```sql
+state <> 'approved'
+  or proposed_by is null or reviewed_by is null or reviewed_by <> proposed_by
+  or (review_note is not null and review_note like '%[Single-founder approval]%')
+```
+
+`0056`'s original has **no final clause**. A database that refuses the row is
+running `0056`'s constraint, so `0075` has not been applied there.
+`npm run test:db` applies all 77 migrations and asserts the relaxed constraint
+accepts that exact row — so the repository is correct and the environment is
+behind.
+
+### Why it surfaced as a raw Postgres dump
+
+`0075` also creates `approve_entity()`. With the migration absent the RPC
+returns `PGRST202`, `auditStore.approveEntity` falls through to its direct
+`PATCH`, and the `PATCH` meets `0056`'s constraint. The verdict parser then
+read `patchRes.error.code` off a value `rest()` returns as **text**, so every
+branch missed and the whole PostgREST envelope — including a `details` blob
+carrying the failing row — was returned to the browser. Fixed 2026-09-23;
+`approval_fn_missing` and `stale_constraint` are now distinct verdicts and the
+precise cause is logged server-side rather than sent to the client.
+
+⚠️ **The code fix does not make approval work. Only this apply does.**
+
+### What they add
+
+| Migration | Objects |
+|---|---|
+| `0074_single_founder_approval.sql` | relaxes `audit_btv_no_self_approval` and `audit_rel_no_self_approval` |
+| `0075_entity_approval.sql` | relaxes `audit_entities_no_self_approval`; adds `approve_entity()` |
+| `0076_endpoint_self_approval_and_directory_ignores.sql` | `endpoint_self_approval` verdict; directory ignores |
+| `0077_approve_entity_richer_verdicts.sql` | `already_approved` / `rejected` / `no_approver` verdicts |
+
+### Apply
+
+```bash
+STAGE_SUPABASE_DB_URL="postgresql://postgres:PASSWORD@db.aubwooslkkrprdxuiyvj.supabase.co:5432/postgres" \
+PROD_SUPABASE_DB_URL="$STAGE_SUPABASE_DB_URL" node -e '
+const fs=require("fs"), {Client}=require("pg");
+(async()=>{
+  const c=new Client({connectionString:process.env.PROD_SUPABASE_DB_URL,ssl:{rejectUnauthorized:false}});
+  await c.connect(); await c.query("SET statement_timeout = 0");
+  for(const f of process.argv.slice(1)){
+    try{ await c.query("BEGIN"); await c.query(fs.readFileSync(f,"utf8")); await c.query("COMMIT"); console.log("OK  ",f); }
+    catch(e){ await c.query("ROLLBACK").catch(()=>{}); console.error("FAIL",f,e.message); process.exitCode=1; break; }
+  }
+  await c.end();
+})().catch(e=>{console.error("ERR",e.message);process.exit(1)});
+' supabase/migrations/0074_single_founder_approval.sql \
+  supabase/migrations/0075_entity_approval.sql \
+  supabase/migrations/0076_endpoint_self_approval_and_directory_ignores.sql \
+  supabase/migrations/0077_approve_entity_richer_verdicts.sql
+```
+
+All four are idempotent (`drop constraint if exists` / `create or replace`), so
+re-running one that is already applied is safe.
+
+### Verify — check the constraint, not the deploy
+
+```sql
+select pg_get_constraintdef(oid)
+  from pg_constraint
+ where conname = 'audit_entities_no_self_approval';
+-- must contain: review_note ~~ '%[Single-founder approval]%'
+
+select proname from pg_proc where proname = 'approve_entity';
+-- must return one row
+```
+
+⚠️ **A green deploy proves nothing here.** The application never fails to build
+over a missing constraint clause; it fails at the moment a user presses
+Approve. Check the two queries above.
+
+---
+
 ## 5. Database functions — no separate step
 
 There is nothing to run beyond the migrations. All **9 functions and 2 triggers**

@@ -308,3 +308,80 @@ describe("reviewNoteFor — a solo operator's own note must not cost them the ap
     expect(store.reviewNoteFor(null, { selfApproval: false })).toBeNull();
   });
 });
+
+// ── 2026-09-23 — THE PARSER READ A SHAPE PRODUCTION NEVER PRODUCES ──────────
+//
+// `rest()` returns the failed response BODY AS TEXT. The previous verdict
+// parser read `patchRes.error.code` and `patchRes.error.message` off that
+// string, so every branch missed, the route fell through to its generic
+// 500 handler, and the RAW PostgREST envelope — including a `details` blob
+// carrying the entire failing row — was returned to the browser.
+//
+// The test that covered it passed an OBJECT and was green throughout. These
+// assertions use the exact text body a live staging PATCH returned.
+describe("approvalVerdictFrom — the error body is TEXT, not an object", () => {
+  const LIVE_BODY = JSON.stringify({
+    code: "23514",
+    details: "Failing row contains (7c61c11a, 52ab7ca5, null, null, brand, Axiom DatIQ, ...).",
+    hint: null,
+    message: 'new row for relation "audit_entities" violates check constraint "audit_entities_no_self_approval"',
+  });
+
+  it("reads the code out of a JSON STRING body (the shape rest() actually returns)", () => {
+    expect(
+      store.approvalVerdictFrom(LIVE_BODY, { marker: false, constraints: store.SELF_APPROVAL_CONSTRAINTS.entity }),
+    ).toBe("check_violation");
+  });
+
+  // 🔴 The distinction the whole fix exists for. 0075's constraint PERMITS a
+  // self-approval whose note carries the marker. So a refusal of a row that
+  // carries it proves the database is enforcing 0056's constraint — a
+  // deployment fact, not a decision about what the user may do.
+  it("calls a refusal DESPITE the single-founder marker a stale constraint, not a policy refusal", () => {
+    expect(
+      store.approvalVerdictFrom(LIVE_BODY, { marker: true, constraints: store.SELF_APPROVAL_CONSTRAINTS.entity }),
+    ).toBe("stale_constraint");
+  });
+
+  it("does not call an unrelated check violation stale, even with the marker present", () => {
+    const other = JSON.stringify({
+      code: "23514",
+      message: 'violates check constraint "audit_entities_rejected_has_reason"',
+    });
+    expect(
+      store.approvalVerdictFrom(other, { marker: true, constraints: store.SELF_APPROVAL_CONSTRAINTS.entity }),
+    ).toBe("check_violation");
+  });
+
+  it("recognises a missing approve_entity function as the same unapplied migration", () => {
+    const missing = JSON.stringify({
+      code: "PGRST202",
+      message: "Could not find the function public.approve_entity(p_entity_id, p_note, p_reviewer_id)",
+    });
+    expect(store.approvalVerdictFrom(missing, { marker: true, constraints: [] })).toBe("approval_fn_missing");
+  });
+
+  it("still detects RLS refusals", () => {
+    const rls = JSON.stringify({ code: "42501", message: "permission denied for table audit_entities" });
+    expect(store.approvalVerdictFrom(rls, {})).toBe("rls_denied");
+  });
+
+  it("returns null for anything it does not recognise — never a guess", () => {
+    expect(store.approvalVerdictFrom(JSON.stringify({ code: "08006", message: "connection failure" }), {})).toBeNull();
+    expect(store.approvalVerdictFrom("", {})).toBeNull();
+  });
+
+  // The `details` blob is the whole failing row. It reached the browser once;
+  // it must not again.
+  it("restErrorMessage keeps the message and DROPS the row-dumping details blob", () => {
+    const msg = store.restErrorMessage(LIVE_BODY, "fallback");
+    expect(msg).toContain("audit_entities_no_self_approval");
+    expect(msg).not.toContain("Failing row contains");
+    expect(msg).not.toContain("Axiom DatIQ");
+  });
+
+  it("survives a non-JSON body rather than throwing inside an error path", () => {
+    expect(store.restErrorMessage("<html>502 Bad Gateway</html>", "fallback")).toBe("<html>502 Bad Gateway</html>");
+    expect(store.parseRestError(undefined)).toEqual({});
+  });
+});

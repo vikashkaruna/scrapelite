@@ -3121,9 +3121,26 @@ async function entityGraphRoute(userId, method, path, body, event) {
         not_found: [404, "Entity not found."],
         check_violation: [409, "A database constraint refused this approval. The most common cause is self-approval without a single-founder note, or a stale row that no longer matches the schema. Refresh and try again."],
         rls_denied: [403, "Row-level security refused this approval. Confirm the entity belongs to this workspace and that your role can approve it."],
+        // 🔴 BOTH OF THESE ARE OUR DEPLOYMENT, NOT THE USER'S DECISION.
+        // `approval_fn_missing` = approve_entity does not exist on this
+        // database; `stale_constraint` = we DID write the single-founder
+        // marker and the constraint refused it anyway, which 0075's version
+        // permits — so the database is still running 0056's. Telling the user
+        // "you may not self-approve" would send them to change a policy that
+        // is already correct. The precise cause goes to the log, not the wire.
+        approval_fn_missing: [503, "Approval is temporarily unavailable on this environment. This is a problem on our side, not with your entity — an administrator needs to finish a pending database update. Nothing was changed."],
+        stale_constraint: [503, "Approval is temporarily unavailable on this environment. This is a problem on our side, not with your entity — an administrator needs to finish a pending database update. Nothing was changed."],
       };
+      if (r.verdict === "approval_fn_missing" || r.verdict === "stale_constraint") {
+        console.warn(
+          `[DatIQ] discoverability: entity approval blocked by an unapplied migration `
+          + `(verdict=${r.verdict}). Apply supabase/migrations/0074-0077 to this database: `
+          + `0075 adds approve_entity() and relaxes audit_entities_no_self_approval for `
+          + `notes carrying the single-founder marker. Underlying: ${r.error || "n/a"}`,
+        );
+      }
       const [status, message] = VERDICTS[r.verdict]
-        || [500, r.error || "The approval could not be saved. Nothing was changed — try again, and contact support if it keeps failing."];
+        || [500, "The approval could not be saved. Nothing was changed — try again, and contact support if it keeps failing."];
       return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
     }
 
@@ -3248,6 +3265,10 @@ async function entityGraphRoute(userId, method, path, body, event) {
         not_found: [404, "Relationship not found."],
         check_violation: [409, "A database constraint refused this approval. The most common cause is a self-approval (edge or endpoint) without a single-founder note, or a stale row. Refresh and try again."],
         rls_denied: [403, "Row-level security refused this approval. Confirm the relationship belongs to this workspace and that your role can approve it."],
+        // See the entity route: an unapplied 0074/0075 is our problem to fix,
+        // not a refusal the user can act on.
+        approval_fn_missing: [503, "Approval is temporarily unavailable on this environment. This is a problem on our side, not with your relationship — an administrator needs to finish a pending database update. Nothing was changed."],
+        stale_constraint: [503, "Approval is temporarily unavailable on this environment. This is a problem on our side, not with your relationship — an administrator needs to finish a pending database update. Nothing was changed."],
       };
       const [status, message] = VERDICTS[r.verdict]
         || [500, r.error || "The approval could not be saved. Nothing was changed — try again, and contact support if it keeps failing."];

@@ -1614,6 +1614,71 @@ export function reviewNoteFor(note, { selfApproval }) {
   return typed ? `${typed}\n\n${attestation}` : attestation;
 }
 
+/**
+ * 🔴 `rest()` RETURNS THE ERROR BODY AS TEXT, NOT AS AN OBJECT.
+ *
+ * The previous verdict parser read `patchRes.error.code` and
+ * `patchRes.error.message` off a STRING, so both were undefined, every branch
+ * missed, and the raw PostgREST envelope — code, message, and a `details` blob
+ * containing the entire failing row — was returned to the browser verbatim.
+ * A unit test that handed the parser an object passed the whole time, because
+ * the shape it asserted was never the shape production produces.
+ */
+export function parseRestError(raw) {
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : { message: String(raw) };
+  } catch {
+    return { message: String(raw) };
+  }
+}
+
+/**
+ * Turn a PostgREST failure into a verdict the route can act on.
+ *
+ * ⚠️ `stale_constraint` is the one worth reading twice. 0075 relaxed
+ * `audit_entities_no_self_approval` (and 0074 the relationship and truth-record
+ * equivalents) so that a self-approval carrying SINGLE_FOUNDER_MARKER is
+ * permitted. So if we wrote the marker and the constraint refused the row
+ * anyway, the database is enforcing the PRE-0075 constraint — which is a
+ * statement about what has been deployed, not about what the user may do.
+ * Reporting that as "you may not self-approve" sends the operator to change a
+ * policy that is already correct; they need to apply the migration.
+ */
+export function approvalVerdictFrom(raw, { marker = false, constraints = [] } = {}) {
+  const e = parseRestError(raw);
+  const code = String(e.code || "");
+  const text = `${e.message || ""} ${e.details || ""} ${e.hint || ""}`.toLowerCase();
+
+  // The RPC itself is absent — same missing migration, seen one layer earlier.
+  if (code === "PGRST202" || text.includes("could not find the function")) {
+    return "approval_fn_missing";
+  }
+  if (code === "23514" || text.includes("check constraint")) {
+    const hitSelfApproval = constraints.some((c) => text.includes(c));
+    if (marker && hitSelfApproval) return "stale_constraint";
+    return "check_violation";
+  }
+  if (code === "42501" || text.includes("row-level security") || text.includes("permission denied")) {
+    return "rls_denied";
+  }
+  return null;
+}
+
+/** A one-line, non-leaking summary of a PostgREST failure for the route. */
+export function restErrorMessage(raw, fallback) {
+  const e = parseRestError(raw);
+  return e.message || fallback;
+}
+
+/** Self-approval CHECK constraint names, by row kind. */
+export const SELF_APPROVAL_CONSTRAINTS = Object.freeze({
+  entity: ["audit_entities_no_self_approval"],
+  relationship: ["audit_rel_no_self_approval", "audit_entities_no_self_approval"],
+});
+
 /** Approve an entity node directly. Verdict returned unchanged with direct DB fallback. */
 export async function approveEntity(userId, entityId, {
   note = null, workspaceId = null,
@@ -1650,6 +1715,17 @@ export async function approveEntity(userId, entityId, {
       if (verdict && verdict !== "unknown" && verdict !== "error") {
         return { ok: false, verdict };
       }
+    } else {
+      // The RPC answered with an error rather than a verdict. PGRST202 here
+      // means approve_entity does not exist on this database — 0075 has not
+      // been applied — and the PATCH below then meets 0056's constraint, which
+      // has no single-founder escape. Remember that now: after the PATCH
+      // fails, "the approval function is missing" is a far more actionable
+      // diagnosis than "a constraint refused it".
+      verdict = approvalVerdictFrom(r?.error, {
+        marker: Boolean(effectiveNote && effectiveNote.includes(SINGLE_FOUNDER_MARKER)),
+        constraints: SELF_APPROVAL_CONSTRAINTS.entity,
+      });
     }
   } catch (_rpcErr) {
     // Fallback directly if RPC invocation fails — but only on transport / 5xx,
@@ -1682,21 +1758,14 @@ export async function approveEntity(userId, entityId, {
   // 23514 = check_violation; 42501 = insufficient_privilege (RLS refused);
   // anything else stays as a generic error with the original PostgREST message
   // attached so the operator can debug from server logs.
-  const fallbackVerdict = (() => {
-    const code = patchRes?.code || patchRes?.error?.code;
-    const message = (patchRes?.error?.message || patchRes?.message || "").toLowerCase();
-    if (code === "23514" || message.includes("audit_entities_no_self_approval") || message.includes("check constraint")) {
-      return "check_violation";
-    }
-    if (code === "42501" || message.includes("row-level security") || message.includes("permission denied")) {
-      return "rls_denied";
-    }
-    return null;
-  })();
+  const fallbackVerdict = approvalVerdictFrom(patchRes?.error, {
+    marker: Boolean(effectiveNote && effectiveNote.includes(SINGLE_FOUNDER_MARKER)),
+    constraints: SELF_APPROVAL_CONSTRAINTS.entity,
+  });
 
   return {
     ok: false,
-    error: patchRes?.error?.message || patchRes?.error || "Could not approve entity",
+    error: restErrorMessage(patchRes?.error, "Could not approve entity"),
     verdict: fallbackVerdict || verdict,
   };
 }
@@ -1732,6 +1801,15 @@ export async function approveEntityRelationship(userId, relationshipId, {
       if (verdict && verdict !== "unknown" && verdict !== "error") {
         return { ok: false, verdict };
       }
+    } else {
+      // Same as approveEntity: an error here rather than a verdict usually
+      // means the RPC is absent (0074/0075 unapplied), and the PATCH below
+      // will meet the pre-relaxation constraint. Keep the earlier, more
+      // specific diagnosis.
+      verdict = approvalVerdictFrom(r?.error, {
+        marker: Boolean(effectiveNote && effectiveNote.includes(SINGLE_FOUNDER_MARKER)),
+        constraints: SELF_APPROVAL_CONSTRAINTS.relationship,
+      });
     }
   } catch (_rpcErr) {
     // Fallback directly if RPC invocation fails
@@ -1789,21 +1867,14 @@ export async function approveEntityRelationship(userId, relationshipId, {
   // The endpoint-self-approval case in particular would otherwise surface as a
   // generic "Could not approve relationship" while the route's VERDICTS map
   // has a perfectly good entry for it — same root cause, same fix.
-  const fallbackVerdict = (() => {
-    const code = patchRes?.code || patchRes?.error?.code;
-    const message = (patchRes?.error?.message || patchRes?.message || "").toLowerCase();
-    if (code === "23514" || message.includes("audit_rel_no_self_approval") || message.includes("audit_entities_no_self_approval") || message.includes("check constraint")) {
-      return "check_violation";
-    }
-    if (code === "42501" || message.includes("row-level security") || message.includes("permission denied")) {
-      return "rls_denied";
-    }
-    return null;
-  })();
+  const fallbackVerdict = approvalVerdictFrom(patchRes?.error, {
+    marker: Boolean(effectiveNote && effectiveNote.includes(SINGLE_FOUNDER_MARKER)),
+    constraints: SELF_APPROVAL_CONSTRAINTS.relationship,
+  });
 
   return {
     ok: false,
-    error: patchRes?.error?.message || patchRes?.error || "Could not approve relationship",
+    error: restErrorMessage(patchRes?.error, "Could not approve relationship"),
     verdict: fallbackVerdict || verdict,
   };
 }
