@@ -134,3 +134,54 @@ describe("EntityGraphPanel — approving an edge between entities you proposed",
     expect(approve.mock.calls[0][1].note).toMatch(/\[Single-founder approval\]/);
   });
 });
+
+describe("EntityGraphPanel — 2026-09-22 approval error banners", () => {
+  beforeEach(() => { vi.restoreAllMocks(); toast.mockReset(); });
+
+  it("🔴 surfaces a SELF_APPROVAL verdict as an inline banner with the remediation hint, not a toast-only error", async () => {
+    mockApi({ entities: [{ id: "e1", name: "Acme", entity_type: "brand", state: "proposed" }] });
+    // The 0077 server returns 403 + { code: "SELF_APPROVAL", error: ... } and
+    // the client maps it to err.code = "SELF_APPROVAL".
+    vi.spyOn(discoverability, "approveEntity").mockRejectedValue(
+      Object.assign(new Error("You proposed this entity."), { status: 403, code: "SELF_APPROVAL" }),
+    );
+    render(<EntityGraphPanel />);
+    fireEvent.click(await screen.findByTitle(/Approve entity/));
+    // The inline banner must render with the structured code, not the generic toast.
+    const banner = await screen.findByTestId("approval-error-ent:e1");
+    expect(banner.textContent).toMatch(/SELF_APPROVAL/);
+    expect(banner.textContent).toMatch(/teammate|single-founder/i);
+  });
+
+  it("🔴 maps a Postgres 23514 CHECK violation to CHECK_VIOLATION so the user sees a hint, not a raw constraint name", async () => {
+    mockApi({ entities: [{ id: "e1", name: "Acme", entity_type: "brand", state: "proposed" }] });
+    // Some transport paths surface the SQLSTATE rather than the route's verdict code.
+    vi.spyOn(discoverability, "approveEntity").mockRejectedValue(
+      Object.assign(new Error("audit_entities_no_self_approval"), { status: 409, code: "23514" }),
+    );
+    render(<EntityGraphPanel />);
+    fireEvent.click(await screen.findByTitle(/Approve entity/));
+    const banner = await screen.findByTestId("approval-error-ent:e1");
+    expect(banner.textContent).toMatch(/CHECK_VIOLATION/);
+  });
+});
+
+describe("EntityGraphPanel — 2026-09-22 inline edit", () => {
+  beforeEach(() => { vi.restoreAllMocks(); toast.mockReset(); });
+
+  it("🔴 opens an inline edit form on an entity and re-proposes with the edited fields", async () => {
+    mockApi({ entities: [{ id: "e1", name: "Acme", entity_type: "brand", state: "proposed", description: "Original" }] });
+    const proposeEntity = vi.spyOn(discoverability, "proposeEntity").mockResolvedValue({ entity: {} });
+    render(<EntityGraphPanel workspaceId="ws-1" />);
+    // The new Edit button (pencil) sits next to Approve.
+    fireEvent.click(await screen.findByTitle(/Edit entity/));
+    // Update the name in the inline form.
+    const nameInput = (await screen.findAllByDisplayValue("Acme"))
+      .find((el) => el.tagName === "INPUT");
+    fireEvent.change(nameInput, { target: { value: "Acme Updated" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Save Edits/ }));
+    await waitFor(() => expect(proposeEntity).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Acme Updated", entity_type: "brand", workspace_id: "ws-1",
+    })));
+  });
+});

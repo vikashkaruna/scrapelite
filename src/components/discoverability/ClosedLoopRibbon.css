@@ -1,0 +1,74 @@
+.closed-loop-ribbon {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem; /* 8px */
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.closed-loop-step-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.closed-loop-step {
+  flex: 0 1 auto;
+  min-width: 5rem; /* approx 80px */
+  padding: 0.25rem 0.5rem;
+  margin: 0.125rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Adjust arrow positioning for wrapped rows */
+.closed-loop-arrow {
+  margin: 0 0.25rem;
+}
+
+@media (max-width: 480px) {
+  .closed-loop-step {
+    font-size: 0.75rem;
+    min-width: 4rem;
+  }
+}
+
+/* ── Loop title ───────────────────────────────────────────────────────────
+   Names the cycle the ribbon describes. Deliberately quiet: it is a label for
+   the steps below, not a page heading, so it must not compete with the audit
+   score for attention. */
+.closed-loop-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2, #6b7280);
+}
+
+/* ── Loop-back ────────────────────────────────────────────────────────────
+   The pill that closes the cycle back to Re-audit. `margin-left: auto` is NOT
+   used: the ribbon is centred and wraps, so pushing this element right would
+   strand it alone on its own row at narrow widths. It simply flows as the last
+   item and wraps with everything else. */
+.closed-loop-loopback {
+  flex: 0 1 auto;
+}
+
+.closed-loop-arrow-back {
+  opacity: 0.55;
+}
+
+.closed-loop-reaudit {
+  border-style: dashed;
+}
+
+@media (max-width: 480px) {
+  .closed-loop-title {
+    font-size: 0.625rem;
+    letter-spacing: 0.04em;
+  }
+}

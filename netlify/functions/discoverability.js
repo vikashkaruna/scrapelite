@@ -3064,16 +3064,22 @@ async function entityGraphRoute(userId, method, path, body, event) {
       });
       if (r.ok) {
         const entity = await store.getEntity(userId, id, { workspaceId });
-        return json(200, { approved: true, entity });
+        return json(200, { approved: true, alreadyApproved: r.verdict === "already_approved", entity });
       }
       if (r.notFound) return notFound("Entity not found.");
+      // 0077 — verdict codes are now the canonical source of truth. Each one
+      // carries a remediation hint, so the UI can render an actionable banner
+      // instead of a generic "Could not approve the entity."
       const VERDICTS = {
-        self_approval: [403, "You proposed this entity. Approval means a second person looked or single-founder confirmation is recorded."],
-        no_approver: [400, "No approver could be resolved for this request."],
+        self_approval: [403, "You proposed this entity. Ask a teammate to approve, or record a single-founder confirmation in the note and try again."],
+        no_approver: [400, "No approver could be resolved for this request. Re-authenticate and try again."],
         rejected: [409, "This entity was rejected. Propose it again rather than reviving the rejection."],
         not_found: [404, "Entity not found."],
+        check_violation: [409, "A database constraint refused this approval. The most common cause is self-approval without a single-founder note, or a stale row that no longer matches the schema. Refresh and try again."],
+        rls_denied: [403, "Row-level security refused this approval. Confirm the entity belongs to this workspace and that your role can approve it."],
       };
-      const [status, message] = VERDICTS[r.verdict] || [500, "Could not approve the entity."];
+      const [status, message] = VERDICTS[r.verdict]
+        || [500, r.error || "The approval could not be saved. Nothing was changed — try again, and contact support if it keeps failing."];
       return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
     }
 
@@ -3181,11 +3187,14 @@ async function entityGraphRoute(userId, method, path, body, event) {
         const relationship = await store.getRelationship(userId, id, { workspaceId });
         // The approved graph just changed, so its conflicts just changed.
         const sweep = await refreshGraphConflicts(userId, body.truth_record_id || null, workspaceId);
-        return json(200, { approved: true, relationship, conflicts: sweep });
+        return json(200, { approved: true, alreadyApproved: r.verdict === "already_approved", relationship, conflicts: sweep });
       }
       if (r.notFound) return notFound("Relationship not found.");
+      // 0077 — added check_violation and rls_denied to the verdict map so the
+      // store's fallback PATCH errors (which used to be a generic 500) now
+      // surface as actionable 4xx messages.
       const VERDICTS = {
-        self_approval: [403, "You proposed this relationship. Approval means a second person looked."],
+        self_approval: [403, "You proposed this relationship. Ask a teammate to approve, or record a single-founder confirmation in the note and try again."],
         no_approver: [400, "No approver could be resolved for this request."],
         rejected: [409, "This relationship was rejected. Propose it again rather than reviving the rejection."],
         endpoint_rejected: [409, "One of the entities this connects was rejected. Approving the edge would silently revive it."],
@@ -3193,9 +3202,11 @@ async function entityGraphRoute(userId, method, path, body, event) {
         // reviewer proposed one of them, that half is a self-approval.
         endpoint_self_approval: [403, "You proposed one of the entities this relationship connects. Approve it as a single-founder approval, or ask a teammate to approve."],
         not_found: [404, "Relationship not found."],
+        check_violation: [409, "A database constraint refused this approval. The most common cause is a self-approval (edge or endpoint) without a single-founder note, or a stale row. Refresh and try again."],
+        rls_denied: [403, "Row-level security refused this approval. Confirm the relationship belongs to this workspace and that your role can approve it."],
       };
       const [status, message] = VERDICTS[r.verdict]
-        || [500, "The approval could not be saved. Nothing was changed — try again, and contact support if it keeps failing."];
+        || [500, r.error || "The approval could not be saved. Nothing was changed — try again, and contact support if it keeps failing."];
       return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
     }
 

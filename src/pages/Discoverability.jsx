@@ -44,14 +44,21 @@ import { discoverability, describeAuditError } from "../lib/discoverability/disc
 import { downloadTextFile, hostOf } from "../lib/utils.js";
 import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 
+// Order follows the audit → revenue-improvement loop (1.Audit → 2.Implement →
+// 3.Verify → 4.Build → 5.Score → 6.Validate → Re-audit). Schema & Trust gets its
+// own tab (step 3) rather than sharing step 2 with Business Truth — schema
+// validation is a distinct act that happens AFTER truth is established and
+// BEFORE the entity graph is built on top of it. Entity Graph and Local
+// Directory come BEFORE Subject Scores because scores need entities; scores
+// come BEFORE SXO & Outcomes because rollups aggregate scores.
 export const UNIFIED_DISCOVERABILITY_NAV = Object.freeze([
   { id: "audit", label: "Audit", icon: "scan-search" },
   { id: "truth", label: "Business Truth", icon: "database", path: "/discoverability/truth" },
   { id: "trust", label: "Schema & Trust", icon: "shield-check", path: "/discoverability/trust" },
-  { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
-  { id: "scores", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
   { id: "entities", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
   { id: "local", label: "Local Directory", icon: "map-pin", path: "/discoverability/local" },
+  { id: "scores", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
+  { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
   { id: "history", label: "History", icon: "clock" },
 ]);
 

@@ -551,8 +551,16 @@ describe("export dropdown & flow ribbon", () => {
   it("opens the export dropdown with all format options and shows the closed loop ribbon with audit tab green highlights", async () => {
     await runAudit();
     // Verify ribbon renders with audit tab green highlights
-    const ribbonSteps = screen.getAllByRole("link").filter((l) => l.className.includes("closed-loop-step"));
-    expect(ribbonSteps.length).toBe(8);
+    // The ribbon carries NINE numbered steps (1.1–1.4, then 2 Implement,
+    // 3 Verify, 4 Build, 5 Score, 6 Validate) plus a tenth link that is not a
+    // step at all: the Re-audit backlink that closes the loop. It reuses
+    // .closed-loop-step for styling, so filtering on that class alone counts
+    // it too — which is why the two are asserted separately here rather than
+    // as one number that silently absorbs a change to either.
+    const ribbonLinks = screen.getAllByRole("link").filter((l) => l.className.includes("closed-loop-step"));
+    const ribbonSteps = ribbonLinks.filter((l) => !l.className.includes("closed-loop-reaudit"));
+    expect(ribbonSteps.length).toBe(9);
+    expect(ribbonLinks.filter((l) => l.className.includes("closed-loop-reaudit"))).toHaveLength(1);
     // 1.1 to 1.4 are highlighted green on Audit tab
     expect(ribbonSteps[0].className).toContain("is-audit-highlight");
     expect(ribbonSteps[1].className).toContain("is-audit-highlight");
