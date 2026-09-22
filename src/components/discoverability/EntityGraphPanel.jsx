@@ -280,6 +280,41 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
       description: entity.description || "",
     });
   };
+  // 🔴 DELETE CASCADES, SO IT ASKS FIRST — AND NAMES THE COST.
+  // audit_entity_relationships declares both endpoints `on delete cascade`
+  // (0056), so removing a node silently removes every edge drawn to it. A
+  // confirm that only says "are you sure?" hides the part that matters, so the
+  // edge count is counted here and put in the question.
+  const [deletingEntityId, setDeletingEntityId] = useState(null);
+  const handleDeleteEntity = async (entity) => {
+    const edges = relationships.filter(
+      (r) => r.subject_id === entity.id || r.object_id === entity.id,
+    ).length;
+    const warning = edges
+      ? `\n\nThis also deletes ${edges} relationship${edges === 1 ? "" : "s"} connected to it.`
+      : "";
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(`Delete "${entity.name}"?${warning}\n\nThis cannot be undone.`)) return;
+    setDeletingEntityId(entity.id);
+    try {
+      const res = await discoverability.deleteEntity(entity.id, { workspaceId });
+      const gone = res?.deletedRelationships || 0;
+      showToast(
+        gone
+          ? `Deleted "${entity.name}" and ${gone} relationship${gone === 1 ? "" : "s"}.`
+          : `Deleted "${entity.name}".`,
+        "check",
+      );
+      if (editingEntityId === entity.id) cancelEditEntity();
+      loadGraphData();
+      bumpRefresh();
+    } catch (err) {
+      showToast(err.message || "Could not delete the entity", "error");
+    } finally {
+      setDeletingEntityId(null);
+    }
+  };
+
   const cancelEditEntity = () => {
     setEditingEntityId(null);
     setEntityEditDraft(null);
@@ -291,12 +326,17 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
     }
     setSubmittingEntity(true);
     try {
-      await discoverability.proposeEntity({
-        ...entityEditDraft,
-        workspace_id: workspaceId,
-        source: "declared",
-      });
-      showToast(`Entity "${entityEditDraft.name}" re-proposed with edits.`, "check");
+      // 🔴 updateEntity, NOT proposeEntity. Re-proposing POSTs a SECOND row and
+      // leaves the original in place — which is why every Save produced a
+      // duplicate. The id has to stay stable anyway: relationships cascade on
+      // their endpoints, so replacing the node would take its edges with it.
+      await discoverability.updateEntity(originalId, {
+        name: entityEditDraft.name,
+        entity_type: entityEditDraft.entity_type,
+        description: entityEditDraft.description || null,
+        canonical_domain: entityEditDraft.canonical_domain || null,
+      }, { workspaceId });
+      showToast(`"${entityEditDraft.name}" updated — approve it again to confirm the new details.`, "check");
       setEditingEntityId(null);
       setEntityEditDraft(null);
       loadGraphData();
@@ -423,7 +463,7 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
         />
         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
           <Button size="sm" variant="ghost" onClick={cancelEditRel}>Cancel</Button>
-          <Button size="sm" onClick={() => saveEditRel(rel.id)} loading={submittingRel}>Save Edits</Button>
+          <Button size="sm" onClick={() => saveEditRel(rel.id)} loading={submittingRel}>Save</Button>
         </div>
       </div>
     );
@@ -464,7 +504,7 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
         </div>
         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
           <Button size="sm" variant="ghost" onClick={cancelEditEntity}>Cancel</Button>
-          <Button size="sm" onClick={() => saveEditEntity(entity.id)} loading={submittingEntity}>Save Edits</Button>
+          <Button size="sm" onClick={() => saveEditEntity(entity.id)} loading={submittingEntity}>Save</Button>
         </div>
       </div>
     );
@@ -699,6 +739,16 @@ export default function EntityGraphPanel({ workspaceId = null, currentUser = nul
                             Approve
                           </Button>
                         )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteEntity(e)}
+                          loading={deletingEntityId === e.id}
+                          title="Delete this entity (and any relationships connected to it)"
+                          style={{ color: "var(--danger, #dc2626)" }}
+                        >
+                          Delete
+                        </Button>
                       </div>
                     </div>
                     {renderEntityEditForm(e)}

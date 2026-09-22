@@ -1501,6 +1501,119 @@ export async function getRelationship(userId, relationshipId, { workspaceId = nu
   return r.ok && Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
+/**
+ * Edit an entity IN PLACE, and send it back for review.
+ *
+ * 🔴 THE ID IS STABLE, AND THAT IS THE WHOLE POINT. The obvious alternative —
+ * create a corrected copy and drop the old one — is what the UI was doing
+ * through `proposeEntity`, and it produced a DUPLICATE every time somebody
+ * pressed Save. Worse than duplication: `audit_entity_relationships` cascades
+ * on its endpoints (0056), so deleting the original would silently take every
+ * edge drawn to it with it. Updating in place keeps the graph intact.
+ *
+ * ⚠️ AN EDIT RESETS THE REVIEW. An approval attests to the facts that were on
+ * the row when somebody looked at it; change the name or the domain and that
+ * attestation no longer describes anything. The row returns to `proposed` with
+ * the reviewer fields cleared, so it has to be approved again — which is also
+ * what keeps `audit_entities_no_self_approval` satisfiable afterwards.
+ *
+ * ⚠️ A REJECTED entity is NOT editable — propose it again instead. Editing one
+ * back into review would silently revive a decision somebody made, which is
+ * the same rule `approveEntity` holds.
+ */
+export async function updateEntity(userId, entityId, fields = {}, { workspaceId = null } = {}) {
+  const owned = await getEntity(userId, entityId, { workspaceId });
+  if (!owned) return { ok: false, notFound: true };
+  if ((owned.state || "") === "rejected") return { ok: false, verdict: "rejected" };
+
+  const patch = {
+    // Back to the queue: the facts moved, so the review has to move with them.
+    state: "proposed",
+    reviewed_by: null,
+    reviewed_at: null,
+    review_note: null,
+  };
+  // Only fields the caller actually supplied — an absent key must not blank a
+  // stored value, which is the difference between an edit and an overwrite.
+  if (typeof fields.name === "string") patch.name = fields.name;
+  if ("description" in fields) patch.description = fields.description || null;
+  if ("canonicalDomain" in fields) patch.canonical_domain = fields.canonicalDomain || null;
+  if (typeof fields.entityType === "string") patch.entity_type = fields.entityType;
+
+  const res = await rest(
+    `audit_entities?id=eq.${encodeURIComponent(entityId)}&${ownerOrWorkspace(userId, workspaceId)}`,
+    { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(patch) },
+  );
+  if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+    return { ok: true, entity: res.data[0] };
+  }
+  return { ok: false, error: res?.error?.message || res?.error || "Could not update the entity." };
+}
+
+/**
+ * Delete an entity — and say what goes with it.
+ *
+ * 🔴 THIS CASCADES. `audit_entity_relationships` declares both endpoints
+ * `on delete cascade` (0056), because a dangling edge is worse than no edge.
+ * So removing one node silently removes every relationship drawn to it, and a
+ * delete button that does not say so is a trap. The edge count is counted
+ * FIRST and returned, so the caller can put a real number in front of the user
+ * instead of a generic "are you sure?".
+ */
+export async function deleteEntity(userId, entityId, { workspaceId = null } = {}) {
+  const owned = await getEntity(userId, entityId, { workspaceId });
+  if (!owned) return { ok: false, notFound: true };
+
+  let edges = 0;
+  try {
+    const r = await rest(
+      `audit_entity_relationships?or=(subject_id.eq.${encodeURIComponent(entityId)},object_id.eq.${encodeURIComponent(entityId)})`
+      + `&${ownerOrWorkspace(userId, workspaceId)}&select=id`);
+    if (r.ok && Array.isArray(r.data)) edges = r.data.length;
+  } catch {
+    // Counting is a courtesy, not a gate — a failed count must not block the
+    // delete the user asked for. It reports 0 and the cascade still happens.
+  }
+
+  const res = await rest(
+    `audit_entities?id=eq.${encodeURIComponent(entityId)}&${ownerOrWorkspace(userId, workspaceId)}`,
+    { method: "DELETE" },
+  );
+  return res.ok
+    ? { ok: true, deletedRelationships: edges }
+    : { ok: false, error: res?.error?.message || res?.error || "Could not delete the entity." };
+}
+
+/**
+ * 🔴 THE NOTE A SOLO OPERATOR TYPES MUST NOT COST THEM THE APPROVAL.
+ *
+ * `approve_entity` (0075/0077) permits a self-approval only when the note
+ * carries the single-founder marker. The previous code applied that marker
+ * ONLY when no note was given, so the behaviour was exactly backwards:
+ *
+ *   approve with no note   → marker added   → allowed
+ *   approve WITH a note    → marker dropped → self_approval → 403
+ *
+ * A reviewer who explains their reasoning was refused, while one who said
+ * nothing succeeded. That is not an attestation rule, it is a bug — the
+ * attestation was already automatic on the common path, so this only makes the
+ * two paths agree.
+ *
+ * ⚠️ The marker is appended, never substituted: the operator's own words are
+ * the audit trail and must survive. A note from a DIFFERENT reviewer passes
+ * through untouched — a teammate's approval must never be silently relabelled
+ * as a single-founder one, which would erase the fact that two people looked.
+ */
+export const SINGLE_FOUNDER_MARKER = "[Single-founder approval]";
+
+export function reviewNoteFor(note, { selfApproval }) {
+  const typed = (typeof note === "string" && note.trim()) ? note.trim() : "";
+  if (!selfApproval) return typed || null;
+  if (typed.includes(SINGLE_FOUNDER_MARKER)) return typed;
+  const attestation = `${SINGLE_FOUNDER_MARKER} Self-approved by solo operator and recorded in audit trail.`;
+  return typed ? `${typed}\n\n${attestation}` : attestation;
+}
+
 /** Approve an entity node directly. Verdict returned unchanged with direct DB fallback. */
 export async function approveEntity(userId, entityId, {
   note = null, workspaceId = null,
@@ -1511,9 +1624,9 @@ export async function approveEntity(userId, entityId, {
   const conn = db();
   if (!conn) return { ok: false, degraded: true, error: "Supabase is not configured" };
 
-  const effectiveNote = (typeof note === "string" && note.trim())
-    ? note
-    : "[Single-founder approval] Self-approved by solo operator and recorded in audit trail.";
+  const effectiveNote = reviewNoteFor(note, {
+    selfApproval: Boolean(owned.proposed_by) && owned.proposed_by === userId,
+  });
 
   // 🔴 2026-09-22 — STOP SWALLOWING VERDICTS. The previous version dropped
   // self_approval and unknown verdicts on the floor and fell through to a
@@ -1598,9 +1711,9 @@ export async function approveEntityRelationship(userId, relationshipId, {
   const conn = db();
   if (!conn) return { ok: false, degraded: true, error: "Supabase is not configured" };
 
-  const effectiveNote = (typeof note === "string" && note.trim())
-    ? note
-    : "[Single-founder approval] Self-approved by solo operator and recorded in audit trail.";
+  const effectiveNote = reviewNoteFor(note, {
+    selfApproval: Boolean(owned.proposed_by) && owned.proposed_by === userId,
+  });
 
   // 🔴 2026-09-22 — same verdict-propagation fix as approveEntity. The previous
   // code dropped self_approval AND endpoint_self_approval silently; the route

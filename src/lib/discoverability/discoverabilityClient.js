@@ -306,6 +306,25 @@ export const discoverability = {
 
   /** `source` may only be `declared` or `inferred`; the server writes observed. */
   proposeEntity: (payload) => req("/entity-graph/entities", "POST", payload),
+  /**
+   * Edit an entity IN PLACE. ⚠️ NOT `proposeEntity` with new values — that
+   * POSTs a second row and leaves the original, which is exactly the duplicate
+   * the edit form used to create on every Save. The id is stable so the
+   * relationships drawn to this node survive the edit; the row returns to
+   * `proposed` and needs approving again, because an approval attests to the
+   * facts that were on it when somebody looked.
+   */
+  updateEntity: (id, payload, { workspaceId = null } = {}) =>
+    req(`/entity-graph/entities/${encodeURIComponent(id)}`, "PATCH",
+      { ...payload, ...(workspaceId ? { workspace_id: workspaceId } : {}) }),
+  /**
+   * Delete an entity. ⚠️ CASCADES — every relationship with this node at either
+   * end goes too (0056). The response carries `deletedRelationships` so the UI
+   * can say what actually happened.
+   */
+  deleteEntity: (id, { workspaceId = null } = {}) =>
+    req(`/entity-graph/entities/${encodeURIComponent(id)}`
+      + (workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""), "DELETE"),
   /** Approve an entity node directly */
   approveEntity: (id, noteOrOpts = null, maybeOpts = {}) => {
     let note = null;

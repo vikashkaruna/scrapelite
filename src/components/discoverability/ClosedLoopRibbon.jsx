@@ -281,8 +281,16 @@ export default function ClosedLoopRibbon({
           <span className="closed-loop-arrow closed-loop-arrow-back" aria-hidden="true">&crarr;</span>
           <Link
             to={`/discoverability${auditId ? `?audit=${encodeURIComponent(auditId)}` : ""}`}
+            // 🔴 A HAND-OFF, NOT A RUN. `reaudit` asks the Audit tab to prefill
+            // the composer with the audit currently being worked on; the URL
+            // itself is resolved THERE, once the audit has loaded, because the
+            // workspace tabs know the audit's id and never load the audit
+            // itself. Auto-running here would spend an audit credit on a
+            // profile and device the user never saw — the same reason the Home
+            // composer's Discover button prefills rather than runs.
+            state={{ reaudit: true }}
             className={`closed-loop-step closed-loop-reaudit${isAuditTab ? " is-audit-highlight is-complete" : ""}`}
-            title="Close the loop: re-audit and measure what changed"
+            title="Close the loop: re-audit this URL and measure what changed"
           >
             <Icon name="refresh-cw" size={12} />
             <span>Re-audit</span>
