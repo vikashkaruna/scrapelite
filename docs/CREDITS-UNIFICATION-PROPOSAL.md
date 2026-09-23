@@ -404,16 +404,122 @@ environment so that, unlike a database flag, it cannot itself fail open.
 
 ### What is NOT done, and why
 
-**C, E, F and G are untouched, and that is the plan's own ordering rather than
-a shortcut.** §6 puts calibration before the switch, and the first line of
-"What NOT to do" is *"❌ Ship §1 un-calibrated — a wrong Discoverability weight
-re-prices every plan at once."*
+**Step C — calibration — is the one remaining step, and it is an
+operator/finance pass, not a code change.** §6 puts it before the switch and
+the first line of "What NOT to do" is *"❌ Ship §1 un-calibrated — a wrong
+Discoverability weight re-prices every plan at once."*
 
-§1 counts provider **calls**, not tokens. Those counts are now measured against
-the real pipeline and enforced by test, but they have still never met a
-provider invoice. **Step C is an operator/finance step**: take a month of real
-invoices, divide by the calls in the ledger, and confirm or correct §1. The
-ledger now produces exactly the data that pass needs, which it could not before.
+⚠️ **The owner overrode that ordering explicitly on 2026-09-23**, on the
+grounds that there are no paying customers today, so a wrong weight costs
+nothing that cannot be corrected before one exists. E, F and G shipped against
+the **measured** call counts (Discoverability 19, AI fast 2 / deep 5,
+enrichment 3). That is a decision with an expiry: **re-run step C before the
+first paid signup.**
 
-Until then the metering runs, the leaks are closed, and **nobody is charged**,
-because no allowance has been granted and `enforced` is false everywhere.
+§1 counts provider **calls**, not tokens. Those counts are measured against the
+real pipeline and enforced by test, but they have still never met a provider
+invoice. Step C is: take a month of real invoices, divide by the calls in the
+ledger, and confirm or correct §1. The ledger now produces exactly the data
+that pass needs, which it could not before.
+
+---
+
+## 9. What shipped — steps E, F and G (2026-09-23)
+
+### E — the switch
+
+Plans are sold in credits. `entitlementModel`'s gates cost the work and check
+the pool; `limits.extractions` and `limits.audits` remain on every plan as a
+historical read and are **enforced by nothing**.
+
+🔴 **`creditsCtx` returns `known: false` for three different situations and the
+gate lets all three through.** `degraded`, `enforced !== true`, and a
+non-finite balance. That is the same fail-open asymmetry `requireEntitlement`
+holds, and it is why applying `0078` cannot take the product down: on apply day
+every account reads 0 and `enforced` is false, so nothing refuses anything
+until a grant arms it.
+
+### F — the Free pool
+
+`freeTierPolicy.js` is pure and has no network. A grant is withheld from an
+unverified address or a disposable domain, and rate-limited per IP to 3 in 24h.
+
+🔴 **NO DEVICE FINGERPRINTING, AND A TEST READS THE SOURCE TO PROVE IT.**
+`freeTierPolicy.test.js` greps the module for `navigator.userAgent`,
+`createElement("canvas")`, `getContext(`, `webgl`, `screen.width` and
+`AudioContext`. A comment saying we do not fingerprint is worth nothing; a test
+that fails the build when somebody adds it is worth something.
+
+⚠️ **The IP is hashed, windowed and never stored as an address** — salted
+SHA-256 truncated to 32 chars, counted over 24h, written into the grant's
+`meta` and never read back as an address. It answers "how many free grants came
+from this origin today" and cannot answer "where is this person".
+
+⚠️ **Every unknown reads as ELIGIBLE.** `freeGrantsFromIp` returns `null`, not
+`0`, when it cannot count — and `null` grants. Refusing a signup because a
+count failed is refusing a customer for our own outage.
+
+### G — the surfaces, and the one that was actively wrong
+
+Four surfaces mislabelled a number. The fifth refused runs the server allows.
+
+🔴 **`creditEstimator` LIED IN THE BLOCKING DIRECTION.** It read
+`plan.limits.extractions` (free = 10) minus `usage.extractions`, so a free
+account holding a full 100-credit pool was told *"Blocked — 10 remaining, 12
+needed"* for a batch the gate runs for 12 credits. **A pre-flight that refuses
+a run the gate would allow is worse than no pre-flight**: the user never learns
+it was wrong, because they never press the button. Its tests now run the real
+`can()` beside it and assert both reach the same verdict — which the old suite
+could not have done, because the two were reading different pools.
+
+🔴 **A SECOND SIGNUP GRANT THAT ONLY THE BROWSER KNEW ABOUT.** `trialCredit: 25`
+had the client add 25 to `bonusExtractions` in localStorage on `SIGNED_IN`,
+while the server grants `FREE_GRANT` once under `grant_period = 'signup'`. Every
+surface reading the local subscription showed a pool 25 larger than the ledger
+would spend from. **That is the referral-loop defect exactly** — a number
+nothing downstream reads, shown beside a refusal. Retired; `applyTrialCredit`
+stays as a no-op, because two live call sites invoke it and a no-op is a smaller
+change than removing a call from an auth event handler.
+
+⚠️ **`CREDIT_PACKS` WAS IMPORTED BY `/pricing` AND RENDERED NOWHERE**, so the
+packs that replaced the removed Extractions Bundle were purchasable by the
+server and reachable from no screen. Rendered. `purchaseBatchPack` resolves a
+pack id now and deliberately does **not** write the credits locally:
+`verify-payment` grants them into the ledger keyed `pack:<paymentId>`, so the
+client re-reads instead of adding, and demo mode returns `creditsPending`
+rather than faking a balance nothing backs.
+
+**`creditPressure()`** is the one place *"is this account running low?"* is
+answered — for `UsageUpsellBanner`, `ReferralBanner` and Account's meter, which
+previously answered it three different ways against the retired quota.
+⚠️ **Its load-bearing field is `known`, not the threshold.** A guest, an account
+never granted credits, and an unreadable read must all render **nothing**;
+`low` and `empty` are both `false` in those cases, so a surface branching on
+`low` alone still cannot invent an outage. ⚠️ **`remainingPct` may exceed 1**
+and is not clamped — rollover means two grants can be live at once.
+
+**Public copy.** `llms.txt`, `llms-full.txt` and `pageSeo.js`'s JSON-LD all
+quoted extraction allowances nothing enforces. ⚠️ **This is the third time that
+copy has rotted**, and the readiness audit's "pricing coherence" check compares
+plan **names**, not numbers, so it passed through every incident. New
+`publicPricingCopy.test.js` checks the **numbers** against `PLANS`, in both
+directions: each plan's real allowance must appear, and each retired extraction
+claim must not.
+
+### Verified
+
+vitest **451 files / 7,228 passed / 0 failed** · db-verify **79 migrations /
+888 assertions** · referral **19** · workflows **56** · build clean · prerender
+**32 pages / 128 refs**. **30 guards confirmed RED first** — 13 estimator
+(including the gate-agreement rows) and 17 pricing-copy.
+
+### Still outstanding
+
+- 🔴 **Migrations `0074`–`0079` are OPERATOR ACTIONS** and have only met WASM
+  Postgres. Nothing in the credit system enforces anything until `0078` is
+  applied, and `0079` must follow it. See
+  [DB-MIGRATION-RUNBOOK.md §4f](DB-MIGRATION-RUNBOOK.md).
+- 🔴 **Step C**, above — before the first paid signup.
+- ⚠️ `bonus_extractions` survives as a stored wire name on three writers. It is
+  read as credits and decides nothing; renaming the column would orphan every
+  row already written.

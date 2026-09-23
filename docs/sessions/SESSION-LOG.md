@@ -18,6 +18,105 @@
 
 ---
 
+## 2026-09-23 (later) — Credits, steps E+F+G: the pre-flight was refusing runs the server allows
+
+**Branch:** `claude/credits-switch`, cut from `staging` @ `581ffb35` after the
+owner merged PR [#214](https://github.com/vikashkaruna/scrapelite/pull/214).
+
+**Owner decisions taken this session, both explicit:**
+1. **Ship the measured weights and recalibrate later.** §6 of the proposal puts
+   step C (calibration against real provider invoices) *before* the switch, and
+   its first "what NOT to do" is *"❌ Ship §1 un-calibrated."* Overridden on the
+   grounds that no customer pays today. 🔴 **That is a decision with an expiry:
+   re-run step C before the first paid signup.**
+2. **Ship all of it to staging, public copy included.** Staging is 401-gated
+   behind Netlify Edge Access, so the copy is not publicly readable yet.
+
+### 1. The one defect that was actively harmful
+
+🔴 **`creditEstimator` LIED IN THE BLOCKING DIRECTION.** It read
+`plan.limits.extractions` (free = 10) minus `usage.extractions` — a quota
+nothing enforces after the switch — so a free account holding a full 100-credit
+pool was told *"Blocked — 10 remaining, 12 needed"* for a batch the gate runs
+for 12 credits.
+
+**A pre-flight that refuses a run the gate would allow is worse than no
+pre-flight**, because the user never learns it was wrong: they never press the
+button, so the server never gets to disagree. The other four surfaces in this
+sweep only mislabelled a number.
+
+⚠️ **Its own tests were green throughout**, because they checked the estimator
+against itself. The new suite runs the real `can()` beside it over the same
+inputs and asserts the two reach the same verdict — **13 of its assertions were
+confirmed RED against the old module**, including the exact 12-URL case.
+
+### 2. A second signup grant that only the browser knew about
+
+🔴 **`trialCredit: 25`** had the client add 25 to `bonusExtractions` in
+localStorage on `SIGNED_IN`, while the server grants `FREE_GRANT` once under
+`grant_period = 'signup'` (idempotent by a partial unique index rather than by
+a flag in a store the user can edit). Every surface reading the local
+subscription showed a pool **25 larger than the ledger would spend from**.
+
+**That is the referral-loop defect exactly** — this repo's own history records a
+banner saying *"you have 25 bonus extractions"* on the same screen that refused
+to extract. Retired. ⚠️ **`applyTrialCredit` stays as a no-op** rather than
+being deleted: two live call sites invoke it, one of them inside an auth event
+handler, and a no-op is the smaller change.
+
+### 3. `CREDIT_PACKS` was imported by `/pricing` and rendered nowhere
+
+So the packs that replaced the removed Extractions Bundle were **purchasable by
+the server and reachable from no screen**. `verify-payment` already grants them
+keyed `pack:<paymentId>` with no expiry; only the page was missing.
+
+⚠️ **`purchaseBatchPack` does NOT write a pack's credits locally.** It refreshes
+the cached balance instead, and demo mode returns `creditsPending` rather than
+faking a number nothing backs — which would have re-created §2 the same day it
+was removed.
+
+### 4. `creditPressure()` — one answer to "is this account low?"
+
+Three surfaces (`UsageUpsellBanner`, `ReferralBanner`, Account's meter) each
+answered it separately against the retired quota, so on a free account they
+fired at the 8th extraction while the pool still held 92 credits, and kept
+firing after a pack refilled it.
+
+⚠️ **The load-bearing field is `known`, not the threshold.** A guest, an account
+never granted credits, and an unreadable read must all render **nothing** —
+`low` and `empty` are both `false` there, so a surface branching on `low` alone
+still cannot invent an outage. ⚠️ **`remainingPct` is not clamped at 1**:
+rollover means two grants can be live, and a full bar for an account holding
+twice the allowance would be its own small lie.
+
+### 5. The public pricing copy had rotted for the third time
+
+`llms.txt`, `llms-full.txt` and `pageSeo.js`'s JSON-LD all quoted extraction
+allowances. ⚠️ **The readiness audit's "pricing coherence" check compares plan
+NAMES, not numbers, and passed through every incident** — including the one this
+file already records, where the FAQ JSON-LD advertised eight wrong figures.
+
+New `publicPricingCopy.test.js` checks **numbers** against `PLANS`, in both
+directions: each plan's real allowance must appear, and each retired extraction
+claim must not. **17 assertions confirmed RED** against the pre-fix copy.
+
+### Verified
+
+vitest **451 files / 7,228 passed / 0 failed** · db-verify **79 migrations /
+888 assertions / 0 failed** · referral **19** · workflows **56** · build clean ·
+prerender **32 rendered / 128 refs**. **30 guards confirmed RED first.**
+
+### Outstanding — operator actions I cannot perform
+
+- 🔴 **Apply `0074`–`0079`.** No Supabase credential is reachable from here:
+  `supabase projects list` hangs on an interactive login prompt, and there is no
+  stored connection string. **Nothing in the credit system enforces anything
+  until `0078` is applied**, and `0079` must follow it.
+- 🔴 **Step C — calibrate §1 against a month of real provider invoices**,
+  before the first paid signup.
+
+---
+
 ## 2026-09-23 — Unified credits (steps A+B+D), and entity approval was reporting a raw Postgres dump
 
 **Branches:** `claude/entity-approval-diagnosis` → PR [#212](https://github.com/vikashkaruna/scrapelite/pull/212) **MERGED** · `claude/credits-unification` → PR [#214](https://github.com/vikashkaruna/scrapelite/pull/214).
