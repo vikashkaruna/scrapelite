@@ -27,16 +27,29 @@ const STATIC_PLANS = {
   agency:   { usd: 106.8, usd_annual: 89,  inr: 10199, inr_annual: 8499 },
 };
 
+// ⚠️ MUST MIRROR src/lib/pricingConfig.js. This is the SERVER's fallback when
+// pricing_config carries no override; a price here that disagrees with the one
+// on screen charges a customer something other than what they were shown.
+//
+// `extractions-bundle` is gone (D15) — it sold pure consumption at 14x the
+// cheapest plan's credit rate. `credits: N` marks a pack whose purchase GRANTS
+// that many credits; a bundle without it buys capacity and grants none.
 const STATIC_BUNDLES = {
-  "extractions-bundle": { usd: 9,  inr: 749  },
-  "batch-pack":         { usd: 9,  inr: 749  },
-  "scheduler-addon":    { usd: 5,  inr: 399  },
-  "workspace-addon":    { usd: 19, inr: 1499 },
-  "hubspot-addon":      { usd: 12, inr: 999  },
+  "batch-pack":         { usd: 9,   inr: 749  },
+  "scheduler-addon":    { usd: 5,   inr: 399  },
+  "workspace-addon":    { usd: 19,  inr: 1499 },
+  "hubspot-addon":      { usd: 12,  inr: 999  },
+  "credits-500":        { usd: 9,   inr: 749,  credits: 500 },
+  "credits-2000":       { usd: 29,  inr: 2399, credits: 2000 },
+  "credits-10000":      { usd: 119, inr: 9899, credits: 10000 },
 };
 
-// Mirrors the percent-type seed coupons in src/lib/adminService.js. Extraction-bonus
-// coupons grant credits client-side and never reduce a charge, so they are absent here.
+// Mirrors the percent-type seed coupons in src/lib/adminService.js.
+// ⚠️ CREDIT coupons are a different thing and DO belong here — they are
+// redeemed server-side by POST /api/credits, which validates against this
+// same table. A coupon that exists only in an admin's localStorage cannot be
+// honoured by anything, which is exactly why the old extraction-bonus coupons
+// granted nothing a gate could see.
 // maxUses = global redemption cap (0/absent = unlimited). Enforced server-side via
 // reserveCoupon() against the coupon_redemptions/coupon_counters tables.
 const STATIC_COUPONS = {

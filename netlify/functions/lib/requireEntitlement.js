@@ -88,6 +88,25 @@ export async function fetchEntitlement(userId) {
  * @returns {{userId: string|null, guest: boolean, entitlement: object|null,
  *            degraded: boolean, planMap: object, supabase: object|null}}
  */
+/**
+ * The caller's network address, as the CDN reports it.
+ *
+ * ⚠️ Used ONLY for a coarse, hashed, 24-hour count of free grants. It is not
+ * stored as an address, not treated as an identity, and never used to link
+ * sessions — see freeTierPolicy's header on why there is no fingerprinting.
+ * x-nf-client-connection-ip is Netlify's own and is not client-settable;
+ * x-forwarded-for is a fallback and its FIRST hop is the only one worth
+ * reading, since anything after it can be appended by the caller.
+ */
+export function clientIp(event) {
+  const h = event?.headers || {};
+  const direct = h["x-nf-client-connection-ip"] || h["X-NF-Client-Connection-Ip"];
+  if (direct) return String(direct).trim();
+  const fwd = h["x-forwarded-for"] || h["X-Forwarded-For"];
+  if (!fwd) return null;
+  return String(fwd).split(",")[0].trim() || null;
+}
+
 export async function resolveRequestEntitlement(event) {
   const authHeader = bearerFromEvent(event);
   const base = { planMap: PLAN_BY_ID, supabase: null };
@@ -132,7 +151,15 @@ export async function resolveRequestEntitlement(event) {
   // creditsContextFor returns `{degraded:true, available:null}`, which
   // entitlementModel's creditGate reads through — the same asymmetry rule 1
   // at the top of this file states for the entitlement row itself.
-  const credits = await creditsContextFor(user.id, row?.plan_id || "free").catch(() => ({
+  const credits = await creditsContextFor(user.id, row?.plan_id || "free", process.env, {
+    email: user.email || "",
+    // ⚠️ `null` where the field is absent, NOT false. freeGrantEligibility
+    // refuses on an explicit false and reads through on an unknown — an
+    // account resolved without its verification state must not be punished
+    // for our lookup.
+    emailVerified: user.email_confirmed_at ? true : (user.email_confirmed_at === null ? false : null),
+    ip: clientIp(event),
+  }).catch(() => ({
     enforced: false, degraded: true, available: null, reason: "threw",
   }));
 

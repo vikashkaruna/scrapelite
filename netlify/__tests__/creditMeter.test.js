@@ -172,3 +172,84 @@ describe("grant", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 });
+
+// ── STEP F — WHO GETS THE FREE POOL ─────────────────────────────────────────
+// 100 credits is five Discoverability runs. A hundred throwaway addresses is
+// five hundred, and nothing in the product would have noticed.
+describe("ensureAllowance — the Free grant is the one worth farming", () => {
+  const FREE_ENV = { ...ENV };
+  beforeEach(() => meter.resetAllowanceMemo());
+
+  const identity = (over = {}) => ({
+    email: "a@acme.com", emailVerified: true, ip: "1.2.3.4", ...over,
+  });
+
+  it("grants the lifetime pool to a verified address on a real domain", async () => {
+    rpc.mockResolvedValue({ data: { ok: true, credits: 100 }, error: null });
+    const r = await meter.ensureAllowance("u1", "free", FREE_ENV, Date.now(), identity());
+    expect(r.ok).toBe(true);
+    const [name, args] = rpc.mock.calls.at(-1);
+    expect(name).toBe("credit_grant");
+    expect(args.p_period).toBe("signup");
+    // 🔴 A lifetime pool. An expiry would quietly delete the taster from
+    // under somebody who came back a month later.
+    expect(args.p_expires_at).toBeNull();
+  });
+
+  it("withholds it until the address is confirmed", async () => {
+    const r = await meter.ensureAllowance("u1", "free", FREE_ENV, Date.now(),
+      identity({ emailVerified: false }));
+    expect(r).toMatchObject({ ok: false, reason: "email_unverified" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("withholds it from a disposable address", async () => {
+    const r = await meter.ensureAllowance("u1", "free", FREE_ENV, Date.now(),
+      identity({ email: "x@mailinator.com" }));
+    expect(r).toMatchObject({ ok: false, reason: "disposable_domain" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  // ⚠️ PAID PLANS ARE NOT CHECKED — somebody who paid has already proved the
+  // thing these controls are a proxy for.
+  it("never applies any of it to a paid plan", async () => {
+    rpc.mockResolvedValue({ data: { ok: true, credits: 750 }, error: null });
+    const r = await meter.ensureAllowance("u1", "go", FREE_ENV, Date.now(),
+      identity({ emailVerified: false, email: "x@mailinator.com" }));
+    expect(r.ok).toBe(true);
+    expect(rpc.mock.calls.at(-1)[0]).toBe("credit_grant_monthly");
+  });
+
+  it("stores the signup IP HASHED, never as an address", async () => {
+    rpc.mockResolvedValue({ data: { ok: true }, error: null });
+    await meter.ensureAllowance("u1", "free", FREE_ENV, Date.now(), identity());
+    const meta = rpc.mock.calls.at(-1)[1].p_meta;
+    expect(meta.signup_ip).toBeTruthy();
+    expect(meta.signup_ip).not.toContain("1.2.3.4");
+    expect(meta.signup_ip).toHaveLength(32);
+  });
+
+  // 🔴 `already_granted` IS A SUCCESS — the allowance exists, which is what
+  // the caller asked about. Collapsing it into a failure starts a retry loop.
+  it("treats an existing grant as done", async () => {
+    rpc.mockResolvedValue({ data: { ok: false, reason: "already_granted" }, error: null });
+    await expect(meter.ensureAllowance("u1", "free", FREE_ENV, Date.now(), identity()))
+      .resolves.toMatchObject({ ok: true, granted: false });
+  });
+
+  it("memoises so a page of requests does not re-grant", async () => {
+    rpc.mockResolvedValue({ data: { ok: true }, error: null });
+    await meter.ensureAllowance("u1", "free", FREE_ENV, Date.now(), identity());
+    const after = rpc.mock.calls.length;
+    await meter.ensureAllowance("u1", "free", FREE_ENV, Date.now(), identity());
+    expect(rpc.mock.calls.length).toBe(after);
+  });
+
+  // The monthly key is the PERIOD alone, not the plan — keying it on the plan
+  // would top a customer up again on every plan change, which is farmable.
+  it("keys a monthly allowance on the period alone", async () => {
+    rpc.mockResolvedValue({ data: { ok: true }, error: null });
+    await meter.ensureAllowance("u1", "pro", FREE_ENV, Date.parse("2026-09-15T00:00:00Z"));
+    expect(rpc.mock.calls.at(-1)[1].p_period).toBe("2026-09");
+  });
+});
