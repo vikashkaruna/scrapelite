@@ -70,6 +70,18 @@ updated to where it stands.
 | The dropdown did not say which campaign | Same-named campaigns show their creation date (and a short id if the date is shared); a non-active status is shown; a line under the header shows the selected campaign's description, date and prospect count. |
 | "Private beta" for an allow-listed tester | **Configuration, not code:** `ENGAGEMENT_ALLOWLIST` held `datiqadmin@gmail.com,*.BETA=DatIQ` — an email (ids are matched, not emails) and a string that is not a bare `*`. See §C for the correct values. |
 
+### Beta feedback, round 2 (2026-09-24)
+
+| Report | Cause → fix |
+|---|---|
+| Messages sent to prospects were not received | **The preview runs with `ENGAGEMENT_MOCK_SEND=1`** — every send was simulated, and the UI then called it "Sent" (the only warning was one line on the Review tab). Simulated sends are now stored with provider `mock`, labelled **Test send** on the board and table, counted separately in the send result, **no longer charged a credit** (they were), and a test-mode banner shows on every tab. |
+| Adding a note showed `Invalid Date {"note":"…"}` | The note **was saved**; the drawer read `action`/`created_at`, which do not exist (the columns are `event_type`/`timestamp`). New `activityCopy.js` renders every event type in words. The reason typed for an opt-out is now stored in the log too (it was accepted and dropped). |
+| Consent should be on by default | Each box now means "may be contacted" and starts **ticked**; untick + **Save consent** (with a confirm step) opts out; ticking a removable opt-out lifts it. |
+| Brand-kit changes did not reach drafts | Saving the brand kit rewrites every **unsent** draft: pending ones in place; approved-but-unsent ones are rewritten **and returned to review** (what was approved must be what is sent); hand-edited drafts are left alone and counted. |
+| Import: template, and typing a row without a header | **Download template**; a header-less paste is accepted, with each column's meaning read from its content (email, phone, then template order) and shown at the top of the dialog. |
+| Show "DatIQ busy" during slow actions | "DatIQ is working…" card on every server action; action buttons disabled meanwhile. |
+| Messages not in DatIQ style; screen needs a facelift | Error toasts showed a **success tick** — the shared toast gained an error/warn tone. The page, pipeline board, prospects table, drawer and results were rebuilt on design tokens (dark mode included) and a fixed-width layout; ~950 lines of old CSS removed. Also: `.btn` had **no disabled style anywhere in the app**, the Kanban "Draft" button never worked (it passed an object as an id), "Draft AI" became "Draft email", a "CAN-SPAM & TRAI Compliant" badge nothing checks was removed, and every text field had 32px of stray left padding. |
+
 ---
 
 ## B. Decisions
@@ -331,7 +343,7 @@ business verification) measured in weeks.
 |---|---|---|
 | Server (`netlify/__tests__/engagement-*.test.js`) | **83** | The real store against **real Postgres** (PGlite, `0081` + `0082`), **two tenants**: sending exactly once (incl. two sends racing), consent at send time per channel and across campaigns, credits, provider failures and retries, webhook signature + per-message correlation, unsubscribe page (GET confirms only, one-click POST), ownership 404s, mass-assignment refusal, unique campaign names, delete keeps opt-outs. Run under `// @vitest-environment node`. |
 | Unit (`src/lib/engagement`) | **73** | Suppression model, generator escaping and variants, state machine, channel routing, CSV import parsing (line numbers, quoting, delimiters, aliases), campaign labels. |
-| UI (`src/pages/Engagement.test.jsx`) | **24** | Sign-in and beta gates call nothing; one explicit Send; consent panel per channel; import check blocks and explains; result panel; duplicate-name refusal; edit, rename, confirmed delete. |
+| UI (`src/pages/Engagement.test.jsx`) | **23** (rewritten for the new layout) | Sign-in and beta gates call nothing; one explicit Send; consent panel per channel; import check blocks and explains; result panel; duplicate-name refusal; edit, rename, confirmed delete. |
 | **P0 mutation check** — `npm run verify:engagement-p0` | **19 mutants** | Puts each P0 defect back into today's code and requires its test to fail. **All 19 killed.** ~2 min; not in pre-push; refuses to run over uncommitted changes and restores every file. If a mutation stops applying, the code moved — **update the entry, never delete it.** |
 | DB (`npm run test:db`) | 82 migrations / **952 assertions** | `0082` tables, indexes, the append-only trigger, the credit-ledger reason/unit widening; engagement tables in the RLS lockdown list. |
 | Registry parity | existing | `engagement-dispatcher` is in `netlify.toml`, `AUTOMATION_JOBS` and the admin runner. |

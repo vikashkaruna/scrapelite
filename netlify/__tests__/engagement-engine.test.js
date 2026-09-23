@@ -459,9 +459,13 @@ describe("F-4 — an unconfigured provider is a failure, never a send", () => {
   it("mock sending is labelled as mock and refused in production", async () => {
     process.env.ENGAGEMENT_MOCK_SEND = "1";
     const { c, m } = await readyToSend(A);
-    await post(A, "send_messages", { campaign_id: c.id });
+    const r = await post(A, "send_messages", { campaign_id: c.id });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect((await msgRow(m.id)).external_message_id).toBe(`mock_${m.id}`);
+    expect(r.body).toMatchObject({ sent: 1, simulated: 1 });
+    // Recorded AS simulated — the UI must never be able to show it as delivered —
+    // and never charged: nothing reached anyone.
+    expect(await msgRow(m.id)).toMatchObject({ external_message_id: `mock_${m.id}`, provider: "mock", status: "sent" });
+    expect(mocks.record).not.toHaveBeenCalled();
 
     process.env.CONTEXT = "production";
     const { c: c2 } = await readyToSend(A, { email: "prod@buyer.test" });
@@ -583,5 +587,60 @@ describe("campaign names are unique per account", () => {
     expect(r.status).toBe(200);
     expect((await db.one("select count(*)::int as n from public.engagement_prospects where campaign_id = $1", [c.id])).n).toBe(0);
     expect((await db.one("select count(*)::int as n from public.engagement_suppressions where user_id = $1", [A])).n).toBe(1);
+  });
+});
+
+// ── brand kit refresh ─────────────────────────────────────────────────────
+describe("a brand-kit change rewrites unsent drafts", () => {
+  const kit = (name) => ({ brand_kit: { company_name: name, value_prop: "faster reports", cta_url: "https://x.test", cta_label: "See it", signoff_name: "Priya" } });
+
+  it("refreshes a pending draft, sends an approved-unsent one back to review, keeps hand edits, never touches a sent one", async () => {
+    const c = await campaignWithSender(A, kit("OldCo"));
+    const [p1, p2, p3, p4] = await Promise.all(["a", "b", "c", "d"].map((x) => addProspect(A, c.id, { email: `${x}@buyer.test`, first_name: x })));
+    const g = await post(A, "generate_messages", { campaign_id: c.id, prospect_ids: [p1.id, p2.id, p3.id, p4.id] });
+    const byP = Object.fromEntries(g.body.messages.map((m) => [m.prospect_id, m]));
+    await post(A, "approve_message", { message_id: byP[p2.id].id });                                     // approved, unsent
+    await post(A, "approve_message", { message_id: byP[p3.id].id, edits: { body: "My own words. {{unsubscribe_url}}" } }); // hand-edited
+    await post(A, "approve_message", { message_id: byP[p4.id].id });
+    await post(A, "send_messages", { campaign_id: c.id, message_ids: [byP[p4.id].id] });                // sent
+    expect((await msgRow(byP[p1.id].id)).body).toMatch(/OldCo/);
+
+    const r = await post(A, "update_campaign", { campaign_id: c.id, updates: kit("NewCo") });
+    expect(r.status).toBe(200);
+    expect(r.body.refresh).toEqual({ refreshed: 1, backToReview: 1, keptEdited: 1 });
+
+    const m1 = await msgRow(byP[p1.id].id);
+    expect(m1.body).toMatch(/NewCo/);
+    expect(m1.status).toBe("pending_approval");
+    const m2 = await msgRow(byP[p2.id].id);
+    expect(m2.body).toMatch(/NewCo/);
+    expect([m2.status, m2.approval_status]).toEqual(["pending_approval", "pending"]);
+    expect((await msgRow(byP[p3.id].id)).body).toBe("My own words. {{unsubscribe_url}}");
+    const m4 = await msgRow(byP[p4.id].id);
+    expect(m4.status).toBe("sent");
+    expect(m4.body).toMatch(/OldCo/);
+  });
+
+  it("changing only the sender does not rewrite anything", async () => {
+    const c = await campaignWithSender(A, kit("OldCo"));
+    const p = await addProspect(A, c.id);
+    const g = await post(A, "generate_messages", { campaign_id: c.id, prospect_ids: [p.id] });
+    const r = await post(A, "update_campaign", { campaign_id: c.id, updates: { sender: SENDER } });
+    expect(r.body.refresh).toBeUndefined();
+    expect((await msgRow(g.body.messages[0].id)).body).toMatch(/OldCo/);
+  });
+});
+
+describe("notes and opt-out reasons reach the activity log", () => {
+  it("stores a note, and the reason given for an opt-out", async () => {
+    const c = await campaignWithSender(A);
+    const p = await addProspect(A, c.id, { phone: "+15550001111" });
+    expect((await post(A, "add_note", { prospect_id: p.id, note: "Testing First Time" })).status).toBe(200);
+    await post(A, "opt_out", { prospect_id: p.id, channels: ["sms"], note: "asked on a call" });
+    const log = (await get(A, "list_activity", { prospect_id: p.id })).body.activity;
+    expect(log.find((l) => l.event_type === "note")).toMatchObject({ details: { note: "Testing First Time" } });
+    expect(log.find((l) => l.event_type === "channel_opted_out")).toMatchObject({ channel: "sms", details: { reason: "manual", note: "asked on a call" } });
+    // The columns the drawer reads — `event_type` and `timestamp` — are what the API returns.
+    expect(log.every((l) => l.event_type && l.timestamp && !Number.isNaN(Date.parse(l.timestamp)))).toBe(true);
   });
 });

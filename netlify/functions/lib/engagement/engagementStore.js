@@ -27,7 +27,7 @@ import { transitionProspect, PROSPECT_STATUSES, STATUS_METADATA } from "../../..
 import { dedupeProspects } from "../../../../src/lib/engagement/syncConnectors.js";
 import { normalizeAddress } from "../../../../src/lib/engagement/suppressionModel.js";
 import { validateSender } from "./engagementGuards.js";
-import { validateMessageGuardrails } from "../../../../src/lib/engagement/aiMessageGenerator.js";
+import { validateMessageGuardrails, generatePersonalizedVariants } from "../../../../src/lib/engagement/aiMessageGenerator.js";
 
 // ── Database handle ─────────────────────────────────────────────────────────
 
@@ -423,6 +423,55 @@ export async function createMessages(campaignId, userId, rows = [], env = proces
   }))).select("*");
   if (error) return dbFail("createMessages", error);
   return { ok: true, messages: data || [] };
+}
+
+/**
+ * Rebuild every UNSENT draft of a campaign from its current brand kit.
+ *
+ *   pending_approval → regenerated in place.
+ *   queued (approved, not yet claimed) → regenerated AND returned to review:
+ *     a person approved the OLD text, and "what was approved is what gets
+ *     sent" (review F-28) would otherwise be false.
+ *   edited by a reviewer → never overwritten; counted so the UI can say so.
+ *
+ * Every write is conditional on the status it read, so a message the
+ * dispatcher claims mid-refresh is left alone rather than changed under it.
+ */
+export async function refreshUnsentMessages(campaignId, userId, env = process.env) {
+  const { db, fail } = withDb(userId, env);
+  if (fail) return fail;
+  const camp = await getCampaign(campaignId, userId, env);
+  if (!camp.ok) return camp;
+
+  const { data: msgs, error } = await db.from("engagement_messages").select("*")
+    .eq("user_id", userId).eq("campaign_id", campaignId).in("status", ["pending_approval", "queued"]);
+  if (error) return dbFail("refreshUnsentMessages", error);
+  const summary = { refreshed: 0, backToReview: 0, keptEdited: 0 };
+  if (!msgs?.length) return { ok: true, ...summary };
+
+  const ids = [...new Set(msgs.map((m) => m.prospect_id))];
+  const { data: prs } = await db.from("engagement_prospects").select("*").eq("user_id", userId).in("id", ids);
+  const byId = new Map((prs || []).map((p) => [p.id, p]));
+
+  for (const m of msgs) {
+    if (m.metadata?.edited_by_reviewer) { summary.keptEdited += 1; continue; }
+    const p = byId.get(m.prospect_id);
+    if (!p) continue;
+    const [v] = generatePersonalizedVariants(p, camp.campaign, camp.campaign.brand_kit, { channels: [m.channel], variants: [m.variant] });
+    if (!v) continue;
+    const patch = {
+      subject: v.subject, body: v.body, body_html: v.bodyHtml, guardrail_checks: v.guardrails,
+      metadata: { ...(m.metadata || {}), refreshed_from_brand_kit_at: new Date().toISOString() },
+      updated_at: new Date().toISOString(),
+    };
+    if (m.status === "queued") Object.assign(patch, { status: "pending_approval", approval_status: "pending" });
+    const { data: upd, error: upErr } = await db.from("engagement_messages").update(patch)
+      .eq("id", m.id).eq("user_id", userId).eq("status", m.status).select("id");
+    if (upErr) { console.error("[engagementStore] refresh failed:", m.id, upErr.message); continue; }
+    if (!upd?.length) continue; // claimed or changed meanwhile
+    if (m.status === "queued") summary.backToReview += 1; else summary.refreshed += 1;
+  }
+  return { ok: true, ...summary };
 }
 
 /** Prospect statuses from which an approved message moves the prospect to `queued`. */

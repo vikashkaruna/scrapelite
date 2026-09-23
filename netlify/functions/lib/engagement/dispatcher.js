@@ -100,7 +100,7 @@ export async function processQueue({
   env = process.env, fetchImpl, meter = meterLib,
 } = {}) {
   const db = serviceDb(env);
-  const summary = { sent: 0, skipped: 0, failed: 0, deferred: 0, claimedByOthers: 0, remaining: 0, results: [] };
+  const summary = { sent: 0, simulated: 0, skipped: 0, failed: 0, deferred: 0, claimedByOthers: 0, remaining: 0, results: [] };
   if (!db) return { ok: false, status: 503, code: "store_unconfigured", ...summary };
 
   let q = db.from("engagement_messages").select("*").eq("status", "queued").eq("approval_status", "approved");
@@ -147,6 +147,7 @@ export async function processQueue({
 
     const outcome = await sendOne(db, msg, { env, fetchImpl, meter, ctxByUser, campaignCache, outOfCredit, deadline });
     summary[outcome.kind] += 1;
+    if (outcome.mock) summary.simulated += 1;
     summary.results.push({ message_id: msg.id, prospect_id: msg.prospect_id, outcome: outcome.kind, code: outcome.code || null });
   }
 
@@ -245,15 +246,19 @@ async function sendOne(db, msg, { env, fetchImpl, meter, ctxByUser, campaignCach
   // ── record ──
   const sentAt = now();
   const { error: recErr } = await db.from("engagement_messages").update({
-    status: "sent", sent_at: sentAt, provider: res.provider, external_message_id: res.externalId,
+    status: "sent", sent_at: sentAt, provider: res.mock ? "mock" : res.provider, external_message_id: res.externalId,
     failure_code: null, updated_at: sentAt,
   }).eq("id", msg.id).eq("status", "sending");
   if (recErr) console.error("[engagement-dispatcher] sent but not recorded:", msg.id, recErr.message);
 
-  if (!ctxByUser.has(msg.user_id)) {
-    ctxByUser.set(msg.user_id, meter.meterContext({ caller: "engagement-dispatcher", userId: msg.user_id }));
+  // A simulated send reached nobody, so it is recorded as provider "mock" (the
+  // UI labels it "test mode — not delivered") and it costs nothing.
+  if (!res.mock) {
+    if (!ctxByUser.has(msg.user_id)) {
+      ctxByUser.set(msg.user_id, meter.meterContext({ caller: "engagement-dispatcher", userId: msg.user_id }));
+    }
+    meter.record(ctxByUser.get(msg.user_id), { kind, quantity: 1, meta: { message_id: msg.id } });
   }
-  meter.record(ctxByUser.get(msg.user_id), { kind, quantity: 1, meta: { message_id: msg.id } });
 
   if (SENDABLE_PROSPECT.includes(prospect.status)) {
     // new → sent is not a legal jump; walk through queued first.
@@ -266,7 +271,7 @@ async function sendOne(db, msg, { env, fetchImpl, meter, ctxByUser, campaignCach
       details: { provider: res.provider, external_message_id: res.externalId, mock: Boolean(res.mock) },
     }, env);
   } else {
-    await logEvent(db, msg, "message_sent", { provider: res.provider, external_message_id: res.externalId });
+    await logEvent(db, msg, "message_sent", { provider: res.provider, external_message_id: res.externalId, mock: Boolean(res.mock) });
   }
-  return { kind: "sent" };
+  return { kind: "sent", mock: Boolean(res.mock) };
 }

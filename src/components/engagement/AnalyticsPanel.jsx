@@ -1,268 +1,128 @@
-// src/components/engagement/AnalyticsPanel.jsx — Outreach Metrics, Conversion Funnel & Channel Performance
-import { useMemo } from "react";
+// src/components/engagement/AnalyticsPanel.jsx — how the campaign is doing.
+//
+// Removed from the previous version, deliberately:
+//   - "CAN-SPAM & TRAI Compliant" — a compliance claim nothing checks. The
+//     product does send an unsubscribe link and honour opt-outs; whether a
+//     campaign is compliant depends on things it cannot see (consent basis,
+//     sender address, content). A badge asserting it is a legal claim.
+//   - Rows for WhatsApp / Telegram / SMS, which cannot send yet and always read 0.
+// Added: the A/B result per variant, from message timestamps, so a later bounce
+// does not erase an open.
+
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
+import { downloadText } from "./ProspectsTable.jsx";
 
-export default function AnalyticsPanel({
-  analytics = {},
-  campaignTitle = "Current Campaign",
-  onExportCsv,
-}) {
-  const total_prospects = analytics.total_prospects ?? analytics.total ?? 0;
-  const sent_count = analytics.sent_count ?? analytics.funnel?.sent ?? analytics.counts?.sent ?? 0;
-  const delivered_count = analytics.delivered_count ?? analytics.funnel?.delivered ?? analytics.counts?.delivered ?? 0;
-  const opened_count = analytics.opened_count ?? analytics.funnel?.opened ?? analytics.counts?.opened ?? 0;
-  const clicked_count = analytics.clicked_count ?? analytics.funnel?.clicked ?? analytics.counts?.clicked ?? 0;
-  const replied_count = analytics.replied_count ?? analytics.funnel?.replied ?? analytics.counts?.replied ?? 0;
-  const converted_count = analytics.converted_count ?? analytics.funnel?.converted ?? analytics.counts?.converted ?? 0;
-  const opted_out_count = analytics.opted_out_count ?? analytics.counts?.opted_out ?? 0;
-  const rates = analytics.rates || {};
-  const channel_breakdown = analytics.channel_breakdown || {};
+const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0);
+const csvCell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 
-  const handleExportCsv = () => {
-    const rows = [
-      ["Metric", "Value"],
-      ["Campaign Title", `"${campaignTitle.replace(/"/g, '""')}"`],
-      ["Total Prospects", total_prospects],
-      ["Messages Sent", sent_count],
-      ["Delivered", delivered_count],
-      ["Opened / Read", opened_count],
-      ["Clicked", clicked_count],
-      ["Replied", replied_count],
-      ["Converted", converted_count],
-      ["Opted Out", opted_out_count],
-      ["Delivery Rate", `${rates.delivery_rate || 0}%`],
-      ["Open Rate", `${rates.open_rate || 0}%`],
-      ["Click Rate", `${rates.click_rate || 0}%`],
-      ["Reply Rate", `${rates.reply_rate || 0}%`],
-      ["Conversion Rate", `${rates.conversion_rate || 0}%`],
-      [],
-      ["Channel Breakdown"],
-      ["Channel", "Sent", "Delivered", "Opened", "Replied", "Converted", "Reply Rate %", "Conversion Rate %"],
-      ...channelRows.map((r) => [
-        r.channel.toUpperCase(),
-        r.sent || 0,
-        r.delivered || 0,
-        r.opened || 0,
-        r.replied || 0,
-        r.converted || 0,
-        `${r.replyRate || 0}%`,
-        `${r.convRate || 0}%`,
-      ]),
-    ];
+export function analyticsCsv(analytics = {}, campaign = "") {
+  const f = analytics.funnel || {};
+  const lines = [
+    ["campaign", campaign], ["prospects", analytics.total_prospects ?? 0],
+    ["sent", f.sent ?? 0], ["delivered", f.delivered ?? 0], ["opened", f.opened ?? 0],
+    ["clicked", f.clicked ?? 0], ["replied", f.replied ?? 0], ["converted", f.converted ?? 0],
+    ["opted_out", analytics.counts?.opted_out ?? 0], [],
+    ["channel", "variant", "sent", "opened", "clicked", "replied"],
+    ...(analytics.variants || []).map((v) => [v.channel, v.variant, v.sent, v.opened, v.clicked, v.replied]),
+  ];
+  return lines.map((l) => l.map(csvCell).join(",")).join("\n") + "\n";
+}
 
-    const csvContent = "data:text/csv;charset=utf-8," + rows.map((e) => e.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    const safeTitle = (campaignTitle || "campaign").toLowerCase().replace(/[^a-z0-9]/g, "_");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `datiq_metrics_${safeTitle}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+export default function AnalyticsPanel({ analytics = {}, campaignTitle = "campaign" }) {
+  const f = analytics.funnel || {};
+  const total = analytics.total_prospects ?? 0;
+  const optedOut = analytics.counts?.opted_out ?? 0;
+  const variants = (analytics.variants || []).filter((v) => v.sent > 0);
+  const channels = Object.entries(analytics.channel_breakdown || {}).filter(([, c]) => c.sent > 0);
+  const sent = f.sent ?? 0;
 
-    if (onExportCsv) onExportCsv();
-  };
+  const kpis = [
+    { label: "Prospects", value: total, icon: "users" },
+    { label: "Sent", value: sent, icon: "send" },
+    { label: "Delivered", value: `${pct(f.delivered, sent)}%`, sub: `${f.delivered ?? 0} of ${sent}`, icon: "check" },
+    { label: "Opened", value: `${pct(f.opened, f.delivered)}%`, sub: `${f.opened ?? 0} open${(f.opened ?? 0) === 1 ? "" : "s"}`, icon: "eye" },
+    { label: "Replied", value: `${pct(f.replied, f.delivered)}%`, sub: `${f.replied ?? 0} repl${(f.replied ?? 0) === 1 ? "y" : "ies"}`, icon: "message-circle" },
+    { label: "Opted out", value: optedOut, icon: "slash" },
+  ];
+  const stages = [
+    ["Sent", sent], ["Delivered", f.delivered ?? 0], ["Opened", f.opened ?? 0],
+    ["Clicked", f.clicked ?? 0], ["Replied", f.replied ?? 0], ["Converted", f.converted ?? 0],
+  ];
 
-  const funnelStages = useMemo(() => {
-    const base = Math.max(sent_count, 1);
-    return [
-      { id: "sent", label: "Dispatched", count: sent_count, pct: 100, color: "var(--accent)" },
-      {
-        id: "delivered",
-        label: "Delivered",
-        count: delivered_count,
-        pct: Math.round((delivered_count / base) * 100),
-        color: "#3b82f6",
-      },
-      {
-        id: "opened",
-        label: "Opened / Read",
-        count: opened_count,
-        pct: Math.round((opened_count / base) * 100),
-        color: "#8b5cf6",
-      },
-      {
-        id: "clicked",
-        label: "Clicked Links",
-        count: clicked_count,
-        pct: Math.round((clicked_count / base) * 100),
-        color: "#ec4899",
-      },
-      {
-        id: "replied",
-        label: "Replied",
-        count: replied_count,
-        pct: Math.round((replied_count / base) * 100),
-        color: "#f59e0b",
-      },
-      {
-        id: "converted",
-        label: "Converted",
-        count: converted_count,
-        pct: Math.round((converted_count / base) * 100),
-        color: "#10b981",
-      },
-    ];
-  }, [sent_count, delivered_count, opened_count, clicked_count, replied_count, converted_count]);
-
-  const channelRows = useMemo(() => {
-    const channels = ["email", "whatsapp", "telegram", "sms"];
-    return channels.map((ch) => {
-      const data = channel_breakdown[ch] || { sent: 0, delivered: 0, opened: 0, replied: 0, converted: 0 };
-      const replyRate = data.sent > 0 ? Math.round((data.replied / data.sent) * 100) : 0;
-      const convRate = data.sent > 0 ? Math.round((data.converted / data.sent) * 100) : 0;
-      return { channel: ch, ...data, replyRate, convRate };
-    });
-  }, [channel_breakdown]);
+  if (total === 0) {
+    return (
+      <div className="engx-empty">
+        <Icon name="bar-chart" size={22} />
+        <h3>No results yet</h3>
+        <p>Import prospects, approve a draft and send it — results appear here as delivery events arrive.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="eng-analytics-root">
-      {/* Header bar */}
-      <div className="eng-analytics-header">
+    <div className="engx-analytics">
+      <div className="engx-section-head">
         <div>
-          <h3 className="eng-analytics-title">Campaign Intelligence & Metrics</h3>
-          <p className="eng-analytics-sub">Performance metrics, multi-channel attribution and conversion funnel for {campaignTitle}</p>
+          <h2>Results</h2>
+          <p className="engx-muted">Rates are of the stage before: delivered of sent, opened and replied of delivered.</p>
         </div>
-        <Button variant="secondary" size="sm" icon="download" onClick={handleExportCsv}>
-          Export Metrics CSV
+        <Button type="button" variant="secondary" size="sm" icon="download"
+          onClick={() => downloadText(`datiq-results-${campaignTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.csv`, analyticsCsv(analytics, campaignTitle))}>
+          Export CSV
         </Button>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="eng-kpi-grid">
-        <div className="eng-kpi-card">
-          <div className="eng-kpi-icon-wrap"><Icon name="users" size={16} /></div>
-          <div className="eng-kpi-meta">
-            <span className="eng-kpi-label">Total Prospects</span>
-            <span className="eng-kpi-val">{total_prospects.toLocaleString()}</span>
+      <div className="engx-kpis">
+        {kpis.map((k) => (
+          <div key={k.label} className="engx-kpi">
+            <span className="engx-kpi-icon" aria-hidden="true"><Icon name={k.icon} size={15} /></span>
+            <span className="engx-kpi-label">{k.label}</span>
+            <strong className="engx-kpi-value">{k.value}</strong>
+            {k.sub && <span className="engx-muted">{k.sub}</span>}
           </div>
-        </div>
-
-        <div className="eng-kpi-card">
-          <div className="eng-kpi-icon-wrap"><Icon name="send" size={16} /></div>
-          <div className="eng-kpi-meta">
-            <span className="eng-kpi-label">Messages Sent</span>
-            <span className="eng-kpi-val">{sent_count.toLocaleString()}</span>
-          </div>
-        </div>
-
-        <div className="eng-kpi-card">
-          <div className="eng-kpi-icon-wrap" style={{ color: "#3b82f6" }}><Icon name="check" size={16} /></div>
-          <div className="eng-kpi-meta">
-            <span className="eng-kpi-label">Delivery Rate</span>
-            <span className="eng-kpi-val">{rates.delivery_rate || 0}%</span>
-          </div>
-        </div>
-
-        <div className="eng-kpi-card">
-          <div className="eng-kpi-icon-wrap" style={{ color: "#8b5cf6" }}><Icon name="eye" size={16} /></div>
-          <div className="eng-kpi-meta">
-            <span className="eng-kpi-label">Open / Read Rate</span>
-            <span className="eng-kpi-val">{rates.open_rate || 0}%</span>
-          </div>
-        </div>
-
-        <div className="eng-kpi-card">
-          <div className="eng-kpi-icon-wrap" style={{ color: "#f59e0b" }}><Icon name="message-circle" size={16} /></div>
-          <div className="eng-kpi-meta">
-            <span className="eng-kpi-label">Reply Rate</span>
-            <span className="eng-kpi-val">{rates.reply_rate || 0}%</span>
-          </div>
-        </div>
-
-        <div className="eng-kpi-card" style={{ borderColor: "rgba(16, 185, 129, 0.4)" }}>
-          <div className="eng-kpi-icon-wrap" style={{ color: "#10b981" }}><Icon name="award" size={16} /></div>
-          <div className="eng-kpi-meta">
-            <span className="eng-kpi-label">Conversion Rate</span>
-            <span className="eng-kpi-val">{rates.conversion_rate || 0}%</span>
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Two Columns: Funnel on Left, Channel Breakdown on Right */}
-      <div className="eng-analytics-grid">
-        {/* Conversion Funnel */}
-        <div className="eng-analytics-box">
-          <h4 className="eng-box-title">
-            <Icon name="bar-chart" size={15} /> Conversion Funnel
-          </h4>
-          <div className="eng-funnel-list">
-            {funnelStages.map((stage) => (
-              <div key={stage.id} className="eng-funnel-row">
-                <div className="eng-funnel-label-col">
-                  <span className="eng-funnel-name">{stage.label}</span>
-                  <span className="eng-funnel-count">{stage.count.toLocaleString()}</span>
-                </div>
-                <div className="eng-funnel-bar-track">
-                  <div
-                    className="eng-funnel-bar-fill"
-                    style={{
-                      width: `${Math.max(stage.pct, 4)}%`,
-                      backgroundColor: stage.color,
-                    }}
-                  />
-                </div>
-                <div className="eng-funnel-pct">{stage.pct}%</div>
-              </div>
+      <div className="engx-grid-2">
+        <section className="engx-panel engx-pad">
+          <h3 className="engx-h3">Funnel</h3>
+          <ul className="engx-funnel">
+            {stages.map(([label, n]) => (
+              <li key={label}>
+                <span className="engx-funnel-label">{label}</span>
+                <span className="engx-funnel-track"><span style={{ width: `${pct(n, Math.max(sent, 1))}%` }} /></span>
+                <span className="engx-funnel-num">{n}</span>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+          <p className="engx-fineprint">Opens are approximate: some mail apps open every message automatically.</p>
+        </section>
 
-        {/* Channel Performance Table */}
-        <div className="eng-analytics-box">
-          <h4 className="eng-box-title">
-            <Icon name="layers" size={15} /> Multi-Channel Attribution
-          </h4>
-          <div className="eng-channel-table-wrap">
-            <table className="eng-channel-table">
-              <thead>
-                <tr>
-                  <th>Channel</th>
-                  <th>Sent</th>
-                  <th>Delivered</th>
-                  <th>Replied</th>
-                  <th>Reply %</th>
-                  <th>Conv %</th>
-                </tr>
-              </thead>
+        <section className="engx-panel engx-pad">
+          <h3 className="engx-h3">A/B variants</h3>
+          {variants.length === 0 ? (
+            <p className="engx-muted">No variant has been sent yet.</p>
+          ) : (
+            <table className="engx-table is-compact">
+              <thead><tr><th>Variant</th><th className="is-num">Sent</th><th className="is-num">Open rate</th><th className="is-num">Reply rate</th></tr></thead>
               <tbody>
-                {channelRows.map((row) => (
-                  <tr key={row.channel}>
-                    <td className="eng-channel-name-cell">
-                      <span className={`eng-channel-tag eng-ch-${row.channel}`}>
-                        {row.channel.toUpperCase()}
-                      </span>
-                    </td>
-                    <td>{row.sent}</td>
-                    <td>{row.delivered}</td>
-                    <td>{row.replied}</td>
-                    <td>
-                      <span className="eng-table-pct">{row.replyRate}%</span>
-                    </td>
-                    <td>
-                      <span className="eng-table-pct eng-conv-pct">{row.convRate}%</span>
-                    </td>
+                {variants.map((v) => (
+                  <tr key={`${v.channel}-${v.variant}`}>
+                    <td>{v.channel === "email" ? "" : `${v.channel} · `}Variant {v.variant}</td>
+                    <td className="is-num">{v.sent}</td>
+                    <td className="is-num">{pct(v.opened, v.sent)}%</td>
+                    <td className="is-num">{pct(v.replied, v.sent)}%</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-
-          {/* Compliance & Health Summary */}
-          <div className="eng-compliance-summary">
-            <div className="eng-compliance-item">
-              <span className="eng-compliance-key">Opt-Outs / Unsubscribes:</span>
-              <span className="eng-compliance-val">{opted_out_count} ({rates.opt_out_rate || 0}%)</span>
-            </div>
-            <div className="eng-compliance-item">
-              <span className="eng-compliance-key">Compliance Status:</span>
-              <span className="eng-compliance-val eng-status-ok">
-                <Icon name="shield-check" size={12} /> CAN-SPAM & TRAI Compliant
-              </span>
-            </div>
-          </div>
-        </div>
+          )}
+          {channels.length > 1 && (
+            <p className="engx-fineprint">{channels.map(([c, v]) => `${c}: ${v.sent} sent`).join(" · ")}</p>
+          )}
+          <p className="engx-fineprint">Email is the live channel. WhatsApp and SMS follow once their sender approvals are in place.</p>
+        </section>
       </div>
     </div>
   );

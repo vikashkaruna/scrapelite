@@ -1,14 +1,36 @@
 // src/lib/engagement/prospectImport.test.js
 import { describe, it, expect } from "vitest";
-import { analyzeProspectCsv, parseCsv, detectDelimiter, importOutcome } from "./prospectImport.js";
+import { analyzeProspectCsv, parseCsv, detectDelimiter, importOutcome, TEMPLATE_CSV } from "./prospectImport.js";
 
 const HEADER = "first_name,last_name,email,company,role,phone";
 
 describe("analyzeProspectCsv — the cases that used to import nothing, silently", () => {
-  it("refuses a single contact line with no header, and says why", () => {
-    const a = analyzeProspectCsv("Alice,Smith,alice@acme.com,Acme,VP,+15551234567");
-    expect(a.ok).toBe(false);
-    expect(a.error).toMatch(/looks like a contact, not a header row/);
+  it("accepts contact rows typed without a header, reading columns from their content", () => {
+    const a = analyzeProspectCsv("Alice,Smith,alice@acme.com,Acme,VP,+15551234567\nBob,Jones,bob@apex.io,Apex,CEO,");
+    expect(a.ok).toBe(true);
+    expect(a.headerless).toBe(true);
+    expect(a.columns.map((c) => c.field)).toEqual(["first_name", "last_name", "email", "company", "role", "phone"]);
+    expect(a.counts).toMatchObject({ dataRows: 2, ready: 2 });
+    expect(a.rows[0]).toMatchObject({ first_name: "Alice", email: "alice@acme.com", phone: "+15551234567", role: "VP" });
+  });
+
+  it("finds the email and phone wherever they sit in a header-less row", () => {
+    const a = analyzeProspectCsv("ana@x.test,Ana,+44 20 7946 0000,Medisync");
+    expect(a.columns.map((c) => c.field)).toEqual(["email", "first_name", "phone", "last_name"]);
+    expect(a.rows[0]).toMatchObject({ email: "ana@x.test", first_name: "Ana", phone: "+442079460000" });
+  });
+
+  it("still reads a real header row as a header", () => {
+    const a = analyzeProspectCsv("email,first_name\nana@x.test,Ana");
+    expect(a.headerless).toBe(false);
+    expect(a.counts.dataRows).toBe(1);
+  });
+
+  it("offers a template that imports cleanly", () => {
+    const a = analyzeProspectCsv(TEMPLATE_CSV);
+    expect(a.headerless).toBe(false);
+    expect(a.counts).toMatchObject({ dataRows: 2, ready: 2, rejected: 0 });
+    expect(a.rows[1].company).toBe("Apex, Inc.");
   });
 
   it("refuses a header with nothing under it", () => {

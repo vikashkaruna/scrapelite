@@ -14,9 +14,14 @@
 //   - rows with no email and no phone were dropped in the browser and never counted.
 //
 // Rules:
-//   - The first line is ALWAYS the header. A first line that contains an email
-//     address is refused with an explanation instead of being guessed at —
-//     silently treating a contact as column names loses that contact.
+//   - A header row is optional. When the first line is a contact (it holds an
+//     email or a phone number), it is IMPORTED, and each column's meaning is
+//     worked out from its content: the column holding an email is email, a
+//     phone-shaped one is phone, the rest follow the template order
+//     (first_name, last_name, company, role, industry, country). The dialog
+//     shows the result at the top, so a guess is visible, never silent.
+//     (The first version refused such a paste — owner asked for it to work,
+//     2026-09-24, because people test by typing a row.)
 //   - An email OR phone column is required; without one nothing is reachable.
 //   - A row is rejected (with a reason) rather than half-imported: a bad email,
 //     a bad phone, no contact detail, or MORE values than headers (the usual
@@ -28,6 +33,14 @@ import { splitName } from "./syncConnectors.js";
 
 export const MAX_IMPORT_ROWS = 1000; // mirrors MAX_PROSPECTS_PER_IMPORT on the server
 const MAX_ISSUES_LISTED = 50;
+
+/** The downloadable template, and the column order a header-less paste is read in. */
+export const TEMPLATE_COLUMNS = ["first_name", "last_name", "email", "company", "role", "phone", "industry", "country"];
+export const TEMPLATE_CSV = [
+  TEMPLATE_COLUMNS.join(","),
+  "Alice,Smith,alice@acme.com,Acme Corp,VP Engineering,+15551234567,Software,United States",
+  'Bob,Jones,bob@apex.io,"Apex, Inc.",CEO,,Healthcare,India',
+].join("\n") + "\n";
 
 /** header (normalised) → prospect field */
 const ALIASES = {
@@ -52,6 +65,27 @@ export const FIELD_LABELS = {
 
 const normHeader = (h) => String(h || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 const looksLikeEmail = (v) => /[^\s@]+@[^\s@]+\.[^\s@]+/.test(v);
+const looksLikePhone = (v) => /^[+\d\s().-]+$/.test(v) && v.replace(/\D/g, "").length >= 7;
+
+/**
+ * Column meanings for a paste whose first line is a contact, from content.
+ * Email and phone are recognised wherever they sit; every other column takes
+ * the next unused template name, in order; any left over are custom.
+ */
+export function inferColumns(firstRow = []) {
+  const fields = new Array(firstRow.length).fill(null);
+  const emailAt = firstRow.findIndex((v) => looksLikeEmail(String(v).trim()));
+  if (emailAt >= 0) fields[emailAt] = "email";
+  const phoneAt = firstRow.findIndex((v, i) => fields[i] === null && looksLikePhone(String(v).trim()));
+  if (phoneAt >= 0) fields[phoneAt] = "phone";
+  const rest = TEMPLATE_COLUMNS.filter((f) => f !== "email" && f !== "phone");
+  let next = 0;
+  return fields.map((f, i) => {
+    if (f) return { header: f, field: f };
+    const name = rest[next++];
+    return name ? { header: name, field: name } : { header: `column_${i + 1}`, field: null };
+  });
+}
 
 /** Pick the delimiter the header line uses most: comma, semicolon or tab. */
 export function detectDelimiter(text) {
@@ -110,7 +144,7 @@ export function parseCsv(text, delimiter = ",") {
 
 function fatal(error, extra = {}) {
   return {
-    ok: false, error, delimiter: ",", columns: [], customColumns: [], rows: [], issues: [],
+    ok: false, error, delimiter: ",", headerless: false, columns: [], customColumns: [], rows: [], issues: [],
     counts: { dataRows: 0, ready: 0, rejected: 0, repeated: 0 }, ...extra,
   };
 }
@@ -118,6 +152,7 @@ function fatal(error, extra = {}) {
 /**
  * @returns {{
  *   ok: boolean, error: string|null, delimiter: string,
+ *   headerless: boolean,                              // true = column meanings were inferred
  *   columns: {header: string, field: string|null}[], customColumns: string[],
  *   rows: object[],                                   // ready to send
  *   issues: {line: number, reason: string}[],          // rejected or skipped rows
@@ -133,21 +168,19 @@ export function analyzeProspectCsv(text) {
   if (records.length === 0) return fatal("Paste a header row and at least one contact.");
 
   const headerCells = records[0].values.map((h) => h.trim());
-  if (headerCells.some(looksLikeEmail)) {
-    return fatal(
-      "The first line looks like a contact, not a header row. Add a header line first, for example: first_name,last_name,email,company,role,phone",
-      { delimiter },
-    );
-  }
+  const headerless = headerCells.some((v) => looksLikeEmail(v) || looksLikePhone(v));
 
   const seenFields = new Set();
-  const columns = headerCells.map((header) => {
-    const field = FIELD_BY_ALIAS[normHeader(header)] || null;
-    // A second column mapping to the same field is kept as custom, never merged.
-    if (field && seenFields.has(field)) return { header, field: null };
-    if (field) seenFields.add(field);
-    return { header, field };
-  });
+  const columns = headerless
+    ? inferColumns(headerCells)
+    : headerCells.map((header) => {
+      const field = FIELD_BY_ALIAS[normHeader(header)] || null;
+      // A second column mapping to the same field is kept as custom, never merged.
+      if (field && seenFields.has(field)) return { header, field: null };
+      if (field) seenFields.add(field);
+      return { header, field };
+    });
+  if (headerless) columns.forEach((c) => c.field && seenFields.add(c.field));
   const customColumns = columns.filter((c) => !c.field && c.header).map((c) => c.header);
 
   if (!seenFields.has("email") && !seenFields.has("phone")) {
@@ -157,7 +190,7 @@ export function analyzeProspectCsv(text) {
     );
   }
 
-  const dataRecords = records.slice(1);
+  const dataRecords = headerless ? records : records.slice(1);
   if (dataRecords.length === 0) {
     return fatal("Only a header row was found. Add at least one contact on the lines below it.", { delimiter, columns, customColumns });
   }
@@ -222,6 +255,7 @@ export function analyzeProspectCsv(text) {
     ok: rows.length > 0,
     error: rows.length > 0 ? null : "None of the rows can be imported — see the problems listed below.",
     delimiter,
+    headerless,
     columns,
     customColumns,
     rows,
