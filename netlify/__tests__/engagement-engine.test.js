@@ -324,6 +324,17 @@ describe("F-1 — a message is sent exactly once", () => {
     expect(mocks.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ kind: "outreach_email" }));
   });
 
+  it("two sends racing for the same message deliver it once (the claim, not the queue filter)", async () => {
+    const { c, m } = await readyToSend(A);
+    const [r1, r2] = await Promise.all([
+      post(A, "send_messages", { campaign_id: c.id }),
+      post(A, "send_messages", { campaign_id: c.id }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(r1.body.sent + r2.body.sent).toBe(1);
+    expect((await msgRow(m.id)).status).toBe("sent");
+  });
+
   it("sends with an idempotency key, a one-click unsubscribe header and the campaign's sender", async () => {
     const { c, m } = await readyToSend(A);
     await post(A, "send_messages", { campaign_id: c.id });

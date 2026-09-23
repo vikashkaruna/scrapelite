@@ -45,6 +45,18 @@
 | F-21…F-29 | ✅ Search sanitised, log append-only, uniqueness indexes, no re-scoring, codes not messages, approval checks guardrails, aliases removed | various |
 | F-17 WhatsApp templates · F-19 Sheets/Airtable | ⏳ Phase 3 / Phase 4 | — |
 
+**Every P0 guard is proven RED — `npm run verify:engagement-p0`.** The defective code was rewritten, so
+"RED against today's code" is enforced by putting each defect BACK into the current code and requiring
+its test to fail: **19 mutants across F-1…F-8, all killed** (re-send, unconditional claim, no
+idempotency key, five drafts per prospect, duplicate drafts, no send-time suppression, `adminOverride`
+from the body, complaint/bounce not suppressing, fake "sent", `RESEND_API_KEY` fallback, mock in
+production, webhook fail-open and unverified, cross-tenant matching, mass assignment, unrestricted
+sender domain, no one-click header, unsigned unsubscribe tokens). It found one missing test on its way
+in: nothing raced two sends against the same message, so an unconditional claim would have survived —
+a concurrent-send test now covers it. ⚠️ The script edits source files: it refuses to run over
+uncommitted changes and restores the original bytes after every mutant. ~2 min, not in pre-push. **If a
+mutation stops applying, the code moved — update its entry, never delete it.**
+
 **Also found and fixed while building** (none were in the review):
 - Reviewer edits in the approval queue were **discarded** — the approved text was not the sent text.
 - The brand-kit editor saved field names the generator never read, so **no brand-kit edit ever reached a message**.
