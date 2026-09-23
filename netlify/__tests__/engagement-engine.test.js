@@ -88,8 +88,10 @@ const call = async (user, method, { query = {}, body } = {}) => {
 const get = (u, action, q = {}) => call(u, "GET", { query: { action, ...q } });
 const post = (u, action, b = {}) => call(u, "POST", { body: { action, ...b } });
 
+let campaignSeq = 0;
 async function campaignWithSender(user, extra = {}) {
-  const r = await post(user, "create_campaign", { name: "Q4", sender: SENDER, brand_kit: { company_name: "Acme" }, ...extra });
+  // Names are unique per account now, so each helper call gets its own.
+  const r = await post(user, "create_campaign", { name: `Q4 ${++campaignSeq}`, sender: SENDER, brand_kit: { company_name: "Acme" }, ...extra });
   expect(r.status).toBe(200);
   return r.body.campaign;
 }
@@ -531,5 +533,44 @@ describe("reads", () => {
     expect(logs.body.activity.some((a) => a.event_type === "note")).toBe(true);
     await expect(db.pg.query("update public.engagement_activity_log set event_type = 'x' where prospect_id = $1", [p.id]))
       .rejects.toThrow(/append-only/);
+  });
+});
+
+// ── campaign names, editing, deletion ─────────────────────────────────────
+describe("campaign names are unique per account", () => {
+  it("refuses a second campaign with the same name, ignoring case and spacing", async () => {
+    expect((await post(A, "create_campaign", { name: "Q4 Outreach" })).status).toBe(200);
+    const r = await post(A, "create_campaign", { name: "  q4   outreach " });
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe("campaign_name_taken");
+    expect(r.body.error).toMatch(/"Q4 Outreach" already exists/);
+    expect((await db.one("select count(*)::int as n from public.engagement_campaigns where user_id = $1", [A])).n).toBe(1);
+  });
+
+  it("lets two different accounts use the same name", async () => {
+    await post(A, "create_campaign", { name: "Shared" });
+    expect((await post(B, "create_campaign", { name: "Shared" })).status).toBe(200);
+  });
+
+  it("renames and edits the description, and refuses a rename onto another campaign's name", async () => {
+    const one = (await post(A, "create_campaign", { name: "One" })).body.campaign;
+    await post(A, "create_campaign", { name: "Two" });
+    const ok = await post(A, "update_campaign", { campaign_id: one.id, updates: { name: "One (EU)", description: "EU leads" } });
+    expect(ok.status).toBe(200);
+    expect(ok.body.campaign).toMatchObject({ name: "One (EU)", description: "EU leads" });
+    const clash = await post(A, "update_campaign", { campaign_id: one.id, updates: { name: "two" } });
+    expect(clash.status).toBe(409);
+    // Re-saving its own name (e.g. a case change) is not a clash with itself.
+    expect((await post(A, "update_campaign", { campaign_id: one.id, updates: { name: "ONE (eu)" } })).status).toBe(200);
+  });
+
+  it("deletes a campaign that has prospects, messages and activity, and keeps the account's opt-outs", async () => {
+    const { c, p } = await readyToSend(A);
+    await post(A, "send_messages", { campaign_id: c.id });
+    await post(A, "opt_out", { prospect_id: p.id, channels: ["email"] });
+    const r = await post(A, "delete_campaign", { campaign_id: c.id });
+    expect(r.status).toBe(200);
+    expect((await db.one("select count(*)::int as n from public.engagement_prospects where campaign_id = $1", [c.id])).n).toBe(0);
+    expect((await db.one("select count(*)::int as n from public.engagement_suppressions where user_id = $1", [A])).n).toBe(1);
   });
 });
