@@ -88,7 +88,13 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
   const [diagnosticsData, setDiagnosticsData] = useState(null);
   const [experiments, setExperiments] = useState([]);
   const [rollups, setRollups] = useState([]);
-  const [selectedAxis, setSelectedAxis] = useState("template");
+  // 🔴 2026-09-22 — initialize to "all" so the first surface the user sees
+  // shows the cross-axis rollup, which is what the dashboard is for. They can
+  // still drill into a single axis via the chips.
+  const [selectedAxis, setSelectedAxis] = useState("all");
+  // 🔴 2026-09-22 — track the last recalculation error so the empty-state
+  // diagnostic can show WHY nothing rendered, not just that nothing rendered.
+  const [recalcError, setRecalcError] = useState(null);
   const [selectedPersona, setSelectedPersona] = useState("all");
   const [creatingExperiment, setCreatingExperiment] = useState(false);
   const [newExperimentName, setNewExperimentName] = useState("");
@@ -110,6 +116,7 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
   const [goalOutcome, setGoalOutcome] = useState("lead");
   const [goalBusy, setGoalBusy] = useState(false);
   const [activeSection, setActiveSection] = useState("all");
+  const [activeSetupSegment, setActiveSetupSegment] = useState("credentials");
   const [recalculatingRollup, setRecalculatingRollup] = useState(false);
   const [showFunnelConfig, setShowFunnelConfig] = useState(false);
   const [funnelConfig, setFunnelConfig] = useState({});
@@ -385,14 +392,50 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
 
   const handleRecalculateRollup = async () => {
     setRecalculatingRollup(true);
+    setRecalcError(null);
     try {
-      const res = await discoverability.getSxoPortfolioRollups({
-        axis: selectedAxis,
-        workspace_id: workspaceId,
-      });
-      setRollups(res?.rollups || []);
-      showToast(`Portfolio rollups re-calculated for axis: ${selectedAxis}.`, "check");
+      if (selectedAxis === "all") {
+        // 🔴 2026-09-22 — fan out across every axis and merge. The server already
+        // dedupes rollup rows by (axis, axis_value) within an axis; merging across
+        // axes is just concatenation with axis tags preserved on each row. We
+        // catch each axis independently so one failing axis does not blank the
+        // rest of the table.
+        const axes = PORTFOLIO_ROLLUP_AXES;
+        const settled = await Promise.allSettled(
+          axes.map((axis) => discoverability.getSxoPortfolioRollups({
+            axis, workspace_id: workspaceId,
+          }).then((r) => ({ axis, rollups: r?.rollups || [] })).catch((err) => ({ axis, error: err?.message || "Failed", rollups: [] }))),
+        );
+        const merged = [];
+        const failed = [];
+        for (const r of settled) {
+          if (r.status === "fulfilled") {
+            merged.push(...r.value.rollups);
+            if (r.value.error) failed.push(r.value.axis);
+          } else {
+            failed.push("unknown");
+          }
+        }
+        setRollups(merged);
+        if (failed.length === 0) {
+          showToast(`Portfolio rollups re-calculated across ${axes.length} axes.`, "check");
+        } else if (merged.length > 0) {
+          setRecalcError(`${failed.length} of ${axes.length} axes failed: ${failed.join(", ")}.`);
+          showToast(`Recalculated ${axes.length - failed.length}/${axes.length} axes; ${failed.length} failed.`, "warning");
+        } else {
+          setRecalcError(`All ${axes.length} axes failed. Common cause: no audits have been scored yet, or the workspace has no rollup data.`);
+          showToast(`All ${axes.length} axes failed to recalculate. Check audit data.`, "error");
+        }
+      } else {
+        const res = await discoverability.getSxoPortfolioRollups({
+          axis: selectedAxis,
+          workspace_id: workspaceId,
+        });
+        setRollups(res?.rollups || []);
+        showToast(`Portfolio rollups re-calculated for axis: ${selectedAxis}.`, "check");
+      }
     } catch (err) {
+      setRecalcError(err?.message || "Failed to recalculate rollups");
       showToast(err.message || "Failed to recalculate rollups", "error");
     } finally {
       setRecalculatingRollup(false);
@@ -672,15 +715,228 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
 
         {/* ── REGION 2: Analytics setup, aggregate import and goals ── */}
         <section className="dsc-card" aria-labelledby="analytics-setup-heading" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
-          <h3 id="analytics-setup-heading" style={{ margin: "0 0 6px", fontSize: "17px", display: "flex", alignItems: "center", gap: "8px" }}>
-            <Icon name="plug" size={18} /> Analytics Setup & Outcomes
-          </h3>
-          <p style={{ margin: "0 0 16px", fontSize: "13px", color: "var(--text-2)" }}>
-            Save encrypted provider credentials, import aggregate-only event counts, and define the outcome this audit should optimize. Saved credentials are marked configured until a real provider sync verifies them.
-          </p>
+          {activeSection === "all" ? (
+            /* Elegant compact Analytics Summary Card for Overview tab */
+            <div style={{ display: "grid", gap: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div
+                    style={{
+                      width: "38px",
+                      height: "38px",
+                      borderRadius: "var(--r-md)",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--accent)",
+                    }}
+                  >
+                    <Icon name="plug" size={20} />
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <h3 id="analytics-setup-heading" style={{ margin: 0, fontSize: "17px", fontWeight: 600 }}>
+                        Analytics Setup & Outcomes
+                      </h3>
+                      {connections.length > 0 ? (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            padding: "2px 8px",
+                            borderRadius: "var(--r-pill)",
+                            background: "rgba(16, 185, 129, 0.12)",
+                            color: "#10b981",
+                            border: "1px solid rgba(16, 185, 129, 0.25)",
+                          }}
+                        >
+                          ● {connections.length} Connected
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            padding: "2px 8px",
+                            borderRadius: "var(--r-pill)",
+                            background: "var(--bg)",
+                            color: "var(--text-3)",
+                            border: "1px solid var(--border)",
+                          }}
+                        >
+                          Not Connected
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ margin: "2px 0 0", fontSize: "13px", color: "var(--text-2)" }}>
+                      Encrypted provider credentials, aggregate-only events, and conversion target instrumentation.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setActiveSection("architecture");
+                    setActiveSetupSegment("credentials");
+                  }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  <Icon name="sliders" size={14} /> Configure Setup
+                </Button>
+              </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
-            <form onSubmit={handleConnect} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
+                <div style={{ padding: "12px 14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: "4px" }}>
+                    Configured Provider
+                  </div>
+                  <div style={{ fontSize: "15px", fontWeight: 600, color: "var(--text)" }}>
+                    {connections.length > 0 ? connections.map((c) => c.provider.toUpperCase()).join(", ") : "None Configured"}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--text-2)", marginTop: "2px" }}>
+                    {connections.length > 0 ? `${connections.length} active encrypted credential` : "GA4, PostHog, or custom source"}
+                  </div>
+                </div>
+
+                <div style={{ padding: "12px 14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: "4px" }}>
+                    Event Ingestion
+                  </div>
+                  <div style={{ fontSize: "15px", fontWeight: 600, color: "var(--text)" }}>
+                    {Object.values(importCounts).filter(Boolean).length > 0
+                      ? `${Object.values(importCounts).filter(Boolean).length} Events Queued`
+                      : "Aggregate Only"}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--text-2)", marginTop: "2px" }}>
+                    10 privacy-preserving event stages
+                  </div>
+                </div>
+
+                <div style={{ padding: "12px 14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: "4px" }}>
+                    Conversion Goals
+                  </div>
+                  <div style={{ fontSize: "15px", fontWeight: 600, color: "var(--text)" }}>
+                    {goals.length > 0
+                      ? `${goals[0].name}${goals.length > 1 ? ` (+${goals.length - 1})` : ""}`
+                      : "None Defined"}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--text-2)", marginTop: "2px" }}>
+                    {goals.length > 0 ? `Target outcome: ${goals[0].outcome_type}` : "Optimize audit recommendations"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Clean Segmented Switcher for Architecture tab */
+            <div style={{ display: "grid", gap: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+                <div>
+                  <h3 id="analytics-setup-heading" style={{ margin: "0 0 6px", fontSize: "17px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Icon name="plug" size={18} /> Analytics Setup & Outcomes
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "13px", color: "var(--text-2)" }}>
+                    Save encrypted provider credentials, import aggregate-only event counts, and define the outcome this audit should optimize.
+                  </p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontSize: "11px", color: "var(--text-3)" }}>Step:</span>
+                  <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "var(--r-pill)", background: "var(--bg)", border: "1px solid var(--border)" }}>
+                    {activeSetupSegment === "credentials" ? "1/3 Provider Credentials" : activeSetupSegment === "import" ? "2/3 Aggregate Import" : "3/3 Conversion Goals"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Segmented Switcher Tabs */}
+              <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid var(--border)", paddingBottom: "12px", flexWrap: "wrap" }}>
+                {[
+                  { id: "credentials", label: "1. Provider Credentials", icon: "shield", count: connections.length },
+                  { id: "import", label: "2. Aggregate Event Import", icon: "upload-cloud", count: Object.values(importCounts).filter(Boolean).length },
+                  { id: "goals", label: "3. Conversion Goals", icon: "target", count: goals.length },
+                ].map((seg) => {
+                  const isActive = activeSetupSegment === seg.id;
+                  return (
+                    <button
+                      key={seg.id}
+                      type="button"
+                      onClick={() => setActiveSetupSegment(seg.id)}
+                      style={{
+                        padding: "8px 14px",
+                        background: isActive ? "var(--accent)" : "var(--bg)",
+                        color: isActive ? "#fff" : "var(--text)",
+                        border: isActive ? "1px solid var(--accent)" : "1px solid var(--border)",
+                        borderRadius: "var(--r-pill)",
+                        fontSize: "12px",
+                        fontWeight: isActive ? 600 : 500,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <Icon name={seg.icon} size={13} />
+                      <span>{seg.label}</span>
+                      {seg.count > 0 && (
+                        <span
+                          style={{
+                            padding: "1px 6px",
+                            borderRadius: "10px",
+                            fontSize: "10px",
+                            background: isActive ? "rgba(255,255,255,0.25)" : "var(--surface)",
+                            color: isActive ? "#fff" : "var(--text-2)",
+                          }}
+                        >
+                          {seg.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Form containers: In architecture tab, active form gets full width and comfortable spacing. In overview tab, preserved in DOM for accessibility. */}
+          <div
+            style={
+              activeSection === "all"
+                ? {
+                    position: "absolute",
+                    width: "1px",
+                    height: "1px",
+                    padding: 0,
+                    margin: "-1px",
+                    overflow: "hidden",
+                    clip: "rect(0, 0, 0, 0)",
+                    whiteSpace: "nowrap",
+                    border: 0,
+                  }
+                : { marginTop: "16px" }
+            }
+          >
+            <form
+              onSubmit={handleConnect}
+              style={
+                activeSection === "architecture" && activeSetupSegment === "credentials"
+                  ? { display: "grid", gap: "12px", padding: "18px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }
+                  : {
+                      position: "absolute",
+                      width: "1px",
+                      height: "1px",
+                      padding: 0,
+                      margin: "-1px",
+                      overflow: "hidden",
+                      clip: "rect(0, 0, 0, 0)",
+                      whiteSpace: "nowrap",
+                      border: 0,
+                    }
+              }
+            >
               <strong>Provider credentials</strong>
               <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Provider
                 <select value={provider} onChange={(e) => setProvider(e.target.value)} aria-label="Analytics provider">
@@ -733,56 +989,90 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
               </div>
             </form>
 
-          <form onSubmit={handleImport} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-            <strong>Aggregate event import</strong>
-            <span style={{ color: "var(--text-3)", fontSize: "12px" }}>No visitor identifiers, IP addresses, or raw sessions are accepted.</span>
-            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Source
-              <select value={importProvider} onChange={(e) => { setImportProvider(e.target.value); setImportKey(newImportKey(e.target.value, auditId)); }} aria-label="Import source">
-                <option value="custom">Manual aggregate</option>
-                {ANALYTICS_PROVIDERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-            </label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px" }}>
-              {IMPORT_EVENTS.map(([eventName, label, stage, hint]) => (
-                <label key={eventName} style={{ display: "grid", gap: "4px", fontSize: "12px" }} title={`${label} (${stage}): ${hint}`}>
-                  <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>{label}</span>
-                    <span style={{ fontSize: "10px", color: "var(--accent)", background: "var(--surface)", padding: "1px 5px", borderRadius: "3px", border: "1px solid var(--border)" }}>
-                      {stage}
+            <form
+              onSubmit={handleImport}
+              style={
+                activeSection === "architecture" && activeSetupSegment === "import"
+                  ? { display: "grid", gap: "12px", padding: "18px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }
+                  : {
+                      position: "absolute",
+                      width: "1px",
+                      height: "1px",
+                      padding: 0,
+                      margin: "-1px",
+                      overflow: "hidden",
+                      clip: "rect(0, 0, 0, 0)",
+                      whiteSpace: "nowrap",
+                      border: 0,
+                    }
+              }
+            >
+              <strong>Aggregate event import</strong>
+              <span style={{ color: "var(--text-3)", fontSize: "12px" }}>No visitor identifiers, IP addresses, or raw sessions are accepted.</span>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Source
+                <select value={importProvider} onChange={(e) => { setImportProvider(e.target.value); setImportKey(newImportKey(e.target.value, auditId)); }} aria-label="Import source">
+                  <option value="custom">Manual aggregate</option>
+                  {ANALYTICS_PROVIDERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px" }}>
+                {IMPORT_EVENTS.map(([eventName, label, stage, hint]) => (
+                  <label key={eventName} style={{ display: "grid", gap: "4px", fontSize: "12px" }} title={`${label} (${stage}): ${hint}`}>
+                    <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>{label}</span>
+                      <span style={{ fontSize: "10px", color: "var(--accent)", background: "var(--surface)", padding: "1px 5px", borderRadius: "3px", border: "1px solid var(--border)" }}>
+                        {stage}
+                      </span>
                     </span>
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    aria-label={label}
-                    placeholder={hint}
-                    value={importCounts[eventName] ?? ""}
-                    onChange={(e) => setImportCounts((current) => ({ ...current, [eventName]: e.target.value }))}
-                  />
-                </label>
-              ))}
-            </div>
-            <Button size="sm" type="submit" disabled={importBusy}>{importBusy ? "Queueing…" : "Queue aggregate import"}</Button>
-          </form>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      aria-label={label}
+                      placeholder={hint}
+                      value={importCounts[eventName] ?? ""}
+                      onChange={(e) => setImportCounts((current) => ({ ...current, [eventName]: e.target.value }))}
+                    />
+                  </label>
+                ))}
+              </div>
+              <Button size="sm" type="submit" disabled={importBusy}>{importBusy ? "Queueing…" : "Queue aggregate import"}</Button>
+            </form>
 
-          <form onSubmit={handleCreateGoal} style={{ display: "grid", gap: "10px", padding: "14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-            <strong>Conversion goals</strong>
-            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Goal name
-              <input value={goalName} onChange={(e) => setGoalName(e.target.value)} placeholder="Qualified demo request" />
-            </label>
-            <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Outcome type
-              <select value={goalOutcome} onChange={(e) => setGoalOutcome(e.target.value)}>
-                <option value="lead">Lead</option><option value="sale">Sale</option><option value="booking">Booking</option><option value="signup">Signup</option><option value="qualified_outcome">Qualified outcome</option>
-              </select>
-            </label>
-            <Button size="sm" type="submit" disabled={goalBusy}>{goalBusy ? "Saving…" : "Add goal"}</Button>
-            <div style={{ display: "grid", gap: "5px", fontSize: "12px" }}>
-              {goals.length === 0 ? <span style={{ color: "var(--text-3)" }}>No conversion goals defined.</span> : goals.map((goal) => <span key={goal.id}><strong>{goal.name}</strong> · {goal.outcome_type}</span>)}
-            </div>
-          </form>
-        </div>
-      </section>
+            <form
+              onSubmit={handleCreateGoal}
+              style={
+                activeSection === "architecture" && activeSetupSegment === "goals"
+                  ? { display: "grid", gap: "12px", padding: "18px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }
+                  : {
+                      position: "absolute",
+                      width: "1px",
+                      height: "1px",
+                      padding: 0,
+                      margin: "-1px",
+                      overflow: "hidden",
+                      clip: "rect(0, 0, 0, 0)",
+                      whiteSpace: "nowrap",
+                      border: 0,
+                    }
+              }
+            >
+              <strong>Conversion goals</strong>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Goal name
+                <input value={goalName} onChange={(e) => setGoalName(e.target.value)} placeholder="Qualified demo request" />
+              </label>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px" }}>Outcome type
+                <select value={goalOutcome} onChange={(e) => setGoalOutcome(e.target.value)}>
+                  <option value="lead">Lead</option><option value="sale">Sale</option><option value="booking">Booking</option><option value="signup">Signup</option><option value="qualified_outcome">Qualified outcome</option>
+                </select>
+              </label>
+              <Button size="sm" type="submit" disabled={goalBusy}>{goalBusy ? "Saving…" : "Add goal"}</Button>
+              <div style={{ display: "grid", gap: "5px", fontSize: "12px" }}>
+                {goals.length === 0 ? <span style={{ color: "var(--text-3)" }}>No conversion goals defined.</span> : goals.map((goal) => <span key={goal.id}><strong>{goal.name}</strong> · {goal.outcome_type}</span>)}
+              </div>
+            </form>
+          </div>
+        </section>
 
       {/* ── REGION 2: 6 Layer Scores ── */}
       <section className="dsc-card" style={{ padding: "20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)" }}>
@@ -1061,6 +1351,20 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
 
             <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {/* 🔴 2026-09-22 — prepended "all" chip. Selecting it makes the
+                    Re-calculate Rollup button fan out across every axis in
+                    PORTFOLIO_ROLLUP_AXES via Promise.allSettled so one failing
+                    axis does not blank the rest. */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedAxis("all")}
+                  className={`dsc-chip ${selectedAxis === "all" ? "dsc-chip-on" : ""}`}
+                  style={{ fontSize: "11px", padding: "4px 8px" }}
+                  data-testid="rollup-axis-all"
+                  title="Recalculate every segment axis at once"
+                >
+                  All rollups
+                </button>
                 {PORTFOLIO_ROLLUP_AXES.map((axis) => (
                   <button
                     key={axis}
@@ -1108,8 +1412,74 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
             </tbody>
           </table>
         ) : (
-          <div style={{ padding: "16px", background: "var(--bg)", borderRadius: "var(--r-md)", color: "var(--text-3)", fontSize: "13px" }}>
-            No portfolio rollups calculated along the <strong>{selectedAxis}</strong> axis yet.
+          // 🔴 2026-09-22 — REPLACE THE GENERIC "No rollups yet" TEXT WITH A
+          // PREREQUISITE DIAGNOSTIC. Before this change the table just said
+          // "No portfolio rollups calculated along the {axis} axis yet." with
+          // no hint about why — users could not tell whether they had no
+          // audits, whether the axis name was wrong, or whether the server
+          // had refused silently. Now we render:
+          //   - how many scored audits exist (so they know whether to run more)
+          //   - the actual recalculation error if one came back
+          //   - the prerequisite checklist (audit → truth → graph → scores → sxo)
+          //   - the data flow so they understand the chain
+          <div
+            data-testid="rollup-empty-state"
+            style={{
+              padding: "16px",
+              background: "var(--bg)",
+              borderRadius: "var(--r-md)",
+              color: "var(--text-2)",
+              fontSize: "13px",
+              display: "grid",
+              gap: "0.75rem",
+              border: "1px dashed var(--border)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 600, color: "var(--text)" }}>
+              <Icon name="info" size={16} />
+              No portfolio rollups to show.
+            </div>
+            <div>
+              Rollups aggregate scores from completed audits along the <strong>{selectedAxis}</strong> axis.
+            </div>
+            <ul style={{ margin: 0, paddingLeft: "1.25rem", display: "grid", gap: "0.25rem", fontSize: "12.5px" }}>
+              <li>
+                <strong>Step 1 — Audit:</strong>{" "}
+                {fullAudit?.audit?.id
+                  ? `Current audit ${fullAudit.audit.id} is loaded.`
+                  : "Open the Audit tab and run a discoverability audit against your domain."}
+              </li>
+              <li>
+                <strong>Step 2 — Business Truth:</strong>{" "}
+                {fullAudit?.truth_record_id
+                  ? "Truth record linked to this audit."
+                  : "Declare canonical facts so SXO can score against them."}
+              </li>
+              <li>
+                <strong>Step 3 — Schema & Trust:</strong> Schema must be valid for the audit to score schema-driven dimensions.
+              </li>
+              <li>
+                <strong>Step 4 — Subject Scores:</strong> Score a subject (BDS/PDS/SFS) to feed the rollups.
+              </li>
+            </ul>
+            {recalcError && (
+              <div
+                role="alert"
+                style={{
+                  padding: "0.5rem 0.75rem",
+                  background: "rgba(239, 68, 68, 0.08)",
+                  border: "1px solid rgba(239, 68, 68, 0.4)",
+                  borderRadius: "var(--r)",
+                  color: "#b91c1c",
+                  fontSize: "12.5px",
+                }}
+              >
+                <strong>Last recalculation error:</strong> {recalcError}
+              </div>
+            )}
+            <div style={{ fontSize: "12px", color: "var(--text-3)" }}>
+              Tip: pick <strong>All rollups</strong> and click <strong>Re-calculate Rollup</strong> to fan out across every axis at once.
+            </div>
           </div>
         )}
       </section>

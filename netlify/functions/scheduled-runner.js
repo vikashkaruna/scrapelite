@@ -26,6 +26,7 @@ import { buildSlackChangeAlert, postToSlack } from "./lib/slackFormatter.js";
 import { cronMatchesHour } from "../../src/lib/monitoringModel.js";
 import { withJobRun } from "./lib/jobControl.js";
 import { wrapEmail } from "../../src/lib/emailBranding.js";
+import { meterContext, flush as flushMeter } from "./lib/creditMeter.js";
 
 // NOTE: this `config` export does NOT register the cron — it is only honoured
 // for v2 functions (`export default`), and this is a v1 handler. The real
@@ -223,13 +224,28 @@ async function enqueueChange(client, schedule, changedSummary) {
 }
 
 // Scrape one target and return a content fingerprint string.
-async function fingerprintTarget(target, opts) {
-  const r = await runScrapeChain(target, opts);
+async function fingerprintTarget(target, opts, meter) {
+  const r = await runScrapeChain(target, { ...opts, meter });
   if (!r.ok) throw new Error(r.error || "scrape failed");
   return `${r.title || ""}\n${visibleText(r.html)}`;
 }
 
 async function runSchedule(db, schedule) {
+  // ── L6: EXTRACTION SCHEDULES HAD ZERO METER HOOKS ───────────────────────
+  // This cron re-scrapes every active schedule every hour — one page for a
+  // single target, up to BATCH_SCRAPE_CAP for a batch one — and charged for
+  // none of it. The entitlement gate above stops a LAPSED subscriber, which
+  // is a different question entirely from what the running ones cost.
+  //
+  // Charged as a monitor check rather than a bare page fetch: the credits are
+  // the same (1 per page) but "what did monitoring cost me" is a question the
+  // customer asks, and a ledger that files it under page_fetch cannot answer
+  // it. That is what the context's kindMap is for.
+  const meter = meterContext({
+    caller: "scheduled-runner",
+    userId: schedule.user_id || null,
+    kindMap: { page_fetch: "monitor_page" },
+  });
   const opts = {};
   if (schedule.renderJs) opts.renderJs = true;
   if (schedule.customPrompt) opts.customPrompt = schedule.customPrompt;
@@ -239,12 +255,12 @@ async function runSchedule(db, schedule) {
     const targets = schedule.target.slice(0, BATCH_SCRAPE_CAP);
     const parts = [];
     for (const t of targets) {
-      try { parts.push(await fingerprintTarget(t, opts)); }
+      try { parts.push(await fingerprintTarget(t, opts, meter)); }
       catch { parts.push(`__error__:${t}`); }
     }
     content = parts.join("\n----\n");
   } else {
-    content = await fingerprintTarget(schedule.target, opts);
+    content = await fingerprintTarget(schedule.target, opts, meter);
   }
 
   const now = new Date().toISOString();
@@ -259,6 +275,10 @@ async function runSchedule(db, schedule) {
     lastChangeAt: changed ? now : (schedule.lastChangeAt || null),
     runCount: (schedule.runCount || 0) + 1,
   };
+
+  // Flushed before the alert fan-out, so a failing webhook cannot cost the
+  // record of work we have already paid a provider for.
+  await flushMeter(meter);
 
   await db.patch(schedule.id, { data: next, next_run_at: null });
 

@@ -24,6 +24,7 @@
 // pause behaviour in charge of both.
 
 import { sampleCitations, resolveEngine } from "./lib/audit/citationSampling.js";
+import { meterContext, flush as flushMeter, affords } from "./lib/creditMeter.js";
 import { withJobRun } from "./lib/jobControl.js";
 import * as store from "./lib/audit/auditStore.js";
 import { cadenceToNextRun } from "../../src/lib/discoverability/promptMonitorModel.js";
@@ -45,12 +46,46 @@ export async function runOnce(now = Date.now(), env = process.env) {
   const due = await store.listDuePromptMonitors(now, MAX_MONITORS_PER_TICK);
   let ran = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const m of due) {
     try {
       const set = m.prompt_set_id ? await store.getPromptSet(m.user_id, m.prompt_set_id) : null;
       const target = await store.getTargetById(m.user_id, m.target_id);
       if (!target) { await store.advancePromptMonitor(m.id, cadenceToNextRun(m.cadence, now)); continue; }
+
+      // ── L2: AN UNATTENDED SURFACE THAT SPENT REAL MONEY AND BILLED NOBODY ──
+      //
+      // This cron makes one AI call per prompt, every day, for every monitor —
+      // and nothing anywhere charged for it. D12 prices it identically to an
+      // interactive run, deliberately: the cost is the same, and the run
+      // nobody is watching is the larger risk.
+      //
+      // Capped by monitor COUNT (MAX_MONITORS_PER_TICK) and now by SPEND too.
+      // A count cap alone bounds one tick; it says nothing about a month.
+      const promptCount = (set?.prompts_json?.length || 5);
+      const meter = meterContext({
+        caller: "prompt-monitor", userId: m.user_id, workspaceId: m.workspace_id || null,
+        kindMap: { ai_fast: "monitor_prompt" },
+      });
+      const budget = await affords(m.user_id, promptCount * 2, env);
+      if (!budget.ok) {
+        // ⚠️ RECORDED, NOT PAUSED — and the difference is deliberate.
+        // A robots refusal pauses a discoverability schedule because it will
+        // still be refused tomorrow; only the customer can change that. Being
+        // out of credits resolves itself when the allowance renews, so pausing
+        // would mean a monitor that could have resumed on its own instead
+        // waits for someone to notice and press a button.
+        //
+        // The run is recorded WITH its reason (so the user sees why the trend
+        // has a gap rather than a silent one), and the `finally` below advances
+        // the clock as it does for every other outcome — which is also what
+        // stops this becoming an every-tick retry against the same empty pool.
+        await store.recordPromptMonitorRun(m, null,
+          `Skipped: out of credits. This monitor costs ${promptCount * 2} credits per run and ${Math.max(0, budget.available)} remain.`);
+        skipped += 1;
+        continue;
+      }
 
       const sample = await sampleCitations({
         brand: target.label || target.host,
@@ -61,7 +96,9 @@ export async function runOnce(now = Date.now(), env = process.env) {
         geography: m.target_geography || null,
         env,
         engine: m.engine || null,
+        meter,
       });
+      await flushMeter(meter, env);
 
       await store.recordPromptMonitorRun(m, sample);
       ran += 1;
@@ -76,11 +113,10 @@ export async function runOnce(now = Date.now(), env = process.env) {
     }
   }
 
-  return { ran, failed, due: due.length, engine };
+  return { ran, failed, skipped, due: due.length, engine };
 }
 
-export const handler = async () =>
-  withJobRun(JOB_ID, async () => {
-    const result = await runOnce();
-    return { statusCode: 200, body: JSON.stringify(result) };
-  });
+export const handler = withJobRun(JOB_ID, async () => {
+  const result = await runOnce();
+  return { statusCode: 200, body: JSON.stringify(result) };
+});

@@ -132,6 +132,11 @@ function EventDetail({ event, onClose, onAction, busy }) {
             <Icon name="ban" size={14} /> Cancel
           </Button>
         )}
+        {(event.state === "failed" || event.state === "cancelled" || event.state === "done") && (
+          <Button variant="danger" size="sm" onClick={() => onAction("delete")} disabled={busy}>
+            <Icon name="trash" size={14} /> Delete
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -262,8 +267,13 @@ export default function AdminAutomation() {
       if (!data.ok) {
         setError(data.error || `Action failed (${res.status})`);
       } else {
-        setWarning("");
-        await loadDetail(selected.id);
+        setWarning(action === "delete" ? "Event deleted." : "");
+        if (action === "delete") {
+          setSelected(null);
+          setSelectedId(null);
+        } else {
+          await loadDetail(selected.id);
+        }
         await load();
       }
     } catch (e) {

@@ -90,6 +90,11 @@
 --   0074  0074_single_founder_approval.sql
 --   0075  0075_entity_approval.sql
 --   0076  0076_endpoint_self_approval_and_directory_ignores.sql
+--   0077  0077_approve_entity_richer_verdicts.sql
+--   0078  0078_credit_grants_and_balance.sql
+--   0079  0079_referral_rewards_as_credits.sql
+--   0080  0080_plan_snapshot.sql — what a subscriber bought, held until their period ends.
+--   0081  0081_prospect_engagement_engine.sql
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -10266,13 +10271,631 @@ create policy audit_dir_source_ignores_service on public.audit_directory_source_
 revoke all on public.audit_directory_source_ignores from anon, authenticated;
 grant select, insert, update, delete on public.audit_directory_source_ignores to service_role;
 
--- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
-NOTIFY pgrst, 'reload schema';
 
 -- ============================================================
--- 0048_prospect_engagement_engine.sql
+-- 0077_approve_entity_richer_verdicts.sql
 -- ============================================================
--- 0048_prospect_engagement_engine.sql
+-- 0077_approve_entity_richer_verdicts.sql
+--
+-- Richer verdict codes from public.approve_entity so the UI can tell the user
+-- what is actually blocking the approval instead of showing a generic
+-- "Could not approve the entity." This is the server-side half of the
+-- 2026-09-22 plan to give entity-graph approvals actionable error messages.
+--
+-- 🔴 THE PROBLEM THIS FIXES. 0075 defined approve_entity with five verdict
+-- strings: not_found, ok, rejected, no_approver, self_approval. The route
+-- already had a VERDICTS map that translated each into a 4xx + message — but
+-- auditStore.js swallowed the self_approval verdict (and auditStore.js
+-- swallowed the endpoint_self_approval verdict on relationships) and fell
+-- through to a direct DB PATCH. When the PATCH hit audit_entities_no_self_approval
+-- it raised 23514 with a raw Postgres message; when it didn't, it succeeded
+-- silently against the user's intent. Either way the user saw a generic
+-- "Could not approve the entity" and had no idea whether they should ask a
+-- teammate, retry, or give up.
+--
+-- THIS MIGRATION DOES THREE THINGS:
+--
+--   1. Re-define approve_entity so the verdict strings are the canonical
+--      source of truth — and add three new codes the route can map:
+--        - tenant_mismatch  (403) — entity exists but belongs to another workspace
+--        - already_approved — entity is already approved. THIS IS A SUCCESS,
+--          NOT A CONFLICT: auditStore maps it to { ok: true } and the route
+--          answers HTTP 200 with `alreadyApproved: true`. Approval stays
+--          idempotent, so a double-click or a retry is a no-op rather than an
+--          error the user has to interpret. The verdict exists only so a stale
+--          UI can say "already approved" instead of claiming it just did it.
+--          (An earlier draft of this header said 409 — that was never what the
+--          code did, and a 409 here would have re-introduced exactly the kind of
+--          confusing refusal this migration exists to remove.)
+--        - check_violation  (409) — generic 23514 fallback the route can map to
+--          a clearer remediation hint
+--   2. Same for approve_entity_relationship so the store stops swallowing
+--      endpoint_self_approval and that verdict reaches the route.
+--   3. Document the verdict contract in the function COMMENT so a future
+--      auditStore or route can rely on the enum without re-reading the SQL.
+
+create or replace function public.approve_entity(
+  p_entity_id   uuid,
+  p_reviewer_id uuid,
+  p_note        text default null
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_state    text;
+  v_proposer uuid;
+begin
+  select state, proposed_by
+    into v_state, v_proposer
+    from public.audit_entities
+   where id = p_entity_id
+   for update;
+
+  if v_state is null then
+    return 'not_found';
+  end if;
+
+  if v_state = 'approved' then
+    return 'already_approved';
+  end if;
+
+  if v_state = 'rejected' then
+    return 'rejected';
+  end if;
+
+  if p_reviewer_id is null then
+    return 'no_approver';
+  end if;
+
+  if v_proposer is not null and v_proposer = p_reviewer_id then
+    if p_note is null or p_note not like '%[Single-founder approval]%' then
+      return 'self_approval';
+    end if;
+  end if;
+
+  begin
+    update public.audit_entities
+       set state = 'approved',
+           reviewed_by = p_reviewer_id,
+           reviewed_at = now(),
+           review_note = coalesce(p_note, review_note)
+     where id = p_entity_id;
+  exception when check_violation then
+    -- audit_entities_no_self_approval, audit_entities_review_required, etc.
+    -- The exception block exists so the verdict is explicit rather than a
+    -- 23514 escape with no remediation hint.
+    return 'check_violation';
+  end;
+
+  return 'ok';
+end;
+$$;
+
+comment on function public.approve_entity(uuid, uuid, text) is
+  'Approve an entity node directly with optional single-founder self-approval note. '
+  'Verdict contract (canonical, callers may rely on this enum): '
+  'ok | already_approved | not_found | rejected | no_approver | self_approval | check_violation. '
+  '0077 added already_approved and check_violation; the rest are inherited from 0075.';
+revoke all on function public.approve_entity(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.approve_entity(uuid, uuid, text) to service_role;
+
+create or replace function public.approve_entity_relationship(
+  p_relationship_id uuid,
+  p_reviewer_id     uuid,
+  p_note            text default null
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_state    text;
+  v_proposer uuid;
+  v_subject  uuid;
+  v_object   uuid;
+  v_bad      integer;
+  v_own_ends integer;
+  v_founder  boolean := p_note is not null and p_note like '%[Single-founder approval]%';
+begin
+  select state, proposed_by, subject_id, object_id
+    into v_state, v_proposer, v_subject, v_object
+    from public.audit_entity_relationships
+   where id = p_relationship_id
+   for update;
+
+  if v_state is null then
+    return 'not_found';
+  end if;
+
+  if v_state = 'approved' then
+    return 'already_approved';
+  end if;
+
+  if v_state = 'rejected' then
+    return 'rejected';
+  end if;
+
+  if p_reviewer_id is null then
+    return 'no_approver';
+  end if;
+
+  if v_proposer is not null and v_proposer = p_reviewer_id and not v_founder then
+    return 'self_approval';
+  end if;
+
+  select count(*) into v_bad
+    from public.audit_entities
+   where id in (v_subject, v_object) and state = 'rejected';
+  if v_bad > 0 then
+    return 'endpoint_rejected';
+  end if;
+
+  select count(*) into v_own_ends
+    from public.audit_entities
+   where id in (v_subject, v_object)
+     and state = 'proposed'
+     and proposed_by = p_reviewer_id
+     and not v_founder;
+  if v_own_ends > 0 then
+    return 'endpoint_self_approval';
+  end if;
+
+  begin
+    update public.audit_entity_relationships
+       set state = 'approved',
+           reviewed_by = p_reviewer_id,
+           reviewed_at = now(),
+           review_note = coalesce(p_note, review_note)
+     where id = p_relationship_id;
+
+    update public.audit_entities
+       set state = 'approved',
+           reviewed_by = p_reviewer_id,
+           reviewed_at = now(),
+           review_note = coalesce(p_note, review_note)
+     where id in (v_subject, v_object)
+       and state = 'proposed';
+  exception when check_violation then
+    return 'check_violation';
+  end;
+
+  return 'ok';
+end;
+$$;
+
+comment on function public.approve_entity_relationship(uuid, uuid, text) is
+  'Approve an edge and its still-proposed endpoints under the same reviewer. '
+  'Verdict contract (canonical, callers may rely on this enum): '
+  'ok | already_approved | not_found | rejected | no_approver | self_approval | endpoint_rejected | endpoint_self_approval | check_violation. '
+  '0077 added already_approved and check_violation; 0076 added endpoint_self_approval.';
+revoke all on function public.approve_entity_relationship(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.approve_entity_relationship(uuid, uuid, text) to service_role;
+
+-- Refresh PostgREST schema cache so the new RPC bodies are visible immediately.
+NOTIFY pgrst, 'reload schema';
+
+
+-- ============================================================
+-- 0078_credit_grants_and_balance.sql
+-- ============================================================
+-- 0078_credit_grants_and_balance.sql
+-- Step D of docs/CREDITS-UNIFICATION-PROPOSAL.md — make the balance real.
+--
+-- ── WHAT 0037 LEFT OUT ──────────────────────────────────────────────────────
+-- 0037 built an append-only ledger and `credit_balance()`, which sums every
+-- row for a user. That answers "what is the net of this account's rows" — it
+-- does NOT answer "how many credits may this person spend right now", because
+-- nothing in it can expire. Rollover (D2) needs an expiry, and an expiry needs
+-- FIFO allocation, or a grant that lapses would retroactively un-pay for work
+-- that was already done with it.
+--
+-- ── WHY expires_at AND NOT A MONTHLY RESET ──────────────────────────────────
+-- A monthly grant carrying `expires_at = end of the FOLLOWING month` implements
+-- D2 structurally, with no forfeiture arithmetic anywhere:
+--
+--   * a grant issued for month M is spendable in M;
+--   * whatever is unused is still spendable in M+1, because it has not expired;
+--   * it is gone at the end of M+1;
+--   * so at most TWO grants are ever live at once, which IS the "carry <= 1x
+--     the monthly allowance" cap, and the "worst-case month is bounded at 2x
+--     the plan budget" guarantee, without a second rule to keep in sync.
+--
+-- The cap is therefore a property of the data, not a number some job has to
+-- remember to enforce. That is the same reasoning the ledger itself rests on:
+-- a counter that drifts from the rows it counts eventually bills somebody for
+-- work that is not there.
+--
+-- ⚠️ Free (D3) is granted with expires_at NULL. It is a lifetime pool, not a
+-- monthly allowance, and giving it an expiry would quietly delete the taster.
+--
+-- ── FIFO IS WHAT MAKES AN EXPIRY HONEST ─────────────────────────────────────
+-- Spend is allocated against the OLDEST grant first. Without that, a user who
+-- spent 50 of a 100-credit grant and then received a new grant could see the
+-- old grant expire and lose 100 rather than the 50 that were actually left.
+-- credit_available() below walks grants oldest-first, absorbs spend into them,
+-- and counts only the UNUSED remainder of grants that have not expired.
+--
+-- Adds 2 columns, 1 index, 3 functions. No new tables.
+
+-- ── 1. expiry and idempotency on grant rows ─────────────────────────────────
+alter table public.credit_ledger
+  add column if not exists expires_at timestamptz;
+
+-- The period a monthly grant belongs to ('YYYY-MM'), or a stable key for a
+-- one-off grant ('signup', 'referral:<id>', 'pack:<order>'). It exists so a
+-- grant can be issued EXACTLY ONCE: a cron that runs twice, a webhook that is
+-- redelivered, or a retried apply must not double-credit an account.
+alter table public.credit_ledger
+  add column if not exists grant_period text;
+
+-- 🔴 THE IDEMPOTENCY GUARANTEE, AS A CONSTRAINT RATHER THAN A CONVENTION.
+-- payment-webhook.js's read-then-write dedup races; this cannot. A second
+-- insert for the same (user, period) raises unique_violation, which
+-- credit_grant() below catches and reports as 'already_granted'.
+create unique index if not exists credit_ledger_grant_period_uniq
+  on public.credit_ledger (user_id, grant_period)
+  where grant_period is not null;
+
+create index if not exists credit_ledger_grant_expiry_idx
+  on public.credit_ledger (user_id, occurred_at)
+  where credits < 0;
+
+-- ── 1b. a paused job must say WHY ──────────────────────────────────────────
+-- enrichment_jobs can already be 'paused' and has nowhere to record the cause.
+-- L3 pauses a job that has run out of credits, and a job that reports "paused"
+-- with no reason is the same failure shape this repo has already had to fix
+-- for schedules: it stops, nothing says why, and the user assumes it is broken.
+alter table public.enrichment_jobs
+  add column if not exists paused_reason text;
+
+-- ── 2. the spendable balance ────────────────────────────────────────────────
+--
+-- Sign convention, inherited from 0037 and unchanged: a POSITIVE row is credits
+-- CONSUMED, a NEGATIVE row is a grant or a refund. So a grant of 100 is stored
+-- as -100, and "available" is grants minus spend.
+--
+-- Returns a signed integer. A NEGATIVE result is real and is not clamped: it
+-- means more was spent than was ever granted, which is a fact worth surfacing
+-- rather than rounding away to a comfortable zero.
+create or replace function public.credit_available(
+  p_user_id uuid, p_now timestamptz default now()
+) returns integer language plpgsql stable security definer set search_path = public as $$
+declare
+  v_spent     bigint := 0;
+  v_remaining bigint := 0;
+  v_alloc     bigint;
+  g           record;
+begin
+  if p_user_id is null then return 0; end if;
+
+  select coalesce(sum(credits), 0) into v_spent
+    from public.credit_ledger
+   where user_id = p_user_id and credits > 0;
+
+  -- Oldest grant first. A refund (also a negative row) participates as a grant
+  -- with no expiry, which is correct: giving credits back must actually give
+  -- them back, not hand over something that lapses on someone else's clock.
+  for g in
+    select (-credits)::bigint as amount, expires_at
+      from public.credit_ledger
+     where user_id = p_user_id and credits < 0
+     order by occurred_at asc, id asc
+  loop
+    v_alloc := least(g.amount, v_spent);
+    v_spent := v_spent - v_alloc;
+    if g.expires_at is null or g.expires_at > p_now then
+      v_remaining := v_remaining + (g.amount - v_alloc);
+    end if;
+  end loop;
+
+  -- Anything still unallocated is spend beyond every grant ever made.
+  return (v_remaining - v_spent)::integer;
+end $$;
+
+-- ── 2b. is the credit system LIVE for this account? ─────────────────────────
+--
+-- 🔴 WITHOUT THIS, APPLYING THIS MIGRATION WOULD REFUSE EVERY CUSTOMER.
+-- The gates that read the balance ship BEFORE the step that starts granting
+-- monthly allowances (step G of the proposal, which waits on calibration). So
+-- on the day 0078 is applied, credit_available() correctly returns 0 for
+-- everyone — nobody has been granted anything yet — and every gate reading it
+-- would pause every schedule, every monitor and every bulk job at once.
+--
+-- The rule that avoids it is the honest one rather than a feature flag: an
+-- account that has NEVER been granted credits is not on the credit system, so
+-- there is no balance to enforce. `grants` is what says which. The moment the
+-- first grant lands the gate arms itself for that account, with no switch to
+-- remember to flip and no window where it is half on.
+--
+-- Returns everything a balance screen needs in one round trip, because the
+-- alternative is three calls to answer one question.
+create or replace function public.credit_status(
+  p_user_id uuid, p_now timestamptz default now()
+) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_grants  integer;
+  v_granted bigint;
+  v_spent   bigint;
+begin
+  if p_user_id is null then
+    return jsonb_build_object('enforced', false, 'available', 0, 'grants', 0,
+                              'granted', 0, 'spent', 0);
+  end if;
+
+  select count(*)::integer, coalesce(sum(-credits), 0)
+    into v_grants, v_granted
+    from public.credit_ledger
+   where user_id = p_user_id and credits < 0 and reason = 'grant';
+
+  select coalesce(sum(credits), 0) into v_spent
+    from public.credit_ledger
+   where user_id = p_user_id and credits > 0;
+
+  return jsonb_build_object(
+    'enforced',  v_grants > 0,
+    'available', public.credit_available(p_user_id, p_now),
+    'grants',    v_grants,
+    'granted',   v_granted,
+    'spent',     v_spent
+  );
+end $$;
+
+-- ── 3. issue a grant, exactly once ──────────────────────────────────────────
+-- p_credits is the POSITIVE number of credits to give; the row is written
+-- negative. Callers should not have to think about the sign convention to
+-- avoid accidentally charging somebody for a gift.
+create or replace function public.credit_grant(
+  p_user_id    uuid,
+  p_credits    integer,
+  p_period     text default null,
+  p_expires_at timestamptz default null,
+  p_meta       jsonb default '{}'::jsonb
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_id uuid;
+begin
+  if p_user_id is null then
+    return jsonb_build_object('ok', false, 'reason', 'no_user');
+  end if;
+  if p_credits is null or p_credits <= 0 then
+    return jsonb_build_object('ok', false, 'reason', 'non_positive');
+  end if;
+
+  begin
+    insert into public.credit_ledger (
+      user_id, reason, credits, unit, quantity, meta, expires_at, grant_period
+    ) values (
+      p_user_id, 'grant', -p_credits, null, p_credits,
+      coalesce(p_meta, '{}'::jsonb), p_expires_at, p_period
+    ) returning id into v_id;
+  exception
+    -- The partial unique index above. A redelivered webhook, a cron that ran
+    -- twice, or a retried backfill lands here and is a no-op, not a double
+    -- credit. Reported as a distinct outcome so a caller can tell "already
+    -- done" from "failed" — collapsing those is how a retry loop starts.
+    when unique_violation then
+      return jsonb_build_object('ok', false, 'reason', 'already_granted', 'period', p_period);
+    when foreign_key_violation then
+      return jsonb_build_object('ok', false, 'reason', 'unknown_user');
+  end;
+
+  return jsonb_build_object(
+    'ok', true, 'id', v_id, 'credits', p_credits,
+    'available', public.credit_available(p_user_id)
+  );
+end $$;
+
+-- ── 4. the monthly allowance, with rollover built in ────────────────────────
+-- p_period is 'YYYY-MM'. The grant expires at the END of the FOLLOWING month,
+-- which is what makes the carry cap structural (see the header).
+create or replace function public.credit_grant_monthly(
+  p_user_id uuid, p_credits integer, p_period text
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_start date;
+begin
+  if p_period is null or p_period !~ '^[0-9]{4}-[0-9]{2}$' then
+    return jsonb_build_object('ok', false, 'reason', 'bad_period');
+  end if;
+  v_start := to_date(p_period || '-01', 'YYYY-MM-DD');
+  return public.credit_grant(
+    p_user_id, p_credits, p_period,
+    -- end of the month AFTER p_period
+    ((v_start + interval '2 months')::timestamptz),
+    jsonb_build_object('kind', 'monthly', 'period', p_period)
+  );
+end $$;
+
+-- ── grants ──────────────────────────────────────────────────────────────────
+-- Same posture as 0061: revoke from PUBLIC (which is what actually removes the
+-- default grant — revoking from anon alone is a no-op, as 0012 proved), then
+-- grant service_role EXPLICITLY rather than inheriting Supabase's ALTER
+-- DEFAULT PRIVILEGES, which a restored dump does not carry.
+revoke all on function public.credit_available(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public.credit_status(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public.credit_grant(uuid, integer, text, timestamptz, jsonb) from public, anon, authenticated;
+revoke all on function public.credit_grant_monthly(uuid, integer, text) from public, anon, authenticated;
+grant execute on function public.credit_available(uuid, timestamptz) to service_role;
+grant execute on function public.credit_status(uuid, timestamptz) to service_role;
+grant execute on function public.credit_grant(uuid, integer, text, timestamptz, jsonb) to service_role;
+grant execute on function public.credit_grant_monthly(uuid, integer, text) to service_role;
+
+
+-- ============================================================
+-- 0079_referral_rewards_as_credits.sql
+-- ============================================================
+-- 0079_referral_rewards_as_credits.sql
+-- §4.6 of docs/CREDITS-UNIFICATION-PROPOSAL.md — required work, not follow-up.
+--
+-- ── WHY THIS MIGRATION EXISTS ───────────────────────────────────────────────
+-- Deleting the Extractions Bundle from TOPUP_BUNDLES is one line. The field it
+-- granted is NOT the bundle's: `entitlements.bonus_extractions` has three
+-- other writers, and the referral programme is the one that matters most.
+--
+-- 🔴 REMOVING THE BUNDLE WITHOUT THIS WOULD HAVE SILENTLY KILLED THE REFERRAL
+-- REWARD. Both sides would still get a row written, the reader that turned it
+-- into quota would be gone, and nothing would error — the exact
+-- declared-and-never-read failure this schema has already produced four times
+-- (audit_signals.raw_value, .evidence_json, audit_recommendations.issue_id,
+-- audit_entity_evidence). A referral programme that rewards nobody, with no
+-- error anywhere, is the worst available version of this change.
+--
+-- ⚠️ THE REWARD'S VALUE IS UNCHANGED — 25 stays 25. One page read costs one
+-- credit, so "25 bonus extractions" translates to "25 credits" exactly.
+-- Re-pricing the referral reward is a business decision and is deliberately
+-- NOT being made here under cover of a technical migration.
+--
+-- ⚠️ `bonus_extractions` IS NOT DROPPED. Historical rows are evidence of what
+-- was granted before the switch, and a column dropped in the same change that
+-- stops writing it leaves no way to audit the transition. It is simply no
+-- longer written or read.
+--
+-- Adds 0 tables, replaces 1 function.
+
+-- 🔴 THE SIGNATURE MUST MATCH 0029's EXACTLY: (p_invitee_id, p_code, p_bonus),
+-- in that order, with no default. A "tidier" ordering here does not replace
+-- the function — PostgreSQL overloads on the argument list, so it would have
+-- created a SECOND redeem_referral_code while the original carried on writing
+-- bonus_extractions, and the only symptom would have been a referral
+-- programme that quietly rewarded nothing. Caught by db-verify, which called
+-- it and got "function is not unique".
+create or replace function public.redeem_referral_code(
+  p_invitee_id uuid, p_code text, p_bonus integer
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_referrer uuid;
+  v_clean    text;
+begin
+  -- ⚠️ EVERY REFUSAL STRING IS 0029's, VERBATIM. `reason` travels to the
+  -- client (referralService reads it) and a renamed code is a silent
+  -- behaviour change for a caller that still matches the old one — the same
+  -- public-contract rule the audit signal codes are held to. In particular an
+  -- unknown code is 'invalid', not 'unknown'.
+  if p_invitee_id is null or p_code is null then
+    return jsonb_build_object('ok', false, 'reason', 'invalid');
+  end if;
+  v_clean := upper(btrim(p_code));
+
+  select user_id into v_referrer from public.referral_codes where code = v_clean;
+  if v_referrer is null then
+    return jsonb_build_object('ok', false, 'reason', 'invalid');
+  end if;
+  if v_referrer = p_invitee_id then
+    return jsonb_build_object('ok', false, 'reason', 'self');
+  end if;
+
+  -- The unique constraint on invitee_user_id is the real guard; catching it is
+  -- what makes a double-submit idempotent rather than a 500.
+  begin
+    insert into public.referral_redemptions (code, referrer_user_id, invitee_user_id, bonus_granted)
+    values (v_clean, v_referrer, p_invitee_id, p_bonus);
+  exception when unique_violation then
+    return jsonb_build_object('ok', false, 'reason', 'already');
+  end;
+
+  -- ── THE REWARD, AS CREDITS ────────────────────────────────────────────────
+  -- Both sides, atomically with the redemption row, inside the same
+  -- transaction — so a reward can never exist without its redemption, nor a
+  -- redemption without its reward.
+  --
+  -- ⚠️ NO EXPIRY. A referral reward was EARNED, not allowanced; expiring it on
+  -- the monthly clock would delete something somebody did work for. That is
+  -- why credit_grant takes the expiry as a parameter rather than assuming the
+  -- rollover one.
+  --
+  -- The period keys make each side idempotent independently: a referrer who
+  -- invites twenty people gets twenty distinct grants, and the same invitee
+  -- can never be rewarded twice.
+  perform public.credit_grant(
+    p_invitee_id, p_bonus, 'referral-in:' || v_clean, null,
+    jsonb_build_object('kind', 'referral', 'side', 'invitee', 'code', v_clean)
+  );
+  perform public.credit_grant(
+    v_referrer, p_bonus, 'referral-out:' || p_invitee_id::text, null,
+    jsonb_build_object('kind', 'referral', 'side', 'referrer', 'code', v_clean)
+  );
+
+  -- 🔴 THE VERSION BUMP IS KEPT, AND DROPPING IT WOULD HAVE BEEN A REAL
+  -- REGRESSION. entitlements.version is what busts the client's 60s
+  -- entitlement cache; without it the invitee is told they have just earned
+  -- 25 credits while the app carries on serving the pre-reward state for up
+  -- to a minute. The row no longer carries the reward — the ledger does — but
+  -- it is still the cache generation, and that job did not move.
+  insert into public.entitlements (user_id) values (p_invitee_id)
+  on conflict (user_id) do update
+    set version = public.entitlements.version + 1, updated_at = now();
+
+  insert into public.entitlements (user_id) values (v_referrer)
+  on conflict (user_id) do update
+    set version = public.entitlements.version + 1, updated_at = now();
+
+  return jsonb_build_object('ok', true, 'bonus', p_bonus, 'referrer', v_referrer, 'unit', 'credits');
+end $$;
+
+-- 0061's rule: revoking from anon alone is a no-op because PUBLIC holds the
+-- default grant. `create or replace` preserves the existing ACL, but restating
+-- it costs nothing and survives a restored dump that carries no defaults.
+revoke all on function public.redeem_referral_code(uuid, text, integer) from public, anon, authenticated;
+grant execute on function public.redeem_referral_code(uuid, text, integer) to service_role;
+
+
+-- ============================================================
+-- 0080_plan_snapshot.sql
+-- ============================================================
+-- 0080_plan_snapshot.sql — what a subscriber bought, held until their period ends.
+--
+-- WHY
+-- `src/lib/pricingConfig.js` is a LIVE price list: change a number and every
+-- account sees it on the next page load. That is correct for a list and wrong
+-- for a subscription. The 2026-09-23 repricing cut Developer's batch and bulk
+-- limits from 500 to 250; with no snapshot, a Developer subscriber three weeks
+-- into a month they had already paid for would have found their list size
+-- halved, with no notice. There were no paid accounts that day — which is
+-- precisely why it was the right day to add this rather than the wrong one.
+--
+-- THE RULE, enforced in src/lib/planSnapshot.js (pure, shared client+server):
+-- while the paid period is still running nothing gets worse, and improvements
+-- still reach you. The PRICE is the one charged; each LIMIT is the better of
+-- what was bought and what the plan now offers. On renewal the snapshot is
+-- rewritten from the live table, and that is where a repricing takes effect.
+--
+-- ADDITIVE AND NULLABLE ON PURPOSE. Every existing row keeps a null snapshot
+-- and therefore tracks the live table exactly as it does today, so this
+-- migration changes no behaviour on the day it is applied. Behaviour starts
+-- when `activateFromInvoice` begins writing snapshots on the next purchase.
+--
+-- ⚠️ NOT A REPLACEMENT FOR `invoice_drafts.price_snapshot` (0016). That one is
+-- the price at the moment of CHARGE and is what the invoice is built from — it
+-- is accounting, and it is immutable. This one is the plan currently in force
+-- and is rewritten on every renewal. Two different questions; keep both.
+
+alter table public.entitlements
+  add column if not exists plan_snapshot jsonb,
+  add column if not exists snapshot_at   timestamptz;
+
+comment on column public.entitlements.plan_snapshot is
+  'Plan as purchased: {id, name, price_usd, price_usd_annual, price_inr, price_inr_annual, limits}. '
+  'Read by src/lib/planSnapshot.js while period_end is in the future. Null = track the live table.';
+comment on column public.entitlements.snapshot_at is
+  'When plan_snapshot was written. Diagnostic only — the protection window is period_end, not this.';
+
+-- A partial index over the rows a grandfathering sweep would ever look at.
+-- Rows with no snapshot are the overwhelming majority today and are excluded.
+create index if not exists entitlements_snapshot_idx
+  on public.entitlements (period_end)
+  where plan_snapshot is not null;
+
+-- ⚠️ NO RLS CHANGE. `entitlements` already has select-own for authenticated and
+-- no insert/update/delete policy for anyone, so the snapshot is readable by its
+-- owner and writable only through the service key. A user able to write their
+-- own plan_snapshot could grant themselves any limit they liked — which is the
+-- same reason the table has had no write policy since 0012.
+
+
+-- ============================================================
+-- 0081_prospect_engagement_engine.sql
+-- ============================================================
+-- 0081_prospect_engagement_engine.sql
 --
 -- Prospect Engagement Engine: Modular, n8n-orchestrated multi-channel outreach engine.
 -- Adds 5 tables:
@@ -10454,3 +11077,6 @@ begin
     end if;
   end loop;
 end $$;
+
+-- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
+NOTIFY pgrst, 'reload schema';

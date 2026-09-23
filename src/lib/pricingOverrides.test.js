@@ -34,7 +34,7 @@ describe("getEffectivePlanById (U-15)", () => {
   it("returns the base plan when no override is present", () => {
     const p = getEffectivePlanById("pro");
     expect(p.id).toBe("pro");
-    expect(p.price_usd).toBe(20.4);
+    expect(p.price_usd).toBe(25);
   });
 
   it("returns the override fields when set", () => {
@@ -121,10 +121,17 @@ describe("Top-up bundle overrides", () => {
     expect(getTopupOverrides()).toEqual({});
   });
 
+  // Was pinned to "extractions-bundle", which is retired (D15) — it sold pure
+  // consumption at 14x the cheapest plan's credit rate. The override
+  // mechanism is unchanged; only the bundle it was demonstrated on is gone.
   it("setTopupOverride persists and is reflected in getEffectiveBundles", () => {
-    setTopupOverride("extractions-bundle", { price_usd: 19 });
-    const bundles = getEffectiveBundles();
-    const bundle = bundles.find((b) => b.id === "extractions-bundle");
+    setTopupOverride("scheduler-addon", { price_usd: 19 });
+    const bundle = getEffectiveBundles().find((b) => b.id === "scheduler-addon");
     expect(bundle.price_usd).toBe(19);
+  });
+
+  it("an override for a retired bundle does not resurrect it", () => {
+    setTopupOverride("extractions-bundle", { price_usd: 19 });
+    expect(getEffectiveBundles().some((b) => b.id === "extractions-bundle")).toBe(false);
   });
 });

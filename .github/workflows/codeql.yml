@@ -25,6 +25,7 @@ on:
       - 'docs/**'
       - 'public/help/**'
       - '*.md'
+  workflow_dispatch:
 
 permissions:
   actions: read

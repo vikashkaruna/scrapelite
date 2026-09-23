@@ -65,7 +65,8 @@ export default function PushIntegrationMenu({
 }) {
   const navigate = useNavigate();
   const showToast = useToast();
-  const { checkCanIntegrations } = useBilling();
+  const billing = (() => { try { return useBilling(); } catch { return null; } })();
+  const checkCanIntegrations = billing?.checkCanIntegrations ?? (() => false);
   const canIntegrate = checkCanIntegrations();
   const [open, setOpen] = useState(false);
   const [statuses, setStatuses] = useState({}); // slug → { connected, ... }

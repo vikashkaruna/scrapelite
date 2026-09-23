@@ -18,6 +18,607 @@
 
 ---
 
+## 2026-09-23 (latest) — Repricing: one maintained table, INR set not converted, and a snapshot so it cannot cut a period already paid for
+
+**Branch:** `claude/credits-switch` (continues PR [#216](https://github.com/vikashkaruna/scrapelite/pull/216)).
+**Source:** the owner's pricing sheet, applied verbatim.
+
+### 1. The table is the product now
+
+Prices and limits come from a single `PLAN_TABLE` literal. The plan objects, the
+numeric line on every card, the comparison matrix and the **server's own charge
+table** are all derived from it, so a repricing is one edit.
+
+🔴 **INR IS A PRICE, NOT A CONVERSION.** `resolvePlanPrice` used to fall back to
+`convertPrice(plan.price_usd, rates, "INR")`. A converted price moves when the
+rate moves, so the figure on the card and the figure charged could differ
+between page load and checkout — and the server never converted anything, so the
+two sides were computing a price by different rules. Every plan carries a set
+INR price and the conversion path is gone.
+
+🔴 **THE SERVER'S TABLE WAS A HAND-WRITTEN MIRROR** carrying the comment *"MUST
+MIRROR src/lib/pricingConfig.js"* — a request, not a mechanism, and the one
+table where a divergence charges a customer something other than the number they
+were shown. Derived now.
+
+### 2. A bulk list is not a batch, and it was gated as one
+
+Both read `batch_max_urls`, which is fine while every plan sets them equal and
+wrong for Free — now batch 5 / bulk 0. So Free's 5-URL batch silently granted it
+a 5-row account list: a product that fetches, enriches **and** ICP-scores each
+row at 3 credits apiece. ⚠️ The new `bulk_list_max` falls back to
+`batch_max_urls`, because an operator override written before the split would
+otherwise be stripped of bulk enrichment entirely.
+
+### 3. `0080` — the grandfathering the repricing made necessary
+
+Developer went 500 → 250 batch and bulk. Without a snapshot a subscriber three
+weeks into a paid month would have found their list size halved, with no notice.
+There were no paid accounts that day, which is exactly why it was the right day.
+
+🔴 **THE RULE: while the paid period runs, nothing gets worse and improvements
+still reach you.** Price is the one charged; each limit is the better of bought
+and current. ⚠️ **A merge, not a substitution** — replacing it with
+`{...snap.limits}` fails two tests: a limit key added after the snapshot would
+read `undefined` for every grandfathered account (and a gate reading undefined
+refuses or allows everything, depending on the key), and a genuine increase
+would be withheld from the people still on the old plan.
+
+### 4. 🔴 An admin repricing Go never reached the server
+
+`SERVER_PLAN_IDS` was the hand-written list `["select","pro","business","agency"]`,
+so the "Generate SQL" panel produced config that never mentioned **go** or
+**developer**. The pricing page would show the new price immediately while the
+server went on charging the static one. **A literal array is how that happened**,
+and a test restating the array would not have caught it — the test asserts an
+editor exists for everything that has a price instead.
+
+Credit packs had no override layer and no editor at all. They do now, with
+`credits` editable beside the price, because that field is what `verify-payment`
+writes to the ledger.
+
+### 5. Two things only the browser found
+
+- **The matrix promised Free a bulk list the gate refuses.** Its "Bulk account
+  list" and "ICP scoring" rows still derived from `batch_max_urls`.
+- **The Batch Pack carried `hidden: true`** and so appeared on no screen, while
+  still being priced, purchasable by id and honoured by the gate — a product
+  nobody could find and everybody paid to maintain.
+
+### 6. The copy guard found a file I had already "finished"
+
+Widening it to `pricingConfig`, the FAQ page and the user guide turned up:
+`public/faq/index.html` carrying every pricing claim **twice** (visible answer
+and FAQPage JSON-LD, both stale); a **second, larger pricing table** at line 230
+of `llms-full.txt`; and a "25-extraction trial credit" still on `/use-cases`.
+
+⚠️ It now also asserts INR is **quoted**, not just set. Before this the copy said
+"INR pricing is available" and gave no rupee figures — which is what let them
+drift unnoticed. **A currency you set by hand and never print is a currency
+nobody proofreads.**
+
+### Two numbers worth a second look
+
+- **Agency's overage now equals its committed rate.** $200 / 100,000 = $0.002 a
+  credit, and `AGENCY_OVERAGE` is $2.00 / 1,000 — the same figure. Coherent as a
+  policy ("past fair use you keep paying the plan rate"), but the guard had to be
+  relaxed from `>` to `>=`. Below the committed rate would make overrunning
+  cheaper than the plan and is still refused.
+- **The large credit pack was ₹11,449 against a converted ₹8,722** — flagged on
+  review as the one number that did not follow the pattern, and **confirmed a
+  typo by the owner: it is ₹8,719.** At ₹11,449 the *biggest* pack was the
+  *dearest* per credit, so a customer buying 10,000 credits in rupees paid more
+  each than one buying 500. 🔴 **Nothing failed**: every other pack assertion is
+  per-pack, and the value ladder had only ever been checked across *plans*, and
+  only in USD. `pricingConfig.test.js` now asserts a bigger pack is cheaper per
+  credit **in both currencies**, confirmed RED against the typo.
+
+### Verified
+
+pre-push gate **9/9 green** · vitest **453 files / 7,284 passed** · db-verify
+**80 migrations / 896 assertions** · referral 19 · workflows 56 · readiness
+**5 pass / 2 warn / 0 fail** (gallery coverage, which can never clear from
+source). All 11 screenshots regenerated. Browser-verified at both currencies:
+every plan, pack and add-on figure matches the sheet.
+
+### Outstanding
+
+- 🔴 **Apply `0078`–`0080`** — [DB-MIGRATION-RUNBOOK.md §4g](../DB-MIGRATION-RUNBOOK.md).
+  Until `0080` lands, a repricing applies to everyone immediately.
+- 🔴 **Step C** — calibrate §1 against real provider invoices before the first
+  paid signup.
+
+---
+
+## 2026-09-23 (later) — Credits, steps E+F+G: the pre-flight was refusing runs the server allows
+
+**Branch:** `claude/credits-switch`, cut from `staging` @ `581ffb35` after the
+owner merged PR [#214](https://github.com/vikashkaruna/scrapelite/pull/214).
+
+**Owner decisions taken this session, both explicit:**
+1. **Ship the measured weights and recalibrate later.** §6 of the proposal puts
+   step C (calibration against real provider invoices) *before* the switch, and
+   its first "what NOT to do" is *"❌ Ship §1 un-calibrated."* Overridden on the
+   grounds that no customer pays today. 🔴 **That is a decision with an expiry:
+   re-run step C before the first paid signup.**
+2. **Ship all of it to staging, public copy included.** Staging is 401-gated
+   behind Netlify Edge Access, so the copy is not publicly readable yet.
+
+### 1. The one defect that was actively harmful
+
+🔴 **`creditEstimator` LIED IN THE BLOCKING DIRECTION.** It read
+`plan.limits.extractions` (free = 10) minus `usage.extractions` — a quota
+nothing enforces after the switch — so a free account holding a full 100-credit
+pool was told *"Blocked — 10 remaining, 12 needed"* for a batch the gate runs
+for 12 credits.
+
+**A pre-flight that refuses a run the gate would allow is worse than no
+pre-flight**, because the user never learns it was wrong: they never press the
+button, so the server never gets to disagree. The other four surfaces in this
+sweep only mislabelled a number.
+
+⚠️ **Its own tests were green throughout**, because they checked the estimator
+against itself. The new suite runs the real `can()` beside it over the same
+inputs and asserts the two reach the same verdict — **13 of its assertions were
+confirmed RED against the old module**, including the exact 12-URL case.
+
+### 2. A second signup grant that only the browser knew about
+
+🔴 **`trialCredit: 25`** had the client add 25 to `bonusExtractions` in
+localStorage on `SIGNED_IN`, while the server grants `FREE_GRANT` once under
+`grant_period = 'signup'` (idempotent by a partial unique index rather than by
+a flag in a store the user can edit). Every surface reading the local
+subscription showed a pool **25 larger than the ledger would spend from**.
+
+**That is the referral-loop defect exactly** — this repo's own history records a
+banner saying *"you have 25 bonus extractions"* on the same screen that refused
+to extract. Retired. ⚠️ **`applyTrialCredit` stays as a no-op** rather than
+being deleted: two live call sites invoke it, one of them inside an auth event
+handler, and a no-op is the smaller change.
+
+### 3. `CREDIT_PACKS` was imported by `/pricing` and rendered nowhere
+
+So the packs that replaced the removed Extractions Bundle were **purchasable by
+the server and reachable from no screen**. `verify-payment` already grants them
+keyed `pack:<paymentId>` with no expiry; only the page was missing.
+
+⚠️ **`purchaseBatchPack` does NOT write a pack's credits locally.** It refreshes
+the cached balance instead, and demo mode returns `creditsPending` rather than
+faking a number nothing backs — which would have re-created §2 the same day it
+was removed.
+
+### 4. `creditPressure()` — one answer to "is this account low?"
+
+Three surfaces (`UsageUpsellBanner`, `ReferralBanner`, Account's meter) each
+answered it separately against the retired quota, so on a free account they
+fired at the 8th extraction while the pool still held 92 credits, and kept
+firing after a pack refilled it.
+
+⚠️ **The load-bearing field is `known`, not the threshold.** A guest, an account
+never granted credits, and an unreadable read must all render **nothing** —
+`low` and `empty` are both `false` there, so a surface branching on `low` alone
+still cannot invent an outage. ⚠️ **`remainingPct` is not clamped at 1**:
+rollover means two grants can be live, and a full bar for an account holding
+twice the allowance would be its own small lie.
+
+### 5. The public pricing copy had rotted for the third time
+
+`llms.txt`, `llms-full.txt` and `pageSeo.js`'s JSON-LD all quoted extraction
+allowances. ⚠️ **The readiness audit's "pricing coherence" check compares plan
+NAMES, not numbers, and passed through every incident** — including the one this
+file already records, where the FAQ JSON-LD advertised eight wrong figures.
+
+New `publicPricingCopy.test.js` checks **numbers** against `PLANS`, in both
+directions: each plan's real allowance must appear, and each retired extraction
+claim must not. **17 assertions confirmed RED** against the pre-fix copy.
+
+### 6. The copy guard had the blind spot it was written to prevent
+
+⚠️ **The first version of `publicPricingCopy.test.js` scanned three files and
+passed — while the Free plan card rendered *"25-extraction trial credit"* live
+on the deploy preview.** That string lives in the plan's own `features` array in
+`pricingConfig.js`, which the test did not scan. So did the hero line *"upgrade
+when you need more extractions"*.
+
+**A guard that enumerates its surfaces has the same blind spot as the
+hand-written lists this repo has been bitten by twice** (`STORE_EXPORTS`,
+`EVENT_TO_SOURCE`). `pricingConfig.js` now heads the list, and the retired-claim
+sweep also walks every plan's `features` directly. **Found by opening the deploy
+preview in a browser, not by any test.**
+
+### Verified
+
+vitest **451 files / 7,231 passed / 0 failed** · db-verify **79 migrations /
+888 assertions / 0 failed** · referral **19** · workflows **56** · build clean ·
+prerender **32 rendered / 128 refs**. **32 guards confirmed RED first.**
+
+### Outstanding — operator actions I cannot perform
+
+- 🔴 **Apply `0074`–`0079`.** No Supabase credential is reachable from here:
+  `supabase projects list` hangs on an interactive login prompt, and there is no
+  stored connection string. **Nothing in the credit system enforces anything
+  until `0078` is applied**, and `0079` must follow it.
+- 🔴 **Step C — calibrate §1 against a month of real provider invoices**,
+  before the first paid signup.
+
+---
+
+## 2026-09-23 — Unified credits (steps A+B+D), and entity approval was reporting a raw Postgres dump
+
+**Branches:** `claude/entity-approval-diagnosis` → PR [#212](https://github.com/vikashkaruna/scrapelite/pull/212) **MERGED** · `claude/credits-unification` → PR [#214](https://github.com/vikashkaruna/scrapelite/pull/214).
+
+### 1. Entity approval — two defects, and the fix does not make it work
+
+Reported live mid-session: Approve returned a raw PostgREST envelope, `details`
+blob and all.
+
+🔴 **The verdict parser read a shape production never produces.** `rest()`
+returns the failed body as **text**; the parser read `patchRes.error.code` and
+`.error.message` off that string, so `code` was `undefined`, `message` was
+`""`, every branch missed, and the route fell through to its generic 500 with
+the raw envelope as the message. **The test covering it passed an OBJECT and
+was green the whole time.**
+
+🔴 **`0075` is not applied to staging, and the refusal proves it rather than
+suggesting it.** `0075`'s constraint permits a self-approval whose
+`review_note` carries `[Single-founder approval]`; the refused row carried it;
+`0056`'s original has no such clause. A database that refuses that row is
+running `0056`'s. `approve_entity()` is missing for the same reason, which is
+why the RPC fell through to the PATCH at all.
+
+New verdicts `approval_fn_missing` / `stale_constraint` — both **our
+deployment, not the user's decision**. Client gets one operator-fault sentence
+with no internals (the `aiFailureCopy` split); the server log names the
+migration. db-verify **+3** assertions exercising the CONSTRAINT directly
+rather than through the RPC — the layer the fallback PATCH meets, and one the
+RPC assertions structurally could not cover, because when `0075` is missing the
+function is missing too.
+
+⚠️ **OPERATOR ACTION OUTSTANDING: apply `0074`–`0077`** —
+[DB-MIGRATION-RUNBOOK.md §4f](../DB-MIGRATION-RUNBOOK.md). All four are
+idempotent. Verify by reading `pg_constraint`, not the deploy status.
+
+### 2. Credits — steps A, B and D
+
+[CREDITS-UNIFICATION-PROPOSAL.md §8](../CREDITS-UNIFICATION-PROPOSAL.md).
+**Nobody is charged:** no allowance granted, `enforced` false everywhere.
+
+**Three places implementation proved the proposal wrong:**
+
+1. 🔴 **Five choke points, not four** — and §1 already knew. Three of an
+   audit's four fetches never touch `runScrapeChain`. Under four, an audit
+   bills 16 against the 19 the same document prices it at. `fetchPublicUrl` is
+   the wrong boundary (nine callers, two must stay free); `fetchLayer` meters
+   its own three.
+2. 🔴 **A balance of zero is not the same as no balance.** These gates ship
+   before allowances are granted, so on `0078` apply-day every account reads 0
+   — a gate treating that as "refuse" would have paused every schedule,
+   monitor and bulk job at once. `credit_status().enforced` separates them and
+   **arms itself** on the first grant.
+3. 🔴 **`/api/ai` must CHECK the guest bucket, not consume it.** The obvious
+   reading of L0b would have taken a guest from ten extractions to three or
+   four while `GuestTrialBanner` went on advertising ten.
+
+**Also found:** watchlist monitoring under-charged (its hand-rolled row
+excluded the discovery crawl, so the first run on every target read an unbilled
+page) **and** discarded its metadata (`chargeLedger()` passes `p_meta: {}`
+unconditionally). Both fixed by moving it onto the choke point.
+
+**Not done, deliberately:** C, E, F, G. §6 orders calibration before the
+switch, and §1 counts provider *calls*, not tokens — never yet against an
+invoice. **Step C is an operator/finance pass**: a month of invoices ÷ the
+calls now in the ledger, which is data that did not exist before this session.
+
+**Verified:** vitest **447 files / 7,121 passed** · db-verify **78 migrations /
+884 assertions** (+35) · referral 17 · workflows 56 · pre-push gate green
+including e2e smoke **159/159**. Guards confirmed RED first: the FIFO balance
+against a naive implementation (**70** vs 100, **−30** vs 0), the self-arming
+rule, and the approval parser against the exact live error body.
+
+🔴 **`0078` has only met WASM Postgres.** ⚠️ Next migration: `0079`.
+
+---
+
+## 2026-09-22 — Discoverability revenue loop completed; PostHog put behind consent; credit-metering audit
+
+> **Branch:** `claude/discoverability-loop-completion` → **PR #210** to `staging`
+> **`main`:** untouched · **`staging`:** untouched until #210 merges
+
+### What this session did
+
+Picked up ~1,100 lines of **uncommitted** work sitting in a separate worktree
+(`.gemini/antigravity/worktrees/Extracta/free_staging_worktree`) which had
+**`staging` itself checked out** — so the work was one `git commit` away from
+landing on a shared branch with no review. Transferred it by patch into an
+isolated branch, finished it, and fixed what was red.
+
+**Shipped (the 2026-09-22 four-item plan):** tab + lifecycle reorder into the
+audit → revenue loop (Audit → Truth `2 Implement` → Trust `3 Verify` →
+Entity Graph + Local `4 Build` → Scores `5 Score` → SXO `6 Validate` →
+↻ Re-audit); "All rollups" axis plus a prerequisite diagnostic; entity-graph
+approval errors, inline edit and forced re-render; Subject Scores button width
+and entity-aware empty state. The loop is now **named on screen** and closed by
+a Re-audit backlink, wrapping responsively to 480px.
+
+**Root cause of "Could not approve the entity" (`0077`):** `auditStore`
+swallowed the `self_approval` verdict and fell through to a raw PATCH, so the
+constraint surfaced as a bare `23514` or silently succeeded against the user's
+intent. Verdicts now propagate unchanged.
+
+### 🔴 Defects found while finishing it
+
+- A contract test pinned the literal phrase **"second person"** and went red
+  when the message was rewritten to be *more* actionable. Now asserts the
+  remedy, not the wording.
+- `db-verify`'s "approval is idempotent" expected `ok`; `0077` returns
+  `already_approved`. Still idempotent — the store maps it to `ok:true` and the
+  route answers **200**. ⚠️ **`0077`'s own header claimed 409**, which the code
+  never did and which would have re-created the confusing refusal the migration
+  exists to remove. Header corrected; a second assertion added pinning that a
+  re-approval does not overwrite the original review record.
+- The Subject Scores empty state used a hard `<a href>`, which reloads the
+  document and discards the entitlement context and any in-flight audit. Now a
+  router `<Link>`. ⚠️ The guard asserts the **click is intercepted**, because a
+  DOM-shape assertion passes for both an anchor and a `<Link>`.
+- `run-all.sql` had been hand-edited and was stale. Regenerated (77 migrations).
+- `Discoverability.integration.test.jsx` still counted an **8**-step ribbon.
+  ⚠️ **`test:unit` excludes `*.integration.test.*`**, so it stayed green through
+  several full runs and was caught only by the pre-push gate.
+
+### 🔴 PostHog was tracking people who declined
+
+It arrived as a raw `<head>` snippet. PostHog's stub initialises on execution —
+it writes a `distinct_id` and captures immediately — so it tracked **every
+visitor before the banner rendered, including those who then clicked Decline**,
+contradicting the consent banner and the DPDP section of `/privacy`.
+
+Moved into `public/analytics.js` (one consent gate, not two that drift), gated
+on the same stored choice as gtag.js, reusing the same `/admin` and localhost
+skips, and opting out + resetting + clearing `ph_*` cookies on withdrawal.
+
+⚠️ **It would also have captured nothing at all:** PostHog loads `array.js` from
+`<region>-assets.i.posthog.com`, which was **not in `netlify.toml`'s
+`script-src`**. CSP would have blocked it on datiq.app, with only a console
+violation to show for it. Allow-listed and pinned by test.
+
+### ✅ `main` and `staging` are content-identical — nothing to sync
+
+Checked rather than assumed: `origin/main^{tree}` and `origin/staging^{tree}`
+are the **same hash** (`5e352eee…`), and
+`git rev-list --count --no-merges origin/staging..origin/main` is **0**. All 13
+commits `main` leads by are GitHub merge commits from past staging→main PRs.
+Merging `main` into `staging` would create a merge commit touching zero files.
+**This is the third time this repo has recorded that finding** — treat "main is
+N ahead" as a question about merge commits, not content.
+
+### 📋 Credit-metering audit (analysis only — nothing implemented)
+
+Full findings and a phased proposal:
+[docs/CREDITS-UNIFICATION-PROPOSAL.md](../CREDITS-UNIFICATION-PROPOSAL.md).
+
+Three non-fungible meters run at once (`usage.extractions`, `audits` row count,
+`credit_ledger`) plus two cardinality proxies. 🔴 **`chargeLedger()` has exactly
+three production callers** — watchlist-monitor, watchlists, templates. Extraction,
+enrichment, audits and every AI call reach none of them.
+
+Leaks found, with evidence:
+- **L1** `discoverability-monitor.js:210` calls `createAudit()` with **no quota
+  check**, yet those rows **do** count — so a cron both exceeds the plan and
+  silently starves the customer's own interactive quota.
+- **L2** `prompt-monitor.js` (`@daily`) makes real answer-engine calls via
+  `sampleCitations()` and writes to **no meter**. Capped by monitor *count*,
+  not spend.
+- **L3** `bulk.enrich` caps **list size**, not monthly volume; `bulk-runner.js`
+  has **zero** metering hooks. Largest unbounded surface.
+- **L5** P2 modules are `ok(Infinity)` — correct *today* (no provider calls,
+  verified) but unenforced, so the first AI call added there is free by default.
+
+⚠️ **Agency is `extractions: Infinity` + `scheduled_monitoring: Infinity`** —
+the biggest exposure in the pricing table, and a commercial decision rather than
+a technical one.
+
+### Verified
+
+All gates green via the pre-push hook on the pushed commit (300s):
+readiness 5/2/0 · unit **243 files / 4,021** · contract **142 / 2,552** ·
+integration **51 / 445** · system 8 · db-verify **77 migrations / 849
+assertions** + referral 17 + workflows 56 · build clean · prerender 32 pages /
+128 refs · security clean · **e2e smoke 159/159**.
+
+New behavioural guards confirmed **RED first**. ⚠️ Three earlier e2e runs each
+failed a *different* single test, all passing in isolation — machine contention,
+not regressions; the final two full runs were 159/159. Nothing was bypassed.
+
+### Open
+
+- 🔴 **Migration `0077` has only met WASM Postgres.** Apply to dev/stage before
+  relying on the new approval messages.
+- `docs/YouTubeChannelContent/` (**224 MB**) and its handoff were **excluded** —
+  unrelated to this work, and the WIP's session docs indexed a file that would
+  have been a broken link. Still intact in the originating worktree.
+- The credits proposal is awaiting a decision; **Phase 0 (stop the leaks) is
+  independently valuable** and needs no pricing change.
+
+---
+
+## 2026-09-20 IST — Discoverability audit improvements & Industry landing pages: Mobile parity, Organization schema, sameAs profile parity, and 4 industry routes
+
+> **Branch:** `staging` · **Delivery:** Merged to `staging` (via PR #206) · **Target:** `staging` deploy / `main` promotion
+> **Verification:** 100% test suites green (Unit: 4002 passed across 243 files, Contract: 2552 passed across 142 files, Database: 847 schema + 17 referral + 56 workflows passed, E2E Smoke: 159 passed) · Build clean (32 prerendered pages synced, 64 sitemap URLs) · GitHub Actions Staging Gate & Netlify deploy previews green
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-20 |
+| **Branch** | `staging` |
+| **PR** | [#206 (Merged)](https://github.com/vikashkaruna/scrapelite/pull/206) |
+| **Target** | `staging` / `https://staging.datiq.app` → `main` / `https://datiq.app` |
+| **Active Focus** | Resolved all 8 Discoverability audit findings: mobile parity preservation in fetchLayer, official sameAs profile parity, Organization schema injection across help center & FAQ, and 4 dedicated industry routes. |
+
+### 2. What was accomplished
+
+- **Head Signals Preservation (`fetchLayer.js`) — TA-12, TA-06, TA-15, EA-01, Mobile Parity:**
+  - Headless scraping engines (Firecrawl / Spider) often strip `<head>` or wrap raw HTML in minimal `<html><body>` shells, losing `<meta name="viewport">`, `<link rel="canonical">`, and `<script type="application/ld+json">`.
+  - Added `preserveHeadSignals(primary, raw)` in `fetchLayer.js` to splice essential head signals from the original raw response into `primaryHtml` if missing in `renderedHtml`.
+  - Fixes mobile parity calculation (`signals.mobile_parity = 100`), eliminating the `MOBILE_PARITY_MISSING` penalty and resolving TA-12, TA-06, TA-15, and EA-01 downstream.
+- **Organization Schema & Profile Parity (`Footer.jsx`, `index.html`) — EA-01, EA-03:**
+  - Removed generic placeholder links in `Footer.jsx`, updating them to official profiles: LinkedIn (`https://www.linkedin.com/company/datiq`) and Twitter / X (`https://twitter.com/DatIQApp`).
+  - Removed `https://github.com/vikashkaruna/scrapelite` from `sameAs` array in `index.html` and prerendered pages.
+  - Replaced `https://twitter.com/datiq_app` with canonical `https://twitter.com/DatIQApp` and updated `twitter:site` to `@DatIQApp`.
+- **Structured Data in Static & Help Center Pages — TA-15, EA-01:**
+  - Updated `shell()` generator in `docs/build-help.mjs` to emit JSON-LD `@graph` (`Organization`, `TechArticle`, `BreadcrumbList`) and OpenGraph / Twitter tags across all 25 static help pages in `public/help/`.
+  - Injected complete `Organization` JSON-LD schema into `public/faq/index.html`.
+- **Industry Landing Pages — AC-11:**
+  - Added 4 industry programmatic routes to `src/lib/programmaticRoutes.js`: `/for-finance`, `/for-healthcare`, `/for-retail`, `/for-legal`.
+  - Updated `src/pages/ProgrammaticRoute.jsx`, `src/App.jsx`, `src/lib/pageSeo.js`, and `scripts/site-routes.mjs`.
+  - Prerendered static pages to `public/for-*/index.html` and updated `public/sitemap.xml` (now 64 total URLs).
+- **Answer Engine Citations & llms.txt — EA-08:**
+  - Updated `public/llms.txt` and `public/llms-full.txt` with the 4 industry pages and official Twitter profile.
+- **Tooling & Pre-push Fixes:**
+  - Fixed `columnsFrom` in `scripts/verify-workflows-e2e.mjs` to strip embedded PostgREST relation syntax before comma-splitting.
+  - Fixed `scripts/pre-push.sh` terminal color `tput` error handling and Node 24 nvm selection.
+
+---
+
+## 2026-09-20 IST — Admin production fixes: Gallery takedown & complete deletion, AI provider test timeouts, Automation event cleanup, and Monitoring job runners
+
+> **Branch:** `staging` · **Delivery:** Merged to `staging` (via PR #199) · **Target:** `main` promotion
+> **Verification:** Vitest test suites green (141/141 contract test files, 2,540/2,540 passed; 240/240 unit test files, 3,979/3,979 passed) · `npm run build` green (vite bundle 1.28s + 28 prerender pages synced) · GitHub Actions Staging Gate & Netlify staging deployments green
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-20 |
+| **Branch** | `staging` |
+| **Commit HEAD** | `65591fa7` |
+| **Target** | `staging` / `https://staging.datiq.app` → `main` / `https://datiq.app` |
+| **Active Focus** | Resolved 4 critical production administrative issues observed on https://datiq.app across Gallery, AI Data Services, Automation, and Monitoring Runners. |
+
+### 2. What was accomplished
+
+- **/admin/gallery takedown & delete:**
+  - `admin-gallery.js`'s `takedown` action updated to directly set `is_public: false, curated: false` on `public_reports` without 404-failing if `reports` table lookup returns not found.
+  - Added administrative `delete` action purging reports from both `public_reports` and `reports`.
+  - Added Delete button with confirmation modal in `AdminGallery.jsx` (`ReportRow`) and wired `onDeleted` callback.
+- **/admin/ai provider test timeouts:**
+  - Added `category=performance` to `testPageSpeed` in `admin-provider-test.js`, cutting audit time from >25s down to 2–5s with a 15s timeout.
+  - Bounded `SCRAPE_TIMEOUT_MS` to 12s so Jina/Firecrawl admin probes fail fast within serverless limits.
+- **/admin/automation failed event cleanup:**
+  - Implemented `action: "delete"` with `deleteEvent(db, eventId)` in `admin-automation.js`, deleting child runs from `workflow_runs` and the parent event from `workflow_events`.
+  - Added Delete button in `AdminAutomation.jsx` (`EventDetail`) for failed, cancelled, and done events with UI list cleanup.
+- **/admin/monitoring runner execution fix:**
+  - Fixed higher-order function bug in `discoverability-monitor.js` and `prompt-monitor.js` where `export const handler = async () => withJobRun(...)` returned an uninvoked function rather than executing the job wrapper.
+  - Added `prompt-monitor` and `sxo-analytics-import-worker` to `RUNNABLE` and `JOB_PLATFORM` in `admin-monitoring.js`.
+
+### 3. Verification evidence
+
+- `npm run test:contract`: 141/141 files, 2,540/2,540 passed
+- `npm run test:unit`: 240/240 files, 3,979/3,979 passed
+- `npm run prerender`: 28 rendered, 28 written, 0 failed
+- `npm run build`: built in 1.28s
+- GitHub Actions Staging Gate on PR #199: 8/8 checks green, Netlify deploy preview verified.
+
+---
+
+## 2026-09-17 IST — Workflows orchestration engine, Templates expansion, Navigation update, Curation, Discoverability UX & E2E smoke tests
+
+> **Branch:** `staging` · **Delivery:** Merged to `staging` (via PR #193, PR #195) · **`main`:** untouched
+> **Verification:** Vitest test suites green (90/90 feature tests, 13/13 template seeds, 18/18 activation events, 17/17 TopBar integration) · `npm run build` green (vite bundle 5.15s + prerender sync) · GitHub Actions Staging Gate & Netlify staging deployments green
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-17 |
+| **Branch** | `staging` |
+| **Commit HEAD** | `7d967f80` |
+| **Target** | `staging` / `https://staging.datiq.app` |
+| **Active Focus** | 10 comprehensive fixes across Workflows, Navigation, Templates, Lists, Watchlists, Signal Rules, Discoverability (Business Truth, SXO, Entity Graph, Local Directory), and CI E2E smoke testing. |
+
+### 2. What was accomplished
+
+- **/workflows flash/crash fix & end-to-end orchestration UI:**
+  - Resolved screen flash/crash on `/workflows` with `authLoading` guards and error boundary.
+  - Built multi-step orchestration graph (`src/lib/workflows/workflowGraph.js`) chaining Account Lists, Competitor Watchlists, Signal Rules, and downstream targets.
+  - Added workflow create, edit, and soft-delete modals preserving audit trails.
+- **Navigation:** Moved Templates into Explore dropdown menu immediately following Integrations (stays public).
+- **Templates & Workflows cross-linkage:** Added Workflows banner on `/templates` and `/templates?filter=workflows` filter tab.
+- **Referenced workflows across Lists, Watchlists, and Signal Rules:** Added linked workflows display, soft deletion preserving audit history, and fixed `"trash-2"` icon.
+- **Account Intelligence Lists enrichment & manual curation:**
+  - Background enrichment jobs in progress show start timestamp and estimated completion time in table.
+  - Added inline manual curation/field overrides per account row, saved to DB with "Curated" badge.
+- **Templates library expansion & dynamic credits:**
+  - Added 4 new seed templates (`recruiter_talent_sourcing`, `market_landscape_map`, `agency_client_teardown`, `continuous_account_signal`).
+  - Added dynamic credit calculation and interactive customization drawer.
+- **Business Truth records versioning:** Recreate new versions by copying an existing version as starting draft, and soft-delete past versions with audit trails.
+- **SXO & Entity Graph:**
+  - Compact Analytics Summary Card in Overview ("all") and segmented step switcher in Architecture ("architecture") tab.
+  - Direct DB update fallback in `auditStore.js` for single-founder/solo-operator approvals when RPC fails; updated Subject Scores label.
+- **Local Directory:** Refactored cramped 2-column layout into readable, searchable cards with collapsible finding details and filter tabs.
+- **CI E2E Smoke Test Fix:** Updated `e2e/smoke/home.spec.js` asserting TopBar nav order (`Extract / Discover / Dashboard`) and verifying Templates is present in the Explore dropdown menu.
+
+### 3. Verification evidence
+
+- `npm run test -- --run src/pages/Workflows.test.jsx`: 3/3 passed
+- `npm run test -- --run src/components/TopBar.integration.test.jsx`: 17/17 passed
+- `npm run test -- --run src/pages/Watchlists.test.jsx`: 3/3 passed
+- `npm run test -- --run src/components/discoverability/BusinessTruthPanel.test.jsx`: 14/14 passed
+- `npm run test -- --run src/components/discoverability/SxoDashboard.test.jsx`: 14/14 passed
+- `npm run test -- --run src/components/discoverability/LocalDirectoryPanel.test.jsx`: 15/15 passed
+- `npm run test -- --run src/components/discoverability/SubjectScoresPanel.test.jsx`: 9/9 passed
+- `npm run test -- --run netlify/__tests__/audit/auditStore.test.js`: 15/15 passed
+- `npm run test -- --run src/pages/Templates.customization.test.jsx`: 4/4 passed
+- `npm run test -- --run src/pages/Templates.handoff.test.jsx`: 6/6 passed
+- `npm run test -- --run src/lib/templates/seedTemplates.test.js`: 13/13 passed
+- `npm run test -- --run src/lib/pql/activationEvents.test.js`: 18/18 passed
+- `npm run build`: built in 5.15s, 0 errors, 28 prerendered pages synced.
+- **GitHub Actions & Deployments**:
+  - Pull Request #193 merged into `staging` (`37f79178`).
+  - Pull Request #195 merged into `staging` (`7d967f80`).
+  - Netlify deployment verified live on `https://staging.datiq.app` / `https://staging--datiqapp.netlify.app`.
+
+---
+
+## 2026-09-16 IST — Fix 502 Bad Gateway on scheduled cron workers & Admin Monitoring runner registration; Manual approval CI RCA
+
+> **Branch:** `staging` · **Delivery:** Commit to `staging` · **`main`:** untouched
+> **Verification:** `npm run test:contract` (139 files, 2,532 passed) · `npm run build` (vite bundle + prerender asset sync green) · targeted Vitest suites (123 passed) · Node.js handler execution assertions
+
+### 1. Quick orientation
+
+| Property | Value |
+|---|---|
+| **Date** | 2026-09-16 |
+| **Branch** | `staging` |
+| **Commit focus** | `withJobRun` response normalization, `detailFromResult` metrics extraction, `RUNNABLE` & `JOB_PLATFORM` parity |
+
+### 2. What was accomplished
+
+- **Root-cause and fix 502 Bad Gateway on scheduled crons:**
+  - Netlify Function handlers v1 (synchronous serverless) require `{ statusCode: number, body: string }`.
+  - Runners for `signal-retry`, `bulk-runner`, `sxo-analytics-import-worker`, and `watchlist-monitor` returned plain data objects without `statusCode`.
+  - Netlify treated responses as malformed proxy responses, returning HTTP 502 Bad Gateway and triggering 3 consecutive attempts on every 5-minute schedule.
+  - Updated `withJobRun` in `netlify/functions/lib/jobControl.js` to normalize non-prewrapped responses into `{ statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(...) }`.
+- **Fix `job_runs.detail` metric persistence:**
+  - Updated `detailFromResult` in `jobControl.js` to extract scalar fields directly from raw runner objects so `job_runs.detail` is populated with run statistics instead of `{}`.
+- **Admin monitoring runner registration:**
+  - Wired `sxo-analytics-import-worker` and `prompt-monitor` into `RUNNABLE` in `netlify/functions/admin-monitoring.js` and added their `"db"` classification in `JOB_PLATFORM` (in both `admin-monitoring.js` and `AdminMonitoring.jsx`).
+  - Added parity test in `admin-monitoring.test.js` ensuring every manual-runnable job in `AUTOMATION_JOBS` is wired into `RUNNABLE`.
+- **RCA on GitHub CI Manual Approval failure (PR #184 / Run #35088279238):**
+  - Diagnosed `HTTP 410 Issues has been disabled in this repository` from `trstringer/manual-approval@v1` because GitHub Issues is disabled in the repository settings.
+  - Diagnosed why production deployment happened anyway: Netlify continuous deployment (auto-publishing) is enabled on `main` in Netlify, bypassing the phase gate workflow. Provided step-by-step resolution instructions.
+
+### 3. Verification evidence
+
+- `npm run test:contract`: 139 files / 2,532 passed (including `jobControl.test.js`, `admin-monitoring.test.js`, `workflow-engines.test.js`, `sxo-analytics-import-worker.test.js`).
+- Targeted tests: 123 tests passing in 3.7s.
+- Node.js direct handler invocation: all 5 scheduled handlers verified returning `{ statusCode: 200, headers: ..., body: ... }`.
+- Production build: `npm run build` passed cleanly, 28 prerendered pages synchronized.
+
+---
+
 ## 2026-09-15 IST — Discoverability tabs: localStorage-first loading, 1.1–1.4 → 5 step numbering, active-audit context, entity approval fix, ignorable directory sources, two-column pillars
 
 > **Branch:** `fix/discoverability-tabs-context`, cut from `origin/staging` @ `5ad8fc3`, then merged with `staging` after PR #179 (pricing consistency) landed · **Delivery:** PR into `staging` (direct pushes are refused by the CodeQL code-scanning rule) · **`main`:** untouched

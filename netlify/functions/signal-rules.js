@@ -12,6 +12,7 @@ import { resolveRequestEntitlement, checkCapability, denyResponse } from "./lib/
 import {
   listRules,
   createRule,
+  updateRule,
   deleteRule,
   testRuleWithPayload,
 } from "./lib/ruleStore.js";
@@ -87,6 +88,14 @@ async function handlePost(event) {
     // A rejected destination URL is the caller's mistake, not a server fault.
     if (!res.ok) return json(res.status || 400, { error: res.reason });
     return json(201, res);
+  }
+
+  if (action === "update") {
+    const { ruleId, updates } = body;
+    if (!ruleId) return json(400, { error: "ruleId is required." });
+    const res = await updateRule(userId, ruleId, updates || {});
+    if (!res.ok) return json(res.status || 400, { error: res.reason });
+    return json(200, res);
   }
 
   if (action === "delete") {

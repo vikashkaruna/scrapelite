@@ -4,7 +4,7 @@
 // and workflow runs to Slack, Email, Webhooks, and HubSpot.
 
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -18,7 +18,7 @@ import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
 export default function SignalRules() {
   const showToast = useToast();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, authLoading } = useAuth();
 
   const cachedRules = readPageCache("signalRules")?.data || [];
   const [rules, setRules] = useState(cachedRules);
@@ -34,6 +34,19 @@ export default function SignalRules() {
   const [conditionOp, setConditionOp] = useState("equals");
   const [conditionVal, setConditionVal] = useState("critical");
 
+  // Edit Modal State
+  const [editingRule, setEditingRule] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editTriggerSource, setEditTriggerSource] = useState(TRIGGER_SOURCES.WATCHLIST);
+  const [editActionType, setEditActionType] = useState(ACTION_TYPES.SLACK);
+  const [editActionDest, setEditActionDest] = useState("");
+  const [editConditionField, setEditConditionField] = useState("materiality");
+  const [editConditionOp, setEditConditionOp] = useState("equals");
+  const [editConditionVal, setEditConditionVal] = useState("critical");
+
+  // Delete Modal State
+  const [deletingRule, setDeletingRule] = useState(null);
+
   // Connection state for the two actions that route through a stored
   // integration. Loaded when the modal opens, not on page mount: a user who
   // never opens the builder should not trigger two integration lookups.
@@ -44,7 +57,7 @@ export default function SignalRules() {
 
   // Load the two connection-backed integrations when the builder opens.
   useEffect(() => {
-    if (!showCreateModal) return;
+    if (!showCreateModal && !editingRule) return;
     let cancelled = false;
     setConnLoading(true);
     Promise.all([getIntegrationStatus("slack"), getIntegrationStatus("hubspot")])
@@ -52,7 +65,7 @@ export default function SignalRules() {
       .catch(() => { if (!cancelled) setConnections({ slack: null, hubspot: null }); })
       .finally(() => { if (!cancelled) setConnLoading(false); });
     return () => { cancelled = true; };
-  }, [showCreateModal]);
+  }, [showCreateModal, editingRule]);
 
   // Each action wants a different destination, so switching action must not
   // leave the previous one's value behind (a Slack channel in a webhook URL
@@ -177,18 +190,64 @@ export default function SignalRules() {
     }
   };
 
-  const handleDelete = async (id) => {
+  const openEditModal = (r) => {
+    setEditingRule(r);
+    setEditName(r.name || "");
+    setEditTriggerSource(r.trigger_source || TRIGGER_SOURCES.WATCHLIST);
+    setEditActionType(r.action_type || ACTION_TYPES.SLACK);
+    setEditActionDest(r.action_config?.channel || r.action_config?.to || r.action_config?.webhook_url || "");
+    const cond = r.conditions?.[0] || {};
+    setEditConditionField(cond.field || "materiality");
+    setEditConditionOp(cond.operator || "equals");
+    setEditConditionVal(cond.value || "critical");
+    setDestTestResult(null);
+  };
+
+  const handleUpdateRule = async (e) => {
+    e.preventDefault();
+    if (!editingRule) return;
+    const conditions = [{ field: editConditionField, operator: editConditionOp, value: editConditionVal }];
+    const actionConfig =
+      editActionType === ACTION_TYPES.SLACK
+        ? { use_connection: true, channel: editActionDest || null }
+        : editActionType === ACTION_TYPES.WEBHOOK
+        ? { webhook_url: editActionDest }
+        : editActionType === ACTION_TYPES.EMAIL
+        ? { to: editActionDest }
+        : {};
+
+    try {
+      await rulesApi.updateRule(editingRule.id, {
+        name: editName.trim(),
+        trigger_source: editTriggerSource,
+        conditions,
+        action_type: editActionType,
+        action_config: actionConfig,
+      });
+
+      showToast("Signal rule updated.");
+      setEditingRule(null);
+      loadRules(true);
+    } catch (err) {
+      showToast(err.message || "Failed to update rule");
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingRule) return;
+    const ruleId = deletingRule.id;
     try {
       setRules((prev) => {
-        const next = prev.filter((r) => r.id !== id);
+        const next = prev.filter((r) => r.id !== ruleId);
         writePageCache("signalRules", next);
         return next;
       });
-      await rulesApi.deleteRule(id);
-      showToast("Rule deleted.");
+      await rulesApi.deleteRule(ruleId);
+      showToast("Rule deleted. Audit trail preserved.");
+      setDeletingRule(null);
       loadRules(true);
     } catch (err) {
-      showToast(err.message);
+      showToast(err.message || "Failed to delete rule");
       loadRules();
     }
   };
@@ -211,6 +270,16 @@ export default function SignalRules() {
       showToast("Invalid JSON in sample payload: " + err.message);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="container" style={{ padding: "40px 20px", opacity: 0.6 }}>
+        <div style={{ height: 28, width: 200, background: "var(--surface-2)", borderRadius: 6, marginBottom: 12 }} />
+        <div style={{ height: 16, width: 340, background: "var(--surface-2)", borderRadius: 6, marginBottom: 24 }} />
+        <div style={{ height: 200, background: "var(--surface-2)", borderRadius: 8 }} />
+      </div>
+    );
+  }
 
   // These endpoints are signed-in only: they return 401 rather than another
   // tenant's rows. Render the reason, not the client SDK's thrown error.
@@ -257,25 +326,43 @@ export default function SignalRules() {
                   key={r.id}
                   style={{
                     border: "1px solid var(--border)",
-                    borderRadius: 8,
+                    borderRadius: "var(--r, 10px)",
                     padding: 16,
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 12,
                   }}
                 >
                   <div>
-                    <h4 style={{ margin: "0 0 6px 0", fontSize: "1.05rem" }}>{r.name}</h4>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.82rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <h4 style={{ margin: "0 0 4px 0", fontSize: "1.05rem" }}>{r.name}</h4>
+                      <Link to="/workflows" style={{ textDecoration: "none" }}>
+                        <span className="wrh-pill" style={{ background: "var(--surface-2)", color: "var(--accent)", border: "1px solid var(--border)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <Icon name="git-merge" size={11} /> Referenced in Workflows
+                        </span>
+                      </Link>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.82rem", flexWrap: "wrap", marginTop: 4 }}>
                       <span className="wrh-pill" style={{ background: "var(--surface-2)", color: "var(--text-2)" }}>
                         WHEN: {r.trigger_source}
                       </span>
                       <span className="wrh-pill" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
-                        THEN: {r.action_type.toUpperCase()}
+                        THEN: {r.action_type?.toUpperCase()}
                       </span>
+                      {r.action_config?.channel && (
+                        <span style={{ fontSize: "12px", color: "var(--text-3)" }}>Channel: {r.action_config.channel}</span>
+                      )}
+                      {r.action_config?.to && (
+                        <span style={{ fontSize: "12px", color: "var(--text-3)" }}>To: {r.action_config.to}</span>
+                      )}
+                      {r.action_config?.webhook_url && (
+                        <span style={{ fontSize: "12px", color: "var(--text-3)" }}>URL: {r.action_config.webhook_url}</span>
+                      )}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <Button
                       variant="secondary"
                       size="sm"
@@ -286,7 +373,21 @@ export default function SignalRules() {
                     >
                       Test
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => handleDelete(r.id)}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openEditModal(r)}
+                      title="Edit rule"
+                    >
+                      <Icon name="edit" size={13} /> Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDeletingRule(r)}
+                      title="Delete rule"
+                      style={{ color: "var(--danger, #dc2626)" }}
+                    >
                       <Icon name="trash-2" size={14} />
                     </Button>
                   </div>
@@ -469,6 +570,207 @@ export default function SignalRules() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Rule Modal */}
+      {editingRule && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            padding: 16,
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: "100%",
+              maxWidth: 540,
+              padding: 24,
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)",
+              background: "var(--surface)",
+              borderRadius: "var(--r, 14px)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ margin: 0, fontSize: "1.2rem", display: "flex", alignItems: "center", gap: 8 }}>
+                <Icon name="edit" size={18} /> Edit Signal Rule
+              </h3>
+              <Button variant="ghost" size="sm" onClick={() => setEditingRule(null)}>
+                <Icon name="x" size={16} />
+              </Button>
+            </div>
+
+            <form onSubmit={handleUpdateRule}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, margin: "18px 0" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                    Rule Name
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                    WHEN (Trigger Source)
+                  </label>
+                  <select
+                    value={editTriggerSource}
+                    onChange={(e) => setEditTriggerSource(e.target.value)}
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+                  >
+                    <option value={TRIGGER_SOURCES.WATCHLIST}>Competitor Watchlist Change</option>
+                    <option value={TRIGGER_SOURCES.BULK_ENRICHMENT}>Bulk Account ICP Qualified</option>
+                    <option value={TRIGGER_SOURCES.WORKFLOW_RUN}>Workflow Template Run Completed</option>
+                  </select>
+                </div>
+
+                <div style={{ padding: 12, background: "var(--surface-2)", borderRadius: 6 }}>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 8 }}>
+                    IF (Condition)
+                  </label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="field (e.g. materiality)"
+                      value={editConditionField}
+                      onChange={(e) => setEditConditionField(e.target.value)}
+                    />
+                    <select
+                      value={editConditionOp}
+                      onChange={(e) => setEditConditionOp(e.target.value)}
+                    >
+                      <option value="equals">equals</option>
+                      <option value="not_equals">not equals</option>
+                      <option value="gte">&gt;=</option>
+                      <option value="lte">&lt;=</option>
+                      <option value="contains">contains</option>
+                      <option value="not_empty">not empty</option>
+                    </select>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="value (e.g. critical)"
+                      value={editConditionVal}
+                      onChange={(e) => setEditConditionVal(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                    THEN (Action)
+                  </label>
+                  <select
+                    value={editActionType}
+                    onChange={(e) => setEditActionType(e.target.value)}
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+                  >
+                    <option value={ACTION_TYPES.SLACK}>Send Slack Notification</option>
+                    <option value={ACTION_TYPES.EMAIL}>Send Email Alert</option>
+                    <option value={ACTION_TYPES.WEBHOOK}>POST to Webhook</option>
+                    <option value={ACTION_TYPES.HUBSPOT}>Sync to HubSpot</option>
+                  </select>
+                </div>
+
+                <DestinationField
+                  actionType={editActionType}
+                  actionDest={editActionDest}
+                  setActionDest={setEditActionDest}
+                  connections={connections}
+                  connLoading={connLoading}
+                  onConfigure={() => { setEditingRule(null); navigate("/integrations"); }}
+                  onTest={runDestinationTest}
+                  testing={destTesting}
+                  testResult={destTestResult}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+                <Button variant="ghost" onClick={() => setEditingRule(null)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" type="submit">
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Rule Confirmation Modal */}
+      {deletingRule && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            padding: 16,
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: "100%",
+              maxWidth: 460,
+              padding: 24,
+              boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)",
+              background: "var(--surface)",
+              borderRadius: "var(--r, 14px)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--danger, #dc2626)", marginBottom: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--danger-soft, #fee2e2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Icon name="alert-triangle" size={18} />
+              </div>
+              <h3 style={{ margin: 0, fontSize: "1.15rem" }}>Delete Signal Rule?</h3>
+            </div>
+
+            <p style={{ fontSize: "0.9rem", color: "var(--text-2)", lineHeight: 1.5, margin: "0 0 12px" }}>
+              Are you sure you want to delete rule <strong>{deletingRule.name}</strong>? This will disconnect the rule and stop sending notifications.
+            </p>
+
+            <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r, 8px)", padding: "10px 12px", fontSize: "0.82rem", color: "var(--text-2)", marginBottom: 16 }}>
+              <Icon name="shield-check" size={14} style={{ color: "var(--success, #10b981)", verticalAlign: "-2px", marginRight: 6 }} />
+              <strong>Audit Trail Preserved:</strong> All past trigger events, payload traces, and delivery timestamps will remain securely preserved in your audit logs.
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <Button variant="ghost" onClick={() => setDeletingRule(null)}>
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={confirmDelete} style={{ background: "var(--danger, #dc2626)", color: "#fff" }}>
+                Delete Rule
+              </Button>
+            </div>
           </div>
         </div>
       )}

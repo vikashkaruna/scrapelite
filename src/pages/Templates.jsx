@@ -11,7 +11,7 @@
 // place that journey can be abandoned.
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams, useNavigate, useLocation } from "react-router";
+import { useSearchParams, useNavigate, useLocation, Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import DomainListInput from "../components/DomainListInput.jsx";
 import { useTemplateRun } from "../components/TemplateRunProvider.jsx";
@@ -39,8 +39,13 @@ export default function Templates() {
   const [params, setParams] = useSearchParams();
   const key = params.get("key") || params.get("t");
   const runId = params.get("runId") || params.get("run");
-  return (key || runId) ? <TemplateRunner templateKey={key} runId={runId} onBack={() => setParams({})} />
-             : <TemplateGalleryView onPick={(k) => setParams({ key: k })} />;
+  const filterParam = params.get("filter");
+
+  return (key || runId) ? (
+    <TemplateRunner templateKey={key} runId={runId} onBack={() => setParams(filterParam ? { filter: filterParam } : {})} />
+  ) : (
+    <TemplateGalleryView onPick={(k) => setParams(filterParam ? { key: k, filter: filterParam } : { key: k })} />
+  );
 }
 
 // ── catalogue ───────────────────────────────────────────────────────────────
@@ -62,45 +67,47 @@ function TemplateGalleryView({ onPick }) {
   // useState initialiser, so there is no flash of the spinner before an effect
   // gets a chance to run. `null` still means "nothing to show yet" and keeps
   // the loading state below working unchanged for a cold visitor.
+  const [params, setParams] = useSearchParams();
+  const queryFilter = params.get("filter");
   const [templates, setTemplates] = useState(() => readTemplatesCache()?.templates || null);
   const [error, setError] = useState(null);
-  const [filter, setFilter] = useState(personaId || "all");
+  const [filter, setFilter] = useState(queryFilter || personaId || "all");
+
+  useEffect(() => {
+    const f = params.get("filter");
+    if (f) setFilter(f);
+  }, [params]);
 
   useEffect(() => {
     let alive = true;
-    // Always revalidate, cache hit or not. That is what makes a browser
-    // refresh a real reload from the database rather than a re-read of
-    // whatever this browser happened to store — the cache only ever buys the
-    // first paint.
     api.listTemplates()
       .then((r) => {
         if (!alive) return;
         const list = r.templates || [];
-        // A degraded response is the server's built-in seed fallback, not the
-        // catalogue. Rendering it is fine; REPLACING a good list with it is
-        // not, because the visitor would silently lose templates that exist.
-        // writeTemplatesCache refuses to store it for the same reason.
         if (r.degraded && templates?.length) return;
         setTemplates(list);
         writeTemplatesCache(r);
       })
-      // A network failure with a warm cache is not an error the visitor needs
-      // to see — the page is already rendering a usable catalogue, and the
-      // revalidation is invisible by design. Only a cold load surfaces it.
       .catch((e) => { if (alive && !templates?.length) setError(e.message); });
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const shown = useMemo(() => {
     if (!templates) return [];
+    if (filter === "workflows") {
+      return templates.filter((t) => t.persona === "workflows" || t.tags?.includes("workflows") || t.template_key === "continuous_account_signal" || t.template_key === "bulk_icp_enrichment");
+    }
     return filter === "all" ? templates : templates.filter((t) => t.persona === filter);
   }, [templates, filter]);
 
   const personasWithTemplates = useMemo(() => {
     const present = new Set((templates || []).map((t) => t.persona));
-    return PERSONAS.filter((p) => present.has(p.id));
-  }, [templates]);
+    const list = PERSONAS.filter((p) => present.has(p.id)).map((p) => ({ id: p.id, label: p.label || p.name || p.id }));
+    if (present.has("workflows") || queryFilter === "workflows" || !list.some((x) => x.id === "workflows")) {
+      list.push({ id: "workflows", label: "Workflows" });
+    }
+    return list;
+  }, [templates, queryFilter]);
 
   return (
     <div className="page container tpl-page">
@@ -111,6 +118,33 @@ function TemplateGalleryView({ onPick }) {
           prompt writing, no schema design.
         </p>
       </header>
+
+      {/* Direct link to Workflows orchestration engine */}
+      <div style={{
+        padding: "14px 20px",
+        background: "var(--surface-2)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--r, 8px)",
+        marginBottom: 20,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 12,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Icon name="git-merge" size={18} style={{ color: "var(--accent)" }} />
+          <div>
+            <strong style={{ fontSize: "0.95rem" }}>Need end-to-end automation pipelines?</strong>
+            <p style={{ margin: "2px 0 0", fontSize: "0.85rem", color: "var(--text-2)" }}>
+              Chain Account Lists, Competitor Watchlists, and Signal Rules in the Workflows engine.
+            </p>
+          </div>
+        </div>
+        <Link to="/workflows" className="btn btn-secondary btn-sm" style={{ textDecoration: "none" }}>
+          Open Workflows →
+        </Link>
+      </div>
 
       {templates && templates.length > 0 && (
         <div className="tpl-filters" role="tablist" aria-label="Filter templates by role">
@@ -124,7 +158,7 @@ function TemplateGalleryView({ onPick }) {
               key={p.id} role="tab" aria-selected={filter === p.id}
               className={`tpl-chip${filter === p.id ? " on" : ""}`}
               onClick={() => setFilter(p.id)}
-            >{p.label || p.name || p.id}</button>
+            >{p.label}</button>
           ))}
         </div>
       )}
@@ -155,6 +189,7 @@ function TemplateGalleryView({ onPick }) {
 }
 
 function personaLabel(id) {
+  if (id === "workflows") return "Workflows & Automation";
   const p = PERSONAS.find((x) => x.id === id);
   return p?.label || p?.name || id;
 }
@@ -205,6 +240,7 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
   const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
   const [shareFor, setShareFor] = useState(null);
+  const [showCustomize, setShowCustomize] = useState(false);
   // Optional: the provider is mounted app-wide, but the page is also rendered
   // directly in unit tests without it, so every call site is guarded.
   const tplRun = useTemplateRun();
@@ -457,6 +493,120 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
               onChange={(val) => setValues((v) => ({ ...v, [f.name]: val }))}
             />
           ))}
+
+          {/* Customize Workflow Panel */}
+          <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShowCustomize(!showCustomize)}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", fontSize: "13px" }}
+            >
+              <Icon name="sliders" size={14} />
+              {showCustomize ? "Hide Customization Options" : "Customize Workflow & Fields"}
+            </button>
+
+            {showCustomize && (
+              <div style={{
+                marginTop: 12,
+                padding: 16,
+                background: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--r, 8px)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                    Additional Custom Extraction Fields (comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+                    placeholder="e.g. security_certifications, glassdoor_score, funding_stage"
+                    value={values.custom_fields || ""}
+                    onChange={(e) => setValues((v) => ({ ...v, custom_fields: e.target.value }))}
+                  />
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-3)", marginTop: 2, display: "block" }}>
+                    Adds custom fields to the structured extraction schema and prompt.
+                  </span>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                      Additional Subpages to Inspect
+                    </label>
+                    <select
+                      value={values.extra_subpages || 0}
+                      onChange={(e) => setValues((v) => ({ ...v, extra_subpages: Number(e.target.value) }))}
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+                    >
+                      <option value={0}>0 (Base template pages only)</option>
+                      <option value={1}>+1 additional subpage (+1 page credit)</option>
+                      <option value={2}>+2 additional subpages (+2 page credits)</option>
+                      <option value={4}>+4 deep crawl subpages (+4 page credits)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                      AI Synthesis Depth
+                    </label>
+                    <select
+                      value={values.ai_depth || "standard"}
+                      onChange={(e) => setValues((v) => ({ ...v, ai_depth: e.target.value }))}
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+                    >
+                      <option value="standard">Standard Synthesis</option>
+                      <option value="deep">Deep Rigorous Cross-Check</option>
+                      <option value="quick">Quick Extraction Only</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
+                    Custom Guidance Prompt
+                  </label>
+                  <textarea
+                    rows={2}
+                    className="input"
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)", fontSize: "0.85rem" }}
+                    placeholder="e.g. Focus specifically on enterprise compliance certifications and customer evidence"
+                    value={values.custom_prompt || ""}
+                    onChange={(e) => setValues((v) => ({ ...v, custom_prompt: e.target.value }))}
+                  />
+                </div>
+
+                {/* Live Dynamic Credit Breakdown */}
+                {estimate && (
+                  <div style={{
+                    padding: 12,
+                    background: "var(--surface)",
+                    borderRadius: 6,
+                    border: "1px solid var(--border)",
+                    fontSize: "0.85rem",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <strong style={{ fontSize: "0.85rem" }}>Live Credit Estimation:</strong>
+                      <span className="wrh-pill" style={{ background: "var(--accent-soft)", color: "var(--accent)", fontWeight: 700 }}>
+                        Total: {estimate.credits} credits
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {estimate.breakdown?.map((b) => (
+                        <span key={b.label} style={{ fontSize: "0.78rem", color: "var(--text-2)", background: "var(--surface-2)", padding: "2px 6px", borderRadius: 4 }}>
+                          {b.label}: <strong>{b.credits} cr</strong>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {errors.length > 0 && (
             <ul className="tpl-errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>

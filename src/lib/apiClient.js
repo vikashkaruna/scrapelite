@@ -160,6 +160,18 @@ export const apiClient = {
   consumeGuestCredit: (kind = "single") =>
     request("/guest-usage", "POST", { kind }),
 
+  /**
+   * The caller's credit position. Read-only, and a HINT — every charge
+   * re-sums the ledger server-side. See src/lib/credits/creditClient.js.
+   */
+  credits: () => request("/credits", "GET"),
+
+  /**
+   * Redeem a credit coupon. Server-side by necessity: the ledger sits behind
+   * the service key and the browser cannot — and must not — write to it.
+   */
+  redeemCredits: (code) => request("/credits", "POST", { code }),
+
   // ── AI (Anthropic Claude) ──────────────────────────────────────────────────
   /** Send a messages-API request. Payload: { model?, max_tokens?, messages }. */
   ai: (payload) => request("/ai", "POST", payload),

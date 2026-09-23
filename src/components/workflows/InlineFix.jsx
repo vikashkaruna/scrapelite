@@ -42,6 +42,10 @@ export default function InlineFix({ issue, graph, onDone }) {
   // screen, so the card keeps its plain link instead.
   if (kind === "watchlist_or_list" && issue.fix?.href?.startsWith("/lists")) return null;
 
+  // `rule_upstream_idle` is only inline-fixable when the upstream is a watchlist (adding competitors).
+  // When it listens for bulk_enrichment (account lists), enriching accounts requires running enrichment on the list screen.
+  if (kind === "targets" && (issue.trigger === "bulk_enrichment" || issue.fix?.href?.startsWith("/lists") || issue.stage === "lists")) return null;
+
   return (
     <div className="wf-inline">
       {!open ? (

@@ -153,4 +153,35 @@ Disallow: /api/
 Disallow: /admin
 Disallow: /admin/
 
+User-agent: Applebot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+
+User-agent: Meta-ExternalAgent
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+
+User-agent: Amazonbot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+
+User-agent: Cohere-ai
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+
 Sitemap: https://datiq.app/sitemap.xml
+

@@ -49,7 +49,7 @@ export function extractJson(text) {
  *
  * @returns {Promise<null|{passageIndependence, intentAlignment, notes}>}
  */
-export async function evaluatePassage({ answerText = "", heading = "", title = "", h1 = "", baseline = {}, signal = null } = {}) {
+export async function evaluatePassage({ answerText = "", heading = "", title = "", h1 = "", baseline = {}, signal = null, meter = null } = {}) {
   if (!answerText || answerText.length < 40) return null;
 
   const prompt = [
@@ -73,7 +73,7 @@ export async function evaluatePassage({ answerText = "", heading = "", title = "
   ].join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 300, { signal, pillar: "discoverability" });
+    const r = await runChain([{ role: "user", content: prompt }], 300, { signal, pillar: "discoverability", meter });
     if (!r.ok) return null;
     const parsed = extractJson(r.text);
     if (!parsed) return null;
@@ -100,7 +100,7 @@ export async function evaluatePassage({ answerText = "", heading = "", title = "
  * score, so a bad suggestion costs a reader ten seconds rather than corrupting
  * their trend line.
  */
-export async function suggestQuestionHeadings({ headings = [], topic = "" } = {}) {
+export async function suggestQuestionHeadings({ headings = [], topic = "", meter = null } = {}) {
   if (headings.length === 0) return null;
   const prompt = [
     "Rewrite these web-page section headings as the questions a reader would actually type or ask.",
@@ -113,7 +113,7 @@ export async function suggestQuestionHeadings({ headings = [], topic = "" } = {}
   ].filter(Boolean).join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 500, { signal, pillar: "discoverability" });
+    const r = await runChain([{ role: "user", content: prompt }], 500, { signal, pillar: "discoverability", meter });
     if (!r.ok) return null;
     const parsed = extractJson(r.text);
     if (!parsed || !Array.isArray(parsed.headings)) return null;
@@ -132,7 +132,7 @@ export async function suggestQuestionHeadings({ headings = [], topic = "" } = {}
  * from introducing facts, because a construct the user pastes without reading
  * is the one place a hallucination reaches the open web under their name.
  */
-export async function draftAnswerBlock({ question = "", sourceText = "" } = {}) {
+export async function draftAnswerBlock({ question = "", sourceText = "", meter = null } = {}) {
   if (!sourceText || sourceText.length < 60) return null;
   const prompt = [
     "Rewrite the source text below into a direct, answer-first passage of 40 to 60 words.",
@@ -153,7 +153,7 @@ export async function draftAnswerBlock({ question = "", sourceText = "" } = {}) 
   ].join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 300, { signal, pillar: "discoverability" });
+    const r = await runChain([{ role: "user", content: prompt }], 300, { signal, pillar: "discoverability", meter });
     if (!r.ok) return null;
     const text = String(r.text || "").trim();
     // The model reporting insufficiency is a SUCCESS: it means it declined to
@@ -188,7 +188,7 @@ export async function draftAnswerBlock({ question = "", sourceText = "" } = {}) 
  * Returns null on any failure, like everything else here — a report with no
  * summary is a report; a report that failed to load is not.
  */
-export async function summariseAudit(audit, { signal = null } = {}) {
+export async function summariseAudit(audit, { signal = null, meter = null } = {}) {
   if (!audit) return null;
 
   const pillars = Object.entries(audit.pillars || {})
@@ -230,7 +230,7 @@ export async function summariseAudit(audit, { signal = null } = {}) {
   ].filter(Boolean).join("\n");
 
   try {
-    const r = await runChain([{ role: "user", content: prompt }], 400, { signal, pillar: "discoverability" });
+    const r = await runChain([{ role: "user", content: prompt }], 400, { signal, pillar: "discoverability", meter });
     if (!r.ok || !r.text) return null;
     // Strip anything that looks like a heading or a list the model added
     // despite being asked not to — the header renders this as one paragraph.

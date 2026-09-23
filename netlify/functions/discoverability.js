@@ -56,6 +56,7 @@
 import { createHash } from "node:crypto";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
+import { meterContext, flush as flushMeter } from "./lib/creditMeter.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
 import { takeTokenBlocking, configFromEnv } from "./lib/rateLimiter.js";
@@ -378,8 +379,19 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
   // `auditProfile` is passed only when it was EXPLICITLY chosen. Sending the
   // "balanced" fallback would look identical to a deliberate choice of the
   // neutral lens and would stop the goal and the page from ever settling it.
+  //
+  // ⚠️ ONE METERING CONTEXT FOR BOTH PATHS, AND IT CARRIES `userId` WHICH IS
+  // NULL FOR A GUEST. That is recorded rather than skipped: the ledger row
+  // carries a null user with `caller: "discoverability"` attached, so guest
+  // spend stays countable even though there is no account to bill it to.
+  const meter = meterContext({
+    caller: "discoverability",
+    userId: userId || null,
+    workspaceId: options.workspaceId || null,
+  });
   const pipelineOptions = {
     deadline,
+    meter,
     deviceProfile: options.deviceProfile,
     auditProfile: options.auditProfileExplicit ? options.auditProfile : null,
     auditType: options.auditType,
@@ -398,8 +410,13 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
     try {
       result = await runAudit(rawUrl, pipelineOptions);
     } catch (err) {
+      await flushMeter(meter);
       return { ok: false, statusCode: 502, headers: guestHeaders, body: { error: "The audit could not be completed.", code: "AUDIT_FAILED" } };
     }
+    // Flushed the moment the run ends, success or failure — the providers
+    // have already been paid by then, and a later exit path that forgot would
+    // lose the record of work we actually did.
+    await flushMeter(meter);
     const auditId = `guest-${Date.now()}`;
     return {
       ok: true, statusCode: 200, headers: guestHeaders,
@@ -454,8 +471,10 @@ async function executeAudit({ event, userId, rawUrl, options = {}, resolved, sou
     result = await runAudit(rawUrl, pipelineOptions);
   } catch (err) {
     await store.markAuditFailed(auditId, err?.message);
+    await flushMeter(meter);
     return { ok: false, statusCode: 502, body: { error: "The audit could not be completed.", code: "AUDIT_FAILED", auditId } };
   }
+  await flushMeter(meter);
 
   const persisted = await store.persistResult(userId, auditId, result, {
     workspaceId: options.workspaceId || null,
@@ -1923,21 +1942,23 @@ async function gateAuditQuota(event, userId, count, rawWorkspaceId, capability =
       }),
     };
   }
-  const { count: used, degraded } = await store.countAuditsThisMonth(userId);
-  if (degraded) return { ok: true, resolved };
-
-  // ⚠️ `capability` IS A PARAMETER SO THERE IS ONE QUOTA GATE, NOT TWO.
-  // `audit.revalidate` delegates to `audit` inside the model, so it needs the
-  // same real monthly count — routing it through a feature-only gate reads
-  // `usage.audits` off an object nobody populated and 500s.
+  // ── THE AUDIT ROW COUNT IS RETIRED — ONE POOL DECIDES ───────────────────
+  // countAuditsThisMonth() stays (history, admin and the report header still
+  // ask "how many this month"), but it no longer GATES anything: an audit is
+  // priced in the same unit as every other provider call now, so it draws on
+  // the credit balance that resolveRequestEntitlement already resolved.
+  //
+  // ⚠️ `capability` IS STILL A PARAMETER SO THERE IS ONE GATE, NOT TWO.
+  // `audit.revalidate` delegates to `audit` inside the model.
   const check = checkCapability(resolved, capability, {
-    usage: { audits: used },
     auditCount: count,
-    bonusAudits: resolved.entitlement?.bonus_audits || 0,
     ...workspaceCtx,
   });
   if (!check.allowed) {
-    return { ok: false, response: json(DENY_STATUS, { ...denyBody(check), used, capability }) };
+    return {
+      ok: false,
+      response: json(DENY_STATUS, { ...denyBody(check), capability }),
+    };
   }
   return { ok: true, resolved };
 }
@@ -2062,13 +2083,12 @@ async function benchmarkRoute(event, userId, method, id, body) {
     const resolved = await resolveRequestEntitlement(event);
     const { ctx: workspaceCtx, refusal } = await buildWorkspaceCtx(resolved, body.workspace_id);
     if (refusal) return json(403, { error: refusal.message, code: refusal.code });
-    const { count: used, degraded } = await store.countAuditsThisMonth(userId);
-    if (!degraded) {
-      // Gated on the WHOLE set fitting. Half a competitive comparison is not a
-      // smaller comparison, it is a misleading one.
+    // Gated on the WHOLE set fitting. Half a competitive comparison is not a
+    // smaller comparison, it is a misleading one — so the model is asked about
+    // urlCount audits at once rather than one at a time.
+    {
       const check = checkCapability(resolved, "audit.benchmark", {
-        usage: { audits: used }, urlCount: urls.length,
-        bonusAudits: resolved.entitlement?.bonus_audits || 0,
+        urlCount: urls.length,
         ...workspaceCtx,
       });
       if (!check.allowed) return json(DENY_STATUS, { ...denyBody(check), capability: "audit.benchmark" });
@@ -2845,6 +2865,16 @@ async function businessTruthRoute(userId, method, path, body, event) {
         return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
       }
 
+      if (verb === "delete") {
+        const delRes = await store.deleteTruthVersion(userId, id, subId, { workspaceId });
+        if (!delRes.ok) {
+          if (delRes.notFound) return notFound("Version not found.");
+          if (delRes.refused) return bad(delRes.refused, { code: "CANNOT_DELETE_CANONICAL" });
+          return json(500, { error: delRes.error || "Could not delete version." });
+        }
+        return json(200, { ok: true, deleted: true });
+      }
+
       const TARGET = { submit: "pending_review", reject: "rejected", withdraw: "draft" };
       const next = TARGET[verb];
       if (!next) return notFound("Unknown endpoint.");
@@ -2940,6 +2970,8 @@ async function businessTruthRoute(userId, method, path, body, event) {
 //   GET    /entity-graph/schema                    types, predicates, states
 //   GET    /entity-graph?truth_record_id=          the graph, with its conflicts
 //   POST   /entity-graph/entities                  propose an entity
+//   PATCH  /entity-graph/entities/:id              edit in place -> back to review
+//   DELETE /entity-graph/entities/:id              cascades its relationships
 //   POST   /entity-graph/entities/:id/reject       reason required
 //   POST   /entity-graph/relationships             propose a relationship
 //   POST   /entity-graph/relationships/:id/approve approve it AND its endpoints
@@ -3047,6 +3079,48 @@ async function entityGraphRoute(userId, method, path, body, event) {
         : json(500, { error: "Could not create the entity.", detail: created.error });
     }
 
+    // 🔴 EDIT IN PLACE — the UI used to "edit" by POSTing a fresh entity, which
+    // left the original behind and produced a duplicate on every Save. The id
+    // must stay stable: audit_entity_relationships cascades on its endpoints,
+    // so replacing the row would take every edge drawn to it as well.
+    if (id && !verb && method === "PATCH") {
+      if ("entity_type" in body && !ENTITY_TYPES[body.entity_type]) {
+        return bad(`Unknown entity type "${body.entity_type}".`, { code: "INVALID_REQUEST", allowed: ENTITY_TYPE_IDS });
+      }
+      if ("name" in body) {
+        const nm = typeof body.name === "string" ? body.name.replace(/\s+/g, " ").trim() : "";
+        if (!nm) return bad("An entity needs a name.", { code: "INVALID_REQUEST" });
+        body.name = nm;
+      }
+      const r = await store.updateEntity(userId, id, {
+        name: body.name,
+        description: "description" in body ? body.description : undefined,
+        canonicalDomain: "canonical_domain" in body
+          ? normalizeFieldValue("canonical_domain", body.canonical_domain)
+          : undefined,
+        entityType: body.entity_type,
+      }, { workspaceId });
+      if (r.ok) return json(200, { entity: r.entity, requiresReview: true });
+      if (r.notFound) return notFound("Entity not found.");
+      if (r.verdict === "rejected") {
+        return json(409, {
+          error: "This entity was rejected. Propose it again rather than editing the rejection back into review.",
+          code: "REJECTED",
+        });
+      }
+      return json(500, { error: r.error || "Could not update the entity." });
+    }
+
+    // 🔴 DELETING AN ENTITY TAKES ITS EDGES WITH IT (0056 cascades both
+    // endpoints). The response reports how many went, so the UI can tell the
+    // truth about what just happened rather than a bare "deleted".
+    if (id && !verb && method === "DELETE") {
+      const r = await store.deleteEntity(userId, id, { workspaceId });
+      if (r.ok) return json(200, { deleted: true, deletedRelationships: r.deletedRelationships || 0 });
+      if (r.notFound) return notFound("Entity not found.");
+      return json(500, { error: r.error || "Could not delete the entity." });
+    }
+
     if (id && verb === "approve" && method === "POST") {
       const note = typeof body?.note === "string" ? body.note : (body?.note?.note || null);
       const r = await store.approveEntity(userId, id, {
@@ -3054,16 +3128,39 @@ async function entityGraphRoute(userId, method, path, body, event) {
       });
       if (r.ok) {
         const entity = await store.getEntity(userId, id, { workspaceId });
-        return json(200, { approved: true, entity });
+        return json(200, { approved: true, alreadyApproved: r.verdict === "already_approved", entity });
       }
       if (r.notFound) return notFound("Entity not found.");
+      // 0077 — verdict codes are now the canonical source of truth. Each one
+      // carries a remediation hint, so the UI can render an actionable banner
+      // instead of a generic "Could not approve the entity."
       const VERDICTS = {
-        self_approval: [403, "You proposed this entity. Approval means a second person looked or single-founder confirmation is recorded."],
-        no_approver: [400, "No approver could be resolved for this request."],
+        self_approval: [403, "You proposed this entity. Ask a teammate to approve, or record a single-founder confirmation in the note and try again."],
+        no_approver: [400, "No approver could be resolved for this request. Re-authenticate and try again."],
         rejected: [409, "This entity was rejected. Propose it again rather than reviving the rejection."],
         not_found: [404, "Entity not found."],
+        check_violation: [409, "A database constraint refused this approval. The most common cause is self-approval without a single-founder note, or a stale row that no longer matches the schema. Refresh and try again."],
+        rls_denied: [403, "Row-level security refused this approval. Confirm the entity belongs to this workspace and that your role can approve it."],
+        // 🔴 BOTH OF THESE ARE OUR DEPLOYMENT, NOT THE USER'S DECISION.
+        // `approval_fn_missing` = approve_entity does not exist on this
+        // database; `stale_constraint` = we DID write the single-founder
+        // marker and the constraint refused it anyway, which 0075's version
+        // permits — so the database is still running 0056's. Telling the user
+        // "you may not self-approve" would send them to change a policy that
+        // is already correct. The precise cause goes to the log, not the wire.
+        approval_fn_missing: [503, "Approval is temporarily unavailable on this environment. This is a problem on our side, not with your entity — an administrator needs to finish a pending database update. Nothing was changed."],
+        stale_constraint: [503, "Approval is temporarily unavailable on this environment. This is a problem on our side, not with your entity — an administrator needs to finish a pending database update. Nothing was changed."],
       };
-      const [status, message] = VERDICTS[r.verdict] || [500, "Could not approve the entity."];
+      if (r.verdict === "approval_fn_missing" || r.verdict === "stale_constraint") {
+        console.warn(
+          `[DatIQ] discoverability: entity approval blocked by an unapplied migration `
+          + `(verdict=${r.verdict}). Apply supabase/migrations/0074-0077 to this database: `
+          + `0075 adds approve_entity() and relaxes audit_entities_no_self_approval for `
+          + `notes carrying the single-founder marker. Underlying: ${r.error || "n/a"}`,
+        );
+      }
+      const [status, message] = VERDICTS[r.verdict]
+        || [500, "The approval could not be saved. Nothing was changed — try again, and contact support if it keeps failing."];
       return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
     }
 
@@ -3171,11 +3268,14 @@ async function entityGraphRoute(userId, method, path, body, event) {
         const relationship = await store.getRelationship(userId, id, { workspaceId });
         // The approved graph just changed, so its conflicts just changed.
         const sweep = await refreshGraphConflicts(userId, body.truth_record_id || null, workspaceId);
-        return json(200, { approved: true, relationship, conflicts: sweep });
+        return json(200, { approved: true, alreadyApproved: r.verdict === "already_approved", relationship, conflicts: sweep });
       }
       if (r.notFound) return notFound("Relationship not found.");
+      // 0077 — added check_violation and rls_denied to the verdict map so the
+      // store's fallback PATCH errors (which used to be a generic 500) now
+      // surface as actionable 4xx messages.
       const VERDICTS = {
-        self_approval: [403, "You proposed this relationship. Approval means a second person looked."],
+        self_approval: [403, "You proposed this relationship. Ask a teammate to approve, or record a single-founder confirmation in the note and try again."],
         no_approver: [400, "No approver could be resolved for this request."],
         rejected: [409, "This relationship was rejected. Propose it again rather than reviving the rejection."],
         endpoint_rejected: [409, "One of the entities this connects was rejected. Approving the edge would silently revive it."],
@@ -3183,9 +3283,15 @@ async function entityGraphRoute(userId, method, path, body, event) {
         // reviewer proposed one of them, that half is a self-approval.
         endpoint_self_approval: [403, "You proposed one of the entities this relationship connects. Approve it as a single-founder approval, or ask a teammate to approve."],
         not_found: [404, "Relationship not found."],
+        check_violation: [409, "A database constraint refused this approval. The most common cause is a self-approval (edge or endpoint) without a single-founder note, or a stale row. Refresh and try again."],
+        rls_denied: [403, "Row-level security refused this approval. Confirm the relationship belongs to this workspace and that your role can approve it."],
+        // See the entity route: an unapplied 0074/0075 is our problem to fix,
+        // not a refusal the user can act on.
+        approval_fn_missing: [503, "Approval is temporarily unavailable on this environment. This is a problem on our side, not with your relationship — an administrator needs to finish a pending database update. Nothing was changed."],
+        stale_constraint: [503, "Approval is temporarily unavailable on this environment. This is a problem on our side, not with your relationship — an administrator needs to finish a pending database update. Nothing was changed."],
       };
       const [status, message] = VERDICTS[r.verdict]
-        || [500, "The approval could not be saved. Nothing was changed — try again, and contact support if it keeps failing."];
+        || [500, r.error || "The approval could not be saved. Nothing was changed — try again, and contact support if it keeps failing."];
       return json(status, { error: message, code: (r.verdict || "error").toUpperCase() });
     }
 

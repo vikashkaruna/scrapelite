@@ -14,6 +14,7 @@ import { runToItem } from "../lib/templates/runToItems.js";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import ExportMenu from "./ExportMenu.jsx";
+import PushIntegrationMenu from "./PushIntegrationMenu.jsx";
 import { useToast } from "./Toast.jsx";
 import { AuthContext } from "./AuthProvider.jsx";
 
@@ -269,13 +270,20 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
             </button>
           </div>
           {exportItems.length > 0 && (
-            <ExportMenu
-              items={exportItems}
-              label={selectedExportItems.length > 0 ? `Export (${selectedExportItems.length})` : "Export"}
-              buttonVariant="secondary"
-              showPush
-              showEmail
-            />
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <ExportMenu
+                items={exportItems}
+                label={selectedExportItems.length > 0 ? `Download (${selectedExportItems.length})` : "Download"}
+                buttonVariant="secondary"
+                showPush={false}
+                showEmail={false}
+              />
+              <PushIntegrationMenu
+                items={exportItems}
+                buttonLabel={selectedExportItems.length > 0 ? `Push (${selectedExportItems.length})` : "Push to Integration"}
+                buttonVariant="secondary"
+              />
+            </div>
           )}
           <button
             type="button"
@@ -371,13 +379,20 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
               Clear
             </button>
             {selectedExportItems.length > 0 && (
-              <ExportMenu
-                items={selectedExportItems}
-                label="Export"
-                buttonVariant="secondary"
-                showPush
-                showEmail
-              />
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <ExportMenu
+                  items={selectedExportItems}
+                  label="Download"
+                  buttonVariant="secondary"
+                  showPush={false}
+                  showEmail={false}
+                />
+                <PushIntegrationMenu
+                  items={selectedExportItems}
+                  buttonLabel="Push to Integration"
+                  buttonVariant="secondary"
+                />
+              </div>
             )}
           </div>
         )}
@@ -502,15 +517,6 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
                         >
                           <Icon name="rotate-cw" size={13} />
                         </button>
-                        {exportItem && (
-                          <ExportMenu
-                            items={[exportItem]}
-                            label=""
-                            buttonVariant="ghost"
-                            showPush
-                            showEmail
-                          />
-                        )}
                       </div>
                     </td>
                   </tr>
@@ -575,15 +581,6 @@ export default function WorkflowRunHistory({ compact = false, limit = null }) {
                   <Button variant="ghost" size="sm" onClick={(e) => handleReRun(e, r)} title="Re-run">
                     <Icon name="rotate-cw" size={13} />
                   </Button>
-                  {exportItem && (
-                    <ExportMenu
-                      items={[exportItem]}
-                      label=""
-                      buttonVariant="ghost"
-                      showPush
-                      showEmail
-                    />
-                  )}
                 </div>
               </div>
             );

@@ -101,4 +101,12 @@ describe("Scheduled Discoverability & SXO Regression Monitor (§10 / Deliverable
       { sxo_total_score: 76.5, model_version: "s2", weight_set_id: "default" },
     )).toEqual(expect.objectContaining({ comparable: false, change: null }));
   });
+
+  it("exports handler wrapped with withJobRun that executes and returns statusCode", async () => {
+    const { handler } = await import("../../functions/discoverability-monitor.js");
+    expect(typeof handler).toBe("function");
+    const res = await handler({ opsTrigger: "manual" });
+    expect(res).toHaveProperty("statusCode");
+    expect(res.statusCode).toBe(200);
+  });
 });

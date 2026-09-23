@@ -44,14 +44,21 @@ import { discoverability, describeAuditError } from "../lib/discoverability/disc
 import { downloadTextFile, hostOf } from "../lib/utils.js";
 import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 
+// Order follows the audit → revenue-improvement loop (1.Audit → 2.Implement →
+// 3.Verify → 4.Build → 5.Score → 6.Validate → Re-audit). Schema & Trust gets its
+// own tab (step 3) rather than sharing step 2 with Business Truth — schema
+// validation is a distinct act that happens AFTER truth is established and
+// BEFORE the entity graph is built on top of it. Entity Graph and Local
+// Directory come BEFORE Subject Scores because scores need entities; scores
+// come BEFORE SXO & Outcomes because rollups aggregate scores.
 export const UNIFIED_DISCOVERABILITY_NAV = Object.freeze([
   { id: "audit", label: "Audit", icon: "scan-search" },
   { id: "truth", label: "Business Truth", icon: "database", path: "/discoverability/truth" },
   { id: "trust", label: "Schema & Trust", icon: "shield-check", path: "/discoverability/trust" },
-  { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
-  { id: "scores", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
   { id: "entities", label: "Entity Graph", icon: "share-2", path: "/discoverability/entities" },
   { id: "local", label: "Local Directory", icon: "map-pin", path: "/discoverability/local" },
+  { id: "scores", label: "Subject Scores", icon: "award", path: "/discoverability/scores" },
+  { id: "sxo", label: "SXO & Outcomes", icon: "zap", path: "/discoverability/sxo" },
   { id: "history", label: "History", icon: "clock" },
 ]);
 
@@ -425,6 +432,39 @@ export default function Discoverability() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
+  // 🔴 RE-AUDIT HAND-OFF FROM THE CLOSED-LOOP RIBBON.
+  //
+  // The ribbon's Re-audit pill is what closes the loop, and it is reachable
+  // from every workspace tab. Those tabs know the audit's ID but never load the
+  // audit itself, so the ribbon cannot supply the URL — it is resolved HERE,
+  // from the audit `?audit=<id>` has loaded.
+  //
+  // ⚠️ The guard returns WITHOUT clearing the state while the audit is still
+  // loading, so the effect runs again when it lands. Clearing early would drop
+  // the request on exactly the path it exists for (arriving from a workspace
+  // tab, where the audit is always still in flight on first render).
+  //
+  // ⚠️ It PREFILLS, it does not run — same rule as the handoff above. An
+  // "is this fixed yet?" control that silently spends an audit is the shape of
+  // thing a customer discovers on an invoice.
+  const reauditConsumedRef = useRef(false);
+  useEffect(() => {
+    if (!location.state?.reaudit || reauditConsumedRef.current) return;
+    const url = audit?.target?.url || audit?.targetUrl || "";
+    if (!url) return; // audit still loading — this effect re-runs when it lands
+    reauditConsumedRef.current = true;
+    setResumedRequest({
+      target_url: url,
+      // "" means nobody has chosen a lens yet, which is what lets the goal and
+      // then the page settle it. Carrying the previous audit's profile over
+      // would make a re-audit claim a choice the user did not just make.
+      audit_profile: "",
+      idempotency_key: `reaudit-${url}`,
+    });
+    navigate(location.pathname + location.search, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, audit]);
+
   const rerun = useCallback(async () => {
     if (!user) {
       setPendingAudit(lastRequest || (audit ? { target_url: audit.targetUrl } : null));
@@ -604,7 +644,9 @@ export default function Discoverability() {
 
       <ClosedLoopRibbon
         auditId={audit?.auditId || null}
-        currentStep={!audit ? "discover" : "score"}
+        isAuditing={running}
+        activeTab={currentView}
+        hasAudit={Boolean(audit)}
       />
 
       {audit?.auditId && (

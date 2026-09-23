@@ -40,20 +40,37 @@ export const STAGE_TRIGGER = {
 export const SEVERITY = { BLOCKING: "blocking", WARNING: "warning", INFO: "info" };
 
 /**
+ * Resiliently compute the target count of a watchlist across all database & mock formats.
+ */
+export function getTargetCount(w) {
+  if (!w) return 0;
+  if (Array.isArray(w.targets)) return w.targets.length;
+  if (Array.isArray(w.watchlist_targets)) {
+    const first = w.watchlist_targets[0];
+    if (first && typeof first.count === "number") return first.count;
+    return w.watchlist_targets.length;
+  }
+  if (typeof w.target_count === "number") return w.target_count;
+  if (typeof w.targets_count === "number") return w.targets_count;
+  return 0;
+}
+
+/**
  * @param {object} data
  * @param {Array} data.lists       — [{ id, name, total_records, completed_records }]
  * @param {Array} data.watchlists  — [{ id, name, cadence, targets:[], change_count }]
  * @param {Array} data.rules       — [{ id, name, status, trigger_source, action_type, execution_count }]
- * @returns {{ nodes, edges, issues, counts }}
+ * @param {Array} data.executions  — [{ id, rule_id, status, error, latency_ms, executed_at }]
+ * @returns {{ nodes, edges, issues, counts, pipelines, recent_executions }}
  */
-export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [] } = {}) {
+export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [], executions = [] } = {}) {
   const issues = [];
   const add = (i) => issues.push(i);
 
   // Which upstreams actually exist, and which are LIVE (capable of emitting).
   const liveByTrigger = {
     bulk_enrichment: lists.some((l) => (l.completed_records || 0) > 0),
-    watchlist: watchlists.some((w) => (w.targets?.length || 0) > 0),
+    watchlist: watchlists.some((w) => getTargetCount(w) > 0),
     // Template runs are always available — there is no object to configure.
     workflow_run: true,
   };
@@ -81,7 +98,8 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [] } =
 
   // ── Stage 2: watchlists ───────────────────────────────────────────────────
   for (const w of watchlists) {
-    if ((w.targets?.length || 0) === 0) {
+    const targetCount = getTargetCount(w);
+    if (targetCount === 0) {
       add({
         code: "watchlist_no_targets",
         severity: SEVERITY.BLOCKING,
@@ -116,28 +134,31 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [] } =
         code: "rule_unreachable",
         severity: SEVERITY.BLOCKING,
         stage: "rules",
+        trigger: r.trigger_source,
         subjectId: r.id,
         subject: r.name,
         title: "Nothing can trigger this rule",
         detail: `It listens for ${labelForTrigger(r.trigger_source)}, and you have none configured. It can never fire.`,
-        fix: fixForTrigger(r.trigger_source),
+        fix: fixForTrigger(r.trigger_source, { hasLists: lists.length > 0, hasWatchlists: watchlists.length > 0 }),
       });
     } else if (!liveByTrigger[r.trigger_source]) {
       add({
         code: "rule_upstream_idle",
         severity: SEVERITY.WARNING,
         stage: "rules",
+        trigger: r.trigger_source,
         subjectId: r.id,
         subject: r.name,
         title: "Its source exists but is not producing",
         detail: `It listens for ${labelForTrigger(r.trigger_source)}, but nothing upstream has produced one yet.`,
-        fix: fixForTrigger(r.trigger_source),
+        fix: fixForTrigger(r.trigger_source, { hasLists: lists.length > 0, hasWatchlists: watchlists.length > 0 }),
       });
     } else if ((r.execution_count || 0) === 0 && r.status === "active") {
       add({
         code: "rule_never_fired",
         severity: SEVERITY.WARNING,
         stage: "rules",
+        trigger: r.trigger_source,
         subjectId: r.id,
         subject: r.name,
         title: "Active but has never fired",
@@ -151,6 +172,7 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [] } =
         code: "rule_paused",
         severity: SEVERITY.INFO,
         stage: "rules",
+        trigger: r.trigger_source,
         subjectId: r.id,
         subject: r.name,
         title: "Paused",
@@ -172,6 +194,7 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [] } =
         code: "no_consumer",
         severity: SEVERITY.WARNING,
         stage,
+        trigger,
         subjectId: null,
         subject: stage === "lists" ? "Account lists" : "Watchlists",
         title: "Nothing acts on this",
@@ -183,7 +206,7 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [] } =
 
   const nodes = [
     ...lists.map((l) => ({ stage: "lists", id: l.id, label: l.name, meta: `${l.completed_records || 0}/${l.total_records || 0} enriched` })),
-    ...watchlists.map((w) => ({ stage: "watchlists", id: w.id, label: w.name, meta: `${w.targets?.length || 0} tracked · ${w.cadence || "daily"}` })),
+    ...watchlists.map((w) => ({ stage: "watchlists", id: w.id, label: w.name, meta: `${getTargetCount(w)} tracked · ${w.cadence || "daily"}` })),
     // Rule nodes carry their CONDITIONS so the dry-run trace can evaluate them
     // in the browser with the runtime's own evaluator — no extra round trip, and
     // no second implementation to drift.
@@ -207,14 +230,113 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [] } =
     }
   }
 
+  // Synthesize Saved Workflows / Pipelines
+  const pipelines = [];
+  for (const r of rules) {
+    const isWatchlist = r.trigger_source === "watchlist";
+    const isBulk = r.trigger_source === "bulk_enrichment";
+
+    const upstreamStage = isWatchlist ? "Competitor Watchlists" : isBulk ? "Account Lists" : "Template Runs";
+    const upstreamSummary = isWatchlist
+      ? `${watchlists.length} watchlist${watchlists.length === 1 ? "" : "s"} (${watchlists.reduce((acc, w) => acc + getTargetCount(w), 0)} tracked)`
+      : isBulk
+      ? `${lists.length} list${lists.length === 1 ? "" : "s"} (${lists.reduce((acc, l) => acc + (l.completed_records || 0), 0)} enriched)`
+      : "Extraction workflows";
+
+    const isLive = liveByTrigger[r.trigger_source];
+    const isConnected = existsByTrigger[r.trigger_source];
+
+    let healthStatus = "healthy";
+    let healthLabel = "Active & Live";
+    if (r.status === "paused") {
+      healthStatus = "paused";
+      healthLabel = "Paused";
+    } else if (!isConnected) {
+      healthStatus = "disconnected";
+      healthLabel = "Missing Upstream";
+    } else if (!isLive) {
+      healthStatus = "idle";
+      healthLabel = "Upstream Idle";
+    }
+
+    const lastExec = executions.find((e) => e.rule_id === r.id) || null;
+
+    const upstreamItems = isWatchlist
+      ? watchlists.map((w) => ({ id: w.id, name: w.name, meta: `${getTargetCount(w)} tracked`, href: `/watchlists?id=${encodeURIComponent(w.id)}` }))
+      : isBulk
+      ? lists.map((l) => ({ id: l.id, name: l.name, meta: `${l.completed_records || 0}/${l.total_records || 0} enriched`, href: `/lists?list=${encodeURIComponent(l.id)}` }))
+      : [{ id: "templates", name: "Workflow Templates", meta: "Explore catalogue", href: "/templates?filter=workflows" }];
+
+    pipelines.push({
+      id: r.id,
+      name: r.name,
+      trigger_source: r.trigger_source,
+      action_type: r.action_type,
+      action_config: r.action_config || {},
+      status: r.status,
+      health: healthStatus,
+      health_label: healthLabel,
+      upstream_stage: upstreamStage,
+      upstream_summary: upstreamSummary,
+      upstream_items: upstreamItems,
+      execution_count: r.execution_count || 0,
+      last_execution: lastExec,
+      rule_id: r.id,
+      conditions: r.conditions || [],
+      conditions_count: (r.conditions || []).length,
+    });
+  }
+
+  // Also include unattached upstreams if any exist without listeners
+  const hasWatchlistRule = rules.some((r) => r.trigger_source === "watchlist" && r.status === "active");
+  if (watchlists.length > 0 && !hasWatchlistRule) {
+    pipelines.push({
+      id: "unconnected-watchlists",
+      name: "Competitor Watchlists (Unconnected)",
+      trigger_source: "watchlist",
+      action_type: "none",
+      action_config: {},
+      status: "unconnected",
+      health: "disconnected",
+      health_label: "No Rule Listening",
+      upstream_stage: "Competitor Watchlists",
+      upstream_summary: `${watchlists.length} watchlist${watchlists.length === 1 ? "" : "s"} tracking competitors`,
+      execution_count: 0,
+      last_execution: null,
+      fix: { label: "Connect a rule", href: "/rules?new=1" },
+    });
+  }
+
+  const hasBulkRule = rules.some((r) => r.trigger_source === "bulk_enrichment" && r.status === "active");
+  if (lists.length > 0 && !hasBulkRule) {
+    pipelines.push({
+      id: "unconnected-lists",
+      name: "Account Lists (Unconnected)",
+      trigger_source: "bulk_enrichment",
+      action_type: "none",
+      action_config: {},
+      status: "unconnected",
+      health: "disconnected",
+      health_label: "No Rule Listening",
+      upstream_stage: "Account Lists",
+      upstream_summary: `${lists.length} account list${lists.length === 1 ? "" : "s"}`,
+      execution_count: 0,
+      last_execution: null,
+      fix: { label: "Connect a rule", href: "/rules?new=1" },
+    });
+  }
+
   return {
     nodes,
     edges,
     issues: issues.sort((a, b) => rank(a.severity) - rank(b.severity)),
+    pipelines,
+    recent_executions: executions,
     counts: {
       lists: lists.length,
       watchlists: watchlists.length,
       rules: rules.length,
+      pipelines: pipelines.length,
       blocking: issues.filter((i) => i.severity === SEVERITY.BLOCKING).length,
       warning: issues.filter((i) => i.severity === SEVERITY.WARNING).length,
     },
@@ -232,9 +354,17 @@ export function labelForTrigger(t) {
   return t;
 }
 
-function fixForTrigger(t) {
-  if (t === "watchlist") return { label: "Create a watchlist", href: "/watchlists?new=1" };
-  if (t === "bulk_enrichment") return { label: "Import a list", href: "/lists?new=1" };
+export function fixForTrigger(t, { hasLists = false, hasWatchlists = false } = {}) {
+  if (t === "watchlist") {
+    return hasWatchlists
+      ? { label: "Add competitors", href: "/watchlists" }
+      : { label: "Create a watchlist", href: "/watchlists?new=1" };
+  }
+  if (t === "bulk_enrichment") {
+    return hasLists
+      ? { label: "Run account enrichment", href: "/lists" }
+      : { label: "Import a list", href: "/lists?new=1" };
+  }
   return { label: "Run a template", href: "/templates" };
 }
 

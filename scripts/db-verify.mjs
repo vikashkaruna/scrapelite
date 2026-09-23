@@ -121,7 +121,7 @@ grant usage on schema public to anon, authenticated;
 //   +1 function (watchlists_touch_updated_at) +1 trigger.
 // 0043_signal_rules.sql        +2 tables (signal_rules, rule_executions)
 //   +1 function (signal_rules_touch_updated_at) +1 trigger.
-// 0048_prospect_engagement_engine.sql +5 tables (engagement_campaigns,
+// 0081_prospect_engagement_engine.sql +5 tables (engagement_campaigns,
 //   engagement_prospects, engagement_messages, engagement_activity_log,
 //   engagement_sync_configs) +1 function (engagement_touch_updated_at)
 //   +4 triggers.
@@ -188,10 +188,15 @@ grant usage on schema public to anon, authenticated;
 // 0071 (+1 table, +1 function). 0075 (+1 function). Taking these to 117 / 55 / 29.
 // 0076 (+1 table: audit_directory_source_ignores; approve_entity_relationship
 // is replaced, not added). Taking these to 118 / 55 / 29.
-// 0048 adds +5 tables, +1 function, +4 triggers → 123 / 56 / 33.
+// 0078 (+4 functions: credit_available, credit_status, credit_grant,
+// credit_grant_monthly —
+// no new tables; expires_at and grant_period are columns on credit_ledger).
+// Taking these to 118 / 59 / 29.
+// 0081 (Prospect Engagement Engine: +5 tables, +1 function
+// engagement_touch_updated_at, +4 updated_at triggers). Taking these to 123 / 60 / 33.
 const EXPECT = {
   tables: 123,
-  functions: 56,
+  functions: 60,
   triggers: 33,
   tablesWithoutRls: 0,
 };
@@ -803,10 +808,20 @@ group("0029 referrals — unique codes, one redemption per account, both sides p
   // Redemption pays BOTH sides. The old client-side path never paid the referrer.
   const ok = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, a1])).result;
   eq("redemption succeeds", ok.ok, true);
-  const aliceEnt = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [alice]);
-  const bobEnt   = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [bob]);
-  eq("the referrer is credited", aliceEnt.b, 25);
-  eq("the invitee is credited", bobEnt.b, 25);
+  // ── 0079: THE REWARD IS A CREDIT GRANT, NOT bonus_extractions ───────────
+  // 🔴 Removing the Extractions Bundle without moving this would have left
+  // both sides with a row written and no reader — a referral programme that
+  // rewards nobody, with nothing erroring anywhere.
+  eq("the referrer is credited, in credits",
+    (await one(`select public.credit_available($1) a`, [alice])).a, 25);
+  eq("the invitee is credited, in credits",
+    (await one(`select public.credit_available($1) a`, [bob])).a, 25);
+  // ⚠️ EARNED, NOT ALLOWANCED — so it must not expire on the monthly clock.
+  eq("a referral reward never expires", (await q(
+    `select 1 from public.credit_ledger
+      where user_id=$1 and reason='grant' and expires_at is not null`, [alice])).length, 0);
+  eq("...and it is no longer written to the retired bonus_extractions column",
+    (await q(`select 1 from public.entitlements where user_id=$1 and bonus_extractions > 0`, [alice])).length, 0);
 
   // One per ACCOUNT, ever — the constraint that makes the reward finite.
   const replay = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, a1])).result;
@@ -825,8 +840,12 @@ group("0029 referrals — unique codes, one redemption per account, both sides p
   const lower = (await one(
     `select public.redeem_referral_code($1, $2, 25) result`, [dave, `  ${a1.toLowerCase()}  `])).result;
   eq("a lowercased, padded code still redeems", lower.ok, true);
-  const aliceAfter = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [alice]);
-  eq("the referrer accrues across referrals", aliceAfter.b, 50);
+  eq("the referrer accrues across referrals",
+    (await one(`select public.credit_available($1) a`, [alice])).a, 50);
+  // Each side is keyed independently, so twenty invitees pay twenty times
+  // while the same invitee can never be rewarded twice.
+  eq("...as two distinct grants, not one merged row", (await q(
+    `select 1 from public.credit_ledger where user_id=$1 and reason='grant'`, [alice])).length, 2);
 
   // The DB refuses a self-referral even if a handler bug ever tried to write one.
   let selfIns = null;
@@ -836,6 +855,47 @@ group("0029 referrals — unique codes, one redemption per account, both sides p
        values ($1, $2, $2, 25)`, [c1, carol]);
   } catch (err) { selfIns = err; }
   eq("a self-referral row is rejected by the check constraint", Boolean(selfIns), true);
+}
+
+// ── 0080: the plan a subscriber actually bought ──────────────────────────────
+group("plan snapshot — a repricing cannot cut a period already paid for");
+{
+  const u = (await one(`insert into auth.users (email) values ('snap@x.com') returning id`)).id;
+
+  // ⚠️ ADDITIVE AND NULLABLE. Every pre-0080 row keeps a null snapshot and
+  // therefore tracks the live price table exactly as it did before — so the
+  // migration changes no behaviour on the day it is applied.
+  await db.query(`insert into public.entitlements (user_id, plan_id) values ($1, 'pro')`, [u]);
+  const bare = await one(`select plan_snapshot, snapshot_at from public.entitlements where user_id=$1`, [u]);
+  eq("an existing row keeps a null snapshot", bare.plan_snapshot, null);
+  eq("...and a null snapshot_at", bare.snapshot_at, null);
+
+  const snap = JSON.stringify({
+    id: "developer", name: "Developer", price_usd: 32.4, price_usd_annual: 27,
+    price_inr: 2999, price_inr_annual: 2499,
+    limits: { credits: 28000, batch_max_urls: 500, bulk_list_max: 500 },
+  });
+  await db.query(
+    `update public.entitlements set plan_snapshot = $2::jsonb, snapshot_at = now(),
+            period_end = now() + interval '30 days' where user_id = $1`, [u, snap]);
+  const row = await one(
+    `select plan_snapshot->>'id' id,
+            (plan_snapshot->'limits'->>'bulk_list_max')::int bulk,
+            (plan_snapshot->>'price_usd')::numeric price
+       from public.entitlements where user_id = $1`, [u]);
+  eq("the snapshot stores the plan id", row.id, "developer");
+  eq("...the limits as purchased", row.bulk, 500);
+  eq("...and the price as charged", Number(row.price), 32.4);
+
+  // 🔴 THE COLUMN IS SERVICE-KEY ONLY, and that is load-bearing rather than
+  // incidental: a user who could write their own plan_snapshot could grant
+  // themselves any limit they liked. `entitlements` has had select-own and NO
+  // write policy for anyone since 0012; 0080 deliberately adds neither.
+  const pols = await q(
+    `select cmd from pg_policies where schemaname='public' and tablename='entitlements'`);
+  eq("entitlements still has exactly one policy", pols.length, 1);
+  eq("...and it is SELECT, so nobody can write their own snapshot",
+    String(pols[0].cmd).toUpperCase(), "SELECT");
 }
 
 // ── 0030: discoverability audits ─────────────────────────────────────────────
@@ -1774,6 +1834,125 @@ group("credit ledger — append-only truth, derived balance");
   eq("the pre-run estimate is stored separately so drift stays measurable", est.estimated_credits, 9);
 }
 
+// ── 0078: grants expire, spend is FIFO, and a grant is issued exactly once ──
+group("credit grants — rollover as a property of the data");
+{
+  const u = (await one(`insert into auth.users (email) values ('grant-user@x.com') returning id`)).id;
+
+  const bad = await one(`select public.credit_grant($1, 0, 'x') v`, [u]);
+  eq("a zero or negative grant is refused rather than written", bad.v.reason, "non_positive");
+
+  const g1 = await one(`select public.credit_grant($1, 100, 'signup') v`, [u]);
+  check("a grant is appended", g1.v.ok === true);
+  eq("...and the caller passes a POSITIVE number, never the sign convention", g1.v.credits, 100);
+  eq("the row itself is stored negative, as 0037 defines it",
+    (await one(`select credits from public.credit_ledger where user_id=$1 and reason='grant'`, [u])).credits, -100);
+  eq("available reads the grant", (await one(`select public.credit_available($1) a`, [u])).a, 100);
+
+  // 🔴 A REDELIVERED WEBHOOK MUST NOT DOUBLE-CREDIT. Enforced by a partial
+  // unique index, not a read-then-write check — payment-webhook.js's dedup
+  // races, and this is the same hazard with money pointing the other way.
+  const dup = await one(`select public.credit_grant($1, 100, 'signup') v`, [u]);
+  eq("the same grant period twice is 'already_granted', not a second grant", dup.v.reason, "already_granted");
+  eq("...and the balance did not move", (await one(`select public.credit_available($1) a`, [u])).a, 100);
+
+  await db.query(`select public.credit_spend($1, null, 'audit', 19, 'audit', 1)`, [u]);
+  eq("a spend draws the pool down", (await one(`select public.credit_available($1) a`, [u])).a, 81);
+
+  // A negative available is a FACT, not something to round away to a
+  // comfortable zero — it says more was spent than was ever granted.
+  await db.query(`select public.credit_spend($1, null, 'page_fetch', 200, 'page', 200)`, [u]);
+  eq("overspend reads NEGATIVE rather than being clamped",
+    (await one(`select public.credit_available($1) a`, [u])).a, -119);
+
+  // ── FIFO is what makes an expiry honest ───────────────────────────────────
+  // Old grant 100 (expires 2026-03-01), spend 30, new grant 100. Read after
+  // the old one has lapsed.
+  //
+  // FIFO: the 30 came out of the OLD grant, so only its 70 unused credits
+  // lapse and 100 survives.
+  // Naive (spend pooled, then subtract expired grants): 100 + 100 - 30 - 100
+  // = 70 — it would charge the user for the same 30 twice, once when they
+  // spent it and again when the grant it came from expired.
+  const f = (await one(`insert into auth.users (email) values ('fifo-user@x.com') returning id`)).id;
+  await db.query(
+    `insert into public.credit_ledger (user_id, reason, credits, expires_at, occurred_at, grant_period)
+     values ($1,'grant',-100,'2026-03-01T00:00:00Z','2026-01-01T00:00:00Z','2026-01'),
+            ($1,'grant',-100,'2026-04-01T00:00:00Z','2026-02-01T00:00:00Z','2026-02'),
+            ($1,'page_fetch',30,null,'2026-01-15T00:00:00Z',null)`, [f]);
+  eq("🔴 spend is allocated OLDEST-GRANT-FIRST, so an expiry forfeits only what was left",
+    (await one(`select public.credit_available($1,'2026-03-15T00:00:00Z'::timestamptz) a`, [f])).a, 100);
+  eq("...and before the expiry both grants count", 
+    (await one(`select public.credit_available($1,'2026-02-15T00:00:00Z'::timestamptz) a`, [f])).a, 170);
+  eq("...and after both have lapsed nothing is left",
+    (await one(`select public.credit_available($1,'2026-05-01T00:00:00Z'::timestamptz) a`, [f])).a, 0);
+
+  // ⚠️ Free (D3) is a LIFETIME pool. An expiry here would quietly delete the
+  // taster out from under someone who came back a month later.
+  const n = (await one(`insert into auth.users (email) values ('never-user@x.com') returning id`)).id;
+  await db.query(`select public.credit_grant($1, 100, 'signup', null) `, [n]);
+  eq("a grant with no expiry is still there years later",
+    (await one(`select public.credit_available($1,'2030-01-01T00:00:00Z'::timestamptz) a`, [n])).a, 100);
+
+  // ── the monthly grant carries the rollover cap in its expiry ──────────────
+  const m = (await one(`insert into auth.users (email) values ('monthly-user@x.com') returning id`)).id;
+  const gm = await one(`select public.credit_grant_monthly($1, 750, '2026-01') v`, [m]);
+  check("a monthly grant is issued", gm.v.ok === true);
+  eq("🔴 it expires at the END OF THE FOLLOWING month — which IS the 1x carry cap",
+    (await one(`select to_char(expires_at,'YYYY-MM-DD') d from public.credit_ledger
+                 where user_id=$1 and grant_period='2026-01'`, [m])).d, "2026-03-01");
+  eq("a malformed period is refused, not coerced",
+    (await one(`select public.credit_grant_monthly($1, 750, 'Jan 2026') v`, [m])).v.reason, "bad_period");
+  await db.query(`select public.credit_grant_monthly($1, 750, '2026-02')`, [m]);
+  eq("two months' grants are live at once — the documented worst case, and no more",
+    (await one(`select public.credit_available($1,'2026-02-10T00:00:00Z'::timestamptz) a`, [m])).a, 1500);
+  eq("...and by March only the newer one survives",
+    (await one(`select public.credit_available($1,'2026-03-10T00:00:00Z'::timestamptz) a`, [m])).a, 750);
+
+  // ── credit_status: is the credit system LIVE for this account? ───────────
+  // 🔴 THE ASSERTION THAT STOPS THIS MIGRATION TAKING THE PRODUCT DOWN.
+  // The gates that read the balance ship before the step that starts granting
+  // monthly allowances, so on the day 0078 is applied every account correctly
+  // reads 0 — and a gate that treated 0 as "refuse" would pause every
+  // schedule, monitor and bulk job at once. `enforced` is what separates
+  // "no credits left" from "not on the credit system".
+  {
+    const fresh = (await one(`insert into auth.users (email) values ('never-granted@x.com') returning id`)).id;
+    await db.query(`select public.credit_spend($1, null, 'page_fetch', 5, 'page', 5)`, [fresh]);
+    const st = (await one(`select public.credit_status($1) v`, [fresh])).v;
+    eq("🔴 an account that was never granted credits is NOT enforced", st.enforced, false);
+    eq("...even though it has spent, and the spend is still counted", st.spent, 5);
+    eq("...and its available balance is honestly negative", st.available, -5);
+
+    await db.query(`select public.credit_grant($1, 100, 'first')`, [fresh]);
+    const armed = (await one(`select public.credit_status($1) v`, [fresh])).v;
+    eq("🔴 the first grant ARMS enforcement for that account — no flag to flip", armed.enforced, true);
+    eq("...and the balance nets the earlier spend against it", armed.available, 95);
+    eq("...granted is reported as a positive number", armed.granted, 100);
+
+    eq("a null user is not enforced and reads zero, never null",
+      (await one(`select public.credit_status(null) v`)).v.enforced, false);
+  }
+
+  eq("an unknown user is refused rather than granted",
+    (await one(`select public.credit_grant($1, 50, 'ghost') v`,
+      ["00000000-0000-0000-0000-000000000000"])).v.reason, "unknown_user");
+  eq("a null user reads 0, never null", (await one(`select public.credit_available(null) a`)).a, 0);
+
+  // 0061's rule: revoking from anon alone is a no-op, because PUBLIC holds the
+  // default grant and anon inherits it. These must be service-role only.
+  for (const fnName of ["credit_available", "credit_status", "credit_grant", "credit_grant_monthly"]) {
+    const acl = await one(`
+      select has_function_privilege('anon', p.oid, 'EXECUTE') anon_x,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') auth_x,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') service_x
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+       where n.nspname='public' and p.proname=$1`, [fnName]);
+    check(`${fnName} is service-role only — anon cannot mint credits`,
+      Boolean(acl) && !acl.anon_x && !acl.auth_x && acl.service_x);
+  }
+}
+
 // ── 0038: unknown is never zero ─────────────────────────────────────────────
 group("extracted fields — 'unknown' and 'zero' are different values");
 {
@@ -2209,7 +2388,7 @@ group("pql — 'no data' and 'unqualified' must not be the same row");
   eq("deleting signal rule cascades to executions", remExec.c, 0);
 }
 
-// ── 0048: prospect engagement engine ──────────────────────────────────
+// ── 0081: prospect engagement engine ──────────────────────────────────
 {
   group("engagement engine — campaigns, prospects, messages, audit log & sync");
   const U4 = "88888888-8888-8888-8888-888888888801";
@@ -2827,8 +3006,20 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
   eq("🔴 approving an edge approves its ENDPOINTS in the same statement",
     (await q(`select id from public.audit_entities where id in ($1,$2) and state='approved'`, [acme, cloud])).length, 2);
 
-  eq("approval is idempotent",
-    (await one(`select public.approve_entity_relationship($1,$2) as r`, [owns, mate])).r, "ok");
+  // 0077 sharpened the verdict: a second approval now reports `already_approved`
+  // rather than a bare `ok`. IDEMPOTENCY IS UNCHANGED AND THAT IS THE POINT —
+  // the row is not re-written, nothing errors, and auditStore maps
+  // `already_approved` to { ok: true }, so the HTTP layer still answers 200 and
+  // a double-click is still a no-op. The verdict only became precise enough for
+  // a stale UI to say "already approved" instead of claiming it just did it.
+  eq("approval is idempotent — second call reports already_approved",
+    (await one(`select public.approve_entity_relationship($1,$2) as r`, [owns, mate])).r, "already_approved");
+  // The half that actually matters: re-approving must not disturb the audit
+  // trail. If the second call overwrote reviewed_by/review_note, "who approved
+  // this and why" would silently change on every stray click.
+  eq("...and the second call does not overwrite the original review record",
+    (await one(`select state, reviewed_by, review_note from public.audit_entity_relationships where id=$1`, [owns])),
+    { state: "approved", reviewed_by: mate, review_note: "Confirmed from the filings." });
 
   // An endpoint somebody explicitly rejected blocks the edge — reviving it
   // silently would undo their decision.
@@ -2859,6 +3050,34 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     (await one(`select public.approve_entity($1,$2,'[Single-founder approval] Verified by owner') as r`, [soloNode, owner])).r, "ok");
   eq("0075: ...and entity state is updated to approved",
     (await one(`select state from public.audit_entities where id=$1`, [soloNode])).state, "approved");
+
+  // ── 0075's CONSTRAINT, exercised DIRECTLY — not through the RPC ──────────
+  // 🔴 2026-09-23. Staging refused a self-approval whose note carried the
+  // marker with a raw 23514 on audit_entities_no_self_approval, which is the
+  // 0056 constraint — 0075 had not been applied there. The RPC assertions
+  // above could not catch it, because if 0075 is missing the FUNCTION is
+  // missing too and the route falls through to a direct PATCH. These pin the
+  // constraint itself, which is the layer that fallback actually meets.
+  {
+    const patchNode = await mkEntity("brand", "Direct Patch Brand");
+    const refused = await throws(
+      `update public.audit_entities
+          set state='approved', reviewed_by=$2, reviewed_at=now(), review_note='Looks right to me.'
+        where id=$1`, [patchNode, owner]);
+    check("🔴 0075: a direct self-approval WITHOUT the marker is still refused by the constraint",
+      Boolean(refused && /audit_entities_no_self_approval/.test(refused)),
+      `\n      got=${JSON.stringify(refused)}`);
+
+    const allowed = await throws(
+      `update public.audit_entities
+          set state='approved', reviewed_by=$2, reviewed_at=now(),
+              review_note='[Single-founder approval] Self-approved by solo operator and recorded in audit trail.'
+        where id=$1`, [patchNode, owner]);
+    eq("🔴 0075: a direct self-approval WITH the marker is permitted — the exact row staging refused",
+      allowed, null);
+    eq("0075: ...and that direct patch really did approve it",
+      (await one(`select state from public.audit_entities where id=$1`, [patchNode])).state, "approved");
+  }
 
   // ── 0076 Endpoint self-approval is a VERDICT, never a raw CHECK violation ──
   // Reproduced before the fix: a teammate proposed the edge, the reviewer had

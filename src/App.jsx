@@ -299,6 +299,10 @@ function Shell() {
           <Route path="/for-sales"                     element={<ProgrammaticRoute />} />
           <Route path="/for-seo"                       element={<ProgrammaticRoute />} />
           <Route path="/for-ci"                        element={<ProgrammaticRoute />} />
+          <Route path="/for-finance"                   element={<ProgrammaticRoute />} />
+          <Route path="/for-healthcare"                element={<ProgrammaticRoute />} />
+          <Route path="/for-retail"                    element={<ProgrammaticRoute />} />
+          <Route path="/for-legal"                     element={<ProgrammaticRoute />} />
           <Route path="/extract-pricing"               element={<ProgrammaticRoute />} />
           <Route path="/extract-contacts"              element={<ProgrammaticRoute />} />
           <Route path="/extract-headings"              element={<ProgrammaticRoute />} />

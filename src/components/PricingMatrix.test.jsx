@@ -22,24 +22,35 @@ describe("F13 — PricingMatrix", () => {
     expect(planHeaders.length).toBeLessThan(10);
   });
 
-  it("renders a row for the headline 'Monthly extractions' feature", () => {
+  // ── ONE POOL. The two separate monthly budgets this table used to quote —
+  // extractions and audits — are what let a customer be refused an audit
+  // while holding a month of unused extractions.
+  it("leads with the credit pool", () => {
     render(<MemoryRouter><PricingMatrix /></MemoryRouter>);
-    expect(screen.getByRole("rowheader", { name: /Monthly extractions/i })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: /Credits \/ month/i })).toBeInTheDocument();
   });
 
-  it("shows plan-specific values (Free = 10 extractions/mo)", () => {
+  it("shows plan-specific pools (Free = 100)", () => {
     render(<MemoryRouter><PricingMatrix /></MemoryRouter>);
-    // The "10" cell appears in the Free column under the extractions row.
-    const row = screen.getByRole("row", { name: /Monthly extractions/i });
+    const row = screen.getByRole("row", { name: /Credits \/ month/i });
     const cells = within(row).getAllByRole("cell");
-    expect(cells.map((c) => c.textContent.trim()).join("|")).toContain("10");
+    expect(cells.map((c) => c.textContent.trim()).join("|")).toContain("100");
   });
 
-  it("renders Unlimited as a value for paid plans' enrichments", () => {
+  // ⚠️ A raw credit count means nothing on its own. The table has to translate
+  // it into the units people actually think in, or "750 credits" is a number
+  // nobody can compare against a competitor.
+  it("translates the pool into runs a buyer can picture", () => {
     render(<MemoryRouter><PricingMatrix /></MemoryRouter>);
-    const row = screen.getByRole("row", { name: /Enrichments per extraction/i });
-    const cells = within(row).getAllByRole("cell");
-    expect(cells.some((c) => /unlimited/i.test(c.textContent))).toBe(true);
+    expect(screen.getByRole("rowheader", { name: /Discoverability runs/i })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: /pages extracted/i })).toBeInTheDocument();
+  });
+
+  // Retired: it capped DEPTH per URL while the cost is per CALL, and every
+  // plan had it at Infinity — a limit nobody ever set is a limit nobody wanted.
+  it("no longer quotes enrichments per extraction", () => {
+    render(<MemoryRouter><PricingMatrix /></MemoryRouter>);
+    expect(screen.queryByRole("rowheader", { name: /Enrichments per extraction/i })).toBeNull();
   });
 
   it("groups rows under a Group label (Usage / Exports / Power / Team / Data)", () => {

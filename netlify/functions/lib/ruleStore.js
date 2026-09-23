@@ -171,6 +171,50 @@ export async function createRule(userId, { name, trigger_source, conditions = []
     .select()
     .single();
 
+    if (error) return { ok: false, reason: error.message };
+  return { ok: true, rule: data };
+}
+
+export async function updateRule(userId, ruleId, updates = {}, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+
+  if (updates.action_type || updates.action_config) {
+    const destination = await validateActionConfig(updates.action_type, updates.action_config);
+    if (!destination.ok) return { ok: false, reason: destination.reason, status: 400 };
+  }
+
+  const db = serviceDb(env);
+  const now = new Date().toISOString();
+
+  if (!db) {
+    const existing = _localRules.get(ruleId);
+    if (!existing || existing.user_id !== userId) {
+      return { ok: false, reason: "Rule not found or unauthorized", status: 404 };
+    }
+    const updated = {
+      ...existing,
+      ...updates,
+      updated_at: now,
+    };
+    _localRules.set(ruleId, updated);
+    return { ok: true, rule: updated };
+  }
+
+  const payload = {
+    ...updates,
+    updated_at: now,
+  };
+  delete payload.id;
+  delete payload.user_id;
+
+  const { data, error } = await db
+    .from("signal_rules")
+    .update(payload)
+    .eq("id", ruleId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
   if (error) return { ok: false, reason: error.message };
   return { ok: true, rule: data };
 }
@@ -259,3 +303,25 @@ export async function recordExecution(ruleId, userId, { status, eventPayload, ac
   if (dbErr) return { ok: false, reason: dbErr.message };
   return { ok: true, execution: data };
 }
+
+export async function listExecutions(userId, { limit = 50 } = {}, env = process.env) {
+  const db = serviceDb(env);
+  if (!db) {
+    const list = Array.from(_localExecutions.values())
+      .filter((e) => !userId || e.user_id === userId)
+      .sort((a, b) => new Date(b.executed_at || 0) - new Date(a.executed_at || 0))
+      .slice(0, limit);
+    return { ok: true, executions: list };
+  }
+
+  const { data, error } = await db
+    .from("rule_executions")
+    .select("id, rule_id, user_id, status, event_payload, action_response, error, latency_ms, attempt, executed_at")
+    .eq("user_id", userId)
+    .order("executed_at", { ascending: false })
+    .limit(limit);
+
+  if (error) return { ok: false, reason: error.message, executions: [] };
+  return { ok: true, executions: data || [] };
+}
+

@@ -142,8 +142,8 @@ export default function UseCases() {
         <div className="uc-cta rise" style={{ marginTop: 48 }}>
           <h2>Start extracting intelligence today</h2>
           <p>
-            All use cases are available on the free plan — 10 extractions per month, no credit card required.
-            Sign up once and your 25-extraction trial credit is added automatically.
+            All use cases are available on the free plan — 100 credits to start, no credit card required.
+            They are granted once when you sign up and never expire.
           </p>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
             <Button variant="primary" icon="rocket" onClick={() => navigate("/")}>

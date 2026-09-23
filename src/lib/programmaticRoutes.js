@@ -65,6 +65,84 @@ export const PROGRAMMATIC_ROUTES = {
     ],
   },
 
+  // ── Industry landing pages (/for-*) ──────────────────────────────────
+  "for-finance": {
+    kind: "industry",
+    industry: "finance",
+    industryLabel: "Financial Services & FinTech",
+    icon: "dollar-sign",
+    h1: "DatIQ for financial services & fintech",
+    sub: "Turn company filings, fee schedules, executive changes, and regulatory disclosures into structured intelligence in seconds.",
+    description:
+      "DatIQ for financial services: extract pricing tiers, corporate disclosures, executive rosters, and fintech fee structures from any web page without code.",
+    ctaPrimary: { label: "Try a Stripe pricing extraction", href: "/", prefilled: "https://stripe.com/pricing", intent: "pricing" },
+    ctaSecondary: { label: "Explore financial intelligence", href: "/use-cases/market-research" },
+    keywords: ["financial web extraction", "fintech intelligence", "investment diligence", "financial data scraping", "fee extraction"],
+    bullets: [
+      "Extract structured fee schedules, pricing tiers, and currency options in one click",
+      "Monitor executive appointments, board changes, and committee rosters",
+      "Track quarterly disclosures and regulatory notice revisions automatically",
+      "Export structured financial tables to Excel (.xlsx), CSV, or webhook pipelines",
+    ],
+  },
+  "for-healthcare": {
+    kind: "industry",
+    industry: "healthcare",
+    industryLabel: "Healthcare & Life Sciences",
+    icon: "activity",
+    h1: "DatIQ for healthcare & life sciences",
+    sub: "Extract provider directories, clinical services, executive leadership, and compliance disclosures with source-level verification.",
+    description:
+      "DatIQ for healthcare: extract provider listings, clinic locations, medical leadership, and regulatory documentation from healthcare domains instantly.",
+    ctaPrimary: { label: "Try a healthcare team extraction", href: "/", prefilled: "https://modernhealth.com", intent: "contacts" },
+    ctaSecondary: { label: "Explore healthcare use cases", href: "/use-cases/account-intelligence" },
+    keywords: ["healthcare web scraping", "life sciences intelligence", "provider extraction", "pharma intelligence", "clinic directory scraper"],
+    bullets: [
+      "Surface medical leadership, department heads, and verified credentials",
+      "Extract clinic locations, contact directories, and accepted insurance plans",
+      "Monitor policy updates, clinical trial announcements, and research publications",
+      "Maintain 100% verifiable source links with timestamped change logs",
+    ],
+  },
+  "for-retail": {
+    kind: "industry",
+    industry: "retail",
+    industryLabel: "E-Commerce & Retail",
+    icon: "tag",
+    h1: "DatIQ for e-commerce & retail",
+    sub: "Track product catalogs, competitor pricing shifts, seasonal promotions, and brand positioning across thousands of storefronts.",
+    description:
+      "DatIQ for retail: extract SKU pricing, stock availability, promo banners, and competitor catalog hierarchies across e-commerce storefronts.",
+    ctaPrimary: { label: "Try a competitor catalog extraction", href: "/", prefilled: "https://allbirds.com", intent: "pricing" },
+    ctaSecondary: { label: "See competitive intelligence", href: "/use-cases/competitive-monitoring" },
+    keywords: ["retail price intelligence", "ecommerce catalog scraping", "competitor pricing tracker", "ecommerce extraction", "sku price monitor"],
+    bullets: [
+      "Extract product tiers, currency options, discount codes, and promotion terms",
+      "Map entire storefront domains to discover newly added collections and categories",
+      "Schedule daily competitor pricing checks with instant threshold alerts",
+      "Export directly to Google Sheets, CSV, or retail BI workflows",
+    ],
+  },
+  "for-legal": {
+    kind: "industry",
+    industry: "legal",
+    industryLabel: "Legal & Compliance",
+    icon: "shield",
+    h1: "DatIQ for legal & compliance",
+    sub: "Extract terms of service revisions, privacy policy updates, regulatory filings, and partner directories with cryptographic audit proof.",
+    description:
+      "DatIQ for legal: monitor policy changes, extract attorney directories, and track compliance notices with verified timestamped evidence.",
+    ctaPrimary: { label: "Extract OpenAI policies", href: "/", prefilled: "https://openai.com/policies", intent: "summary" },
+    ctaSecondary: { label: "See due diligence brief", href: "/use-cases/investor-diligence" },
+    keywords: ["legal compliance monitoring", "terms of service tracker", "regulatory extraction", "legal due diligence", "policy change alert"],
+    bullets: [
+      "Extract complete Terms of Service and Privacy Policy text with heading hierarchy",
+      "Surface attorney rosters, practice areas, bar admissions, and direct contacts",
+      "Monitor regulatory change notices and compliance updates on automated schedules",
+      "Preserve objective page snapshots with permanent audit trail evidence",
+    ],
+  },
+
   // ── Programmatic SEO pages (/extract-*) ───────────────────────────────
   "extract-pricing": {
     kind: "extract",

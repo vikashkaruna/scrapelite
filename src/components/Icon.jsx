@@ -175,6 +175,7 @@ const MAP = {
   "arrow-up": ArrowUp,
   "arrow-up-right": ArrowUpRight,
   trash: Trash2,
+  "trash-2": Trash2,
   download: Download,
   external: ExternalLink,
   sun: Sun,

@@ -4,6 +4,22 @@
 // distinct error codes for unknown plan, missing gateway keys, etc.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
+
+// 🔴 EXPECTED AMOUNTS ARE DERIVED FROM THE PRICE TABLE, NOT TYPED IN.
+// These tests used to hardcode "1799 × 1.18 × 100", which made a repricing fail
+// fourteen assertions that had nothing to do with pricing — they exist to prove
+// GST is applied, that the ANNUAL path multiplies by 12, that a client-supplied
+// `amount` is ignored and that discounts compose by max(coupon, global). The
+// specific rupee figure is incidental to every one of them, and pinning it here
+// meant the next price change looked like fourteen regressions.
+//
+// ⚠️ ONE absolute pin still exists, in src/lib/pricingConfig.test.js, which
+// asserts the literal table. That is where a corrupted PLAN_TABLE is caught;
+// deriving here does not remove that guard, it stops duplicating it.
+const INR    = (id) => PLAN_BY_ID[id].price_inr;
+const INR_YR = (id) => PLAN_BY_ID[id].price_inr_annual;
+const USD    = (id) => PLAN_BY_ID[id].price_usd;
 
 // ── Mocked Stripe + Razorpay SDKs (dynamic-imported inside the handler) ─────────
 // Use vi.hoisted() to define the mock class + shared mock fns so the vi.mock
@@ -71,13 +87,8 @@ function mockEmptySupabase() {
   });
 }
 
-// Static table (mirror of src/lib/pricingConfig.js):
-//   pro:      { usd: 20.4,  usd_annual: 17, inr: 1799,  inr_annual: 1499 }
-//   select:   { usd: 14.4,  usd_annual: 12, inr: 1199,  inr_annual: 999 }
-//   agency:   { usd: 106.8, usd_annual: 89, inr: 10199, inr_annual: 8499 }
-//   business: { usd: 44.4,  usd_annual: 37, inr: 4199,  inr_annual: 3499 }
-// Monthly INR uses p.inr; annual uses p.inr_annual × 12.
-// GST_RATE = 0.18.
+// Monthly INR uses plan.price_inr; annual uses plan.price_inr_annual × 12.
+// GST_RATE = 0.18. Both read through the INR/INR_YR/USD helpers above.
 
 // ── C-12: plan + currency + billingPeriod resolution ───────────────────────────
 describe("create-checkout Razorpay (C-12) — plan/currency/billingPeriod", () => {
@@ -86,7 +97,7 @@ describe("create-checkout Razorpay (C-12) — plan/currency/billingPeriod", () =
     process.env.RAZORPAY_KEY_SECRET = "rzp_secret";
   });
 
-  it("INR monthly Pro plan → 1799 × 1.18 × 100 = 342,082 paise", async () => {
+  it("INR monthly Pro plan → price_inr × 1.18 × 100 paise", async () => {
     mockEmptySupabase();
     rzpOrdersCreate.mockResolvedValueOnce({
       id: "order_1", amount: 342082, currency: "INR", receipt: "r_1",
@@ -103,10 +114,10 @@ describe("create-checkout Razorpay (C-12) — plan/currency/billingPeriod", () =
     expect(rzpOrdersCreate).toHaveBeenCalledTimes(1);
     const order = rzpOrdersCreate.mock.calls[0][0];
     expect(order.currency).toBe("INR");
-    expect(order.amount).toBe(Math.round(1799 * 1.18 * 100));
+    expect(order.amount).toBe(Math.round(INR("pro") * 1.18 * 100));
   });
 
-  it("INR annual Select plan → 999 × 12 × 1.18 × 100 = 1,415,064 paise", async () => {
+  it("INR annual Select plan → price_inr_annual × 12 × 1.18 × 100 paise", async () => {
     mockEmptySupabase();
     rzpOrdersCreate.mockResolvedValueOnce({
       id: "order_2", amount: 1415064, currency: "INR", receipt: "r_2",
@@ -121,10 +132,10 @@ describe("create-checkout Razorpay (C-12) — plan/currency/billingPeriod", () =
     });
     expect(r.statusCode).toBe(200);
     const order = rzpOrdersCreate.mock.calls[0][0];
-    expect(order.amount).toBe(Math.round(999 * 12 * 1.18 * 100));
+    expect(order.amount).toBe(Math.round(INR_YR("select") * 12 * 1.18 * 100));
   });
 
-  it("INR annual Agency plan → 8499 × 12 × 1.18 × 100 = 12,034,584 paise", async () => {
+  it("INR annual Agency plan → price_inr_annual × 12 × 1.18 × 100 paise", async () => {
     mockEmptySupabase();
     rzpOrdersCreate.mockResolvedValueOnce({
       id: "order_3", amount: 12034584, currency: "INR", receipt: "r_3",
@@ -139,7 +150,7 @@ describe("create-checkout Razorpay (C-12) — plan/currency/billingPeriod", () =
     });
     expect(r.statusCode).toBe(200);
     const order = rzpOrdersCreate.mock.calls[0][0];
-    expect(order.amount).toBe(Math.round(8499 * 12 * 1.18 * 100));
+    expect(order.amount).toBe(Math.round(INR_YR("agency") * 12 * 1.18 * 100));
   });
 });
 
@@ -167,8 +178,8 @@ describe("create-checkout (C-13) — server ignores client amount/discount", () 
     });
     expect(r.statusCode).toBe(200);
     const order = rzpOrdersCreate.mock.calls[0][0];
-    // Server-computed amount (1799 × 1.18 × 100) wins
-    expect(order.amount).toBe(Math.round(1799 * 1.18 * 100));
+    // Server-computed amount (price_inr × 1.18 × 100) wins
+    expect(order.amount).toBe(Math.round(INR("pro") * 1.18 * 100));
   });
 });
 
@@ -199,7 +210,7 @@ describe("create-checkout (X-03) — client discountPercent is ignored", () => {
     // Server-computed amount (no coupon, no global sale) = base × 1.18 × 100.
     // If the client-supplied 99% had been honoured, the order would be
     // base × 0.01 × 1.18 × 100 ≈ 3,420 paise. It is NOT.
-    const base = 1799;
+    const base = INR("pro");
     const fullPricePaise = Math.round(base * 1.18 * 100);
     expect(order.amount).toBe(fullPricePaise);
     expect(order.amount).toBeGreaterThan(fullPricePaise * 0.5); // sanity: not 50% off
@@ -236,7 +247,7 @@ describe("create-checkout (X-03) — client discountPercent is ignored", () => {
       }),
     });
     const order = rzpOrdersCreate.mock.calls[0][0];
-    const base = 1799;
+    const base = INR("pro");
     // 20% coupon applied: base × 0.80 × 1.18 × 100
     const expected = Math.round(base * 0.8 * 1.18 * 100);
     expect(order.amount).toBe(expected);
@@ -266,7 +277,7 @@ describe("create-checkout (X-07) — client amount is ignored", () => {
     expect(r.statusCode).toBe(200);
     const order = rzpOrdersCreate.mock.calls[0][0];
     // Server uses table amount, not the client-sent 1 paise.
-    const base = 1799;
+    const base = INR("pro");
     const expected = Math.round(base * 1.18 * 100);
     expect(order.amount).toBe(expected);
   });
@@ -285,7 +296,7 @@ describe("create-checkout (X-07) — client amount is ignored", () => {
       }),
     });
     const order = rzpOrdersCreate.mock.calls[0][0];
-    const base = 1799;
+    const base = INR("pro");
     const expected = Math.round(base * 1.18 * 100);
     expect(order.amount).toBe(expected);
   });
@@ -309,7 +320,7 @@ describe("create-checkout (C-14) — GST 18% on INR only", () => {
         billingPeriod: "monthly", sessionId: "sess_abc",
       }),
     });
-    const base = 1799;
+    const base = INR("pro");
     const expected = Math.round(base * 1.18 * 100);
     const order = rzpOrdersCreate.mock.calls[0][0];
     expect(order.amount).toBe(expected);
@@ -329,8 +340,8 @@ describe("create-checkout (C-14) — GST 18% on INR only", () => {
       }),
     });
     const order = rzpOrdersCreate.mock.calls[0][0];
-    // 20.4 USD × 100 cents, no GST
-    expect(order.amount).toBe(Math.round(20.4 * 100));
+    // price_usd × 100 cents, no GST
+    expect(order.amount).toBe(Math.round(USD("pro") * 100));
   });
 });
 
@@ -354,7 +365,7 @@ describe("create-checkout (C-15) — discount precedence", () => {
       }),
     });
     const order = rzpOrdersCreate.mock.calls[0][0];
-    const base = 1799;
+    const base = INR("pro");
     const expected = Math.round(base * 0.80 * 1.18 * 100);
     expect(order.amount).toBe(expected);
   });
@@ -379,7 +390,7 @@ describe("create-checkout (C-15) — discount precedence", () => {
       }),
     });
     const order = rzpOrdersCreate.mock.calls[0][0];
-    expect(order.amount).toBe(Math.round(1799 * 1.18 * 100));
+    expect(order.amount).toBe(Math.round(INR("pro") * 1.18 * 100));
   });
 
   it("cap_reached → coupon dropped, full price charged", async () => {
@@ -402,7 +413,7 @@ describe("create-checkout (C-15) — discount precedence", () => {
       }),
     });
     const order = rzpOrdersCreate.mock.calls[0][0];
-    expect(order.amount).toBe(Math.round(1799 * 1.18 * 100));
+    expect(order.amount).toBe(Math.round(INR("pro") * 1.18 * 100));
   });
 
   it("expired coupon → 0 discount", async () => {
@@ -418,7 +429,7 @@ describe("create-checkout (C-15) — discount precedence", () => {
       }),
     });
     const order = rzpOrdersCreate.mock.calls[0][0];
-    expect(order.amount).toBe(Math.round(1799 * 1.18 * 100));
+    expect(order.amount).toBe(Math.round(INR("pro") * 1.18 * 100));
   });
 });
 

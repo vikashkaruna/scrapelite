@@ -159,17 +159,18 @@
     # - connect-src:  already wildcards https: (covers api.razorpay.com,
     #                   lumberjack.razorpay.com telemetry, etc.).
     #
-    # Google Analytics 4 (public/analytics.js):
+    # Google Analytics 4 (public/analytics.js) & Plausible Analytics:
     # - script-src:   + www.googletagmanager.com — the gtag.js bundle. WITHOUT
     #                   THIS THE TAG IS SILENTLY BLOCKED by the browser and GA
     #                   records nothing, with only a console CSP violation to
     #                   show for it. The loader itself is same-origin ('self').
+    #                 + plausible.io — privacy-friendly analytics tracker.
     # - connect-src:  already wildcards https:, which covers the
     #                   google-analytics.com / analytics.google.com measurement
-    #                   beacons and region1.* endpoints.
+    #                   beacons, region1.* endpoints, and plausible.io API events.
     # - img-src:      already allows https:, covering the pixel fallback GA
     #                   uses when fetch/sendBeacon are unavailable.
-    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com; form-action 'self' https://checkout.razorpay.com https://js.stripe.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://checkout.razorpay.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.razorpay.com https://cdn.razorpay.com https://www.googletagmanager.com; connect-src 'self' https: wss:;"
+    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com; form-action 'self' https://checkout.razorpay.com https://js.stripe.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://checkout.razorpay.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.razorpay.com https://cdn.razorpay.com https://www.googletagmanager.com https://plausible.io https://us-assets.i.posthog.com https://eu-assets.i.posthog.com; connect-src 'self' https: wss:;"
 
 # ── API routes (must come BEFORE the SPA catch-all) ──────────────────────────
 # Public REST API (v1) and the Discoverability module both route internally

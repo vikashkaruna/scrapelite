@@ -16,6 +16,7 @@
 // Every map  adapter returns:  { ok, source, mapLinks[] }
 
 import { fetchPublicUrl } from "./publicUrl.js";
+import { record as meterRecord } from "./creditMeter.js";
 import {
   PROVIDERS as REGISTRY, SCRAPE_PROVIDERS_LIST, FUNCTION_AREAS, readKey,
 } from "../../../src/lib/providerRegistry.js";
@@ -418,6 +419,16 @@ export async function runScrapeChain(url, options = {}) {
         : options;
       const result = await p.scrape(url, perCall, apiKey);
       if (result.ok && result.html) {
+        // ── CHOKE POINT 2 of 4 ────────────────────────────────────────────
+        // One page read = one credit, the anchor every other weight is a
+        // multiple of. Charged once for the CHAIN, not once per provider
+        // attempted: a fallback that had to try three providers to get one
+        // page still delivered one page, and billing the customer for our
+        // retries would make an unreliable provider their problem.
+        meterRecord(options.meter, {
+          kind: "page_fetch",
+          meta: { provider: result.source || providerKey, url },
+        });
         return { ...result, attempts };
       }
       attempts.push({ provider: providerKey, error: result.error || "empty result", status: result.status, code: result.code });
@@ -426,6 +437,8 @@ export async function runScrapeChain(url, options = {}) {
     }
   }
 
+  // Nothing was read, so nothing is charged.
+  meterRecord(options.meter, { kind: "page_fetch", failed: true });
   return { ok: false, attempts, error: "All scrape providers failed or are unconfigured." };
 }
 

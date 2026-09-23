@@ -2,6 +2,7 @@
 // scripts/consolidate-sessions.mjs
 // Consolidates all historical session handoff and end files into a single master archive:
 // docs/sessions/SESSIONS-HISTORY.md
+// Last session recorded: 2026-09-20
 
 import { readdirSync, readFileSync, writeFileSync, unlinkSync, statSync } from "node:fs";
 import { join, resolve, basename } from "node:path";

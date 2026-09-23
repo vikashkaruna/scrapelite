@@ -32,6 +32,19 @@
     ? String(rt.gaMeasurementId || "")
     : FALLBACK_ID;
 
+  // ── PostHog ───────────────────────────────────────────────────────────────
+  // Same absent-vs-empty rule as the GA id above: an ABSENT key falls back to
+  // the literal, an EMPTY string is a deliberate disable. PostHog lives here
+  // rather than as its own <script> in index.html for the reason stated at the
+  // top of this file — a second copy of the consent rules drifts from the first
+  // one the moment either changes, and a snippet pasted into <head> runs before
+  // the visitor has chosen anything.
+  var PH_FALLBACK_KEY = "phc_nGVqCMMbixTafmtb46bLZZakeEV2cpmEMQYf8uLVymUs";
+  var PH_KEY = Object.prototype.hasOwnProperty.call(rt, "posthogKey")
+    ? String(rt.posthogKey || "")
+    : PH_FALLBACK_KEY;
+  var PH_HOST = String(rt.posthogHost || "https://us.i.posthog.com");
+
   var CONSENT_KEY = "datiq.consent";
 
   // ── Skip conditions ───────────────────────────────────────────────────────
@@ -118,9 +131,61 @@
     return true;
   }
 
+  // ── PostHog loader ────────────────────────────────────────────────────────
+  // 🔴 GATED ON THE SAME STORED CHOICE AS gtag.js, AND FOR THE SAME REASON.
+  // PostHog's own snippet initialises on execution: it sets a distinct_id in
+  // storage and begins capturing immediately, so pasting it into <head> tracks
+  // every visitor before the banner is even rendered — including the ones who
+  // then click Decline. That contradicts the consent banner and the DPDP
+  // section of /privacy. Calling the stub IS the load (it injects array.js),
+  // so the gate is simply: do not call it until analytics consent is granted.
+  //
+  // `disabled` is reused deliberately, which carries the /admin and localhost
+  // skips across unchanged: the operator console must not leak internal path
+  // names into a third-party product-analytics property either.
+  var phLoaded = false;
+
+  function loadPostHog() {
+    if (disabled || !PH_KEY || phLoaded) return false;
+    if (readStored()?.analytics !== "granted") return false;
+    try {
+      !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}p||((p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",p.onerror=function(){p=null},(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r));var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],Object.defineProperty(u,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e}}),Object.defineProperty(u.people,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(){return u.toString(1)+".people (stub)"}}),o="vu fu pu gu bu init Hu zu qu ju Gu Xa Bu Qu Du eh ih nh sh rh oh capture getExtension Uu cu hh calculateEventProperties uh register register_once register_for_session unregister unregister_for_session gh Nu dh getFeatureFlag getFeatureFlagPayload getFeatureFlagResult getAllFeatureFlags isFeatureEnabled reloadFeatureFlags updateFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey displaySurvey cancelPendingSurvey canRenderSurvey canRenderSurveyAsync mh identify setPersonProperties unsetPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset yh shutdown setIdentity clearIdentity get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException addExceptionStep captureLog startExceptionAutocapture stopExceptionAutocapture loadToolbar get_property getSessionProperty fh Xu createPersonProfile setInternalOrTestUser ph wu opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing get_explicit_consent_status is_capturing clear_opt_in_out_capturing Ju debug Ya Os getPageViewId captureTraceFeedback captureTraceMetric Ru".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+      window.posthog.init(PH_KEY, {
+        api_host: PH_HOST,
+        defaults: "2026-05-30",
+        person_profiles: "identified_only",
+      });
+      phLoaded = true;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // Best-effort teardown on withdrawal, mirroring the _ga cookie sweep below.
+  // opt_out_capturing() stops further capture AND is what PostHog itself reads
+  // on the next page load; reset() drops the distinct_id so the visitor is no
+  // longer identifiable browser-side. Neither can reach data already sent —
+  // that is a PostHog-account-side deletion, not something a page can do.
+  function stopPostHog() {
+    try {
+      if (window.posthog && typeof window.posthog.opt_out_capturing === "function") {
+        window.posthog.opt_out_capturing();
+        if (typeof window.posthog.reset === "function") window.posthog.reset();
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      document.cookie.split(";").forEach(function (part) {
+        var name = part.split("=")[0].trim();
+        if (name.indexOf("ph_") === 0) {
+          document.cookie = name + "=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+        }
+      });
+    } catch (e) { /* ignore */ }
+  }
+
   // A previously granted choice can activate immediately. No choice and a
-  // stored denial deliberately leave gtag.js unloaded.
+  // stored denial deliberately leave gtag.js AND PostHog unloaded.
   loadTag();
+  loadPostHog();
 
   // ── Public API ────────────────────────────────────────────────────────────
   // src/lib/consentService.js talks to this, so React never touches gtag and
@@ -129,17 +194,20 @@
     measurementId: MEASUREMENT_ID,
     enabled: !disabled,
     active: function () { return tagLoaded; },
+    posthogActive: function () { return phLoaded; },
     get: function () { return readStored(); },
     set: function (choice) {
       if (choice !== "granted" && choice !== "denied") return;
       if (disabled) return;
       if (choice === "granted") {
         loadTag();
+        loadPostHog();
       }
       gtag("consent", "update", {
         analytics_storage: choice === "granted" ? "granted" : "denied",
       });
       if (choice === "denied") {
+        stopPostHog();
         // GA cookies are first-party and can be removed by the page. This is
         // best-effort; it cannot remove HttpOnly cookies or data already held
         // by Google, but it prevents continued browser-side identification.

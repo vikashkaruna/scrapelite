@@ -74,7 +74,7 @@ test("home does NOT have an inline multi-URL textarea toggle (R15 cleanup)", asy
   await expect(page.getByText(/Use Batch mode/i)).toHaveCount(0);
 });
 
-test("TopBar nav shows Extract / Discover / Templates / Dashboard (in that order)", async ({ page }) => {
+test("TopBar nav shows Extract / Discover / Dashboard (in that order) and Templates is in Explore", async ({ page }) => {
   await page.goto("/");
   // mainLinks are buttons in .topbar-desktop-actions.
   const nav = page.locator(".topbar-desktop-actions .nav-link");
@@ -83,8 +83,13 @@ test("TopBar nav shows Extract / Discover / Templates / Dashboard (in that order
   // short form (TopBar.jsx explains why). The route and the page heading
   // keep the full word, so this must NOT be loosened to match both.
   await expect(nav.nth(1)).toContainText(/^Discover$/i);
-  await expect(nav.nth(2)).toContainText(/^Templates$/i);
-  await expect(nav.nth(3)).toContainText(/Dashboard/i);
+  await expect(nav.nth(2)).toContainText(/Dashboard/i);
+
+  // Templates was moved to the Explore menu just after Integrations (stays public).
+  await page.getByRole("button", { name: /explore/i }).first().click();
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: /templates/i })).toBeVisible();
 });
 
 test("TopBar has no Schedules nav item — it lives in the user menu", async ({ page }) => {

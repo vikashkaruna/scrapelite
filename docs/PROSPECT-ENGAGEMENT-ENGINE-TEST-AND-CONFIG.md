@@ -57,9 +57,9 @@ The **Prospect Engagement Engine** transforms DatIQ from a passive web extractio
 
 ### 2.1 Database Migration (Supabase)
 
-To enable live persistent storage and multi-seat sync, execute migration `0048_prospect_engagement_engine.sql` in your Supabase SQL editor:
+To enable live persistent storage and multi-seat sync, execute migration `0081_prospect_engagement_engine.sql` in your Supabase SQL editor:
 
-File: [`supabase/migrations/0048_prospect_engagement_engine.sql`](file:///Users/vikash/Extracta/supabase/migrations/0048_prospect_engagement_engine.sql)
+File: [`supabase/migrations/0081_prospect_engagement_engine.sql`](../supabase/migrations/0081_prospect_engagement_engine.sql)
 
 #### Tables Created:
 1. `public.engagement_campaigns`: Outreach campaign definitions, brand kits, channel priority, and settings.
@@ -72,7 +72,7 @@ File: [`supabase/migrations/0048_prospect_engagement_engine.sql`](file:///Users/
 ```bash
 # Option A: Via Supabase Dashboard
 # Navigate to: https://app.supabase.com/project/<project-ref>/sql
-# Copy and paste the contents of supabase/migrations/0048_prospect_engagement_engine.sql and click Run.
+# Copy and paste the contents of supabase/migrations/0081_prospect_engagement_engine.sql and click Run.
 
 # Option B: Via DatIQ migration script
 npm run migrate:prod
@@ -447,14 +447,14 @@ npm run build
 - **Resolution**: In staging or preview environments, the system defaults to mock simulation. If real sends are desired, add `RESEND_API_KEY` and `TWILIO_*` credentials to Netlify environment variables.
 
 ### Q3: Prospects are not saving to Supabase
-- **Cause**: Migration `0048_prospect_engagement_engine.sql` has not been applied yet to the active Supabase project.
+- **Cause**: Migration `0081_prospect_engagement_engine.sql` has not been applied yet to the active Supabase project.
 - **Resolution**: Run the SQL migration in the Supabase SQL editor. In the meantime, the engine will gracefully fall back to browser `localStorage` storage so UI testing is unblocked.
 
 ---
 
 ## 6. Summary Checklist for Sign-Off
 
-- [ ] Migration `0048_prospect_engagement_engine.sql` executed in Supabase.
+- [ ] Migration `0081_prospect_engagement_engine.sql` executed in Supabase.
 - [ ] Netlify environment variables configured (`SUPABASE_*`, `RESEND_*`, `TWILIO_*`).
 - [ ] Edge Access bypass set for `/api/engagement/*`.
 - [ ] n8n workflows imported and credential mappings confirmed.

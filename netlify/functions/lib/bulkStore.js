@@ -5,6 +5,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { enrichDomain, fieldsNeedingReview } from "./bulkEnrich.js";
+import { meterContext, flush as flushMeter, affords } from "./creditMeter.js";
 import { dispatchSignal } from "./signalDispatch.js";
 import { dedupeEntries } from "../../../src/lib/bulk/identityModel.js";
 import { evaluateIcp, DEFAULT_THRESHOLD } from "../../../src/lib/bulk/icpModel.js";
@@ -56,11 +57,30 @@ export async function assertJobOwner(jobId, userId, env = process.env) {
   return !error && !!data;
 }
 
+export async function assertListOwner(listId, userId, env = process.env) {
+  if (ownerless(userId) || !listId) return false;
+  const db = serviceDb(env);
+  if (!db) {
+    const list = _localLists.get(listId);
+    return !!list && list.user_id === userId;
+  }
+  const { data, error } = await db
+    .from("lists")
+    .select("id")
+    .eq("id", listId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !error && !!data;
+}
+
 export async function listLists(userId, env = process.env) {
   if (ownerless(userId)) return { ...NO_OWNER, lists: [] };
   const db = serviceDb(env);
   if (!db) {
-    const userLists = Array.from(_localLists.values()).filter((l) => l.user_id === userId);
+    const userLists = Array.from(_localLists.values()).filter((l) => l.user_id === userId).map((l) => {
+      const activeJob = Array.from(_localJobs.values()).find((j) => j.list_id === l.id && j.status !== "completed") || null;
+      return { ...l, active_job: activeJob };
+    });
     return { ok: true, lists: userLists };
   }
 
@@ -69,7 +89,23 @@ export async function listLists(userId, env = process.env) {
 
   const { data, error } = await q;
   if (error) return { ok: false, reason: error.message, lists: [] };
-  return { ok: true, lists: data || [] };
+
+  // Fetch active enrichment jobs to report real-time background progress
+  const { data: activeJobs } = await db
+    .from("enrichment_jobs")
+    .select("id, list_id, status, total_items, processed_items, created_at, updated_at")
+    .eq("user_id", userId)
+    .in("status", ["processing", "running", "queued", "pending"]);
+
+  const listsWithJobs = (data || []).map((list) => {
+    const activeJob = (activeJobs || []).find((j) => j.list_id === list.id) || null;
+    return {
+      ...list,
+      active_job: activeJob,
+    };
+  });
+
+  return { ok: true, lists: listsWithJobs };
 }
 
 export async function getList(listId, userId, env = process.env) {
@@ -441,23 +477,63 @@ export async function processJobChunk(jobId, budgetMs = 8000, env = process.env)
 
   const { data: pendingItems, error: itemsErr } = await db
     .from("enrichment_job_items")
-    .select("*, list_records(*)")
+    .select("id, job_id, record_id, status, attempts")
     .eq("job_id", jobId)
     .eq("status", "queued")
     .limit(25);
 
-  if (itemsErr || !pendingItems || pendingItems.length === 0) {
+  if (itemsErr) {
+    console.error("[bulkStore] processJobChunk items error:", itemsErr);
+    return { ok: false, reason: itemsErr.message };
+  }
+
+  if (!pendingItems || pendingItems.length === 0) {
     await db.from("enrichment_jobs").update({ status: "completed" }).eq("id", jobId);
-    await db.from("lists").update({ status: "complete" }).eq("id", job.list_id);
+    await updateListCounters(db, job.list_id);
     return { ok: true, processed: 0, remaining: 0, done: true };
   }
 
+  const recordIds = pendingItems.map((i) => i.record_id).filter(Boolean);
+  const { data: recordsData, error: recFetchErr } = await db
+    .from("list_records")
+    .select("*")
+    .in("id", recordIds);
+
+  if (recFetchErr) {
+    console.error("[bulkStore] processJobChunk recordsData error:", recFetchErr);
+    return { ok: false, reason: recFetchErr.message };
+  }
+  const recordsMap = new Map((recordsData || []).map((r) => [r.id, r]));
+
   const rules = await getIcpRules(job.user_id, "sales", env);
+
+  // ── L3: A MONTHLY VOLUME CAP, NOT JUST A LIST-SIZE ONE ──────────────────
+  // batch_max_urls bounds how big one list may be. It says nothing about how
+  // OFTEN, so the same 250-row list re-run daily was 250 fetches and 250 AI
+  // calls a day against a cap that had already been satisfied once.
+  //
+  // ⚠️ Checked ONCE per chunk, not per row. A balance read per row would put
+  // a Supabase round-trip inside the loop this budget exists to protect, and
+  // the pool cannot move much inside one chunk anyway.
+  // ⚠️ affords() says yes when the balance is unreadable AND when this
+  //    account has never been granted credits — see its header for why.
+  const meter = meterContext({ caller: "bulk-enrich", userId: job.user_id });
+  const budget = await affords(job.user_id, pendingItems.length * 3, env);
+  if (!budget.ok) {
+    // Stopped with a recorded reason, never silently dropped: a job that keeps
+    // reporting "running" while doing nothing is the failure shape this repo
+    // has already had to fix for schedules.
+    await db.from("enrichment_jobs").update({
+      status: "paused",
+      paused_reason: `Out of credits — this chunk needs about ${budget.estimated} and ${Math.max(0, budget.available)} remain. Top up, or wait for your allowance to renew.`,
+    }).eq("id", jobId);
+    return { ok: false, reason: "out_of_credits", available: budget.available, needed: budget.estimated };
+  }
 
   for (const item of pendingItems) {
     if (Date.now() - startTime >= budgetMs) break;
 
-    const rec = item.list_records;
+    const rec = recordsMap.get(item.record_id);
     if (rec) {
       const domain = rec.canonical_domain;
 
@@ -470,6 +546,7 @@ export async function processJobChunk(jobId, budgetMs = 8000, env = process.env)
       const perDomainBudget = Math.max(2000, budgetMs - (Date.now() - startTime));
       const enrichment = await enrichDomain(domain, {
         deadlineAt: Date.now() + Math.min(perDomainBudget, 9000),
+        meter,
       });
 
       if (!enrichment.ok) {
@@ -554,13 +631,159 @@ export async function processJobChunk(jobId, budgetMs = 8000, env = process.env)
     .eq("job_id", jobId)
     .eq("status", "queued");
 
+  // One ledger write for the whole chunk, collapsed by reason — not one per
+  // row. See creditMeter's header for why the charge is buffered.
+  await flushMeter(meter, env);
+
   const done = (pendingCount || 0) === 0;
   await db.from("enrichment_jobs").update({
-    processed_items: job.processed_items + processedCount,
+    processed_items: (job.processed_items || 0) + processedCount,
     status: done ? "completed" : "running",
   }).eq("id", jobId);
 
+  await updateListCounters(db, job.list_id);
+
   return { ok: true, processed: processedCount, remaining: pendingCount || 0, done };
+}
+
+/**
+ * Recomputes and persists aggregate list statistics to public.lists.
+ */
+async function updateListCounters(db, listId) {
+  if (!db || !listId) return;
+  try {
+    const { data: records, error } = await db
+      .from("list_records")
+      .select("status")
+      .eq("list_id", listId);
+    if (error || !records) return;
+
+    const total = records.length;
+    const completed = records.filter((r) => r.status === "complete" || r.status === "partial").length;
+    const failed = records.filter((r) => r.status === "failed").length;
+    const needsReview = records.filter((r) => r.status === "needs_review").length;
+    const isDone = completed + failed + needsReview >= total && total > 0;
+
+    await db.from("lists").update({
+      completed_records: completed,
+      failed_records: failed,
+      needs_review_records: needsReview,
+      status: isDone ? "complete" : "running",
+      updated_at: new Date().toISOString(),
+    }).eq("id", listId);
+  } catch (err) {
+    console.error("[bulkStore] updateListCounters error:", err);
+  }
+}
+
+/**
+ * Initiates or retrieves an active enrichment job for an account list.
+ * Safe fallback so user can always trigger enrichment without re-importing.
+ */
+export async function startJob(userId, listId, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+  if (!listId) return { ok: false, reason: "list_id_required", status: 400 };
+
+  const db = serviceDb(env);
+  if (!db) {
+    const list = _localLists.get(listId);
+    if (!list || list.user_id !== userId) return { ok: false, reason: "list_not_found", status: 404 };
+
+    const activeJob = Array.from(_localJobs.values()).find(
+      (j) => j.list_id === listId && j.user_id === userId && j.status !== "completed"
+    );
+    if (activeJob) return { ok: true, jobId: activeJob.id, total: activeJob.total_items };
+
+    const records = Array.from(_localRecords.values()).filter((r) => r.list_id === listId);
+    const uncompleted = records.filter((r) => r.status !== "complete" && r.status !== "partial");
+    const toQueue = uncompleted.length > 0 ? uncompleted : records;
+
+    const jobId = "job_" + Math.random().toString(36).slice(2, 10);
+    const now = new Date().toISOString();
+
+    toQueue.forEach((rec, idx) => {
+      rec.status = "queued";
+      const itemId = `item_${jobId}_${idx}`;
+      _localJobItems.set(itemId, {
+        id: itemId,
+        job_id: jobId,
+        record_id: rec.id,
+        status: "queued",
+        attempts: 0,
+        created_at: now,
+      });
+    });
+
+    _localJobs.set(jobId, {
+      id: jobId,
+      list_id: listId,
+      user_id: userId,
+      status: "queued",
+      cursor: 0,
+      total_items: toQueue.length,
+      processed_items: 0,
+      created_at: now,
+    });
+
+    list.status = "running";
+    return { ok: true, jobId, total: toQueue.length };
+  }
+
+  const isOwner = await assertListOwner(listId, userId, env);
+  if (!isOwner) return { ok: false, reason: "list_not_found", status: 404 };
+
+  // Check if there is an existing non-completed job
+  const { data: existingJobs } = await db
+    .from("enrichment_jobs")
+    .select("id, status, total_items")
+    .eq("list_id", listId)
+    .eq("user_id", userId)
+    .neq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (existingJobs && existingJobs.length > 0) {
+    return { ok: true, jobId: existingJobs[0].id, total: existingJobs[0].total_items };
+  }
+
+  const { data: records, error: recErr } = await db
+    .from("list_records")
+    .select("id, status")
+    .eq("list_id", listId);
+
+  if (recErr || !records || records.length === 0) {
+    return { ok: false, reason: "no_records_in_list", status: 400 };
+  }
+
+  const uncompleted = records.filter((r) => r.status !== "complete" && r.status !== "partial");
+  const targetRecords = uncompleted.length > 0 ? uncompleted : records;
+
+  const { data: newJob, error: jobErr } = await db
+    .from("enrichment_jobs")
+    .insert({
+      list_id: listId,
+      user_id: userId,
+      status: "queued",
+      total_items: targetRecords.length,
+    })
+    .select()
+    .single();
+
+  if (jobErr) return { ok: false, reason: jobErr.message, status: 500 };
+
+  const targetIds = targetRecords.map((r) => r.id);
+  await db.from("list_records").update({ status: "queued" }).in("id", targetIds);
+
+  const itemsPayload = targetIds.map((recId) => ({
+    job_id: newJob.id,
+    record_id: recId,
+    status: "queued",
+  }));
+  await db.from("enrichment_job_items").insert(itemsPayload);
+
+  await db.from("lists").update({ status: "running" }).eq("id", listId);
+
+  return { ok: true, jobId: newJob.id, total: targetRecords.length };
 }
 
 export async function getReviewQueue(userId, listId = null, env = process.env) {
@@ -623,4 +846,133 @@ export async function resolveReviewItem(userId, { reviewId, action, resolvedValu
 
   await db.from("list_records").update({ status: "complete" }).eq("id", item.record_id);
   return { ok: true, item };
+}
+
+export async function updateList(userId, listId, { name, description }, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+  const db = serviceDb(env);
+  const now = new Date().toISOString();
+
+  if (!db) {
+    const list = _localLists.get(listId);
+    if (!list || list.user_id !== userId) return { ok: false, reason: "List not found or unauthorized", status: 404 };
+    if (name) list.name = name.trim();
+    if (description !== undefined) list.description = description;
+    list.updated_at = now;
+    return { ok: true, list };
+  }
+
+  const updates = { updated_at: now };
+  if (name) updates.name = name.trim();
+  if (description !== undefined) updates.description = description;
+
+  const { data, error } = await db
+    .from("lists")
+    .update(updates)
+    .eq("id", listId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true, list: data };
+}
+
+export async function deleteList(userId, listId, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+  const db = serviceDb(env);
+
+  if (!db) {
+    const list = _localLists.get(listId);
+    if (list && list.user_id === userId) {
+      _localLists.delete(listId);
+      for (const [id, rec] of _localRecords.entries()) {
+        if (rec.list_id === listId) _localRecords.delete(id);
+      }
+    }
+    return { ok: true };
+  }
+
+  await db.from("list_records").delete().eq("list_id", listId);
+  const { error } = await db.from("lists").delete().eq("id", listId).eq("user_id", userId);
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true };
+}
+
+export async function updateRecord(userId, recordId, updates = {}, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+  const db = serviceDb(env);
+  const now = new Date().toISOString();
+
+  if (!db) {
+    const rec = _localRecords.get(recordId);
+    if (!rec) return { ok: false, reason: "Record not found", status: 404 };
+    const list = _localLists.get(rec.list_id);
+    if (!list || list.user_id !== userId) return { ok: false, reason: "Unauthorized", status: 403 };
+
+    rec.curated = true;
+    rec.curated_at = now;
+    if (updates.icp_score !== undefined) rec.icp_score = updates.icp_score;
+    if (updates.curation_notes !== undefined) rec.curation_notes = updates.curation_notes;
+    rec.enriched_data = { ...(rec.enriched_data || {}), ...(updates.enriched_data || {}) };
+    rec.updated_at = now;
+    return { ok: true, record: rec };
+  }
+
+  const { data: currentRec, error: fetchErr } = await db
+    .from("list_records")
+    .select("*, lists!inner(user_id)")
+    .eq("id", recordId)
+    .single();
+
+  if (fetchErr || !currentRec) return { ok: false, reason: "Record not found", status: 404 };
+  if (currentRec.lists?.user_id !== userId) return { ok: false, reason: "Unauthorized", status: 403 };
+
+  const mergedData = { ...(currentRec.enriched_data || {}), ...(updates.enriched_data || {}) };
+  const updatePayload = {
+    curated: true,
+    curated_at: now,
+    enriched_data: mergedData,
+    updated_at: now,
+  };
+  if (updates.icp_score !== undefined) updatePayload.icp_score = updates.icp_score;
+  if (updates.curation_notes !== undefined) updatePayload.curation_notes = updates.curation_notes;
+
+  const { data, error } = await db
+    .from("list_records")
+    .update(updatePayload)
+    .eq("id", recordId)
+    .select()
+    .single();
+
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true, record: data };
+}
+
+export async function deleteRecord(userId, recordId, env = process.env) {
+  if (ownerless(userId)) return NO_OWNER;
+  const db = serviceDb(env);
+
+  if (!db) {
+    const rec = _localRecords.get(recordId);
+    if (!rec) return { ok: true };
+    const list = _localLists.get(rec.list_id);
+    if (!list || list.user_id !== userId) return { ok: false, reason: "Unauthorized", status: 403 };
+    _localRecords.delete(recordId);
+    return { ok: true };
+  }
+
+  const { data: currentRec } = await db
+    .from("list_records")
+    .select("id, lists!inner(user_id)")
+    .eq("id", recordId)
+    .single();
+
+  if (!currentRec || currentRec.lists?.user_id !== userId) {
+    return { ok: false, reason: "Unauthorized", status: 403 };
+  }
+
+  const { error } = await db.from("list_records").delete().eq("id", recordId);
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true };
 }

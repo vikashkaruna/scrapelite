@@ -2,6 +2,7 @@
 <html lang="en" data-datiq-app="spa">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- ⚠️ Nothing may go between <!DOCTYPE> and <html>. Vite's dev server
          injects the @vitejs/plugin-react refresh preamble at exactly that
          position, so a comment there SWALLOWS the preamble and the dev server
@@ -29,6 +30,14 @@
          so the Consent Mode v2 default lands on the dataLayer before gtag.js
          can run. See public/analytics.js. -->
     <script src="/analytics.js"></script>
+
+    <!-- Privacy-friendly analytics by Plausible -->
+    <script async src="https://plausible.io/js/pa-Eg7Xhgb7lalkDtpfmY-qf.js"></script>
+    <script>
+      window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+      plausible.init()
+    </script>
+
     <!-- Supply the DatIQ mark in every browser-native format. The SVG keeps
          desktop tabs crisp, while ICO and PNG cover legacy/browser chrome and
          installed/mobile contexts without falling through to the SPA shell. -->
@@ -38,7 +47,6 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="theme-color" content="#4f46e5" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- Primary meta -->
     <title>DatIQ — Intelligence, Connected.</title>
@@ -115,23 +123,36 @@
     <meta name="twitter:title" content="DatIQ — Intelligence, Connected." />
     <meta name="twitter:description" content="Turn public web signals into structured intelligence and connected workflows. Extract, enrich, monitor and audit a URL with evidence you can use." />
     <meta name="twitter:image" content="https://datiq.app/og-card.jpg" />
-    <meta name="twitter:site" content="@datiq_app" />
+    <meta name="twitter:site" content="@DatIQApp" />
 
     <!-- JSON-LD: Organization -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "Organization",
+      "@id": "https://datiq.app/#organization",
       "name": "DatIQ",
+      "legalName": "Axiom Minds Private Limited",
       "alternateName": "DatIQ — Intelligence, Connected.",
       "url": "https://datiq.app",
-      "logo": "https://datiq.app/favicon.svg",
-      "description": "DatIQ turns public web signals into structured intelligence and connected workflows through extraction, enrichment, discoverability audits, monitoring and exports.",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://datiq.app/favicon.svg",
+        "width": "512",
+        "height": "512"
+      },
+      "description": "DatIQ turns public web signals into structured intelligence and connected workflows through extraction, enrichment, discoverability audits, competitor monitoring and signal routing.",
       "slogan": "Intelligence, Connected.",
       "sameAs": [
         "https://www.linkedin.com/company/datiq",
-        "https://twitter.com/datiq_app"
+        "https://twitter.com/DatIQApp",
+        "https://www.linkedin.com/company/axiom-minds/"
       ],
+      "parentOrganization": {
+        "@type": "Organization",
+        "name": "Axiom Minds Private Limited",
+        "url": "https://axiomminds.ai"
+      },
       "contactPoint": {
         "@type": "ContactPoint",
         "contactType": "customer support",

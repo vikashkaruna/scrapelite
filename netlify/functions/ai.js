@@ -33,6 +33,8 @@ import { runChain, keyPresence } from "./lib/aiProviders.js";
 import { publicFailure, logChainFailure } from "./lib/aiFailure.js";
 import { AI_AREA_KEYS, MODEL_TIER } from "../../src/lib/providerRegistry.js";
 import { DENY_STATUS, denyBody, resolveRequestEntitlement, checkCapability } from "./lib/requireEntitlement.js";
+import { peekGuestCredit } from "./lib/guestUsage.js";
+import { meterContext, flush as flushMeter } from "./lib/creditMeter.js";
 import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
 import { createDeadline } from "./lib/audit/deadline.js";
 
@@ -98,13 +100,14 @@ function aiBudgetMs(env = process.env) {
   return Math.max(3_000, Math.min(120_000, Math.round(raw)));
 }
 
-function respond(statusCode, body) {
+function respond(statusCode, body, extraHeaders = {}) {
   return {
     statusCode,
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Headers": "Content-Type",
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
   };
@@ -151,8 +154,10 @@ export const handler = async (event) => {
   // Subscription gate — AI enrichment is a paid capability and must stop for a
   // lapsed subscriber. Signed-in users only; guests are unaffected. Fails OPEN
   // on infrastructure error (see lib/requireEntitlement.js).
+  let verifiedUserId = null;
   try {
     const resolved = await resolveRequestEntitlement(event);
+    verifiedUserId = resolved?.userId || null;
     const { ctx, refusal } = await buildWorkspaceCtx(resolved, workspaceId);
     if (refusal) return respond(403, { error: refusal.message, code: refusal.code });
     const check = checkCapability(resolved, "ai", ctx);
@@ -171,6 +176,42 @@ export const handler = async (event) => {
     return respond(503, { error: "AI is temporarily unavailable.", code: "no_key" });
   }
 
+  // ── L0b: A GUEST REACHED THIS ENDPOINT FOR FREE, WITHOUT LIMIT ──────────
+  //
+  // The gate above is explicitly "signed-in users only; guests are
+  // unaffected", which was true and was the leak: /api/ai is a real provider
+  // call, and an anonymous caller could make it as many times as they liked.
+  //
+  // 🔴 IT CHECKS THE BUCKET, IT DOES NOT SPEND FROM IT.
+  // One extraction from the browser is /api/extract — which charges a guest
+  // credit — PLUS a /api/ai call for the summary and often another for link
+  // tagging. Consuming here as well would have taken a guest from ten
+  // extractions to three or four, silently, while GuestTrialBanner went on
+  // advertising ten. A read closes the leak exactly (once the ten credits are
+  // gone, this endpoint stops too) without charging one extraction twice.
+  //
+  // ⚠️ FAILS OPEN on anything undeterminable — no cookie, no row, no database
+  // — and closed only on a count at or over the limit. "No account" is a
+  // known state with a known bucket; an unreachable Supabase is not.
+  const guestUsage = await peekGuestCredit(event, "single", { verifiedUserId });
+  if (!guestUsage.allowed) {
+    return respond(429, {
+      error: "You've used your free AI requests. Sign in to continue — it's free and takes a moment.",
+      code: guestUsage.reason || "single_limit_reached",
+      remaining: 0,
+    });
+  }
+
+  const meter = meterContext({ caller: "api-ai", userId: verifiedUserId });
+  // Single exit below this line so no return path can forget the charge.
+  // No Set-Cookie here: the peek above never mints an identity, because
+  // /api/extract owns that and a second minter would hand the same browser
+  // two identities and two fresh buckets.
+  const reply = async (statusCode, body) => {
+    await flushMeter(meter);
+    return respond(statusCode, body);
+  };
+
   // Budgeted from the REQUEST, not from the chain: entitlement resolution and
   // the workspace lookup above have already spent real wall clock, and a budget
   // that ignores it is a budget that still overruns.
@@ -178,7 +219,7 @@ export const handler = async (event) => {
   const slice = deadline.signalFor(deadline.remaining());
 
   try {
-    const result = await runChain(safeMessages, max_tokens, { area, tier, signal: slice?.signal });
+    const result = await runChain(safeMessages, max_tokens, { area, tier, signal: slice?.signal, meter });
     if (!result.ok) {
       // Our own clock, named as ours. Distinguished from a provider fault so an
       // operator reads "raise the budget" instead of hunting a key or a bill,
@@ -189,7 +230,7 @@ export const handler = async (event) => {
       // construction: we own the controller that set it.
       if (slice?.signal.aborted || deadline.expired()) {
         logChainFailure("/api/ai (timeout)", result);
-        return respond(504, {
+        return reply(504, {
           error: "This took too long to answer. This is a limit on our side — try again shortly.",
           code: "ai_timeout",
         });
@@ -198,10 +239,10 @@ export const handler = async (event) => {
       // alone goes to the caller. `detail.attempts` used to travel here
       // carrying each vendor's own error prose.
       logChainFailure("/api/ai", result);
-      return respond(502, { error: "AI is temporarily unavailable.", ...publicFailure(result) });
+      return reply(502, { error: "AI is temporarily unavailable.", ...publicFailure(result) });
     }
     // Normalize to the Anthropic messages shape the browser already parses.
-    return respond(200, {
+    return reply(200, {
       content: [{ type: "text", text: result.text }],
       _provider: result.provider,
       _model: result.model,
@@ -210,12 +251,12 @@ export const handler = async (event) => {
     });
   } catch (err) {
     if (err?.name === "AbortError" || slice?.signal.aborted || deadline.expired()) {
-      return respond(504, {
+      return reply(504, {
         error: "This took too long to answer. This is a limit on our side — try again shortly.",
         code: "ai_timeout",
       });
     }
-    return respond(502, { error: `Upstream fetch failed: ${err.message}` });
+    return reply(502, { error: `Upstream fetch failed: ${err.message}` });
   } finally {
     slice?.clear();
   }

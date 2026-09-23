@@ -49,6 +49,7 @@ const ACTIONS = new Set([
 // absent: a module that is never imported cannot be invoked by a typo.
 const RUNNABLE = {
   "scheduled-runner": () => import("./scheduled-runner.js"),
+  "prompt-monitor": () => import("./prompt-monitor.js"),
   "reengagement": () => import("./reengagement.js"),
   "billing-lifecycle": () => import("./billing-lifecycle.js"),
   "health-monitor": () => import("./health-monitor.js"),
@@ -61,6 +62,7 @@ const RUNNABLE = {
   "bulk-runner": () => import("./bulk-runner.js"),
   "signal-retry": () => import("./signal-retry.js"),
   "workflow-orchestrator-cron": () => import("./workflow-orchestrator-cron.js"),
+  "sxo-analytics-import-worker": () => import("./sxo-analytics-import-worker.js"),
 };
 
 // Marks a schedule paused by an admin rather than by the billing lifecycle.
@@ -77,6 +79,7 @@ const ADMIN_PAUSE_REASON = "admin_paused";
 // render it.
 const JOB_PLATFORM = {
   "scheduled-runner": "netlify",
+  "prompt-monitor":   "db",
   "reengagement":     "netlify",
   "billing-lifecycle":"db",
   "billing-purge":    "db",
@@ -85,6 +88,7 @@ const JOB_PLATFORM = {
   "watchlist-monitor":       "db",
   "bulk-runner":             "db",
   "signal-retry":            "db",
+  "sxo-analytics-import-worker": "db",
   // The orchestrator's own work is an outbound POST to n8n; the queue read is
   // incidental. Classified by what it primarily does, not what it touches.
   "workflow-orchestrator-cron": "netlify",

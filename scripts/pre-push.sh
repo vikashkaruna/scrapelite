@@ -34,7 +34,12 @@
 
 set -euo pipefail
 
-# ── Is the INSTALLED hook the current one? ─────────────────────────────
+# Ensure Node 24 is used if nvm is present
+if [ -s "${HOME:-}/.nvm/nvm.sh" ]; then
+  export NVM_DIR="${HOME}/.nvm"
+  . "${NVM_DIR}/nvm.sh" 2>/dev/null || true
+  nvm use 24.17.0 >/dev/null 2>&1 || nvm use 24 >/dev/null 2>&1 || true
+fi
 # .git/hooks/pre-push is a COPY of this file, made by `npm run
 # ci:install-hook`. Nothing re-copies it when this script changes, so the
 # installed hook silently rots — and a rotted hook does not announce
@@ -194,9 +199,11 @@ fi
 # ── Run the test suites ───────────────────────────────────────────────
 # tput may not exist in non-TTY environments (CI smoke, backgrounded
 # shells). Use plain escape codes when it does, otherwise fall back.
-if [ -t 1 ] && command -v tput >/dev/null 2>&1; then
-  C_OK="$(tput setaf 2)"; C_ERR="$(tput setaf 1)"; C_DIM="$(tput dim)"
-  C_RST="$(tput sgr0)"
+if [ -t 1 ] && command -v tput >/dev/null 2>&1 && tput setaf 2 >/dev/null 2>&1; then
+  C_OK="$(tput setaf 2 2>/dev/null || echo '\033[32m')"
+  C_ERR="$(tput setaf 1 2>/dev/null || echo '\033[31m')"
+  C_DIM="$(tput dim 2>/dev/null || echo '\033[2m')"
+  C_RST="$(tput sgr0 2>/dev/null || echo '\033[0m')"
 else
   C_OK='\033[32m'; C_ERR='\033[31m'; C_DIM='\033[2m'; C_RST='\033[0m'
 fi

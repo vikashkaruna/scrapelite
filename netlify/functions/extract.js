@@ -60,6 +60,7 @@ import { runChain, keyPresence } from "./lib/aiProviders.js";
 import { DENY_STATUS, denyBody, resolveRequestEntitlement, checkCapability } from "./lib/requireEntitlement.js";
 import { buildWorkspaceCtx } from "./lib/workspaceContext.js";
 import { consumeGuestCredit } from "./lib/guestUsage.js";
+import { meterContext, flush as flushMeter } from "./lib/creditMeter.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
 
@@ -228,7 +229,7 @@ export function relatedFetchMs(deadline) {
   return Math.min(RELATED_FETCH_TIMEOUT_MS, room);
 }
 
-async function extractStructuredWithAI({ plan, title, url, text, pagesRead, deadline, isRetry = false }) {
+async function extractStructuredWithAI({ plan, title, url, text, pagesRead, deadline, isRetry = false, meter = null }) {
   const presence = keyPresence();
   if (!Object.values(presence).some(Boolean)) {
     return { ok: false, reason: ENRICH_REASON.NOT_CONFIGURED };
@@ -282,6 +283,9 @@ async function extractStructuredWithAI({ plan, title, url, text, pagesRead, dead
       area: "enrichment",
       schema: plan.schema,
       signal: slice?.signal,
+      // L0 — enrichment was an unconditional ok() with no meter anywhere, so
+      // every capability run made a real AI call and billed nobody.
+      meter,
     });
   } catch (err) {
     console.warn("[DatIQ] enrichment runChain threw:", err?.message || err);
@@ -707,11 +711,26 @@ export const handler = async (event) => {
   // URLs spent three of their ten free extractions on requests that were
   // refused on policy grounds before a provider was ever contacted.
   const guestUsage = await consumeGuestCredit(event, "single", { verifiedUserId });
-  const reply = (statusCode, body) => respond(
-    statusCode,
-    body,
-    guestUsage.cookie ? { "Set-Cookie": guestUsage.cookie } : {},
-  );
+
+  // ── ONE METERING CONTEXT PER REQUEST, FLUSHED ON THE WAY OUT ────────────
+  // Created HERE, below every gate that can decline without doing work, for
+  // the same reason the guest charge is: nothing above this line may bill.
+  // `reply` is the single exit, so flushing there means no return path can
+  // forget — which is how a charge goes missing on the one branch nobody
+  // remembered.
+  //
+  // A guest has no user id, and that is recorded rather than skipped: the
+  // ledger row carries a null user with the caller attached, so guest spend
+  // is countable even though it is not billable to an account.
+  const meter = meterContext({ caller: "extract", userId: verifiedUserId });
+  const reply = async (statusCode, body) => {
+    await flushMeter(meter);
+    return respond(
+      statusCode,
+      body,
+      guestUsage.cookie ? { "Set-Cookie": guestUsage.cookie } : {},
+    );
+  };
   if (!guestUsage.allowed) {
     return reply(429, {
       error: "Guest extraction limit reached. Sign in to continue.",
@@ -769,6 +788,7 @@ export const handler = async (event) => {
     const result = await runScrapeChain(url, {
       ...options,
       deadlineAt: deadline.startedAt + deadline.totalMs,
+      meter,
     });
     if (!result.ok) {
       // A chain that ran out of time is OUR limit, not the page's fault, and it
@@ -834,6 +854,7 @@ export const handler = async (event) => {
 
       const corpus = buildCorpus(url, page.text, related);
       const aiRes = await extractStructuredWithAI({
+        meter,
         plan, title: result.title || "", url,
         text: corpus.text, pagesRead: corpus.pagesRead, deadline,
       });
@@ -874,6 +895,7 @@ export const handler = async (event) => {
             if (late.length) {
               const c2 = buildCorpus(url, page.text, late);
               const retry = await extractStructuredWithAI({
+                meter,
                 plan, title: result.title || "", url, text: c2.text,
                 pagesRead: c2.pagesRead, deadline, isRetry: true,
               });

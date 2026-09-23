@@ -1,4 +1,4 @@
--- 0048_prospect_engagement_engine.sql
+-- 0081_prospect_engagement_engine.sql
 --
 -- Prospect Engagement Engine: Modular, n8n-orchestrated multi-channel outreach engine.
 -- Adds 5 tables:

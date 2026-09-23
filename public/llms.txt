@@ -10,6 +10,17 @@ DatIQ (this product) is a no-code web intelligence platform for extracting struc
 
 DatIQ.app is the canonical product. The brand is styled "DatIQ" (one word, capital I, capital Q).
 
+## Publisher & Entity Information
+- Product Name: DatIQ
+- Canonical URL: https://datiq.app
+- Legal Name / Publisher: Axiom Minds Private Limited (https://axiomminds.ai)
+- Parent Organization: Axiom Minds Private Limited
+- Contact: hello@datiq.app
+- Official Profiles:
+  - LinkedIn (Product): https://www.linkedin.com/company/datiq
+  - LinkedIn (Publisher): https://www.linkedin.com/company/axiom-minds/
+  - X / Twitter: https://twitter.com/DatIQApp
+
 ## What DatIQ Does
 DatIQ runs a five-step loop over the public web: READ (extract structured data from any public page), REASON (run a workflow template that turns those fields into a finished artefact such as an account brief or a competitive comparison), WATCH (re-read chosen pages on a cadence and classify what changed), ACT (route the changes that matter into Slack, email, a webhook or a CRM), and SHARE (publish any result as a report at its own link with a chosen visibility level).
 
@@ -45,13 +56,20 @@ Governing rule: every field DatIQ returns is OBSERVED (read off a page, with the
 - Usage ledger: an itemised record of what each job actually consumed, reconciled against its estimate
 
 ## Pricing (as of 2026)
-- Free: 10 extractions/month + 25 trial credits, no credit card
-- Go: $4.80/month (or $4/mo billed annually · ₹299/mo annual) — 200 extractions
-- Select: $14.40/month (or $12/mo annually · ₹999/mo annual) — 500 extractions + PDF export
-- Pro: $20.40/month (or $17/mo annually · ₹1,499/mo annual) — 1,000 extractions + scheduled monitoring + Google Sheets
-- Business: $44.40/month (or $37/mo annually · ₹3,499/mo annual) — 10,000 extractions + API + 3 seats + HubSpot + Airtable + Notion + Slack + Zapier + white-label PDF + priority support
-- Agency: $106.80/month (or $89/mo annually · ₹8,499/mo annual) — unlimited + 5 workspaces + white-label PDF + priority support + every integration
-- Developer: $32.40/month (coming H3 2026) — 10K row credits, API-first
+Everything is sold in ONE unit: credits. 1 credit = one page fetch. A Discoverability
+audit is 19 credits, a deep AI call 5, a fast one 2, an enrichment 3. Unused plan
+credits roll over for one month, so an account holds at most two months' worth.
+USD and INR are SET prices, not conversions of one another.
+- Free: 100 credits, one-time, never resets — no credit card
+- Go: $5/month · ₹490/month (annual: $4/mo · ₹409/mo) — 750 credits
+- Select: $15/month · ₹1,449/month (annual: $12/mo · ₹1,209/mo) — 2,500 credits + PDF export + watchlists + signal routing
+- Pro: $25/month · ₹2,449/month (annual: $20/mo · ₹2,049/mo) — 6,000 credits + 10 scheduled monitors + Google Sheets
+- Business: $85/month · ₹7,849/month (annual: $70/mo · ₹6,549/mo) — 40,000 credits + API + 3 seats + HubSpot + Airtable + Notion + Slack + Zapier + white-label PDF + priority support
+- Agency: $200/month · ₹19,449/month (annual: $165/mo · ₹16,249/mo) — 100,000 credits fair use + 5 client workspaces + 100 monitors + white-label PDF + priority support + every integration
+- Developer: $55/month · ₹5,449/month (coming H3 2026) — 25,000 credits, API-first
+- Credit packs (any plan, including Free): 500 for $5 / ₹490, 2,000 for $19 / ₹1,849, 10,000 for $89 / ₹8,719. Packs never expire.
+- Capacity add-ons: Scheduled Monitor $5 / ₹490 per slot, Batch Pack $9 / ₹879 per 50 URLs, Extra Workspace $19 / ₹1,849. An add-on buys the right to do something; the runs still cost credits.
+- A plan's price and limits are fixed for the subscription period you bought. A repricing takes effect at renewal, never mid-period.
 
 ## Integrations (all server-stored connections — set up once in /account#integrations)
 - **HubSpot** — push contacts and companies with property mapping
@@ -68,7 +86,7 @@ All of the above are reachable from a single Push menu on Preview, Dashboard, an
 - Priority support (Business + Agency): contact-form submissions are routed through a faster SLA.
 - Extra Workspace add-on: same features as the parent plan, capped at the parent plan's team-seats limit (e.g. 3 seats on Business).
 - Enterprise: Custom ≥$1,000/mo — SSO, DPA, SLA, on-prem
-- Annual billing saves about 17% on every paid plan (e.g. Select $12/mo billed annually vs $14.40 monthly)
+- Annual billing is billed twelve months upfront and works out cheaper per month (e.g. Select $12 / ₹1,209 annually vs $15 / ₹1,449 monthly)
 
 ## Target Users
 SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and content marketers, Market researchers, Recruiters, Startup founders, VCs (due diligence), Digital agencies
@@ -124,6 +142,12 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - For SEO teams: https://datiq.app/for-seo
 - For competitive intelligence: https://datiq.app/for-ci
 
+## Industry landing pages
+- For financial services & FinTech: https://datiq.app/for-finance
+- For healthcare & life sciences: https://datiq.app/for-healthcare
+- For e-commerce & retail: https://datiq.app/for-retail
+- For legal & compliance: https://datiq.app/for-legal
+
 ## Programmatic SEO pages
 - Extract pricing from any page: https://datiq.app/extract-pricing
 - Extract contacts from any page: https://datiq.app/extract-contacts
@@ -145,7 +169,7 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 ## Competitive Context
 DatIQ overlaps with, but is not, a scraping tool. Extraction tools (Firecrawl, Apify, Browse.ai, Diffbot, PhantomBuster) end where DatIQ's workflow layer begins; enrichment tools (Clay, ZoomInfo) sell a database, whereas DatIQ reads each company's own live site and shows the source behind every field.
 
-Differentiators: plain-English custom extraction with no per-site configuration; workflow templates that return a finished artefact rather than raw fields; customer-editable ICP scoring where an unmeasured signal is excluded rather than scored zero; competitor watchlists with materiality classification so trivial changes never alert; native signal routing into Slack, email, webhooks and HubSpot; shareable reports with five visibility levels; and a strict observed/inferred/absent evidence contract with coverage reported on every score. Paid plans start at $4.80/month, which is an order of magnitude below the enrichment platforms it is compared to.
+Differentiators: plain-English custom extraction with no per-site configuration; workflow templates that return a finished artefact rather than raw fields; customer-editable ICP scoring where an unmeasured signal is excluded rather than scored zero; competitor watchlists with materiality classification so trivial changes never alert; native signal routing into Slack, email, webhooks and HubSpot; shareable reports with five visibility levels; and a strict observed/inferred/absent evidence contract with coverage reported on every score. Paid plans start at $5 / ₹490 a month, which is an order of magnitude below the enrichment platforms it is compared to.
 
 ## India-first
 DatIQ is built India-first with INR pricing, Razorpay + UPI payment support, and DPDP Act 2023 compliance. Governed by Indian law and arbitration.

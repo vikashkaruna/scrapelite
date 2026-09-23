@@ -151,4 +151,55 @@ describe("BusinessTruthPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Page Corrected" }));
     await waitFor(() => expect(discoverability.resolveTruthConflict).toHaveBeenCalledWith("rec-1", "c1", "page_updated", { workspaceId: "ws-1" }));
   });
+
+  it("copies facts from an existing version into the proposal form", async () => {
+    mockApi({
+      record: full({
+        versions: [
+          {
+            id: "v-prev",
+            version_no: 3,
+            state: "superseded",
+            origin: "manual",
+            fields_json: { legal_name: "Acme Old Corp", canonical_domain: "acme.old" },
+          },
+        ],
+      }),
+    });
+    render(<BusinessTruthPanel />);
+    const copyBtn = await screen.findByRole("button", { name: /Copy to New/ });
+    fireEvent.click(copyBtn);
+
+    expect(await screen.findByText("Propose New Fact Version")).toBeTruthy();
+    expect(screen.getByDisplayValue("Acme Old Corp")).toBeTruthy();
+  });
+
+  it("opens delete modal and deletes unapproved or superseded version", async () => {
+    mockApi({
+      record: full({
+        versions: [
+          {
+            id: "v-draft",
+            version_no: 2,
+            state: "draft",
+            origin: "manual",
+            fields_json: { legal_name: "Draft Corp" },
+          },
+        ],
+      }),
+    });
+    vi.spyOn(discoverability, "deleteTruthVersion").mockResolvedValue({ ok: true, deleted: true });
+    render(<BusinessTruthPanel workspaceId="ws-1" />);
+
+    const deleteBtn = await screen.findByTitle("Delete this unapproved or superseded version");
+    fireEvent.click(deleteBtn);
+
+    expect(await screen.findByText("Delete Version v2")).toBeTruthy();
+    expect(screen.getByText(/Audit Notice:/)).toBeTruthy();
+
+    const confirmBtn = screen.getByRole("button", { name: "Delete Version" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => expect(discoverability.deleteTruthVersion).toHaveBeenCalledWith("rec-1", "v-draft", { workspaceId: "ws-1" }));
+  });
 });

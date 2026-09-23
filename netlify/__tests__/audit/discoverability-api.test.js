@@ -336,22 +336,51 @@ describe("gate order — nothing above the quota check may spend a credit", () =
     expect(auditRun).not.toHaveBeenCalled();
   });
 
-  it("refuses when the audit quota is exhausted, without running anything", async () => {
-    storeMock.countAuditsThisMonth = vi.fn(async () => ({ count: 100, degraded: false }));
+  // ── THE QUOTA IS THE CREDIT POOL NOW ───────────────────────────────────
+  // This used to set countAuditsThisMonth to 100 and expect a refusal. The
+  // audit row count is retired as a GATE (it still answers "how many this
+  // month" for history and the report header) — an audit is priced in the
+  // same unit as every other provider call and draws on the one pool.
+  it("refuses when the credit pool cannot cover the run, without running anything", async () => {
+    entitlement.mockResolvedValue({
+      planMap: PLAN_BY_ID, userId: "user-1", guest: false, degraded: false,
+      entitlement: { plan_id: "pro", status: "active" },
+      credits: { enforced: true, available: 4 },   // a run costs 19
+    });
     const res = await call("POST", "audits", { body: { target_url: "https://example.com" } });
     expect(res.statusCode).toBe(402);
-    expect(parse(res).code).toBe("QUOTA_EXCEEDED");
+    expect(parse(res).code).toBe("INSUFFICIENT_CREDITS");
+    // ⚠️ The refusal has to NAME the cost, or it is not actionable.
+    expect(parse(res).error).toMatch(/19 credits/);
     expect(auditRun).not.toHaveBeenCalled();
     expect(storeMock.createAudit).not.toHaveBeenCalled();
   });
 
-  it("FAILS OPEN when the quota count could not be read", async () => {
-    // Same asymmetry as requireEntitlement: a Supabase blip must not take
-    // auditing down. It fails closed only on an explicitly-read over-quota state.
-    storeMock.countAuditsThisMonth = vi.fn(async () => ({ count: 0, degraded: true }));
+  it("FAILS OPEN when the balance could not be read", async () => {
+    // Same asymmetry as requireEntitlement: a Supabase blip, or an
+    // environment where 0078 has not been applied, must not take auditing
+    // down. It fails closed only on an explicitly-read, enforced shortfall.
+    entitlement.mockResolvedValue({
+      planMap: PLAN_BY_ID, userId: "user-1", guest: false, degraded: false,
+      entitlement: { plan_id: "pro", status: "active" },
+      credits: { enforced: true, degraded: true, available: null },
+    });
     const res = await call("POST", "audits", { body: { target_url: "https://example.com" } });
     expect(res.statusCode).toBe(201);
     expect(auditRun).toHaveBeenCalled();
+  });
+
+  // 🔴 An account that has never been granted credits is not an account with
+  // none. These gates ship before allowances are granted, so reading 0 as
+  // "refuse" would have refused everyone on migration day.
+  it("reads through for an account that is not on the credit system", async () => {
+    entitlement.mockResolvedValue({
+      planMap: PLAN_BY_ID, userId: "user-1", guest: false, degraded: false,
+      entitlement: { plan_id: "pro", status: "active" },
+      credits: { enforced: false, available: 0 },
+    });
+    const res = await call("POST", "audits", { body: { target_url: "https://example.com" } });
+    expect(res.statusCode).toBe(201);
   });
 });
 

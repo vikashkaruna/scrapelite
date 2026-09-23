@@ -14,6 +14,8 @@ import {
   listWatchlists,
   getWatchlist,
   createWatchlist,
+  updateWatchlist,
+  deleteWatchlist,
   recordFieldChange,
   submitChangeFeedback,
   serviceDb,
@@ -102,6 +104,28 @@ async function handlePost(event) {
     const res = await createWatchlist(userId, { name, description, cadence, domains });
     if (!res.ok) return json(res.status || 400, { error: res.reason });
     return json(201, res);
+  }
+
+  if (action === "update") {
+    const { watchlistId, name, description, cadence, domains } = body;
+    if (!watchlistId) return json(400, { error: "watchlistId is required." });
+    if (!(await assertWatchlistOwner(watchlistId, userId))) {
+      return json(404, { error: "Watchlist not found" });
+    }
+    const res = await updateWatchlist(userId, watchlistId, { name, description, cadence, domains });
+    if (!res.ok) return json(res.status || 400, { error: res.reason });
+    return json(200, res);
+  }
+
+  if (action === "delete") {
+    const { watchlistId } = body;
+    if (!watchlistId) return json(400, { error: "watchlistId is required." });
+    if (!(await assertWatchlistOwner(watchlistId, userId))) {
+      return json(404, { error: "Watchlist not found" });
+    }
+    const res = await deleteWatchlist(userId, watchlistId);
+    if (!res.ok) return json(res.status || 400, { error: res.reason });
+    return json(200, res);
   }
 
   if (action === "record_change") {

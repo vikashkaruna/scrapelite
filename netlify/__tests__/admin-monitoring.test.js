@@ -128,10 +128,12 @@ describe("admin-monitoring GET (AM-02)", () => {
     const b = body(await handler(authed()));
     const byId = Object.fromEntries(b.jobs.map((j) => [j.id, j.platform]));
     expect(byId["scheduled-runner"]).toBe("netlify");
+    expect(byId["prompt-monitor"]).toBe("db");
     expect(byId["reengagement"]).toBe("netlify");
     expect(byId["billing-lifecycle"]).toBe("db");
     expect(byId["billing-purge"]).toBe("db");
     expect(byId["health-monitor"]).toBe("db");
+    expect(byId["sxo-analytics-import-worker"]).toBe("db");
   });
 
   it("emits a dataSource block describing the Netlify + Supabase context", async () => {
@@ -367,6 +369,15 @@ describe("run_job (AM-05)", () => {
   it("does not even import the destructive job's module", async () => {
     const mod = await import("../functions/admin-monitoring.js");
     expect(Object.keys(mod._internal.RUNNABLE)).not.toContain("billing-purge");
+  });
+
+  it("wires every manual-runnable automation job into RUNNABLE", async () => {
+    const mod = await import("../functions/admin-monitoring.js");
+    const { AUTOMATION_JOBS } = await import("../../src/lib/monitoringModel.js");
+    const manualJobs = AUTOMATION_JOBS.filter((j) => j.manualRunAllowed && !j.destructive).map((j) => j.id);
+    for (const id of manualJobs) {
+      expect(mod._internal.RUNNABLE[id], `missing runner for ${id}`).toBeDefined();
+    }
   });
 
   it("runs a permitted job and returns its output", async () => {

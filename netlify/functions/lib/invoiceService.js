@@ -20,6 +20,8 @@ import { DOC_TYPE, SERIES, getSupplierSnapshot, resolveDocType } from "./invoice
 import { computeChargeMinor, grossMajor } from "../../../src/lib/chargeMath.js";
 import { loadPricing } from "./pricingSource.js";
 import { buildInvoiceLines } from "./invoiceDraft.js";
+import { PLAN_BY_ID } from "../../../src/lib/pricingConfig.js";
+import { snapshotPlan } from "../../../src/lib/planSnapshot.js";
 
 function db() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -224,6 +226,13 @@ export function nextPeriodFromInvoice(invoice, previous, now = new Date()) {
   };
 }
 
+/** Resolve the live plan without importing the browser-only override layer:
+ *  operator overrides live in localStorage, which a Netlify function has none
+ *  of, so the static table IS the effective plan server-side. */
+function getEffectivePlanById(planId) {
+  return PLAN_BY_ID[planId] || null;
+}
+
 export async function activateFromInvoice(invoice, { now = new Date() } = {}) {
   const d = db();
   if (!d || !invoice) return false;
@@ -253,6 +262,18 @@ export async function activateFromInvoice(invoice, { now = new Date() } = {}) {
           plan_id: invoice.plan_id,
           billing_period: invoice.billing_period,
           ...nextPeriodFromInvoice(invoice, previous, now),
+          // 🔴 THE PLAN AS BOUGHT, FROZEN FOR THE PERIOD THEY PAID FOR.
+          // `pricingConfig` is a live list — change a limit there and every
+          // account sees it on the next page load, which is right for a price
+          // list and wrong for a subscription. Written HERE, at the one moment
+          // a period begins, so renewal is what picks up a repricing.
+          // planSnapshot.js holds the read rule; migration 0080 the column.
+          //
+          // ⚠️ A null snapshot is a valid state and means "track the live
+          // table" — so a plan id we cannot resolve writes null rather than a
+          // half-populated object a gate would then read limits off.
+          plan_snapshot: snapshotPlan(getEffectivePlanById(invoice.plan_id)),
+          snapshot_at: new Date().toISOString(),
           status: "active",
           source: "payment",
           // Clear every lifecycle marker so a reactivated account is genuinely

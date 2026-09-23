@@ -311,6 +311,25 @@ describe("withJobRun (J-05)", () => {
     await mod.withJobRun("reengagement", body)({ a: 1 }, { b: 2 });
     expect(body).toHaveBeenCalledWith({ a: 1 }, { b: 2 });
   });
+
+  it("normalizes a runner returning a plain object into a valid Netlify response", async () => {
+    fetchMock
+      .mockResolvedValueOnce(ok([]))
+      .mockResolvedValueOnce(ok([{ id: 12 }]))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const body = vi.fn().mockResolvedValue({ retried: 2, succeeded: 2, settled: 0 });
+    const handler = mod.withJobRun("signal-retry", body);
+    const res = await handler({});
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(res.body)).toEqual({ retried: 2, succeeded: 2, settled: 0 });
+
+    const patch = JSON.parse(calls((u, o) => o.method === "PATCH")[0][1].body);
+    expect(patch.status).toBe("success");
+    expect(patch.detail).toEqual({ retried: 2, succeeded: 2, settled: 0 });
+  });
 });
 
 describe("detailFromResult (J-06)", () => {
@@ -321,6 +340,11 @@ describe("detailFromResult (J-06)", () => {
   it("keeps scalar fields from a JSON body", () => {
     expect(detail({ statusCode: 200, body: JSON.stringify({ sent: 3, ok: true, who: "u1" }) }))
       .toEqual({ statusCode: 200, sent: 3, ok: true, who: "u1" });
+  });
+
+  it("extracts scalar fields from a raw result object", () => {
+    expect(detail({ retried: 5, succeeded: 4, settled: 1, errors: ["err1"] }))
+      .toEqual({ retried: 5, succeeded: 4, settled: 1 });
   });
 
   // One busy run must not be able to write a megabyte of JSON into every row.
