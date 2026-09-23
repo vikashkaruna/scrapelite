@@ -88,7 +88,13 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
   const [diagnosticsData, setDiagnosticsData] = useState(null);
   const [experiments, setExperiments] = useState([]);
   const [rollups, setRollups] = useState([]);
-  const [selectedAxis, setSelectedAxis] = useState("template");
+  // 🔴 2026-09-22 — initialize to "all" so the first surface the user sees
+  // shows the cross-axis rollup, which is what the dashboard is for. They can
+  // still drill into a single axis via the chips.
+  const [selectedAxis, setSelectedAxis] = useState("all");
+  // 🔴 2026-09-22 — track the last recalculation error so the empty-state
+  // diagnostic can show WHY nothing rendered, not just that nothing rendered.
+  const [recalcError, setRecalcError] = useState(null);
   const [selectedPersona, setSelectedPersona] = useState("all");
   const [creatingExperiment, setCreatingExperiment] = useState(false);
   const [newExperimentName, setNewExperimentName] = useState("");
@@ -386,14 +392,50 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
 
   const handleRecalculateRollup = async () => {
     setRecalculatingRollup(true);
+    setRecalcError(null);
     try {
-      const res = await discoverability.getSxoPortfolioRollups({
-        axis: selectedAxis,
-        workspace_id: workspaceId,
-      });
-      setRollups(res?.rollups || []);
-      showToast(`Portfolio rollups re-calculated for axis: ${selectedAxis}.`, "check");
+      if (selectedAxis === "all") {
+        // 🔴 2026-09-22 — fan out across every axis and merge. The server already
+        // dedupes rollup rows by (axis, axis_value) within an axis; merging across
+        // axes is just concatenation with axis tags preserved on each row. We
+        // catch each axis independently so one failing axis does not blank the
+        // rest of the table.
+        const axes = PORTFOLIO_ROLLUP_AXES;
+        const settled = await Promise.allSettled(
+          axes.map((axis) => discoverability.getSxoPortfolioRollups({
+            axis, workspace_id: workspaceId,
+          }).then((r) => ({ axis, rollups: r?.rollups || [] })).catch((err) => ({ axis, error: err?.message || "Failed", rollups: [] }))),
+        );
+        const merged = [];
+        const failed = [];
+        for (const r of settled) {
+          if (r.status === "fulfilled") {
+            merged.push(...r.value.rollups);
+            if (r.value.error) failed.push(r.value.axis);
+          } else {
+            failed.push("unknown");
+          }
+        }
+        setRollups(merged);
+        if (failed.length === 0) {
+          showToast(`Portfolio rollups re-calculated across ${axes.length} axes.`, "check");
+        } else if (merged.length > 0) {
+          setRecalcError(`${failed.length} of ${axes.length} axes failed: ${failed.join(", ")}.`);
+          showToast(`Recalculated ${axes.length - failed.length}/${axes.length} axes; ${failed.length} failed.`, "warning");
+        } else {
+          setRecalcError(`All ${axes.length} axes failed. Common cause: no audits have been scored yet, or the workspace has no rollup data.`);
+          showToast(`All ${axes.length} axes failed to recalculate. Check audit data.`, "error");
+        }
+      } else {
+        const res = await discoverability.getSxoPortfolioRollups({
+          axis: selectedAxis,
+          workspace_id: workspaceId,
+        });
+        setRollups(res?.rollups || []);
+        showToast(`Portfolio rollups re-calculated for axis: ${selectedAxis}.`, "check");
+      }
     } catch (err) {
+      setRecalcError(err?.message || "Failed to recalculate rollups");
       showToast(err.message || "Failed to recalculate rollups", "error");
     } finally {
       setRecalculatingRollup(false);
@@ -1309,6 +1351,20 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
 
             <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {/* 🔴 2026-09-22 — prepended "all" chip. Selecting it makes the
+                    Re-calculate Rollup button fan out across every axis in
+                    PORTFOLIO_ROLLUP_AXES via Promise.allSettled so one failing
+                    axis does not blank the rest. */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedAxis("all")}
+                  className={`dsc-chip ${selectedAxis === "all" ? "dsc-chip-on" : ""}`}
+                  style={{ fontSize: "11px", padding: "4px 8px" }}
+                  data-testid="rollup-axis-all"
+                  title="Recalculate every segment axis at once"
+                >
+                  All rollups
+                </button>
                 {PORTFOLIO_ROLLUP_AXES.map((axis) => (
                   <button
                     key={axis}
@@ -1356,8 +1412,74 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
             </tbody>
           </table>
         ) : (
-          <div style={{ padding: "16px", background: "var(--bg)", borderRadius: "var(--r-md)", color: "var(--text-3)", fontSize: "13px" }}>
-            No portfolio rollups calculated along the <strong>{selectedAxis}</strong> axis yet.
+          // 🔴 2026-09-22 — REPLACE THE GENERIC "No rollups yet" TEXT WITH A
+          // PREREQUISITE DIAGNOSTIC. Before this change the table just said
+          // "No portfolio rollups calculated along the {axis} axis yet." with
+          // no hint about why — users could not tell whether they had no
+          // audits, whether the axis name was wrong, or whether the server
+          // had refused silently. Now we render:
+          //   - how many scored audits exist (so they know whether to run more)
+          //   - the actual recalculation error if one came back
+          //   - the prerequisite checklist (audit → truth → graph → scores → sxo)
+          //   - the data flow so they understand the chain
+          <div
+            data-testid="rollup-empty-state"
+            style={{
+              padding: "16px",
+              background: "var(--bg)",
+              borderRadius: "var(--r-md)",
+              color: "var(--text-2)",
+              fontSize: "13px",
+              display: "grid",
+              gap: "0.75rem",
+              border: "1px dashed var(--border)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 600, color: "var(--text)" }}>
+              <Icon name="info" size={16} />
+              No portfolio rollups to show.
+            </div>
+            <div>
+              Rollups aggregate scores from completed audits along the <strong>{selectedAxis}</strong> axis.
+            </div>
+            <ul style={{ margin: 0, paddingLeft: "1.25rem", display: "grid", gap: "0.25rem", fontSize: "12.5px" }}>
+              <li>
+                <strong>Step 1 — Audit:</strong>{" "}
+                {fullAudit?.audit?.id
+                  ? `Current audit ${fullAudit.audit.id} is loaded.`
+                  : "Open the Audit tab and run a discoverability audit against your domain."}
+              </li>
+              <li>
+                <strong>Step 2 — Business Truth:</strong>{" "}
+                {fullAudit?.truth_record_id
+                  ? "Truth record linked to this audit."
+                  : "Declare canonical facts so SXO can score against them."}
+              </li>
+              <li>
+                <strong>Step 3 — Schema & Trust:</strong> Schema must be valid for the audit to score schema-driven dimensions.
+              </li>
+              <li>
+                <strong>Step 4 — Subject Scores:</strong> Score a subject (BDS/PDS/SFS) to feed the rollups.
+              </li>
+            </ul>
+            {recalcError && (
+              <div
+                role="alert"
+                style={{
+                  padding: "0.5rem 0.75rem",
+                  background: "rgba(239, 68, 68, 0.08)",
+                  border: "1px solid rgba(239, 68, 68, 0.4)",
+                  borderRadius: "var(--r)",
+                  color: "#b91c1c",
+                  fontSize: "12.5px",
+                }}
+              >
+                <strong>Last recalculation error:</strong> {recalcError}
+              </div>
+            )}
+            <div style={{ fontSize: "12px", color: "var(--text-3)" }}>
+              Tip: pick <strong>All rollups</strong> and click <strong>Re-calculate Rollup</strong> to fan out across every axis at once.
+            </div>
           </div>
         )}
       </section>

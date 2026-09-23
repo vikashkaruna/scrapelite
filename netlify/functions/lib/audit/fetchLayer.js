@@ -28,6 +28,7 @@
 import { runScrapeChain } from "../scrapeProviders.js";
 import { isHeadlessAvailable } from "../headlessProvider.js";
 import { fetchPublicUrl, isPublicHttpUrlAsync } from "../publicUrl.js";
+import { record as meterRecord } from "../creditMeter.js";
 import { fetchRobotsText, evaluateAgentAccess } from "../complianceEngine.js";
 import { AI_CRAWLERS } from "../../../../src/lib/discoverability/constructTemplates.js";
 import { visibleText, wordCount, capHtml } from "./htmlParse.js";
@@ -86,6 +87,22 @@ export function looksLikeFullDocument(html) {
 }
 
 /** The raw HTML a non-rendering crawler receives. */
+// ── CHOKE POINT 5 of 5 — THE AUDIT'S OWN FETCHES ──────────────────────────
+//
+// 🔴 THE PROPOSAL'S §5 SAYS "EXACTLY FOUR FUNCTIONS SPEND MONEY". IT IS FIVE.
+// Three of the four fetches a Discoverability run makes never touch
+// runScrapeChain: the raw HTML fetch, the robots.txt read behind the crawler
+// check, and the canonical HEAD all go through fetchPublicUrl directly. Under
+// the four-choke-point model an audit would have been charged 16, not the 19
+// the same document prices it at — the recount and the metering plan
+// disagreed with each other.
+//
+// ⚠️ fetchPublicUrl ITSELF IS THE WRONG PLACE TO METER, which is why this
+// sits one layer up. It has nine callers, two of which must never be charged:
+// complianceEngine's robots.txt read (a request refused at a gate does no
+// billable work) and scrapeProviders' own direct adapter (already charged by
+// runScrapeChain, so metering both would double-bill every extraction).
+// fetchLayer is the narrowest boundary that contains only audit spend.
 export async function fetchRawHtml(url, opts = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || RAW_FETCH_TIMEOUT_MS);
@@ -97,6 +114,7 @@ export async function fetchRawHtml(url, opts = {}) {
     });
     clearTimeout(timer);
     const html = await res.text();
+    meterRecord(opts.meter, { kind: "page_fetch", meta: { stage: "raw", url } });
     return {
       ok: true,
       status: res.status,
@@ -137,6 +155,10 @@ export async function checkCanonicalTarget(canonicalUrl, requestedUrl, opts = {}
       headers: { "User-Agent": AUDIT_UA },
     });
     clearTimeout(timer);
+    // Charged only where a request actually left — the self-referencing
+    // short-circuit above returns before this and costs nothing, because we
+    // already know the answer from the page fetch that produced it.
+    meterRecord(opts.meter, { kind: "page_fetch", meta: { stage: "canonical", url: absolute } });
     // Some servers reject HEAD outright while serving GET fine. Treating a 405
     // as a broken canonical would be a false critical finding on a working page.
     if (res.status === 405 || res.status === 501) return 200;
@@ -148,7 +170,7 @@ export async function checkCanonicalTarget(canonicalUrl, requestedUrl, opts = {}
 }
 
 /** Which answer-engine crawlers may fetch this path? */
-export async function checkAiCrawlerAccess(url, agents = AI_CRAWLERS) {
+export async function checkAiCrawlerAccess(url, agents = AI_CRAWLERS, opts = {}) {
   let origin;
   let path = "/";
   try {
@@ -163,6 +185,9 @@ export async function checkAiCrawlerAccess(url, agents = AI_CRAWLERS) {
   if (robots.error) {
     return { access: null, error: robots.error, robotsFound: false, sitemaps: [] };
   }
+  // A robots.txt we could not read charges nothing (above); one we read is a
+  // real request against the host and is part of what the audit measures.
+  meterRecord(opts.meter, { kind: "page_fetch", meta: { stage: "crawler", origin } });
   return {
     access: evaluateAgentAccess(robots.text, agents, path),
     error: null,
@@ -373,14 +398,18 @@ export async function collectPage(url, opts = {}) {
   const deadlineAt = deadline ? Date.now() + slice : null;
   const chainOpts = { ...(headless ? { renderJs: true } : {}) };
   if (deadlineAt !== null) chainOpts.deadlineAt = deadlineAt;
+  // One context, three fetches, one flush by whoever started the audit. Each
+  // of these is a separate request against the customer's host and each is a
+  // credit; §1 prices collectPage at 3 for exactly this reason.
 
   const [raw, rendered, crawler] = await Promise.all([
     fetchRawHtml(url, { ...opts, timeoutMs: opts.timeoutMs || slice }),
     // renderJs only helps where an upstream provider can actually honour it.
-    runScrapeChain(url, chainOpts).catch((err) => ({
+    runScrapeChain(url, { ...chainOpts, meter: opts.meter }).catch((err) => ({
       ok: false, error: err?.message || "scrape chain threw",
     })),
-    checkAiCrawlerAccess(url).catch(() => ({ access: null, error: "crawler check failed", robotsFound: false, sitemaps: [] })),
+    checkAiCrawlerAccess(url, undefined, { meter: opts.meter })
+      .catch(() => ({ access: null, error: "crawler check failed", robotsFound: false, sitemaps: [] })),
   ]);
 
   const rawHtml = raw.ok ? raw.html : "";

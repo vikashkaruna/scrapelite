@@ -33,6 +33,8 @@ import { dispatchAuditEvent } from "./lib/audit/webhookDispatch.js";
 import { checkCompliance } from "./lib/complianceEngine.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
 import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
+import { meterContext, flush as flushMeter, affords } from "./lib/creditMeter.js";
+import { discoverabilityCredits } from "../../src/lib/credits/creditWeights.js";
 
 const JOB_ID = "discoverability-monitor";
 
@@ -199,6 +201,40 @@ export async function runSchedule(schedule, opts = {}) {
 
     const targetId = schedule.target_id;
     const workspaceId = schedule.workspace_id || null;
+
+    // ── L1: THIS RAN AUDITS WITH NO QUOTA CHECK OF ANY KIND ────────────────
+    // createAudit() below opens the row that the interactive path treats as
+    // THE charge — audits are counted from the audits table — so a schedule
+    // consumed the user's monthly allowance every day while checking nothing
+    // against it. The quota was spent by a caller that could not see it.
+    //
+    // Checked BEFORE the row is opened, for the same reason extract.js orders
+    // its gates the way it does: a run we are going to refuse must not first
+    // create the artefact that bills for it.
+    //
+    // ⚠️ affords() SAYS YES IN THREE CASES and only one of them is "they have
+    // the credits": an unreadable balance, an account not yet on the credit
+    // system, or a genuine pass. A Supabase blip — or an environment where
+    // 0078 has not been applied — must not silently stop every customer's
+    // monitoring, the same asymmetry the entitlement gate holds one layer up.
+    const cost = discoverabilityCredits();
+    const budget = await affords(schedule.user_id, cost);
+    if (!budget.ok) {
+      // Paused with a reason, exactly as a robots refusal pauses it above. A
+      // schedule that silently skips its run looks identical to one that ran
+      // and found nothing — and the trend line it feeds would carry a gap
+      // nobody could explain.
+      await store.updateSchedule(schedule.user_id, schedule.id, { status: "paused" });
+      summary.paused = true;
+      summary.error = `out of credits: this audit costs ${cost} and ${Math.max(0, budget.available)} remain`;
+      return summary;
+    }
+
+    const meter = meterContext({
+      caller: "discoverability-monitor",
+      userId: schedule.user_id,
+      workspaceId,
+    });
     // ── EVERY RUN IS COMMISSIONED LIKE THE FIRST ONE ───────────────────────
     // The schedule carries the intake (migration 0049) precisely so this loop
     // can replay it. A monitor that re-audited a page without its goal,
@@ -224,6 +260,7 @@ export async function runSchedule(schedule, opts = {}) {
     if (!created.ok) { summary.error = "could not open the audit"; return summary; }
 
     const result = await runAudit(url, {
+      meter,
       deviceProfile: schedule.device_profile,
       auditProfile: schedule.audit_profile,
       auditType: "rerun",
@@ -234,6 +271,10 @@ export async function runSchedule(schedule, opts = {}) {
       ...opts.auditOptions,
     });
     await store.persistResult(schedule.user_id, created.audit.id, result, { workspaceId });
+    // Charged from ACTUALS: a run whose citation sample was skipped for budget
+    // costs less than one that completed, because the ledger records what the
+    // pipeline actually did rather than what it was quoted.
+    summary.credits = (await flushMeter(meter)).charged || 0;
     summary.ran = true;
     summary.auditId = created.audit.id;
 

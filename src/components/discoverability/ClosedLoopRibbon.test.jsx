@@ -4,12 +4,14 @@ import { MemoryRouter } from "react-router";
 import ClosedLoopRibbon, { CLOSED_LOOP_STEPS, stepNumber } from "./ClosedLoopRibbon.jsx";
 
 describe("ClosedLoopRibbon numbering", () => {
-  it("numbers the four audit sub-steps 1.1–1.4, then 2 Implement … 5 Expand", () => {
+  it("numbers the four audit sub-steps 1.1–1.4, then 2 Implement … 6 Validate along the audit → revenue loop", () => {
     expect(CLOSED_LOOP_STEPS.map((s) => `${s.number} ${s.label}`)).toEqual([
       "1.1 Discover", "1.2 Score", "1.3 Diagnose", "1.4 Recommend",
-      "2 Implement", "3 Validate", "4 Benchmark", "5 Expand",
+      "2 Implement", "3 Verify", "4 Build", "5 Score", "6 Validate",
     ]);
-    expect(stepNumber("validate")).toBe("3");
+    expect(stepNumber("validate")).toBe("6");
+    expect(stepNumber("verify")).toBe("3");
+    expect(stepNumber("score_subj")).toBe("5");
     expect(stepNumber("nope")).toBeNull();
   });
 
@@ -18,7 +20,7 @@ describe("ClosedLoopRibbon numbering", () => {
       <MemoryRouter><ClosedLoopRibbon currentStep="diagnose" auditId="a-1" /></MemoryRouter>,
     );
     const nums = [...container.querySelectorAll(".closed-loop-step-num")].map((n) => n.textContent);
-    expect(nums).toEqual(["1.1", "1.2", "1.3", "1.4", "2", "3", "4", "5"]);
+    expect(nums).toEqual(["1.1", "1.2", "1.3", "1.4", "2", "3", "4", "5", "6"]);
     expect(screen.getByText(/Step 1\.3:/)).toBeTruthy();
     // Earlier steps read as complete; the active one is marked for assistive tech.
     const links = container.querySelectorAll(".closed-loop-step");
@@ -39,12 +41,42 @@ describe("ClosedLoopRibbon numbering", () => {
       expect(steps[i].className).toContain("is-audit-highlight");
       expect(steps[i].className).toContain("is-complete");
     }
-    // Steps 2 to 5 are not in green audit highlight
-    for (let i = 4; i < 8; i++) {
+    // Steps 2 to 6 are not in green audit highlight
+    for (let i = 4; i < 9; i++) {
       expect(steps[i].className).not.toContain("is-audit-highlight");
     }
     // Guide card displays audit complete summary
     expect(screen.getByText(/Step 1: Audit Complete/)).toBeTruthy();
+  });
+
+  it("🔴 names the loop and closes it with a Re-audit backlink", () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={["/discoverability/sxo"]}>
+        <ClosedLoopRibbon auditId="a-1" />
+      </MemoryRouter>,
+    );
+    // The loop is the product thesis — it is named, not left to be inferred.
+    expect(screen.getByText(/Discoverability to Revenue Loop/i)).toBeTruthy();
+
+    // Without the backlink the ribbon reads as a nine-item checklist that ends
+    // at Validate. The whole claim is that Validate feeds the next Re-audit.
+    const back = container.querySelector(".closed-loop-reaudit");
+    expect(back).toBeTruthy();
+    expect(back.getAttribute("href")).toBe("/discoverability?audit=a-1");
+  });
+
+  it("🔴 keeps the Re-audit backlink out of the nine NUMBERED steps", () => {
+    // The backlink reuses .closed-loop-step for styling, so it is picked up by
+    // the same selector the assertions above index into. It must never carry a
+    // step number: it is the loop closing, not a tenth thing to do. If this
+    // ever regresses, every steps[i] assertion in this file silently shifts.
+    const { container } = render(
+      <MemoryRouter initialEntries={["/discoverability"]}>
+        <ClosedLoopRibbon activeTab="audit" />
+      </MemoryRouter>,
+    );
+    expect(container.querySelectorAll(".closed-loop-step-num")).toHaveLength(9);
+    expect(container.querySelector(".closed-loop-reaudit .closed-loop-step-num")).toBeNull();
   });
 
   it("progressively highlights 1.1 to 1.4 while auditing is in progress", async () => {

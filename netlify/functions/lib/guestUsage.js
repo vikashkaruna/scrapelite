@@ -96,4 +96,61 @@ export async function consumeGuestCredit(event, kind = "single", { verifiedUserI
   }
 }
 
-export const _internal = { COOKIE, DEFAULT_SINGLE_LIMIT, DEFAULT_BATCH_LIMIT, DEFAULT_AUDIT_LIMIT, hashIdentity, limits, cookieValue };
+/**
+ * Is this guest still within their bucket — WITHOUT spending from it.
+ *
+ * 🔴 /api/ai MUST CHECK, NEVER CONSUME, AND THE DIFFERENCE IS THE WHOLE POINT.
+ * One extraction from the browser is /api/extract (which charges the bucket)
+ * PLUS one or two /api/ai calls for the summary and link tagging. Charging
+ * each of those would take a guest from ten extractions to three or four,
+ * silently, while GuestTrialBanner carried on advertising ten — the server
+ * and the UI would disagree about the same number.
+ *
+ * The leak L0b describes is "a guest can call /api/ai without limit", and a
+ * READ closes it exactly: once the ten extraction credits are gone, the AI
+ * endpoint stops too. Nothing is double-charged to get there.
+ *
+ * ⚠️ FAILS OPEN on anything it cannot determine — no cookie (a first-time
+ * visitor has spent nothing), no row, no database. Only an explicit count at
+ * or over the limit refuses, which is the same asymmetry requireEntitlement
+ * holds: closed on a known state, open on infrastructure.
+ */
+export async function peekGuestCredit(event, kind = "single", { verifiedUserId = null, env = process.env } = {}) {
+  if (verifiedUserId) return { allowed: true, authenticated: true };
+
+  const identity = cookieValue(event);
+  // No cookie at all means no charged extraction has ever happened for this
+  // browser, so there is nothing to have exhausted.
+  if (!identity) return { allowed: true, fresh: true };
+
+  const d = db(env);
+  if (!d) return { allowed: true, degraded: true };
+
+  const lim = limits(env);
+  const column = kind === "batch" ? "batch_count" : kind === "audit" ? "audit_count" : "single_count";
+  const max = kind === "batch" ? lim.batch : kind === "audit" ? lim.audit : lim.single;
+
+  try {
+    const res = await fetch(
+      `${d.base}/guest_identities?token_hash=eq.${encodeURIComponent(hashIdentity(identity))}&select=${column}&limit=1`,
+      { headers: d.headers },
+    );
+    if (!res.ok) return { allowed: true, degraded: true };
+    const rows = await res.json();
+    // 0073 added audit_count. On a database that has not applied it the column
+    // is absent and PostgREST answers 400, caught above as degraded — which is
+    // the open direction, as it must be.
+    const used = Number(rows?.[0]?.[column] ?? 0);
+    if (!Number.isFinite(used)) return { allowed: true, degraded: true };
+    return {
+      allowed: used < max,
+      remaining: Math.max(0, max - used),
+      reason: used >= max ? `${kind}_limit_reached` : undefined,
+      kind,
+    };
+  } catch {
+    return { allowed: true, degraded: true };
+  }
+}
+
+export const _internal = { COOKIE,  DEFAULT_SINGLE_LIMIT, DEFAULT_BATCH_LIMIT, DEFAULT_AUDIT_LIMIT, hashIdentity, limits, cookieValue };

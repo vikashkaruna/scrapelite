@@ -295,12 +295,17 @@ describe("SxoDashboard (§11.15 / Deliverable 4.8)", () => {
     });
   });
 
-  it("re-calculates portfolio rollups when Re-calculate Rollup button is clicked", async () => {
+  it("re-calculates portfolio rollups for the selected single axis when Re-calculate Rollup is clicked", async () => {
     const rollupSpy = vi.spyOn(discoverability, "getSxoPortfolioRollups").mockResolvedValue({
-      rollups: [{ axis_value: "Recalculated Segment", audit_count: 8, master_score: 82.5, coverage: 98 }],
+      rollups: [{ axis_value: "Recalculated Segment", audit: 8, audit_count: 8, master_score: 82.5, coverage: 98 }],
     });
 
     render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} workspaceId="ws-1" />);
+
+    // Pick the "template" chip so the test is deterministic regardless of the
+    // default selected axis. The "all" chip fans out across all axes (covered
+    // by the next test); a single-axis click exercises the legacy single-call path.
+    fireEvent.click(screen.getByRole("button", { name: /^template$/i }));
 
     const recalcBtn = screen.getByRole("button", { name: /Re-calculate Rollup/i });
     fireEvent.click(recalcBtn);
@@ -311,6 +316,29 @@ describe("SxoDashboard (§11.15 / Deliverable 4.8)", () => {
         workspace_id: "ws-1",
       }));
       expect(screen.getByText("Recalculated Segment")).toBeInTheDocument();
+    });
+  });
+
+  it("🔴 fans out across every axis when 'All rollups' is selected", async () => {
+    const rollupSpy = vi.spyOn(discoverability, "getSxoPortfolioRollups").mockResolvedValue({
+      rollups: [{ axis_value: "Segment", audit_count: 4, master_score: 75, coverage: 80 }],
+    });
+
+    render(<SxoDashboard auditId="aud-test-101" fullAudit={auditFixture} workspaceId="ws-1" />);
+
+    // "All rollups" is the new default chip, so a single click on the recalc
+    // button should fire one request per PORTFOLIO_ROLLUP_AXES entry.
+    fireEvent.click(screen.getByTestId("rollup-axis-all"));
+    fireEvent.click(screen.getByRole("button", { name: /Re-calculate Rollup/i }));
+
+    await waitFor(() => {
+      // Each axis is fetched exactly once.
+      const axes = rollupSpy.mock.calls.map((c) => c[0]?.axis).filter(Boolean);
+      expect(new Set(axes).size).toBeGreaterThan(1);
+      // All calls share the same workspace id.
+      for (const call of rollupSpy.mock.calls) {
+        expect(call[0]?.workspace_id).toBe("ws-1");
+      }
     });
   });
 

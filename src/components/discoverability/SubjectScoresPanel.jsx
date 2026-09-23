@@ -11,6 +11,7 @@
 // showed "No Scorable Subjects Found" to every account, including ones that had
 // just created one.
 
+import { Link } from "react-router";
 import { useState, useEffect, useCallback, useContext } from "react";
 import { AuthContext } from "../AuthProvider.jsx";
 import { cacheKey, readCache, loadWithCache } from "../../lib/discoverability/tabCache.js";
@@ -28,6 +29,32 @@ const DESCRIPTIONS = {
 };
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
+
+/** 🔴 2026-09-22 — inline empty-state copy when entities exist but none are
+ *  approved yet.
+ *
+ *  ⚠️ THIS USES <Link>, NOT <a href>. An <a href> here "works" — the browser
+ *  navigates and the SPA boots at the new route — which is exactly why it
+ *  survives review. What it silently costs is a FULL DOCUMENT RELOAD: the
+ *  billing/entitlement context is rebuilt, the 60s entitlement cache is
+ *  discarded, and any audit in flight in ActiveAuditContext is abandoned. On a
+ *  panel whose entire job is "go approve that entity, then come back", that is
+ *  the worst possible place to drop state. CLAUDE.md states the rule directly:
+ *  inside the app, route through the router; window.location is for LEAVING
+ *  the app. Callers must render this inside a Router (the panel already is,
+ *  via DiscoverabilityWorkspace). */
+function PendingEntitiesHint({ count }) {
+  return (
+    <p style={{ color: "var(--text-sub)", fontSize: "0.875rem", maxWidth: "32rem", margin: "0 auto" }}>
+      <strong>{count}</strong> {count === 1 ? "entity is" : "entities are"} awaiting approval in the
+      {" "}
+      <Link to="/discoverability/entities" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+        Entity Graph
+      </Link>
+      . Approve them to create scorable subjects.
+    </p>
+  );
+}
 
 /** The components to render: the stored row's when scored, the registry's otherwise. */
 export function componentsFor(kind, latestScore) {
@@ -148,6 +175,14 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
   const isApproved = (e) => (e?.state || e?.status || "").toLowerCase() === "approved";
   const eligibleEntities = entities.filter((e) => (SCORABLE_ENTITY_TYPES[newKind] || []).includes(e.entity_type));
   const pendingEntities = allEntities.filter((e) => (SCORABLE_ENTITY_TYPES[newKind] || []).includes(e.entity_type) && !isApproved(e));
+  // 🔴 2026-09-22 — count of pending entities across ALL subject kinds, not
+  // just the currently-selected `newKind`. The empty state needs the global
+  // figure so the user knows whether they should approve one entity to mint
+  // their first subject, or whether they have several waiting already.
+  const allScorableEntityTypes = Object.values(SCORABLE_ENTITY_TYPES).flat();
+  const totalPendingScorable = allEntities.filter(
+    (e) => allScorableEntityTypes.includes(e.entity_type) && !isApproved(e),
+  );
   const thin = latestScore && (latestScore.score === null || Number(latestScore.coverage) < THIN_COVERAGE);
 
   return (
@@ -204,17 +239,39 @@ export default function SubjectScoresPanel({ workspaceId = null }) {
               {pendingEntities.length > 0 && ` (${pendingEntities.length} proposed awaiting approval in Entity Graph)`}
             </p>
           )}
-          <Button size="sm" type="submit">Create Subject</Button>
+          {/* 🔴 2026-09-22 — wrap the submit button in a flex-end container so
+              it no longer spans the full form width. The form parent is a CSS
+              grid; the previous placement made the button a full-width grid
+              child, which looked out of place next to every other submit
+              button in the app. Matches EntityGraphPanel's pattern. */}
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button size="sm" type="submit">Create Subject</Button>
+          </div>
         </form>
       )}
 
       {subjects.length === 0 ? (
-        <div className="dsc-panel dsc-panel-empty" style={{ padding: "2.5rem", textAlign: "center" }}>
+        // 🔴 2026-09-22 — entity-aware empty state. Before this change the
+        // empty state said "Create an entity in the Entity Graph, approve it,
+        // and mint a scorable Brand, Product, or Service subject above." with
+        // no clue about whether the user actually had entities awaiting
+        // approval. Now the message is split: if there ARE pending entities,
+        // tell the user exactly how many and link to the Entity Graph tab so
+        // they can approve them; if there are NONE, point them at Add Entity.
+        <div
+          data-testid="subject-scores-empty"
+          className="dsc-panel dsc-panel-empty"
+          style={{ padding: "2.5rem", textAlign: "center" }}
+        >
           <Icon name="info" size={28} />
           <h3 style={{ marginTop: "0.5rem", fontWeight: 600 }}>No Scorable Subjects Found</h3>
-          <p style={{ color: "var(--text-sub)", fontSize: "0.875rem" }}>
-            Create an entity in the Entity Graph, approve it, and mint a scorable Brand, Product, or Service subject above.
-          </p>
+          {totalPendingScorable.length > 0 ? (
+            <PendingEntitiesHint count={totalPendingScorable.length} />
+          ) : (
+            <p style={{ color: "var(--text-sub)", fontSize: "0.875rem" }}>
+              Create an entity in the Entity Graph, approve it, and mint a scorable Brand, Product, or Service subject above.
+            </p>
+          )}
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: "1.5rem" }}>

@@ -170,6 +170,14 @@ export async function runAudit(url, options = {}) {
   // See deadline.js for the measurements.
   const deadline = options.deadline || createDeadline(options.budgetMs ?? budgetFromEnv(env));
 
+  // ── THE AUDIT'S METERING CONTEXT ────────────────────────────────────────
+  // Threaded, never created here. The pipeline does not know who asked — a
+  // route, a schedule, a benchmark and a guest run all reach this function —
+  // and a context invented here would attribute every audit to the pipeline
+  // rather than to the caller who has to pay for it. The caller creates it
+  // and the caller flushes it.
+  const meter = options.meter || null;
+
   // Every observation any analyser makes is recorded here, at the point it is
   // made, and lands on the signal or issue it supports. `now` rather than a
   // clock read per record: two observations from the same audit run must carry
@@ -178,7 +186,7 @@ export async function runAudit(url, options = {}) {
   const evidence = createEvidenceCollector({ url, collectedAt: now });
 
   // ── 1 + 2. fetch and render, concurrently ────────────────────────────────
-  const collected = await collectPage(url, { env, deadline });
+  const collected = await collectPage(url, { env, deadline, meter });
   if (!collected.ok) {
     // No HTML at all. This is a completed audit reporting an unreachable page,
     // not a failed job — the technical facts we DID gather (status, robots) are
@@ -270,7 +278,7 @@ export async function runAudit(url, options = {}) {
 
   const [vitalsResult, citationResult, aiResult, canonicalStatus] = await Promise.all([
     wantVitals
-      ? fetchWebVitals(url, { env, strategy: deviceProfile, timeoutMs: vitalsSlice }).catch(() => null)
+      ? fetchWebVitals(url, { env, strategy: deviceProfile, timeoutMs: vitalsSlice, meter }).catch(() => null)
       : Promise.resolve(null),
     wantCitations
       ? sampleCitations({
@@ -280,7 +288,7 @@ export async function runAudit(url, options = {}) {
           competitors: competitorUrls, geography: targetGeography, industries: [],
           pageText: parsed.text || "",
           prompts: options.prompts, env, engine: options.citationEngine,
-          signal: citationBudget.signal, timeoutMs: citationBudget.ms,
+          signal: citationBudget.signal, timeoutMs: citationBudget.ms, meter,
         }).catch(() => null).finally(() => citationBudget.clear())
       : Promise.resolve(null),
     wantAi
@@ -288,11 +296,11 @@ export async function runAudit(url, options = {}) {
           answerText,
           heading: parsed.passages?.[0]?.heading || "",
           title: parsed.meta?.title || "", h1: parsed.headingStats?.h1Text || "",
-          signal: aiBudget.signal,
+          signal: aiBudget.signal, meter,
         }).catch(() => null).finally(() => aiBudget.clear())
       : Promise.resolve(null),
     canonicalSlice > 0
-      ? checkCanonicalTarget(parsed.meta?.canonical, url, { timeoutMs: canonicalSlice }).catch(() => null)
+      ? checkCanonicalTarget(parsed.meta?.canonical, url, { timeoutMs: canonicalSlice, meter }).catch(() => null)
       : Promise.resolve(null),
   ]);
 

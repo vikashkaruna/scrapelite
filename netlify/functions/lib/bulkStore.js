@@ -5,6 +5,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { enrichDomain, fieldsNeedingReview } from "./bulkEnrich.js";
+import { meterContext, flush as flushMeter, affords } from "./creditMeter.js";
 import { dispatchSignal } from "./signalDispatch.js";
 import { dedupeEntries } from "../../../src/lib/bulk/identityModel.js";
 import { evaluateIcp, DEFAULT_THRESHOLD } from "../../../src/lib/bulk/icpModel.js";
@@ -506,6 +507,29 @@ export async function processJobChunk(jobId, budgetMs = 8000, env = process.env)
 
   const rules = await getIcpRules(job.user_id, "sales", env);
 
+  // ── L3: A MONTHLY VOLUME CAP, NOT JUST A LIST-SIZE ONE ──────────────────
+  // batch_max_urls bounds how big one list may be. It says nothing about how
+  // OFTEN, so the same 250-row list re-run daily was 250 fetches and 250 AI
+  // calls a day against a cap that had already been satisfied once.
+  //
+  // ⚠️ Checked ONCE per chunk, not per row. A balance read per row would put
+  // a Supabase round-trip inside the loop this budget exists to protect, and
+  // the pool cannot move much inside one chunk anyway.
+  // ⚠️ affords() says yes when the balance is unreadable AND when this
+  //    account has never been granted credits — see its header for why.
+  const meter = meterContext({ caller: "bulk-enrich", userId: job.user_id });
+  const budget = await affords(job.user_id, pendingItems.length * 3, env);
+  if (!budget.ok) {
+    // Stopped with a recorded reason, never silently dropped: a job that keeps
+    // reporting "running" while doing nothing is the failure shape this repo
+    // has already had to fix for schedules.
+    await db.from("enrichment_jobs").update({
+      status: "paused",
+      paused_reason: `Out of credits — this chunk needs about ${budget.estimated} and ${Math.max(0, budget.available)} remain. Top up, or wait for your allowance to renew.`,
+    }).eq("id", jobId);
+    return { ok: false, reason: "out_of_credits", available: budget.available, needed: budget.estimated };
+  }
+
   for (const item of pendingItems) {
     if (Date.now() - startTime >= budgetMs) break;
 
@@ -522,6 +546,7 @@ export async function processJobChunk(jobId, budgetMs = 8000, env = process.env)
       const perDomainBudget = Math.max(2000, budgetMs - (Date.now() - startTime));
       const enrichment = await enrichDomain(domain, {
         deadlineAt: Date.now() + Math.min(perDomainBudget, 9000),
+        meter,
       });
 
       if (!enrichment.ok) {
@@ -605,6 +630,10 @@ export async function processJobChunk(jobId, budgetMs = 8000, env = process.env)
     .select("id", { count: "exact", head: true })
     .eq("job_id", jobId)
     .eq("status", "queued");
+
+  // One ledger write for the whole chunk, collapsed by reason — not one per
+  // row. See creditMeter's header for why the charge is buffered.
+  await flushMeter(meter, env);
 
   const done = (pendingCount || 0) === 0;
   await db.from("enrichment_jobs").update({

@@ -17,13 +17,18 @@ import { useToast } from "../components/Toast.jsx";
 import { useSeo } from "../hooks/useSeo.js";
 import { discoverability } from "../lib/discoverability/discoverabilityClient.js";
 
+// `step` is the closed-loop stage id from CLOSED_LOOP_STEPS in
+// ClosedLoopRibbon.jsx — keep these in sync. Schema & Trust maps to its own
+// step (`verify`); Entity Graph + Local Directory share `build`; Subject Scores
+// uses `score_subj`; SXO & Outcomes is `validate`. The ribbon uses these to
+// decide which step pill is highlighted.
 export const DISCOVERABILITY_WORKSPACES = Object.freeze([
   { path: "/discoverability/truth", label: "Business Truth", icon: "database", component: BusinessTruthPanel, step: "implement" },
-  { path: "/discoverability/trust", label: "Schema & Trust", icon: "shield-check", component: SchemaTrustPanel, step: "implement" },
+  { path: "/discoverability/trust", label: "Schema & Trust", icon: "shield-check", component: SchemaTrustPanel, step: "verify" },
+  { path: "/discoverability/entities", label: "Entity Graph", icon: "share-2", component: EntityGraphPanel, step: "build" },
+  { path: "/discoverability/local", label: "Local Directory", icon: "map-pin", component: LocalDirectoryPanel, step: "build" },
+  { path: "/discoverability/scores", label: "Subject Scores", icon: "award", component: SubjectScoresPanel, step: "score_subj" },
   { path: "/discoverability/sxo", label: "SXO & Outcomes", icon: "zap", component: SxoDashboard, step: "validate" },
-  { path: "/discoverability/scores", label: "Subject Scores", icon: "award", component: SubjectScoresPanel, step: "benchmark" },
-  { path: "/discoverability/entities", label: "Entity Graph", icon: "share-2", component: EntityGraphPanel, step: "expand" },
-  { path: "/discoverability/local", label: "Local Directory", icon: "map-pin", component: LocalDirectoryPanel, step: "expand" },
 ]);
 
 function WorkspaceScreen() {

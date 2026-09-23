@@ -18,6 +18,204 @@
 
 ---
 
+## 2026-09-23 — Unified credits (steps A+B+D), and entity approval was reporting a raw Postgres dump
+
+**Branches:** `claude/entity-approval-diagnosis` → PR [#212](https://github.com/vikashkaruna/scrapelite/pull/212) **MERGED** · `claude/credits-unification` → PR [#214](https://github.com/vikashkaruna/scrapelite/pull/214).
+
+### 1. Entity approval — two defects, and the fix does not make it work
+
+Reported live mid-session: Approve returned a raw PostgREST envelope, `details`
+blob and all.
+
+🔴 **The verdict parser read a shape production never produces.** `rest()`
+returns the failed body as **text**; the parser read `patchRes.error.code` and
+`.error.message` off that string, so `code` was `undefined`, `message` was
+`""`, every branch missed, and the route fell through to its generic 500 with
+the raw envelope as the message. **The test covering it passed an OBJECT and
+was green the whole time.**
+
+🔴 **`0075` is not applied to staging, and the refusal proves it rather than
+suggesting it.** `0075`'s constraint permits a self-approval whose
+`review_note` carries `[Single-founder approval]`; the refused row carried it;
+`0056`'s original has no such clause. A database that refuses that row is
+running `0056`'s. `approve_entity()` is missing for the same reason, which is
+why the RPC fell through to the PATCH at all.
+
+New verdicts `approval_fn_missing` / `stale_constraint` — both **our
+deployment, not the user's decision**. Client gets one operator-fault sentence
+with no internals (the `aiFailureCopy` split); the server log names the
+migration. db-verify **+3** assertions exercising the CONSTRAINT directly
+rather than through the RPC — the layer the fallback PATCH meets, and one the
+RPC assertions structurally could not cover, because when `0075` is missing the
+function is missing too.
+
+⚠️ **OPERATOR ACTION OUTSTANDING: apply `0074`–`0077`** —
+[DB-MIGRATION-RUNBOOK.md §4f](../DB-MIGRATION-RUNBOOK.md). All four are
+idempotent. Verify by reading `pg_constraint`, not the deploy status.
+
+### 2. Credits — steps A, B and D
+
+[CREDITS-UNIFICATION-PROPOSAL.md §8](../CREDITS-UNIFICATION-PROPOSAL.md).
+**Nobody is charged:** no allowance granted, `enforced` false everywhere.
+
+**Three places implementation proved the proposal wrong:**
+
+1. 🔴 **Five choke points, not four** — and §1 already knew. Three of an
+   audit's four fetches never touch `runScrapeChain`. Under four, an audit
+   bills 16 against the 19 the same document prices it at. `fetchPublicUrl` is
+   the wrong boundary (nine callers, two must stay free); `fetchLayer` meters
+   its own three.
+2. 🔴 **A balance of zero is not the same as no balance.** These gates ship
+   before allowances are granted, so on `0078` apply-day every account reads 0
+   — a gate treating that as "refuse" would have paused every schedule,
+   monitor and bulk job at once. `credit_status().enforced` separates them and
+   **arms itself** on the first grant.
+3. 🔴 **`/api/ai` must CHECK the guest bucket, not consume it.** The obvious
+   reading of L0b would have taken a guest from ten extractions to three or
+   four while `GuestTrialBanner` went on advertising ten.
+
+**Also found:** watchlist monitoring under-charged (its hand-rolled row
+excluded the discovery crawl, so the first run on every target read an unbilled
+page) **and** discarded its metadata (`chargeLedger()` passes `p_meta: {}`
+unconditionally). Both fixed by moving it onto the choke point.
+
+**Not done, deliberately:** C, E, F, G. §6 orders calibration before the
+switch, and §1 counts provider *calls*, not tokens — never yet against an
+invoice. **Step C is an operator/finance pass**: a month of invoices ÷ the
+calls now in the ledger, which is data that did not exist before this session.
+
+**Verified:** vitest **447 files / 7,121 passed** · db-verify **78 migrations /
+884 assertions** (+35) · referral 17 · workflows 56 · pre-push gate green
+including e2e smoke **159/159**. Guards confirmed RED first: the FIFO balance
+against a naive implementation (**70** vs 100, **−30** vs 0), the self-arming
+rule, and the approval parser against the exact live error body.
+
+🔴 **`0078` has only met WASM Postgres.** ⚠️ Next migration: `0079`.
+
+---
+
+## 2026-09-22 — Discoverability revenue loop completed; PostHog put behind consent; credit-metering audit
+
+> **Branch:** `claude/discoverability-loop-completion` → **PR #210** to `staging`
+> **`main`:** untouched · **`staging`:** untouched until #210 merges
+
+### What this session did
+
+Picked up ~1,100 lines of **uncommitted** work sitting in a separate worktree
+(`.gemini/antigravity/worktrees/Extracta/free_staging_worktree`) which had
+**`staging` itself checked out** — so the work was one `git commit` away from
+landing on a shared branch with no review. Transferred it by patch into an
+isolated branch, finished it, and fixed what was red.
+
+**Shipped (the 2026-09-22 four-item plan):** tab + lifecycle reorder into the
+audit → revenue loop (Audit → Truth `2 Implement` → Trust `3 Verify` →
+Entity Graph + Local `4 Build` → Scores `5 Score` → SXO `6 Validate` →
+↻ Re-audit); "All rollups" axis plus a prerequisite diagnostic; entity-graph
+approval errors, inline edit and forced re-render; Subject Scores button width
+and entity-aware empty state. The loop is now **named on screen** and closed by
+a Re-audit backlink, wrapping responsively to 480px.
+
+**Root cause of "Could not approve the entity" (`0077`):** `auditStore`
+swallowed the `self_approval` verdict and fell through to a raw PATCH, so the
+constraint surfaced as a bare `23514` or silently succeeded against the user's
+intent. Verdicts now propagate unchanged.
+
+### 🔴 Defects found while finishing it
+
+- A contract test pinned the literal phrase **"second person"** and went red
+  when the message was rewritten to be *more* actionable. Now asserts the
+  remedy, not the wording.
+- `db-verify`'s "approval is idempotent" expected `ok`; `0077` returns
+  `already_approved`. Still idempotent — the store maps it to `ok:true` and the
+  route answers **200**. ⚠️ **`0077`'s own header claimed 409**, which the code
+  never did and which would have re-created the confusing refusal the migration
+  exists to remove. Header corrected; a second assertion added pinning that a
+  re-approval does not overwrite the original review record.
+- The Subject Scores empty state used a hard `<a href>`, which reloads the
+  document and discards the entitlement context and any in-flight audit. Now a
+  router `<Link>`. ⚠️ The guard asserts the **click is intercepted**, because a
+  DOM-shape assertion passes for both an anchor and a `<Link>`.
+- `run-all.sql` had been hand-edited and was stale. Regenerated (77 migrations).
+- `Discoverability.integration.test.jsx` still counted an **8**-step ribbon.
+  ⚠️ **`test:unit` excludes `*.integration.test.*`**, so it stayed green through
+  several full runs and was caught only by the pre-push gate.
+
+### 🔴 PostHog was tracking people who declined
+
+It arrived as a raw `<head>` snippet. PostHog's stub initialises on execution —
+it writes a `distinct_id` and captures immediately — so it tracked **every
+visitor before the banner rendered, including those who then clicked Decline**,
+contradicting the consent banner and the DPDP section of `/privacy`.
+
+Moved into `public/analytics.js` (one consent gate, not two that drift), gated
+on the same stored choice as gtag.js, reusing the same `/admin` and localhost
+skips, and opting out + resetting + clearing `ph_*` cookies on withdrawal.
+
+⚠️ **It would also have captured nothing at all:** PostHog loads `array.js` from
+`<region>-assets.i.posthog.com`, which was **not in `netlify.toml`'s
+`script-src`**. CSP would have blocked it on datiq.app, with only a console
+violation to show for it. Allow-listed and pinned by test.
+
+### ✅ `main` and `staging` are content-identical — nothing to sync
+
+Checked rather than assumed: `origin/main^{tree}` and `origin/staging^{tree}`
+are the **same hash** (`5e352eee…`), and
+`git rev-list --count --no-merges origin/staging..origin/main` is **0**. All 13
+commits `main` leads by are GitHub merge commits from past staging→main PRs.
+Merging `main` into `staging` would create a merge commit touching zero files.
+**This is the third time this repo has recorded that finding** — treat "main is
+N ahead" as a question about merge commits, not content.
+
+### 📋 Credit-metering audit (analysis only — nothing implemented)
+
+Full findings and a phased proposal:
+[docs/CREDITS-UNIFICATION-PROPOSAL.md](../CREDITS-UNIFICATION-PROPOSAL.md).
+
+Three non-fungible meters run at once (`usage.extractions`, `audits` row count,
+`credit_ledger`) plus two cardinality proxies. 🔴 **`chargeLedger()` has exactly
+three production callers** — watchlist-monitor, watchlists, templates. Extraction,
+enrichment, audits and every AI call reach none of them.
+
+Leaks found, with evidence:
+- **L1** `discoverability-monitor.js:210` calls `createAudit()` with **no quota
+  check**, yet those rows **do** count — so a cron both exceeds the plan and
+  silently starves the customer's own interactive quota.
+- **L2** `prompt-monitor.js` (`@daily`) makes real answer-engine calls via
+  `sampleCitations()` and writes to **no meter**. Capped by monitor *count*,
+  not spend.
+- **L3** `bulk.enrich` caps **list size**, not monthly volume; `bulk-runner.js`
+  has **zero** metering hooks. Largest unbounded surface.
+- **L5** P2 modules are `ok(Infinity)` — correct *today* (no provider calls,
+  verified) but unenforced, so the first AI call added there is free by default.
+
+⚠️ **Agency is `extractions: Infinity` + `scheduled_monitoring: Infinity`** —
+the biggest exposure in the pricing table, and a commercial decision rather than
+a technical one.
+
+### Verified
+
+All gates green via the pre-push hook on the pushed commit (300s):
+readiness 5/2/0 · unit **243 files / 4,021** · contract **142 / 2,552** ·
+integration **51 / 445** · system 8 · db-verify **77 migrations / 849
+assertions** + referral 17 + workflows 56 · build clean · prerender 32 pages /
+128 refs · security clean · **e2e smoke 159/159**.
+
+New behavioural guards confirmed **RED first**. ⚠️ Three earlier e2e runs each
+failed a *different* single test, all passing in isolation — machine contention,
+not regressions; the final two full runs were 159/159. Nothing was bypassed.
+
+### Open
+
+- 🔴 **Migration `0077` has only met WASM Postgres.** Apply to dev/stage before
+  relying on the new approval messages.
+- `docs/YouTubeChannelContent/` (**224 MB**) and its handoff were **excluded** —
+  unrelated to this work, and the WIP's session docs indexed a file that would
+  have been a broken link. Still intact in the originating worktree.
+- The credits proposal is awaiting a decision; **Phase 0 (stop the leaks) is
+  independently valuable** and needs no pricing change.
+
+---
+
 ## 2026-09-20 IST — Discoverability audit improvements & Industry landing pages: Mobile parity, Organization schema, sameAs profile parity, and 4 industry routes
 
 > **Branch:** `staging` · **Delivery:** Merged to `staging` (via PR #206) · **Target:** `staging` deploy / `main` promotion
