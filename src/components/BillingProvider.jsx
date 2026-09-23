@@ -8,6 +8,8 @@ import {
 } from "../lib/usageService.js";
 import { can, computeLifecycle } from "../lib/entitlementModel.js";
 import { clearEntitlementCache, getCachedEntitlement, loadEntitlement } from "../lib/entitlementClient.js";
+import { clearCreditsCache, fetchCredits, getCachedCredits } from "../lib/credits/creditClient.js";
+import { apiClient } from "../lib/apiClient.js";
 import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyService.js";
 import { getEffectivePlanMap, getEffectiveBundles } from "../lib/pricingOverrides.js";
 import { validateCoupon, incrementCouponUses, checkCouponServer } from "../lib/adminService.js";
@@ -146,7 +148,37 @@ export function BillingProvider({ children }) {
     return row;
   }, []);
 
+  /**
+   * The credit balance the gates decide against.
+   *
+   * ⚠️ UX ONLY — see creditClient's header. The server re-sums the ledger at
+   * the moment it charges; this exists so a button can be disabled without a
+   * round-trip per click.
+   */
+  const [credits, setCredits] = useState(() => getCachedCredits());
+  const refreshCredits = useCallback(async () => {
+    const next = await fetchCredits({ force: true }).catch(() => null);
+    if (next) setCredits(next);
+    return next;
+  }, []);
+
+  useEffect(() => {
+    // A sign-in or sign-out changes whose balance this is, so the cache must
+    // not survive it — the same reason entitlementClient is cleared there.
+    clearCreditsCache();
+    if (!user) { setCredits(null); return; }
+    fetchCredits({ force: true }).then(setCredits).catch(() => {});
+  }, [user?.id]);
+
   const planId = entitlementRow?.plan_id || (adminGrantCoupon?.status === "redeemed" ? adminGrantCoupon.planId : null) || subscription.planId || "free";
+  // ⚠️ `bonus` IS NOW DISPLAY-ONLY AND IS NOT PASSED TO ANY GATE.
+  // It summed three writers of `bonus_extractions` into an extraction quota
+  // that is retired (D1). The three writers moved to credit grants in §4.6 —
+  // the referral reward (0079), admin grants (admin-users.js) and credit
+  // coupons (POST /api/credits) — so the real balance is the ledger's, read
+  // through creditClient. This is kept so an account that was granted bonus
+  // extractions BEFORE the switch can still be shown what it was given;
+  // nothing decides anything from it.
   const bonus  = (entitlementRow?.bonus_extractions ?? 0) + (user?.user_metadata?.bonus_extractions ?? 0) + (subscription.bonusExtractions || 0);
   const plan   = planMap[planId] ?? planMap.free;
 
@@ -419,9 +451,21 @@ export function BillingProvider({ children }) {
   // deactivated), which the existing per-call-site toasts cannot express. That
   // is deliberate: suspended UX belongs in one global banner and route guards
   // (PR3), not in 20 rewritten toast strings. Use whyCannot() for the reason.
+  // 🔴 `credits` REPLACES `bonus` HERE, and that is the whole switch on the
+  // client. The cached balance is a HINT so a button can be disabled without
+  // a round-trip; the server re-sums the ledger at the moment it charges. A
+  // missing or stale cache reads as "unknown", which entitlementModel lets
+  // through deliberately — a UI that refuses on a cache miss refuses paying
+  // customers during a blip.
   const gateCtx = useCallback(
-    (extra) => ({ planMap, usage: readUsage(), bonus, bonusBatchUrls: subscription.bonusBatchUrls || 0, ...extra }),
-    [planMap, bonus, subscription.bonusBatchUrls],
+    (extra) => ({
+      planMap,
+      usage: readUsage(),
+      credits: credits || undefined,
+      bonusBatchUrls: subscription.bonusBatchUrls || 0,
+      ...extra,
+    }),
+    [planMap, credits, subscription.bonusBatchUrls],
   );
 
   const checkCanExtract      = useCallback(() => can(entitlement, "extract", gateCtx()), [entitlement, gateCtx, usage]);
@@ -500,15 +544,27 @@ export function BillingProvider({ children }) {
     if (!valid) { setCouponError(reason); return false; }
     incrementCouponUses(trimmed);
     let sub = { ...subscription, coupon: { code: coupon.code, appliedAt: new Date().toISOString() } };
-    if (coupon.type === "extractions") sub.bonusExtractions = (sub.bonusExtractions || 0) + coupon.value;
+    // 🔴 A CREDIT COUPON IS REDEEMED ON THE SERVER, NOT HERE.
+    // This branch used to add the value to a localStorage object that fed the
+    // extraction quota. That quota is retired, and a balance lives in an
+    // append-only ledger behind the service key — so the same code today
+    // would show a success toast and grant nothing any gate could see.
+    if (coupon.type === "extractions" || coupon.type === "credits") {
+      try {
+        const res = await apiClient.redeemCredits(trimmed);
+        clearCreditsCache();
+        await refreshCredits();
+        setCouponSuccess(`Coupon applied — ${res.granted} credits added.`);
+        return true;
+      } catch (err) {
+        setCouponError(err?.message || "That coupon could not be applied.");
+        return false;
+      }
+    }
     if (coupon.type === "percent")     sub.discountPercent  = coupon.value;
     setSubscription(sub);
     writeSubscription(sub);
-    setCouponSuccess(
-      coupon.type === "extractions"
-        ? `Coupon applied — ${coupon.value} bonus extractions added.`
-        : `Coupon applied — ${coupon.value}% discount on your next upgrade.`
-    );
+    setCouponSuccess(`Coupon applied — ${coupon.value}% discount on your next upgrade.`);
     return true;
   }, [subscription, planId, planMap]);
 
@@ -601,7 +657,7 @@ export function BillingProvider({ children }) {
   }, [initiatePayment, dismissPaymentModal]);
 
   const ctx = useMemo(() => ({
-    subscription, plan, planId, bonus, usage,
+    subscription, plan, planId, bonus, usage, credits, refreshCredits,
     currency, rates, setCurrency,
     upgradePlan,
     initiatePayment, confirmPayment, purchaseBatchPack,
@@ -617,7 +673,7 @@ export function BillingProvider({ children }) {
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
     couponError, couponSuccess, adminGrantCoupon, redeemAdminGrant,
   }), [
-    subscription, plan, planId, bonus, usage,
+    subscription, plan, planId, bonus, usage, credits, refreshCredits,
     currency, rates, setCurrency,
     upgradePlan,
     initiatePayment, confirmPayment, purchaseBatchPack,

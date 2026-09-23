@@ -802,10 +802,20 @@ group("0029 referrals — unique codes, one redemption per account, both sides p
   // Redemption pays BOTH sides. The old client-side path never paid the referrer.
   const ok = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, a1])).result;
   eq("redemption succeeds", ok.ok, true);
-  const aliceEnt = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [alice]);
-  const bobEnt   = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [bob]);
-  eq("the referrer is credited", aliceEnt.b, 25);
-  eq("the invitee is credited", bobEnt.b, 25);
+  // ── 0079: THE REWARD IS A CREDIT GRANT, NOT bonus_extractions ───────────
+  // 🔴 Removing the Extractions Bundle without moving this would have left
+  // both sides with a row written and no reader — a referral programme that
+  // rewards nobody, with nothing erroring anywhere.
+  eq("the referrer is credited, in credits",
+    (await one(`select public.credit_available($1) a`, [alice])).a, 25);
+  eq("the invitee is credited, in credits",
+    (await one(`select public.credit_available($1) a`, [bob])).a, 25);
+  // ⚠️ EARNED, NOT ALLOWANCED — so it must not expire on the monthly clock.
+  eq("a referral reward never expires", (await q(
+    `select 1 from public.credit_ledger
+      where user_id=$1 and reason='grant' and expires_at is not null`, [alice])).length, 0);
+  eq("...and it is no longer written to the retired bonus_extractions column",
+    (await q(`select 1 from public.entitlements where user_id=$1 and bonus_extractions > 0`, [alice])).length, 0);
 
   // One per ACCOUNT, ever — the constraint that makes the reward finite.
   const replay = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, a1])).result;
@@ -824,8 +834,12 @@ group("0029 referrals — unique codes, one redemption per account, both sides p
   const lower = (await one(
     `select public.redeem_referral_code($1, $2, 25) result`, [dave, `  ${a1.toLowerCase()}  `])).result;
   eq("a lowercased, padded code still redeems", lower.ok, true);
-  const aliceAfter = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [alice]);
-  eq("the referrer accrues across referrals", aliceAfter.b, 50);
+  eq("the referrer accrues across referrals",
+    (await one(`select public.credit_available($1) a`, [alice])).a, 50);
+  // Each side is keyed independently, so twenty invitees pay twenty times
+  // while the same invitee can never be rewarded twice.
+  eq("...as two distinct grants, not one merged row", (await q(
+    `select 1 from public.credit_ledger where user_id=$1 and reason='grant'`, [alice])).length, 2);
 
   // The DB refuses a self-referral even if a handler bug ever tried to write one.
   let selfIns = null;

@@ -5,6 +5,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHmac } from "crypto";
 
+const grantCredits = vi.fn(async () => ({ ok: true, credits: 50, available: 50 }));
+vi.mock("../functions/lib/creditMeter.js", () => ({ grant: (...a) => grantCredits(...a) }));
+
 let fetchMock;
 let handler;
 
@@ -23,6 +26,7 @@ beforeEach(() => {
   vi.resetModules();
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
+  grantCredits.mockResolvedValue({ ok: true, credits: 50, available: 50 });
 });
 
 afterEach(() => {
@@ -192,20 +196,17 @@ describe("admin-users PATCH (C-28)", () => {
     expect(r.statusCode).toBe(400);
   });
 
-  it("extend bonus extractions writes new bonus to auth metadata", async () => {
+  // ── §4.6 — AN ADMIN GRANT GOES TO THE LEDGER, NOT TO AUTH METADATA ──────
+  // This used to add to `user_metadata.bonus_extractions`, one of three
+  // writers of a field the Extractions Bundle appeared to own. The bundle is
+  // retired (D15) along with the quota that read the field, so writing it now
+  // would record a grant nothing can spend — and auth metadata is invisible
+  // to the balance, unauditable, and silently editable by anything holding
+  // the service key.
+  it("grants credits through the ledger and never touches auth metadata", async () => {
+    let putSeen = false;
     fetchMock.mockImplementation(async (url, init) => {
-      const u = String(url);
-      if (u.includes("/auth/v1/admin/users/u1") && (!init?.method || init?.method === "GET")) {
-        return new Response(
-          JSON.stringify({ id: "u1", raw_user_meta_data: { bonus_extractions: 10 } }),
-          { status: 200 },
-        );
-      }
-      if (init?.method === "PUT") {
-        const sent = JSON.parse(init.body);
-        expect(sent.user_metadata.bonus_extractions).toBe(60); // 10 + 50
-        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
+      if (init?.method === "PUT") putSeen = true;
       return new Response("[]", { status: 200 });
     });
     const h = await loadHandler();
@@ -215,8 +216,24 @@ describe("admin-users PATCH (C-28)", () => {
       body: JSON.stringify({ userId: "u1", bonus: 50 }),
     });
     expect(r.statusCode).toBe(200);
-    const body = JSON.parse(r.body);
-    expect(body.newBonus).toBe(60);
+    expect(JSON.parse(r.body)).toMatchObject({ ok: true, granted: 50, unit: "credits" });
+    expect(putSeen).toBe(false);
+    expect(grantCredits).toHaveBeenCalledWith("u1", 50, expect.objectContaining({
+      // ⚠️ An administrative grant was GIVEN, not allowanced — expiring it on
+      // the monthly clock would delete something an operator handed out.
+      expiresAt: null,
+    }));
+  });
+
+  it("reports a failed grant rather than claiming success", async () => {
+    grantCredits.mockResolvedValueOnce({ ok: false, reason: "unknown_user" });
+    const h = await loadHandler();
+    const r = await h({
+      httpMethod: "PATCH",
+      headers: { authorization: `Bearer ${makeAdminToken()}` },
+      body: JSON.stringify({ userId: "ghost", bonus: 10 }),
+    });
+    expect(r.statusCode).toBe(502);
   });
 
   it("invalid bonus (< 1) → 400", async () => {

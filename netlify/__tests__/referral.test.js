@@ -73,11 +73,19 @@ describe("referral — identity", () => {
 });
 
 describe("referral — GET", () => {
+  // ── 0079 — THE REWARD IS READ FROM THE LEDGER, NOT bonus_extractions ────
+  // Grant rows are stored NEGATIVE (0037's convention: positive is
+  // consumption), so the handler flips the sign. Asserting the old column
+  // here would have gone green against a banner showing every referrer 0.
   it("returns the server-issued code and standing", async () => {
     fetchMock.mockImplementation(async (url) => {
-      if (String(url).includes("issue_referral_code")) return new Response('"Q7BKM2XR"', { status: 200 });
-      if (String(url).includes("referral_redemptions")) return new Response(JSON.stringify([{ id: 1 }, { id: 2 }]), { status: 200 });
-      return new Response(JSON.stringify([{ bonus_extractions: 50 }]), { status: 200 });
+      const u = String(url);
+      if (u.includes("issue_referral_code")) return new Response('"Q7BKM2XR"', { status: 200 });
+      if (u.includes("referral_redemptions")) return new Response(JSON.stringify([{ id: 1 }, { id: 2 }]), { status: 200 });
+      if (u.includes("credit_ledger")) {
+        return new Response(JSON.stringify([{ credits: -25 }, { credits: -25 }]), { status: 200 });
+      }
+      return new Response("[]", { status: 200 });
     });
     const h = await loadHandler();
     const body = JSON.parse((await h({ httpMethod: "GET", headers: AUTH })).body);
@@ -85,6 +93,22 @@ describe("referral — GET", () => {
     expect(body.referrals).toBe(2);
     expect(body.bonus).toBe(50);
     expect(body.bonusPerReferral).toBe(25);
+  });
+
+  // ⚠️ It asks only for REFERRAL grants. Summing every grant would report a
+  // customer's monthly allowance as something their invites earned them.
+  it("counts only referral grants, not the monthly allowance", async () => {
+    let ledgerQuery = "";
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("issue_referral_code")) return new Response('"Q7BKM2XR"', { status: 200 });
+      if (u.includes("credit_ledger")) { ledgerQuery = u; return new Response("[]", { status: 200 }); }
+      return new Response("[]", { status: 200 });
+    });
+    const h = await loadHandler();
+    await h({ httpMethod: "GET", headers: AUTH });
+    expect(ledgerQuery).toContain("reason=eq.grant");
+    expect(ledgerQuery).toContain("referral-");
   });
 
   it("returns a NULL code when the store cannot answer, never a placeholder", async () => {
