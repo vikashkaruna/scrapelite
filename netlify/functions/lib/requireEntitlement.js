@@ -27,6 +27,7 @@
 // overrides are per-operator-browser and must never influence a server-side
 // authorization decision.
 import { PLAN_BY_ID } from "../../../src/lib/pricingConfig.js";
+import { effectivePlanFor } from "../../../src/lib/planSnapshot.js";
 import { can, computeLifecycle, isAccountBlocked } from "../../../src/lib/entitlementModel.js";
 import { authenticateBearer, getUserScopedClient } from "./supabaseServerClient.js";
 import { creditsContextFor } from "./creditMeter.js";
@@ -194,10 +195,33 @@ export function checkCapability(resolved, capability, ctx = {}) {
   // an audit that already knows its prompt count, say — but never has to
   // remember to supply it.
   return can(resolved.entitlement, capability, {
-    planMap: resolved.planMap,
+    planMap: grandfatheredPlanMap(resolved.entitlement, resolved.planMap),
     credits: resolved.credits,
     ...ctx,
   });
+}
+
+/**
+ * The plan map this account is actually entitled to.
+ *
+ * 🔴 A REPRICING MUST NOT CUT A PERIOD SOMEBODY ALREADY PAID FOR. The live
+ * table is what a new customer buys; the snapshot on the entitlement row is
+ * what this one did. `effectivePlanFor` takes the better of the two for every
+ * limit and the purchased price, and falls back to the live plan the moment
+ * the period ends — which is where a repricing takes effect.
+ *
+ * ⚠️ ONLY THE CALLER'S OWN PLAN IS SUBSTITUTED. The rest of the map is left
+ * live on purpose: `can()` reads other plans to name an upgrade target, and
+ * quoting a grandfathered customer's frozen limits as another plan's would
+ * describe a product nobody can buy.
+ */
+export function grandfatheredPlanMap(entitlement, planMap) {
+  const id = entitlement?.plan_id;
+  if (!id || !entitlement?.plan_snapshot) return planMap;
+  const live = planMap?.[id];
+  const effective = effectivePlanFor(entitlement, live);
+  if (!effective || effective === live) return planMap;
+  return { ...planMap, [id]: effective };
 }
 
 /** Convenience: resolve + check in one call. */

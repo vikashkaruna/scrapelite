@@ -851,6 +851,47 @@ group("0029 referrals — unique codes, one redemption per account, both sides p
   eq("a self-referral row is rejected by the check constraint", Boolean(selfIns), true);
 }
 
+// ── 0080: the plan a subscriber actually bought ──────────────────────────────
+group("plan snapshot — a repricing cannot cut a period already paid for");
+{
+  const u = (await one(`insert into auth.users (email) values ('snap@x.com') returning id`)).id;
+
+  // ⚠️ ADDITIVE AND NULLABLE. Every pre-0080 row keeps a null snapshot and
+  // therefore tracks the live price table exactly as it did before — so the
+  // migration changes no behaviour on the day it is applied.
+  await db.query(`insert into public.entitlements (user_id, plan_id) values ($1, 'pro')`, [u]);
+  const bare = await one(`select plan_snapshot, snapshot_at from public.entitlements where user_id=$1`, [u]);
+  eq("an existing row keeps a null snapshot", bare.plan_snapshot, null);
+  eq("...and a null snapshot_at", bare.snapshot_at, null);
+
+  const snap = JSON.stringify({
+    id: "developer", name: "Developer", price_usd: 32.4, price_usd_annual: 27,
+    price_inr: 2999, price_inr_annual: 2499,
+    limits: { credits: 28000, batch_max_urls: 500, bulk_list_max: 500 },
+  });
+  await db.query(
+    `update public.entitlements set plan_snapshot = $2::jsonb, snapshot_at = now(),
+            period_end = now() + interval '30 days' where user_id = $1`, [u, snap]);
+  const row = await one(
+    `select plan_snapshot->>'id' id,
+            (plan_snapshot->'limits'->>'bulk_list_max')::int bulk,
+            (plan_snapshot->>'price_usd')::numeric price
+       from public.entitlements where user_id = $1`, [u]);
+  eq("the snapshot stores the plan id", row.id, "developer");
+  eq("...the limits as purchased", row.bulk, 500);
+  eq("...and the price as charged", Number(row.price), 32.4);
+
+  // 🔴 THE COLUMN IS SERVICE-KEY ONLY, and that is load-bearing rather than
+  // incidental: a user who could write their own plan_snapshot could grant
+  // themselves any limit they liked. `entitlements` has had select-own and NO
+  // write policy for anyone since 0012; 0080 deliberately adds neither.
+  const pols = await q(
+    `select cmd from pg_policies where schemaname='public' and tablename='entitlements'`);
+  eq("entitlements still has exactly one policy", pols.length, 1);
+  eq("...and it is SELECT, so nobody can write their own snapshot",
+    String(pols[0].cmd).toUpperCase(), "SELECT");
+}
+
 // ── 0030: discoverability audits ─────────────────────────────────────────────
 group("discoverability — targets, idempotency, trends, retention");
 {

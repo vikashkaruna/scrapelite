@@ -12,6 +12,7 @@ import { clearCreditsCache, fetchCredits, getCachedCredits } from "../lib/credit
 import { apiClient } from "../lib/apiClient.js";
 import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyService.js";
 import { getEffectivePlanMap, getEffectiveBundles } from "../lib/pricingOverrides.js";
+import { effectivePlanFor, isRepriced } from "../lib/planSnapshot.js";
 import { CREDIT_PACK_BY_ID } from "../lib/pricingConfig.js";
 import { validateCoupon, incrementCouponUses, checkCouponServer } from "../lib/adminService.js";
 import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
@@ -59,7 +60,7 @@ export function BillingProvider({ children }) {
   const confirmResolveRef                 = useRef(null);   // holds the resolve fn while modal is open
 
   // Reload effective plan map on every render to pick up admin overrides immediately
-  const planMap = getEffectivePlanMap();
+  const livePlanMap = getEffectivePlanMap();
 
   // Every mount fetch below is guarded by a `cancelled` flag. These resolve on
   // the network's schedule, so any of them can land after the provider has
@@ -181,6 +182,21 @@ export function BillingProvider({ children }) {
   // extractions BEFORE the switch can still be shown what it was given;
   // nothing decides anything from it.
   const bonus  = (entitlementRow?.bonus_extractions ?? 0) + (user?.user_metadata?.bonus_extractions ?? 0) + (subscription.bonusExtractions || 0);
+  // 🔴 GRANDFATHERING, CLIENT SIDE — the same substitution the server gate makes
+  // in requireEntitlement.grandfatheredPlanMap, and it has to be here too or the
+  // pre-flight checks would refuse work the server would allow. While the paid
+  // period is running the account keeps the better of what it bought and what
+  // the plan now offers, at the price it was charged; on renewal it tracks the
+  // live table. Only the CALLER'S OWN plan is substituted — the rest of the map
+  // stays live so an upgrade CTA quotes a plan somebody can actually buy.
+  const planMap = useMemo(() => {
+    if (!entitlementRow?.plan_snapshot || !planId) return livePlanMap;
+    const live = livePlanMap[planId];
+    const effective = effectivePlanFor(entitlementRow, live);
+    if (!effective || effective === live) return livePlanMap;
+    return { ...livePlanMap, [planId]: effective };
+  }, [livePlanMap, entitlementRow, planId]);
+
   const plan   = planMap[planId] ?? planMap.free;
 
   /**
@@ -461,7 +477,7 @@ export function BillingProvider({ children }) {
     }
     const u = incrementExtractions(count);
     setUsage(u);
-    const currentPlan = getEffectivePlanMap()[planId] ?? planMap.free;
+    const currentPlan = planMap[planId] ?? planMap.free;
     checkAndFireAlerts(u, currentPlan, subscription).catch(() => {});
   }, [planId, subscription, setUsage, user]);
 
