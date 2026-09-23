@@ -192,7 +192,14 @@ export async function enrichDomain(canonicalDomain, opts = {}) {
 
   let scraped;
   try {
-    scraped = await runScrapeChain(url, { deadlineAt });
+    // L3 — bulk enrichment capped list SIZE and nothing else: a 250-row list
+    // could be re-run every day for ever, spending a real fetch and a real AI
+    // call per row, and `credits_used` was computed on the row and written to
+    // no ledger. The choke points now charge from ACTUALS, so a row that only
+    // needed a fetch costs 1 and a row that also inferred costs 3 — which is
+    // the §1 "bulk row = 3" weight arrived at by measurement rather than
+    // asserted as a flat rate.
+    scraped = await runScrapeChain(url, { deadlineAt, meter: opts.meter });
   } catch (e) {
     return { ok: false, reason: `fetch_failed: ${e.message}`, ...empty };
   }
@@ -266,7 +273,7 @@ export async function enrichDomain(canonicalDomain, opts = {}) {
       const reply = await runChain(
         [{ role: "user", content: `${INFERENCE_PROMPT}\n\n---\n${content.text.slice(0, 12_000)}` }],
         400,
-        { area: "classification", tier: "fast" },
+        { area: "classification", tier: "fast", meter: opts.meter },
       );
       const text = reply?.content?.[0]?.text || "";
       const parsed = parseJsonObject(text);

@@ -26,6 +26,7 @@
 // service resumed — inventing the trend the validation loop exists to measure.
 
 import { isCredentialRejection, googleKeyKind } from "../googleApiKey.js";
+import { record as meterRecord } from "../creditMeter.js";
 
 const PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
@@ -139,13 +140,22 @@ export async function fetchWebVitals(url, opts = {}) {
     }
     const data = await res.json();
 
+    // ── CHOKE POINT 3 of 4 ──────────────────────────────────────────────
+    // D11 — PageSpeed is charged. It is free at low volume and falls back to
+    // keyless, but "cheap for us" is not "free to the customer": it is a real
+    // lookup on every audit and part of what a paid plan buys. Charged only
+    // where a METRIC came back — a lookup that returned nothing usable is an
+    // unmeasured signal, and the scorer already redistributes its weight
+    // rather than scoring it zero. Billing for it would charge the customer
+    // for the one outcome that makes their report less complete.
+
     // Field data first: real users beat one synthetic run from a datacentre.
     const field = parseFieldMetrics(data.loadingExperience)
       || parseFieldMetrics(data.originLoadingExperience);
-    if (field) return field;
+    if (field) { meterRecord(opts.meter, { kind: "pagespeed", meta: { url, strategy, source: "field" } }); return field; }
 
     const lab = parseLabMetrics(data.lighthouseResult);
-    if (lab) return lab;
+    if (lab) { meterRecord(opts.meter, { kind: "pagespeed", meta: { url, strategy, source: "lab" } }); return lab; }
 
     return { error: "PageSpeed returned no usable metrics", unavailable: true };
   } catch (err) {

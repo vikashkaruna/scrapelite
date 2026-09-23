@@ -30,6 +30,7 @@
 //
 // Provider keys are SERVER-ONLY (never VITE_ prefix). See providerRegistry.js.
 
+import { record as meterRecord } from "./creditMeter.js";
 import {
   PROVIDERS, AI_PROVIDERS, AI_AREA_KEYS, FUNCTION_AREAS, MODEL_TIER,
   readKey, defaultModel,
@@ -795,6 +796,16 @@ export async function runChain(messages, clientMaxTokens, opts = {}) {
         ...(opts.schema && supportsSchema ? { schema: opts.schema } : {}),
       });
       if (r.ok && r.text) {
+        // ── CHOKE POINT 1 of 4 ────────────────────────────────────────────
+        // Every AI call the product makes arrives here, so metering here is
+        // what makes a NEW module cost-bearing on the day it lands rather
+        // than on the day somebody notices. `opts.meter` carries the caller;
+        // without one the call is recorded as unattributed and reported,
+        // never silently free. Synchronous — the write happens at flush().
+        meterRecord(opts.meter, {
+          kind: tier === MODEL_TIER.FAST ? "ai_fast" : "ai_deep",
+          meta: { provider, model, area: area || null },
+        });
         return { ok: true, provider, model, tier, text: r.text, json: r.json, structured: Boolean(r.structured), attempts };
       }
       attempts.push({ provider, model, status: r.status, error: r.error || "empty response", code: classifyProviderError(r) });
@@ -807,6 +818,9 @@ export async function runChain(messages, clientMaxTokens, opts = {}) {
   // Surface the FIRST real (non-skip) failure code so callers can say
   // "out of credit" instead of "all providers failed".
   const firstReal = attempts.find((a) => a.code);
+  // A chain that produced nothing charges nothing. The customer got no value
+  // and we eat the cost — chargeableEvents() states the same rule for runs.
+  meterRecord(opts.meter, { kind: "ai_fast", failed: true });
   return {
     ok: false, attempts,
     errorCode: firstReal?.code || (attempts.every((a) => a.skipped === "no-key") ? "no_key" : "error"),

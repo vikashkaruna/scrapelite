@@ -184,9 +184,13 @@ grant usage on schema public to anon, authenticated;
 // 0071 (+1 table, +1 function). 0075 (+1 function). Taking these to 117 / 55 / 29.
 // 0076 (+1 table: audit_directory_source_ignores; approve_entity_relationship
 // is replaced, not added). Taking these to 118 / 55 / 29.
+// 0078 (+4 functions: credit_available, credit_status, credit_grant,
+// credit_grant_monthly —
+// no new tables; expires_at and grant_period are columns on credit_ledger).
+// Taking these to 118 / 59 / 29.
 const EXPECT = {
   tables: 118,
-  functions: 55,
+  functions: 59,   // +4 in 0078: credit_available, credit_status, credit_grant, credit_grant_monthly
   triggers: 29,
   tablesWithoutRls: 0,
 };
@@ -1767,6 +1771,125 @@ group("credit ledger — append-only truth, derived balance");
      values ($1, 'trun_x', 'acct_brief', 1, 9, '[{"unit":"page","qty":3}]'::jsonb)`, [u]);
   const est = await one(`select estimated_credits from public.credit_estimates where run_id='trun_x'`);
   eq("the pre-run estimate is stored separately so drift stays measurable", est.estimated_credits, 9);
+}
+
+// ── 0078: grants expire, spend is FIFO, and a grant is issued exactly once ──
+group("credit grants — rollover as a property of the data");
+{
+  const u = (await one(`insert into auth.users (email) values ('grant-user@x.com') returning id`)).id;
+
+  const bad = await one(`select public.credit_grant($1, 0, 'x') v`, [u]);
+  eq("a zero or negative grant is refused rather than written", bad.v.reason, "non_positive");
+
+  const g1 = await one(`select public.credit_grant($1, 100, 'signup') v`, [u]);
+  check("a grant is appended", g1.v.ok === true);
+  eq("...and the caller passes a POSITIVE number, never the sign convention", g1.v.credits, 100);
+  eq("the row itself is stored negative, as 0037 defines it",
+    (await one(`select credits from public.credit_ledger where user_id=$1 and reason='grant'`, [u])).credits, -100);
+  eq("available reads the grant", (await one(`select public.credit_available($1) a`, [u])).a, 100);
+
+  // 🔴 A REDELIVERED WEBHOOK MUST NOT DOUBLE-CREDIT. Enforced by a partial
+  // unique index, not a read-then-write check — payment-webhook.js's dedup
+  // races, and this is the same hazard with money pointing the other way.
+  const dup = await one(`select public.credit_grant($1, 100, 'signup') v`, [u]);
+  eq("the same grant period twice is 'already_granted', not a second grant", dup.v.reason, "already_granted");
+  eq("...and the balance did not move", (await one(`select public.credit_available($1) a`, [u])).a, 100);
+
+  await db.query(`select public.credit_spend($1, null, 'audit', 19, 'audit', 1)`, [u]);
+  eq("a spend draws the pool down", (await one(`select public.credit_available($1) a`, [u])).a, 81);
+
+  // A negative available is a FACT, not something to round away to a
+  // comfortable zero — it says more was spent than was ever granted.
+  await db.query(`select public.credit_spend($1, null, 'page_fetch', 200, 'page', 200)`, [u]);
+  eq("overspend reads NEGATIVE rather than being clamped",
+    (await one(`select public.credit_available($1) a`, [u])).a, -119);
+
+  // ── FIFO is what makes an expiry honest ───────────────────────────────────
+  // Old grant 100 (expires 2026-03-01), spend 30, new grant 100. Read after
+  // the old one has lapsed.
+  //
+  // FIFO: the 30 came out of the OLD grant, so only its 70 unused credits
+  // lapse and 100 survives.
+  // Naive (spend pooled, then subtract expired grants): 100 + 100 - 30 - 100
+  // = 70 — it would charge the user for the same 30 twice, once when they
+  // spent it and again when the grant it came from expired.
+  const f = (await one(`insert into auth.users (email) values ('fifo-user@x.com') returning id`)).id;
+  await db.query(
+    `insert into public.credit_ledger (user_id, reason, credits, expires_at, occurred_at, grant_period)
+     values ($1,'grant',-100,'2026-03-01T00:00:00Z','2026-01-01T00:00:00Z','2026-01'),
+            ($1,'grant',-100,'2026-04-01T00:00:00Z','2026-02-01T00:00:00Z','2026-02'),
+            ($1,'page_fetch',30,null,'2026-01-15T00:00:00Z',null)`, [f]);
+  eq("🔴 spend is allocated OLDEST-GRANT-FIRST, so an expiry forfeits only what was left",
+    (await one(`select public.credit_available($1,'2026-03-15T00:00:00Z'::timestamptz) a`, [f])).a, 100);
+  eq("...and before the expiry both grants count", 
+    (await one(`select public.credit_available($1,'2026-02-15T00:00:00Z'::timestamptz) a`, [f])).a, 170);
+  eq("...and after both have lapsed nothing is left",
+    (await one(`select public.credit_available($1,'2026-05-01T00:00:00Z'::timestamptz) a`, [f])).a, 0);
+
+  // ⚠️ Free (D3) is a LIFETIME pool. An expiry here would quietly delete the
+  // taster out from under someone who came back a month later.
+  const n = (await one(`insert into auth.users (email) values ('never-user@x.com') returning id`)).id;
+  await db.query(`select public.credit_grant($1, 100, 'signup', null) `, [n]);
+  eq("a grant with no expiry is still there years later",
+    (await one(`select public.credit_available($1,'2030-01-01T00:00:00Z'::timestamptz) a`, [n])).a, 100);
+
+  // ── the monthly grant carries the rollover cap in its expiry ──────────────
+  const m = (await one(`insert into auth.users (email) values ('monthly-user@x.com') returning id`)).id;
+  const gm = await one(`select public.credit_grant_monthly($1, 750, '2026-01') v`, [m]);
+  check("a monthly grant is issued", gm.v.ok === true);
+  eq("🔴 it expires at the END OF THE FOLLOWING month — which IS the 1x carry cap",
+    (await one(`select to_char(expires_at,'YYYY-MM-DD') d from public.credit_ledger
+                 where user_id=$1 and grant_period='2026-01'`, [m])).d, "2026-03-01");
+  eq("a malformed period is refused, not coerced",
+    (await one(`select public.credit_grant_monthly($1, 750, 'Jan 2026') v`, [m])).v.reason, "bad_period");
+  await db.query(`select public.credit_grant_monthly($1, 750, '2026-02')`, [m]);
+  eq("two months' grants are live at once — the documented worst case, and no more",
+    (await one(`select public.credit_available($1,'2026-02-10T00:00:00Z'::timestamptz) a`, [m])).a, 1500);
+  eq("...and by March only the newer one survives",
+    (await one(`select public.credit_available($1,'2026-03-10T00:00:00Z'::timestamptz) a`, [m])).a, 750);
+
+  // ── credit_status: is the credit system LIVE for this account? ───────────
+  // 🔴 THE ASSERTION THAT STOPS THIS MIGRATION TAKING THE PRODUCT DOWN.
+  // The gates that read the balance ship before the step that starts granting
+  // monthly allowances, so on the day 0078 is applied every account correctly
+  // reads 0 — and a gate that treated 0 as "refuse" would pause every
+  // schedule, monitor and bulk job at once. `enforced` is what separates
+  // "no credits left" from "not on the credit system".
+  {
+    const fresh = (await one(`insert into auth.users (email) values ('never-granted@x.com') returning id`)).id;
+    await db.query(`select public.credit_spend($1, null, 'page_fetch', 5, 'page', 5)`, [fresh]);
+    const st = (await one(`select public.credit_status($1) v`, [fresh])).v;
+    eq("🔴 an account that was never granted credits is NOT enforced", st.enforced, false);
+    eq("...even though it has spent, and the spend is still counted", st.spent, 5);
+    eq("...and its available balance is honestly negative", st.available, -5);
+
+    await db.query(`select public.credit_grant($1, 100, 'first')`, [fresh]);
+    const armed = (await one(`select public.credit_status($1) v`, [fresh])).v;
+    eq("🔴 the first grant ARMS enforcement for that account — no flag to flip", armed.enforced, true);
+    eq("...and the balance nets the earlier spend against it", armed.available, 95);
+    eq("...granted is reported as a positive number", armed.granted, 100);
+
+    eq("a null user is not enforced and reads zero, never null",
+      (await one(`select public.credit_status(null) v`)).v.enforced, false);
+  }
+
+  eq("an unknown user is refused rather than granted",
+    (await one(`select public.credit_grant($1, 50, 'ghost') v`,
+      ["00000000-0000-0000-0000-000000000000"])).v.reason, "unknown_user");
+  eq("a null user reads 0, never null", (await one(`select public.credit_available(null) a`)).a, 0);
+
+  // 0061's rule: revoking from anon alone is a no-op, because PUBLIC holds the
+  // default grant and anon inherits it. These must be service-role only.
+  for (const fnName of ["credit_available", "credit_status", "credit_grant", "credit_grant_monthly"]) {
+    const acl = await one(`
+      select has_function_privilege('anon', p.oid, 'EXECUTE') anon_x,
+             has_function_privilege('authenticated', p.oid, 'EXECUTE') auth_x,
+             has_function_privilege('service_role', p.oid, 'EXECUTE') service_x
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+       where n.nspname='public' and p.proname=$1`, [fnName]);
+    check(`${fnName} is service-role only — anon cannot mint credits`,
+      Boolean(acl) && !acl.anon_x && !acl.auth_x && acl.service_x);
+  }
 }
 
 // ── 0038: unknown is never zero ─────────────────────────────────────────────
