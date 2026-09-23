@@ -114,7 +114,7 @@ describe("admin-monitoring GET (AM-02)", () => {
     expect(b.ok).toBe(true);
     expect(b.jobs.map((j) => j.id)).toEqual([
       "scheduled-runner", "prompt-monitor", "discoverability-monitor",
-      "watchlist-monitor", "bulk-runner", "signal-retry",
+      "watchlist-monitor", "bulk-runner", "engagement-dispatcher", "signal-retry",
       "reengagement", "billing-lifecycle", "billing-purge", "health-monitor",
       "workflow-orchestrator-cron", "sxo-analytics-import-worker",
     ]);
@@ -156,7 +156,7 @@ describe("admin-monitoring GET (AM-02)", () => {
     wireReads({ runs: [] });
     const b = body(await handler(authed()));
     expect(b.jobs.every((j) => j.state === "never-run")).toBe(true);
-    expect(b.jobSummary.neverRun).toBe(12);
+    expect(b.jobSummary.neverRun).toBe(13);
   });
 
   it("reports a failing job and surfaces it as the worst state", async () => {

@@ -18,7 +18,37 @@
 
 ---
 
-## 2026-09-23 (latest) — Repricing: one maintained table, INR set not converted, and a snapshot so it cannot cut a period already paid for
+## 2026-09-23 (latest) — Prospect Engagement Engine: review, then Phase 1 (safe email MVP)
+
+**Branch:** `feat/prospect-engagement-engine` (not merged). **Plan + findings:**
+[PROSPECT-ENGAGEMENT-ENGINE-REVIEW-AND-ROLLOUT.md](../PROSPECT-ENGAGEMENT-ENGINE-REVIEW-AND-ROLLOUT.md).
+
+1. **Brought up to date with `staging`** (69 commits, 3 conflicts). Migration renumbered
+   `0048 → 0081` — staging already had a `0048`. Root BRD/PRD + an unrelated PDF removed
+   from the public repo (owner keeps local copies); squash-merge the branch.
+2. **Review found the module unsafe to send**: re-sent every approved message on every
+   dispatch; up to five messages per prospect; opt-out not checked at send and
+   client-overridable; "sent" fabricated when a provider was unconfigured; webhook
+   fail-open and matching prospects across tenants; `user_id` mass-assignable.
+3. **Phase 1 built** (owner decisions: customer-ready but DatIQ-only beta; email first;
+   per-channel opt-out with multi-channel UI; LLM slot-filling in Phase 2).
+   New `0082` (suppressions, send claims, append-only log, sender, ledger `outreach`),
+   dispatcher + `engagement-dispatcher` cron, Svix-verified webhook, signed unsubscribe
+   page with RFC 8058 one-click, consent panel, send panel. n8n engagement workflows retired.
+4. **Found while building:** reviewer edits were discarded; brand-kit fields never reached
+   a message; the board could hand-set Sent/Delivered; the first dispatcher could never
+   send (8.5s window vs 7–8s budget — caught by the real-Postgres suite).
+5. **New test harness:** `scripts/lib/pgliteSupabase.mjs` runs the real store against
+   PGlite; engagement suites use `// @vitest-environment node` (test/setup.js now tolerates
+   no `window`).
+
+**Verified:** db-verify 82 migrations / 952 assertions · full vitest green · build + prerender
+clean. **Open:** `canLiftSuppression()` policy (owner), outreach credit weight (provisional 1),
+Resend outreach domain, legal review, apply `0081`+`0082` (runbook §4h). Next migration `0083`.
+
+---
+
+## 2026-09-23 (later) — Repricing: one maintained table, INR set not converted, and a snapshot so it cannot cut a period already paid for
 
 **Branch:** `claude/credits-switch` (continues PR [#216](https://github.com/vikashkaruna/scrapelite/pull/216)).
 **Source:** the owner's pricing sheet, applied verbatim.

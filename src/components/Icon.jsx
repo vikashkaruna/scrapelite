@@ -98,6 +98,9 @@ import {
   MapPin,
   Repeat,
   Menu,
+  Phone,
+  PhoneCall,
+  MessageCircle,
   Pin,
   PinOff,
   // Batch/export additions
@@ -263,6 +266,9 @@ const MAP = {
   "map-pin": MapPin,
   repeat: Repeat,
   menu: Menu,
+  phone: Phone,
+  "phone-call": PhoneCall,
+  "message-circle": MessageCircle,
   pin: Pin,
   "pin-off": PinOff,
   // Batch/export

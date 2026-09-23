@@ -97,7 +97,7 @@ function ExploreDropdown({ onNavigate }) {
 }
 
 // ── User account dropdown ─────────────────────────────────────────
-function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onWorkflows, onLists, onWatchlists, onRules, onSwitchRole, onSignOut, onSignIn }) {
+function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onWorkflows, onEngagement, onLists, onWatchlists, onRules, onSwitchRole, onSignOut, onSignIn }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const { workspaces, currentWorkspaceId, setCurrentWorkspaceId } = useWorkspace();
@@ -203,6 +203,11 @@ function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onWo
                 onClick={() => { setOpen(false); onWorkflows?.(); }}>
                 <span className="nav-dd-icon"><Icon name="share-2" size={14} /></span>
                 Overview
+              </button>
+              <button className="nav-dropdown-item" role="menuitem"
+                onClick={() => { setOpen(false); onEngagement?.(); }}>
+                <span className="nav-dd-icon"><Icon name="send" size={14} /></span>
+                Engagement
               </button>
               <button className="nav-dropdown-item" role="menuitem"
                 onClick={() => { setOpen(false); onLists?.(); }}>
@@ -373,6 +378,10 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
                     <Icon name="share-2" size={14} />
                     Overview
                   </button>
+                  <button className="mobile-nav-subitem" onClick={() => go("/engagement")}>
+                    <Icon name="send" size={14} />
+                    Engagement
+                  </button>
                   <button className="mobile-nav-subitem" onClick={() => go("/lists")}>
                     <Icon name="users" size={14} />
                     Account Lists
@@ -519,6 +528,7 @@ export default function TopBar() {
               onAccount={() => navigate("/account")}
               onSchedules={() => navigate("/schedules")}
               onWorkflows={() => navigate("/workflows")}
+              onEngagement={() => navigate("/engagement")}
               onLists={() => navigate("/lists")}
               onWatchlists={() => navigate("/watchlists")}
               onRules={() => navigate("/rules")}
