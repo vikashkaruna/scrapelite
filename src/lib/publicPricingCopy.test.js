@@ -39,6 +39,14 @@ const SURFACES = {
   "public/llms.txt":          read("public/llms.txt"),
   "public/llms-full.txt":     read("public/llms-full.txt"),
   "src/lib/pageSeo.js":       read("src/lib/pageSeo.js"),
+  // ⚠️ ADDED AFTER THE 2026-09-23 REPRICING, WHICH FOUND THEM STALE. The FAQ
+  // page carries every pricing claim TWICE — once in the visible answer and
+  // once in its FAQPage JSON-LD — and both had the pre-credit figures. The
+  // user guide is the source the published help site is generated from, so a
+  // stale number there ships to /help on the next build.
+  "public/faq/index.html":     read("public/faq/index.html"),
+  "docs/DatIQ-User-Guide.md":  read("docs/DatIQ-User-Guide.md"),
+  "src/pages/UseCases.jsx":    read("src/pages/UseCases.jsx"),
 };
 
 /** "40000" is written "40,000" in prose, so both spellings count as a match. */
@@ -53,7 +61,10 @@ describe("public pricing copy — credit allowances", () => {
   // Skipped for the two source files: `pricingConfig.js` DEFINES the numbers
   // (checking it against itself proves nothing) and `Pricing.jsx` derives every
   // figure from it at render time rather than hard-coding any.
-  const PROSE = ["public/llms.txt", "public/llms-full.txt", "src/lib/pageSeo.js"];
+  const PROSE = [
+    "public/llms.txt", "public/llms-full.txt", "src/lib/pageSeo.js",
+    "public/faq/index.html", "docs/DatIQ-User-Guide.md",
+  ];
   for (const [file, text] of Object.entries(SURFACES)) {
     if (!PROSE.includes(file)) continue;
     for (const id of QUOTED) {
@@ -81,6 +92,12 @@ describe("public pricing copy — the retired extraction quota is gone", () => {
     "25-extraction trial credit",
     "monthly extraction budget",
     "Unused extractions don't roll over",
+    // 🔴 THE PRE-2026-09-23 PRICES, in both currencies. These are quoted with
+    // their currency symbol so an incidental number cannot false-positive, and
+    // they are listed rather than derived because a derived check would go
+    // quiet the moment somebody deleted the old value from the table.
+    "$4.80", "$14.40", "$20.40", "$44.40", "$106.80", "$32.40",
+    "₹359", "₹1,199", "₹1,799", "₹4,199", "₹10,199", "₹2,999",
   ];
 
   for (const [file, text] of Object.entries(SURFACES)) {
@@ -95,6 +112,24 @@ describe("public pricing copy — the retired extraction quota is gone", () => {
     const found = RETIRED.filter((c) => text.includes(c));
     expect(found, `Pricing.jsx still claims: ${found.join(" · ")}`).toEqual([]);
   });
+});
+
+// 🔴 INR IS A SET PRICE, SO IT HAS TO BE QUOTED. Before the repricing the copy
+// said "INR pricing is available" and gave no figures, which is what let the
+// rupee prices drift unnoticed — there was nothing to check them against. A
+// currency you set by hand and never print is a currency nobody proofreads.
+describe("public pricing copy — both currencies are actually quoted", () => {
+  const PAID = PLANS.filter((p) => p.price_usd > 0 && !p.comingSoon);
+  for (const file of ["public/llms.txt", "docs/DatIQ-User-Guide.md"]) {
+    for (const plan of PAID) {
+      it(`${file} quotes ${plan.name} in USD and INR`, () => {
+        const text = SURFACES[file];
+        expect(text, `${file} omits $${plan.price_usd}`).toContain(`$${plan.price_usd}`);
+        const inr = `₹${plan.price_inr.toLocaleString("en-US")}`;
+        expect(text, `${file} omits ${inr}`).toContain(inr);
+      });
+    }
+  }
 });
 
 describe("public pricing copy — credit packs", () => {

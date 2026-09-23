@@ -228,18 +228,26 @@ Every run shows a cost estimate before it starts and spends nothing until confir
 
 ## 4. Pricing (as of 2026)
 
-| Plan | Price (USD/mo) | Price (INR/mo, annual) | Extractions | Key features |
-|---|---|---|---|---|
-| Free | $0 | ₹0 | 10 / month + 25-trial credit | No credit card, headings + links + summary, CSV export |
-| Go | $4.80 | ₹299 | 200 / month | + PDF / Markdown / JSON export, email export |
-| Select | $14.40 | ₹999 | 500 / month | + 5 scheduled monitors, integrations, signal routing |
-| Pro | $20.40 | ₹1,499 | 1,000 / month | + 10 scheduled monitors, Google Sheets push, 100-URL batches |
-| Business | $44.40 | ₹3,499 | 10,000 / month | + API, 3 seats, HubSpot CRM sync, white-label PDF, priority support |
-| Agency | $106.80 | ₹8,499 | Unlimited | + 5 workspaces, white-label PDF, priority support |
-| Developer | $32.40 | ₹2,499 | 10K row credits | API-first (coming H3 2026) |
-| Enterprise | Custom ≥$1,000 | Custom | Custom | SSO, DPA, SLA, on-prem |
+Everything is sold in ONE unit: credits. 1 credit = one page fetch; a fast AI call is 2, a deep one 5, an enriched account-list row 3, a Discoverability audit 19. USD and INR are SET prices, not conversions of one another.
 
-Monthly prices shown; annual billing saves about 17% (Go $4, Select $12, Pro $17, Business $37, Agency $89 per month, billed annually). INR prices exclude 18% GST, added at checkout. INR pricing available. GST invoices on every payment.
+| Plan | Price (USD/mo) | Price (INR/mo) | Credits / month | Batch | Bulk list | Monitors | Key features |
+|---|---|---|---|---|---|---|---|
+| Free | $0 | ₹0 | 100, one-time, never resets | 5 | — | — | No credit card, headings + links + summary, CSV export |
+| Go | $5 | ₹490 | 750 | 20 | 20 | — | + PDF / Markdown / JSON export, email export |
+| Select | $15 | ₹1,449 | 2,500 | 50 | 50 | 5 | + integrations, signal routing, competitor watchlists |
+| Pro | $25 | ₹2,449 | 6,000 | 100 | 100 | 10 | + Google Sheets push |
+| Developer | $55 | ₹5,449 | 25,000 | 250 | 250 | 10 | API-first, JSONL / RAG export (coming H3 2026) |
+| Business | $85 | ₹7,849 | 40,000 | 250 | 250 | 25 | + API, 3 seats, HubSpot CRM sync, white-label PDF, priority support |
+| Agency | $200 | ₹19,449 | 100,000 on fair use | 500 | 500 | 100 | + 5 client workspaces, white-label PDF, priority support |
+| Enterprise | Custom ≥$1,000 | Custom | Custom | Custom | Custom | Custom | SSO, DPA, SLA, on-prem |
+
+Monthly prices shown; annual billing is billed twelve months upfront and works out cheaper per month (Go $4 / ₹409, Select $12 / ₹1,209, Pro $20 / ₹2,049, Developer $45 / ₹4,549, Business $70 / ₹6,549, Agency $165 / ₹16,249). Unused plan credits roll over for one month, so an account holds at most two months' worth. INR prices exclude 18% GST, added at checkout. GST invoices on every payment.
+
+**Credit packs** — 500 for $5 / ₹490, 2,000 for $19 / ₹1,849, 10,000 for $89 / ₹11,449. Any plan including Free; they never expire.
+
+**Capacity add-ons** — Scheduled Monitor $5 / ₹490 per slot, Batch Pack $9 / ₹879 per 50 rows, Extra Workspace $19 / ₹1,849. An add-on buys the right to do something; the runs still cost credits.
+
+**Your price is fixed for the period you paid for.** If prices or plan limits change while you are subscribed you keep what you bought for the rest of that period, and any increase reaches you straight away. A repricing applies at renewal, never mid-period.
 
 ### Plan-level features
 - **White-label PDF** (Business + Agency): upload a single-page PDF template in /account; every PDF export and invoice is rendered on top of your branded background.
@@ -478,7 +486,7 @@ Full reference: /help/index.html (DatIQ-Developer-API section)
 ## 10. Competitive Context
 
 DatIQ is a no-code alternative to:
-- **Clay** — an order of magnitude cheaper; DatIQ's paid plans start at $4.80/mo vs Clay's $149/mo. DatIQ's enrichment is built into the extraction rather than bolted on, and it reads each company's own live site instead of serving a purchased database, so every field carries the page and quote it came from.
+- **Clay** — an order of magnitude cheaper; DatIQ's paid plans start at $5 / ₹490 a month vs Clay's $149/mo. DatIQ's enrichment is built into the extraction rather than bolted on, and it reads each company's own live site instead of serving a purchased database, so every field carries the page and quote it came from.
 - **Browse.ai** — More feature-rich (custom extraction, AI enrichment tabs, scheduled monitoring, white-label PDF).
 - **Firecrawl** — Simpler. No API key management, no scraping infrastructure to maintain.
 - **Diffbot** — Much cheaper. Plain-English config vs ontology training.

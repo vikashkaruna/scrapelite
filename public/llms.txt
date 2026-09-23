@@ -86,7 +86,7 @@ All of the above are reachable from a single Push menu on Preview, Dashboard, an
 - Priority support (Business + Agency): contact-form submissions are routed through a faster SLA.
 - Extra Workspace add-on: same features as the parent plan, capped at the parent plan's team-seats limit (e.g. 3 seats on Business).
 - Enterprise: Custom ≥$1,000/mo — SSO, DPA, SLA, on-prem
-- Annual billing saves about 17% on every paid plan (e.g. Select $12/mo billed annually vs $14.40 monthly)
+- Annual billing is billed twelve months upfront and works out cheaper per month (e.g. Select $12 / ₹1,209 annually vs $15 / ₹1,449 monthly)
 
 ## Target Users
 SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and content marketers, Market researchers, Recruiters, Startup founders, VCs (due diligence), Digital agencies
@@ -169,7 +169,7 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 ## Competitive Context
 DatIQ overlaps with, but is not, a scraping tool. Extraction tools (Firecrawl, Apify, Browse.ai, Diffbot, PhantomBuster) end where DatIQ's workflow layer begins; enrichment tools (Clay, ZoomInfo) sell a database, whereas DatIQ reads each company's own live site and shows the source behind every field.
 
-Differentiators: plain-English custom extraction with no per-site configuration; workflow templates that return a finished artefact rather than raw fields; customer-editable ICP scoring where an unmeasured signal is excluded rather than scored zero; competitor watchlists with materiality classification so trivial changes never alert; native signal routing into Slack, email, webhooks and HubSpot; shareable reports with five visibility levels; and a strict observed/inferred/absent evidence contract with coverage reported on every score. Paid plans start at $4.80/month, which is an order of magnitude below the enrichment platforms it is compared to.
+Differentiators: plain-English custom extraction with no per-site configuration; workflow templates that return a finished artefact rather than raw fields; customer-editable ICP scoring where an unmeasured signal is excluded rather than scored zero; competitor watchlists with materiality classification so trivial changes never alert; native signal routing into Slack, email, webhooks and HubSpot; shareable reports with five visibility levels; and a strict observed/inferred/absent evidence contract with coverage reported on every score. Paid plans start at $5 / ₹490 a month, which is an order of magnitude below the enrichment platforms it is compared to.
 
 ## India-first
 DatIQ is built India-first with INR pricing, Razorpay + UPI payment support, and DPDP Act 2023 compliance. Governed by Indian law and arbitration.

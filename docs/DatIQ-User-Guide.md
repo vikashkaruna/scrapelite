@@ -915,22 +915,29 @@ A **benchmark** audits several URLs with the same profile and lines the results
 up side by side, so "why is that page more answer-ready than mine?" becomes a
 question you can answer from evidence rather than intuition.
 
-### Audit allowances
+### What an audit costs
 
-Audits have their own monthly allowance, separate from extraction credits — an
-audit fetches the page twice, checks crawl policy, looks up performance data and
-runs an AI pass, so it costs more than an extraction and gets its own budget.
+Audits no longer have a separate allowance. They spend from the same pool of
+credits as everything else, at **19 credits** for a standard run — an audit
+fetches the page twice, checks crawl policy, looks up performance data, samples
+citations and runs an AI pass, so it costs more than a single extraction. Each
+citation prompt beyond the five included adds 2 credits.
 
-| Plan | Audits / month |
-|---|---|
-| Free | 3 |
-| Go | 10 |
-| Select | 25 |
-| Pro | 100 |
-| Business | 500 |
-| Agency | 2,000 |
+That means you decide how to spend the month rather than being handed two
+budgets that cannot be moved between. As a rough guide, if you spent a month's
+credits on nothing else:
 
-Scheduled monitoring needs Pro or above. Benchmarks need Select or above.
+| Plan | Credits / month | ≈ audits |
+|---|---|---|
+| Free | 100 (one-time) | 5 |
+| Go | 750 | 39 |
+| Select | 2,500 | 131 |
+| Pro | 6,000 | 315 |
+| Developer | 25,000 | 1,315 |
+| Business | 40,000 | 2,105 |
+| Agency | 100,000 | 5,263 |
+
+Scheduled monitoring needs Select or above. Benchmarks need Select or above.
 
 ### What it does not promise
 
@@ -951,29 +958,80 @@ exact site, it expires after 180 days, and you can withdraw it at any time.
 
 ## 18. Plans, usage & billing
 
-DatIQ offers a free tier plus paid plans for heavier use. Pricing is shown in your local currency where
-supported, with monthly and annual billing (annual saves you money).
+DatIQ is sold in one unit: **credits**. One credit is one page fetch, and
+everything else is priced as a multiple of it — so there is a single number to
+watch rather than a separate allowance per screen.
 
 ![DatIQ pricing page](assets/screenshots/08-pricing.png)
 
-- **Free** — a monthly allowance of extractions, full core features, the whole template catalogue, and a one-time bonus credit when you sign up.
-- **Paid plans** (Go, Select, Pro, Business, Agency) — higher allowances, larger batches and account lists, more workspaces, and additional capabilities such as integrations and signal routing from Select, and API access on Business and above.
-- **Top-up bundles** — add extra batch and account-list capacity to your current plan without changing tiers.
-- **Enterprise** — custom volume and terms; contact sales.
+| What it costs | Credits |
+|---|---|
+| Reading a page (extraction, batch row, monitor check) | 1 |
+| A fast AI call | 2 |
+| A deep AI call | 5 |
+| Enriching one account-list row | 3 |
+| A Discoverability audit | 19 |
+
+### Plans
+
+Prices are set separately in US dollars and Indian rupees — the rupee price is
+its own number, not a conversion, so the figure you are quoted is the figure you
+are charged. Annual billing is billed twelve months upfront and works out
+cheaper per month.
+
+| Plan | Per month | Credits / month | Batch | Bulk list | Monitors |
+|---|---|---|---|---|---|
+| Free | Free | 100, one-time | 5 | — | — |
+| Go | $5 · ₹490 | 750 | 20 | 20 | — |
+| Select | $15 · ₹1,449 | 2,500 | 50 | 50 | 5 |
+| Pro | $25 · ₹2,449 | 6,000 | 100 | 100 | 10 |
+| Developer | $55 · ₹5,449 | 25,000 | 250 | 250 | 10 |
+| Business | $85 · ₹7,849 | 40,000 | 250 | 250 | 25 |
+| Agency | $200 · ₹19,449 | 100,000 | 500 | 500 | 100 |
+
+Free's 100 credits are granted once and never reset. Every paid plan's credits
+renew monthly and **roll over for one month**, so you can hold at most two
+months' worth — unused credits are not lost the moment the month turns, and they
+do not accumulate for ever either.
+
+Integrations and signal routing start at Select; API access, extra seats and
+white-label PDFs at Business. **Enterprise** is custom volume and terms — contact
+sales.
+
+### Credit packs and capacity add-ons
+
+Two different things, and the difference matters:
+
+- **Credit packs** buy credits outright — 500 for $5 / ₹490, 2,000 for
+  $19 / ₹1,849, 10,000 for $89 / ₹11,449. They work on any plan including Free,
+  and **they never expire**.
+- **Capacity add-ons** buy the *right* to do something: a Scheduled Monitor slot
+  ($5 / ₹490), a Batch Pack of 50 extra rows ($9 / ₹879), an Extra Workspace
+  ($19 / ₹1,849). The doing still costs credits — an add-on raises a ceiling, it
+  does not come with a budget attached.
+
+### Your price is fixed for the period you paid for
+
+If DatIQ's prices or plan limits change while you are subscribed, **nothing you
+bought gets worse**. For the rest of the period you have paid for you keep the
+price you were charged and the limits you bought, and if a limit goes *up* you
+get the increase straight away. The new pricing applies when you renew, not
+before — so a change is never something you discover mid-month.
 
 ### What each capability draws on
 
-DatIQ does not make you buy a separate allowance for every screen. Features reuse the allowance that
-already describes the work they do, so there is nothing new to learn and nothing to reconcile:
+Everything spends from the one pool. What differs is the ceiling a plan puts on
+a single run:
 
-| Capability | Draws on |
-|---|---|
-| Single extraction, enrichment, template runs | Your monthly **extractions** allowance |
-| Batch extraction and **bulk account lists** | Your plan's **batch size** (plus any top-up bundles) |
-| Scheduled monitors and **competitor watchlists** | Your plan's **scheduled monitoring** allowance |
-| **Signal routing rules** | Included wherever **integrations** are (Select and above) |
-| Discoverability audits | A separate monthly **audit** allowance |
-| Sharing a report | Free on every plan, including Free |
+| Capability | Costs | Bounded by |
+|---|---|---|
+| Single extraction, enrichment, template runs | Credits | Your credit pool |
+| Batch extraction | 1 credit per page | Your plan's **batch size** |
+| **Bulk account lists** | 3 credits per row | Your plan's **bulk list size** |
+| Scheduled monitors and **competitor watchlists** | 1–2 credits per check | Your plan's **monitor slots** |
+| **Signal routing rules** | Free to dispatch | Included wherever **integrations** are (Select and above) |
+| Discoverability audits | 19 credits per run | Your credit pool |
+| Exporting and sharing a report | Nothing | Free on every plan, including Free |
 
 ### Knowing the cost before you spend it
 
@@ -1026,9 +1084,10 @@ schedules you paused yourself stay paused. Renewing at any stage puts everything
 
 Alongside your plan, the Account screen shows:
 
-- **Discoverability** — audits used and remaining this month (audits have their **own** monthly allowance
-  and do not come out of your extraction credits), how many distinct pages you have audited, how many
-  monitors are running, and your average score across them.
+- **Credits** — how many you have left, and how many your plan renews with each month. If you are
+  holding more than a month's worth, that is last month's rollover.
+- **Discoverability** — audits run (19 credits each, from the same pool as everything else), how many
+  distinct pages you have audited, how many monitors are running, and your average score across them.
 - **Usage by role** — which persona was in use when each unit was spent, so on a team plan you can see
   which role is consuming the allowance. This started being recorded recently, so a month from before then
   says so rather than showing zeros.
