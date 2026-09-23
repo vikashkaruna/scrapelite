@@ -59,14 +59,17 @@ Governing rule: every field DatIQ returns is OBSERVED (read off a page, with the
 Everything is sold in ONE unit: credits. 1 credit = one page fetch. A Discoverability
 audit is 19 credits, a deep AI call 5, a fast one 2, an enrichment 3. Unused plan
 credits roll over for one month, so an account holds at most two months' worth.
-- Free: 100 credits/month, no credit card
-- Go: $4.80/month (or $4/mo billed annually · ₹299/mo annual) — 750 credits
-- Select: $14.40/month (or $12/mo annually · ₹999/mo annual) — 2,500 credits + PDF export
-- Pro: $20.40/month (or $17/mo annually · ₹1,499/mo annual) — 6,000 credits + scheduled monitoring + Google Sheets
-- Business: $44.40/month (or $37/mo annually · ₹3,499/mo annual) — 40,000 credits + API + 3 seats + HubSpot + Airtable + Notion + Slack + Zapier + white-label PDF + priority support
-- Agency: $106.80/month (or $89/mo annually · ₹8,499/mo annual) — 100,000 credits fair use + 5 workspaces + white-label PDF + priority support + every integration
-- Developer: $32.40/month (coming H3 2026) — 28,000 credits, API-first
-- Credit packs (any plan, including Free): 500 for $9, 2,000 for $29, 10,000 for $119. Packs never expire.
+USD and INR are SET prices, not conversions of one another.
+- Free: 100 credits, one-time, never resets — no credit card
+- Go: $5/month · ₹490/month (annual: $4/mo · ₹409/mo) — 750 credits
+- Select: $15/month · ₹1,449/month (annual: $12/mo · ₹1,209/mo) — 2,500 credits + PDF export + watchlists + signal routing
+- Pro: $25/month · ₹2,449/month (annual: $20/mo · ₹2,049/mo) — 6,000 credits + 10 scheduled monitors + Google Sheets
+- Business: $85/month · ₹7,849/month (annual: $70/mo · ₹6,549/mo) — 40,000 credits + API + 3 seats + HubSpot + Airtable + Notion + Slack + Zapier + white-label PDF + priority support
+- Agency: $200/month · ₹19,449/month (annual: $165/mo · ₹16,249/mo) — 100,000 credits fair use + 5 client workspaces + 100 monitors + white-label PDF + priority support + every integration
+- Developer: $55/month · ₹5,449/month (coming H3 2026) — 25,000 credits, API-first
+- Credit packs (any plan, including Free): 500 for $5 / ₹490, 2,000 for $19 / ₹1,849, 10,000 for $89 / ₹11,449. Packs never expire.
+- Capacity add-ons: Scheduled Monitor $5 / ₹490 per slot, Batch Pack $9 / ₹879 per 50 URLs, Extra Workspace $19 / ₹1,849. An add-on buys the right to do something; the runs still cost credits.
+- A plan's price and limits are fixed for the subscription period you bought. A repricing takes effect at renewal, never mid-period.
 
 ## Integrations (all server-stored connections — set up once in /account#integrations)
 - **HubSpot** — push contacts and companies with property mapping

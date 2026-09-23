@@ -131,9 +131,25 @@ describe("describePlanChange", () => {
     expect(u.losses).toHaveLength(0);
   });
 
+  // ⚠️ SYNTHETIC PLANS ON PURPOSE. This used to read agency → pro, because
+  // Agency's extraction limit was Infinity. The 2026-09-23 repricing made every
+  // shipped plan finite, so no real pair exercises the "unlimited" wording any
+  // more — but the branch is still reachable, since an operator override can
+  // set Infinity on any limit. Deleting the test would leave that path
+  // uncovered the day somebody does; driving it directly keeps it honest and
+  // stops the test quietly re-pinning whatever the top plan happens to be.
   it("describes a drop from unlimited in words rather than as a number", () => {
-    const d = describePlanChange(PLAN_BY_ID.agency, PLAN_BY_ID.pro);
+    const unlimited = { ...PLAN_BY_ID.agency, limits: { ...PLAN_BY_ID.agency.limits, extractions: Infinity } };
+    const d = describePlanChange(unlimited, PLAN_BY_ID.pro);
     expect(d.losses.join(" | ")).toMatch(/Extractions per month drops from unlimited to 1,000/);
+  });
+
+  it("no shipped plan is unlimited any more — the ladder is finite end to end", () => {
+    for (const p of Object.values(PLAN_BY_ID)) {
+      expect(Number.isFinite(p.limits.extractions), `${p.id}.extractions`).toBe(true);
+      expect(Number.isFinite(p.limits.credits), `${p.id}.credits`).toBe(true);
+      expect(Number.isFinite(p.limits.scheduled_monitoring), `${p.id}.scheduled_monitoring`).toBe(true);
+    }
   });
 
   it("reports no change between a plan and itself", () => {

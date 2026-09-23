@@ -581,31 +581,60 @@ describe("can() — frozen accounts and paused seats", () => {
 // all, which made the BRD's own upgrade triggers unenforceable and left three
 // cost-bearing operations unmetered. Each reuses a limit the pricing page
 // already sells rather than inventing a new per-tier number.
-describe("bulk.enrich — answers to the batch allowance", () => {
+describe("bulk.enrich — answers to its OWN allowance, not the batch one", () => {
   const free = { plan_id: "free", status: "active" };
+  const go = { plan_id: "go", status: "active" };
   const business = { plan_id: "business", status: "active" };
 
-  it("allows a list within the plan's batch allowance", () => {
-    expect(can(free, "bulk.enrich", ctx({ rowCount: 3 })).allowed).toBe(true);
+  // 🔴 THE SPLIT THAT MADE THIS ITS OWN KEY. Bulk enrichment and batch mode
+  // both read `batch_max_urls` until the 2026-09-23 repricing. Free is now
+  // batch 5 / bulk 0, so the shared key would have kept handing Free a 5-row
+  // account list — a product it is not sold. A batch fetches pages; a bulk list
+  // fetches, enriches and ICP-scores each row at 3 credits apiece.
+  it("Free has a batch allowance and NO bulk allowance", () => {
+    expect(PLAN_BY_ID.free.limits.batch_max_urls).toBeGreaterThan(0);
+    expect(PLAN_BY_ID.free.limits.bulk_list_max).toBe(0);
+    const r = can(free, "bulk.enrich", ctx({ rowCount: 1 }));
+    expect(r.allowed).toBe(false);
+    expect(r.code).toBe("NOT_IN_PLAN");
   });
 
-  it("denies a list larger than the plan's batch allowance", () => {
-    const r = can(free, "bulk.enrich", ctx({ rowCount: 500 }));
+  it("allows a list within the plan's bulk allowance", () => {
+    expect(can(go, "bulk.enrich", ctx({ rowCount: 3 })).allowed).toBe(true);
+  });
+
+  it("denies a list larger than the plan's bulk allowance", () => {
+    const r = can(go, "bulk.enrich", ctx({ rowCount: 500 }));
     expect(r.allowed).toBe(false);
     expect(r.code).toBe("PLAN_LIMIT");
   });
 
   it("a bigger plan allows a bigger list", () => {
-    const freeCap = PLAN_BY_ID.free.limits.batch_max_urls;
-    expect(can(free, "bulk.enrich", ctx({ rowCount: freeCap + 1 })).allowed).toBe(false);
-    expect(can(business, "bulk.enrich", ctx({ rowCount: freeCap + 1 })).allowed).toBe(true);
+    const goCap = PLAN_BY_ID.go.limits.bulk_list_max;
+    expect(can(go, "bulk.enrich", ctx({ rowCount: goCap + 1 })).allowed).toBe(false);
+    expect(can(business, "bulk.enrich", ctx({ rowCount: goCap + 1 })).allowed).toBe(true);
+  });
+
+  // ⚠️ An operator override written before the split carries batch_max_urls and
+  // no bulk_list_max. Resolving that to 0 would REVOKE bulk enrichment from
+  // whoever wrote the override, which is the opposite of what one is for.
+  it("falls back to batch_max_urls for an override written before the split", () => {
+    const legacy = { free: { id: "free", price_usd: 0, limits: { batch_max_urls: 50 } } };
+    const r = can(free, "bulk.enrich", { planMap: legacy, rowCount: 20 });
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(30);
+  });
+
+  it("honours a deliberate bulk_list_max of 0 over the batch fallback", () => {
+    const explicit = { free: { id: "free", price_usd: 0, limits: { batch_max_urls: 50, bulk_list_max: 0 } } };
+    expect(can(free, "bulk.enrich", { planMap: explicit, rowCount: 1 }).allowed).toBe(false);
   });
 
   it("purchased batch bundles raise the bulk ceiling too", () => {
-    const cap = PLAN_BY_ID.free.limits.batch_max_urls;
-    expect(can(free, "bulk.enrich", ctx({ rowCount: cap + 10 })).allowed).toBe(false);
+    const cap = PLAN_BY_ID.go.limits.bulk_list_max;
+    expect(can(go, "bulk.enrich", ctx({ rowCount: cap + 10 })).allowed).toBe(false);
     expect(
-      can(free, "bulk.enrich", ctx({ rowCount: cap + 10, bonusBatchUrls: 50 })).allowed
+      can(go, "bulk.enrich", ctx({ rowCount: cap + 10, bonusBatchUrls: 50 })).allowed
     ).toBe(true);
   });
 

@@ -24,6 +24,9 @@ const ALLOWED_LIMIT_KEYS = new Set([
   // surfaces still print them — and are no longer what any gate reads.
   "credits",
   "extractions",
+  // Separate from batch_max_urls since the 2026-09-23 repricing: Free gets a
+  // 5-URL batch but NO bulk account list, which one shared key could not say.
+  "bulk_list_max",
   "enrichments_per_extraction",
   "exports",
   "email_export",
@@ -250,7 +253,7 @@ describe("credit pools", () => {
   it("holds the §4.1 table exactly", () => {
     expect(Object.fromEntries(PLANS.map((p) => [p.id, p.limits.credits]))).toEqual({
       free: 100, go: 750, select: 2500, pro: 6000,
-      developer: 28000, business: 40000, agency: 100000,
+      developer: 25000, business: 40000, agency: 100000,
     });
   });
 
@@ -300,7 +303,9 @@ describe("top-ups sell capacity, never consumption", () => {
 describe("credit packs", () => {
   it("ship the §4.4 table", () => {
     expect(CREDIT_PACKS.map((p) => [p.credits, p.price_usd]))
-      .toEqual([[500, 9], [2000, 29], [10000, 119]]);
+      .toEqual([[500, 5], [2000, 19], [10000, 89]]);
+    expect(CREDIT_PACKS.map((p) => [p.credits, p.price_inr]))
+      .toEqual([[500, 490], [2000, 1849], [10000, 11449]]);
   });
 
   // The packs must be worse value than any plan, or nobody upgrades.
@@ -346,7 +351,14 @@ describe("Agency overage (D13)", () => {
     const agency = PLANS.find((p) => p.id === "agency");
     const committed = agency.price_usd / agency.limits.credits;
     const overage = AGENCY_OVERAGE.usdPer1000 / 1000;
-    expect(overage).toBeGreaterThan(committed);
+    // ⚠️ EQUAL IS ALLOWED, BELOW IS NOT, and the 2026-09-23 repricing made it
+    // exactly equal: Agency is $200 for 100,000 credits, so its committed rate
+    // is $0.002/credit and AGENCY_OVERAGE is $2.00/1,000 — the same number.
+    // That is a coherent policy (past fair use you keep paying the plan's own
+    // rate) and it is the pricing sheet's stated intent. What must never
+    // happen is overage BELOW the committed rate, which would make overrunning
+    // cheaper than the plan that grants the credits.
+    expect(overage).toBeGreaterThanOrEqual(committed);
     expect(overage).toBeLessThan(Math.min(...CREDIT_PACKS.map((p) => p.price_usd / p.credits)));
   });
 });

@@ -14,34 +14,45 @@
 // (no SUPABASE_URL / SUPABASE_SERVICE_KEY) or the fetch fails, the static tables
 // are used — nothing ever hard-fails, so "static is the start" always holds.
 
+import { PLANS, TOPUP_BUNDLES, CREDIT_PACKS } from "../../../src/lib/pricingConfig.js";
+
 export const GST_RATE = 0.18; // 18% GST, INR only
 
 // ── Static price tables (BASE prices; INR is pre-GST) ──────────────────────────
-// planId -> { usd, usd_annual, inr, inr_annual }. Annual figures are PER-MONTH base.
-const STATIC_PLANS = {
-  free:     { usd: 0,     usd_annual: 0,   inr: 0,     inr_annual: 0    },
-  go:       { usd: 4.8,   usd_annual: 4,   inr: 359,   inr_annual: 299  },
-  select:   { usd: 14.4,  usd_annual: 12,  inr: 1199,  inr_annual: 999  },
-  pro:      { usd: 20.4,  usd_annual: 17,  inr: 1799,  inr_annual: 1499 },
-  business: { usd: 44.4,  usd_annual: 37,  inr: 4199,  inr_annual: 3499 },
-  agency:   { usd: 106.8, usd_annual: 89,  inr: 10199, inr_annual: 8499 },
-};
-
-// ⚠️ MUST MIRROR src/lib/pricingConfig.js. This is the SERVER's fallback when
-// pricing_config carries no override; a price here that disagrees with the one
-// on screen charges a customer something other than what they were shown.
 //
+// 🔴 THESE ARE DERIVED FROM `src/lib/pricingConfig.js`, NOT COPIED FROM IT.
+// They used to be a hand-written mirror carrying a comment that said "MUST
+// MIRROR src/lib/pricingConfig.js" — which is a request, not a mechanism, and
+// this is the one table where a divergence charges a customer something other
+// than the number they were shown. Deriving them makes a repricing one edit,
+// which is the whole point of PLAN_TABLE existing.
+//
+// ⚠️ `verify-payment.js` already imports from the same module, so reaching
+// across into src/ from a Netlify function is established here and the bundler
+// handles it. Nothing browser-only is pulled in: pricingConfig is pure data.
+//
+// ⚠️ INR IS A SET PRICE, NEVER CONVERTED, on both sides. See PLAN_TABLE's
+// header for why a converted price is the wrong thing to charge.
+const STATIC_PLANS = Object.fromEntries(
+  PLANS.map((p) => [p.id, {
+    usd: p.price_usd,
+    usd_annual: p.price_usd_annual,
+    inr: p.price_inr,
+    inr_annual: p.price_inr_annual,
+  }]),
+);
+
 // `extractions-bundle` is gone (D15) — it sold pure consumption at 14x the
 // cheapest plan's credit rate. `credits: N` marks a pack whose purchase GRANTS
 // that many credits; a bundle without it buys capacity and grants none.
+//
+// ⚠️ `hubspot-addon` is NOT in the client catalogue and is kept deliberately:
+// `paymentConfig.js` still maps a Stripe price id for it, so an order could
+// name it. Dropping its price here would make that order resolve to 0.
 const STATIC_BUNDLES = {
-  "batch-pack":         { usd: 9,   inr: 749  },
-  "scheduler-addon":    { usd: 5,   inr: 399  },
-  "workspace-addon":    { usd: 19,  inr: 1499 },
-  "hubspot-addon":      { usd: 12,  inr: 999  },
-  "credits-500":        { usd: 9,   inr: 749,  credits: 500 },
-  "credits-2000":       { usd: 29,  inr: 2399, credits: 2000 },
-  "credits-10000":      { usd: 119, inr: 9899, credits: 10000 },
+  ...Object.fromEntries(TOPUP_BUNDLES.map((b) => [b.id, { usd: b.price_usd, inr: b.price_inr }])),
+  ...Object.fromEntries(CREDIT_PACKS.map((p) => [p.id, { usd: p.price_usd, inr: p.price_inr, credits: p.credits }])),
+  "hubspot-addon": { usd: 12, inr: 999 },
 };
 
 // Mirrors the percent-type seed coupons in src/lib/adminService.js.

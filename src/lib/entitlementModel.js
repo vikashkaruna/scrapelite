@@ -696,12 +696,23 @@ export function can(ent, capability, ctx = {}) {
     // the owner, not something to smuggle in with a security fix — and a limit
     // nobody has priced is worse than an honest reuse of one that is.
 
-    // A bulk list is a batch of URLs by another name, so it answers to the
-    // batch allowance. Giving it a separate, ungated path would let a user on
-    // a 5-URL batch limit enrich 500 domains by using the other screen.
+    // 🔴 A BULK LIST IS NOT A BATCH, AND IT USED TO BE GATED AS ONE.
+    // Both read `batch_max_urls` until the 2026-09-23 repricing, which is fine
+    // while every plan sets them equal — and wrong for Free, which is now batch
+    // 5 / bulk 0. A batch fetches pages; a bulk list fetches AND enriches AND
+    // ICP-scores each row at 3 credits apiece, which is a different, more
+    // expensive product. Sharing one key meant Free's 5-URL batch silently
+    // granted it a 5-row account list nobody decided to give away.
+    //
+    // ⚠️ THE FALLBACK IS LOAD-BEARING, NOT DEFENSIVE. An operator override
+    // written against the older shape carries `batch_max_urls` and no
+    // `bulk_list_max`; resolving that to 0 would take bulk enrichment away from
+    // whoever wrote it, which is the opposite of what an override is for.
+    // `?? ` rather than `||` so a deliberate 0 is honoured.
     case "bulk.enrich": {
       const rowCount = ctx.rowCount ?? 1;
-      const effective = (L.batch_max_urls || 0) + (ctx.bonusBatchUrls || 0);
+      const listCap = L.bulk_list_max ?? L.batch_max_urls ?? 0;
+      const effective = listCap + (ctx.bonusBatchUrls || 0);
       if (effective === 0) {
         return deny(
           "NOT_IN_PLAN",

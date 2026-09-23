@@ -11,23 +11,34 @@
 // applied here — callers apply applyGlobalDiscount() so admin overrides flow
 // through exactly one place.
 
-import { convertPrice } from "./currencyService.js";
-
 /**
  * Per-month display price for a plan.
+ *
+ * 🔴 THERE IS NO LONGER A CONVERSION PATH, AND THAT IS THE POINT. This used to
+ * fall back to `convertPrice(plan.price_usd, rates, "INR")` when a plan had no
+ * fixed INR price. Two things were wrong with it: a converted price MOVES when
+ * the rate moves, so the figure on the card and the figure charged could differ
+ * between the page load and the checkout — and the server never converted
+ * anything, so the two sides were computing a price by different rules. INR is
+ * now a SET price on every plan (PLAN_TABLE), and a plan without one resolves
+ * to 0 rather than inventing an amount.
+ *
+ * ⚠️ `rates` is still accepted so the four call sites need no change, and is
+ * deliberately unused. Do not reintroduce it here.
+ *
  * @param {object} plan           effective plan (see pricingOverrides.getEffectivePlans)
  * @param {"monthly"|"annual"} billingPeriod
  * @param {"USD"|"INR"} currency
- * @param {object} [rates]        live FX rates — only used when a plan has no fixed INR price
+ * @param {object} [_rates]       ignored — kept for call-site compatibility
  * @returns {number}
  */
-export function resolvePlanPrice(plan, billingPeriod, currency, rates) {
+export function resolvePlanPrice(plan, billingPeriod, currency, _rates) {
   if (!plan || plan.price_usd === 0) return 0;
   if (billingPeriod === "annual") {
-    if (currency === "INR" && plan.price_inr_annual) return plan.price_inr_annual;
+    if (currency === "INR") return plan.price_inr_annual || 0;
     return plan.price_usd_annual ?? plan.price_usd;
   }
-  if (currency === "INR") return plan.price_inr || Math.round(convertPrice(plan.price_usd, rates, "INR"));
+  if (currency === "INR") return plan.price_inr || 0;
   return plan.price_usd;
 }
 

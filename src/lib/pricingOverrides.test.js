@@ -34,7 +34,7 @@ describe("getEffectivePlanById (U-15)", () => {
   it("returns the base plan when no override is present", () => {
     const p = getEffectivePlanById("pro");
     expect(p.id).toBe("pro");
-    expect(p.price_usd).toBe(20.4);
+    expect(p.price_usd).toBe(25);
   });
 
   it("returns the override fields when set", () => {
