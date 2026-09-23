@@ -23,6 +23,7 @@ describe("the price list is pinned, not assumed", () => {
       monitor_prompt: 2,
       bulk_row: 3,
       citation_prompt_extra: 2,
+      outreach_email: 1,
     });
   });
 

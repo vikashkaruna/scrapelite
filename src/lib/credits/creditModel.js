@@ -23,11 +23,14 @@
 export const LEDGER_REASONS = Object.freeze([
   "page_fetch", "ai_call", "enrichment", "audit", "monitor_check",
   "template_run", "refund", "grant", "adjustment",
+  // 0082 — a message sent by the Prospect Engagement Engine.
+  "outreach",
 ]);
 
 /** Mirrors credit_ledger.unit in 0037. */
 export const LEDGER_UNITS = Object.freeze([
   "page", "ai_call", "enrichment", "audit", "monitor_check", "run",
+  "message",
 ]);
 
 /** Map an estimate breakdown unit onto the ledger reason it will be charged as. */

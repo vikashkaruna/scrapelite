@@ -3,81 +3,105 @@ import { describe, it, expect } from "vitest";
 import {
   generatePersonalizedVariants,
   validateMessageGuardrails,
+  assignVariant,
+  escapeHtml,
+  UNSUBSCRIBE_PLACEHOLDER,
   CHANNELS,
 } from "./aiMessageGenerator.js";
 
-describe("aiMessageGenerator — variant generation", () => {
-  const prospect = {
-    first_name: "Alex",
-    last_name: "Morgan",
-    company: "Acme Cloud",
-    role: "VP Product",
-    industry: "Enterprise SaaS",
-  };
+const prospect = {
+  id: "p-1",
+  first_name: "Alex",
+  company: "Acme Cloud",
+  role: "VP Product",
+  industry: "Enterprise SaaS",
+};
+const brandKit = {
+  company_name: "Northwind",
+  value_prop: "same-day payroll for small teams",
+  cta_url: "https://northwind.test/demo",
+  cta_label: "See a demo",
+};
 
-  const campaign = {
-    name: "Acme Outreach",
-    channels: [CHANNELS.EMAIL, CHANNELS.WHATSAPP, CHANNELS.SMS],
-  };
-
-  const brandKit = {
-    company_name: "DatIQ",
-    value_prop: "automated web extraction and competitor tracking",
-    cta_url: "https://datiq.app/acme",
-    cta_label: "View Acme Snapshot",
-  };
-
-  it("generates variants across all specified channels", () => {
-    const variants = generatePersonalizedVariants(prospect, campaign, brandKit);
-    expect(variants.length).toBeGreaterThanOrEqual(4);
-
-    const emailVariants = variants.filter((v) => v.channel === CHANNELS.EMAIL);
-    expect(emailVariants.length).toBe(2);
-    expect(emailVariants[0].variant).toBe("A");
-    expect(emailVariants[1].variant).toBe("B");
-
-    const waVariants = variants.filter((v) => v.channel === CHANNELS.WHATSAPP);
-    expect(waVariants.length).toBe(2);
-
-    const smsVariants = variants.filter((v) => v.channel === CHANNELS.SMS);
-    expect(smsVariants.length).toBe(1);
+describe("drafts — one channel, one variant, per call (review F-2)", () => {
+  it("returns exactly what was asked for", () => {
+    const v = generatePersonalizedVariants(prospect, {}, brandKit, { channels: [CHANNELS.EMAIL], variants: ["B"] });
+    expect(v).toHaveLength(1);
+    expect(v[0]).toMatchObject({ channel: "email", variant: "B" });
   });
 
-  it("injects personalized prospect fields and brand kit into copy", () => {
-    const variants = generatePersonalizedVariants(prospect, campaign, brandKit);
-    const emailA = variants.find((v) => v.channel === CHANNELS.EMAIL && v.variant === "A");
-
-    expect(emailA.subject).toContain("Acme Cloud");
-    expect(emailA.body).toContain("Alex");
-    expect(emailA.body).toContain("VP Product");
-    expect(emailA.body).toContain("Enterprise SaaS");
-    expect(emailA.body).toContain("DatIQ");
-    expect(emailA.body).toContain("https://datiq.app/acme");
+  it("defaults to email only — never a fan-out across channels", () => {
+    const v = generatePersonalizedVariants(prospect, {}, brandKit);
+    expect(new Set(v.map((x) => x.channel))).toEqual(new Set(["email"]));
   });
 
-  it("enforces SMS length constraint (under 160 chars for single segment)", () => {
-    const variants = generatePersonalizedVariants(prospect, campaign, brandKit);
-    const sms = variants.find((v) => v.channel === CHANNELS.SMS);
+  it("assigns the same variant to the same prospect every time, and uses both arms", () => {
+    expect(assignVariant("p-1")).toBe(assignVariant("p-1"));
+    const arms = new Set(Array.from({ length: 50 }, (_, i) => assignVariant(`prospect-${i}`)));
+    expect(arms).toEqual(new Set(["A", "B"]));
+  });
+
+  it("SMS stays within one segment and carries an opt-out", () => {
+    const [sms] = generatePersonalizedVariants(prospect, {}, brandKit, { channels: [CHANNELS.SMS] });
     expect(sms.body.length).toBeLessThanOrEqual(160);
     expect(sms.body).toContain("STOP");
+    expect(sms.guardrails.passed).toBe(true);
+  });
+});
+
+describe("drafts — no invented claims, no borrowed brand (review F-11)", () => {
+  it("never claims monitoring or findings the record does not support", () => {
+    for (const variant of ["A", "B"]) {
+      const [e] = generatePersonalizedVariants(prospect, {}, brandKit, { channels: ["email"], variants: [variant] });
+      expect(e.body).not.toMatch(/monitor|uncovered|synthesi[sz]ed|we (set up|noticed)|shifts/i);
+      expect(e.guardrails.passed).toBe(true);
+    }
   });
 
-  it("generates Telegram channel message variant", () => {
-    const telegramCampaign = { ...campaign, channels: [CHANNELS.TELEGRAM] };
-    const variants = generatePersonalizedVariants(prospect, telegramCampaign, brandKit);
-    const tg = variants.find((v) => v.channel === CHANNELS.TELEGRAM);
-    expect(tg).toBeDefined();
-    expect(tg.body).toContain("Alex");
+  it("does not default to DatIQ when the brand kit is empty", () => {
+    const [e] = generatePersonalizedVariants(prospect, {}, {}, { channels: ["email"], variants: ["A"] });
+    expect(`${e.subject} ${e.body} ${e.bodyHtml}`).not.toMatch(/datiq/i);
   });
 
-  it("generates variants for all requested channels including Telegram", () => {
-    const allChannelsCampaign = { ...campaign, channels: [CHANNELS.EMAIL, CHANNELS.WHATSAPP, CHANNELS.SMS, CHANNELS.TELEGRAM] };
-    const variants = generatePersonalizedVariants(prospect, allChannelsCampaign, brandKit);
-    
-    expect(variants.some(v => v.channel === CHANNELS.EMAIL)).toBe(true);
-    expect(variants.some(v => v.channel === CHANNELS.WHATSAPP)).toBe(true);
-    expect(variants.some(v => v.channel === CHANNELS.SMS)).toBe(true);
-    expect(variants.some(v => v.channel === CHANNELS.TELEGRAM)).toBe(true);
+  it("uses the brand kit fields the editor saves", () => {
+    const [e] = generatePersonalizedVariants(prospect, {}, brandKit, { channels: ["email"], variants: ["A"] });
+    expect(e.body).toContain("Northwind");
+    expect(e.body).toContain("same-day payroll for small teams");
+    expect(e.body).toContain("https://northwind.test/demo");
+  });
+
+  it("carries the unsubscribe placeholder in both parts", () => {
+    const [e] = generatePersonalizedVariants(prospect, {}, brandKit, { channels: ["email"], variants: ["A"] });
+    expect(e.body).toContain(UNSUBSCRIBE_PLACEHOLDER);
+    expect(e.bodyHtml).toContain(UNSUBSCRIBE_PLACEHOLDER);
+  });
+});
+
+describe("drafts — prospect data is untrusted (review F-12)", () => {
+  const hostile = {
+    id: "p-2",
+    first_name: '<img src=x onerror="alert(1)">',
+    company: "Acme\r\nBcc: everyone@x.test",
+  };
+
+  it("escapes prospect fields in HTML", () => {
+    const [e] = generatePersonalizedVariants(hostile, {}, brandKit, { channels: ["email"], variants: ["A"] });
+    expect(e.bodyHtml).not.toContain("<img");
+    expect(e.bodyHtml).toContain("&lt;img");
+  });
+
+  it("strips line breaks so a field cannot become a header", () => {
+    const [e] = generatePersonalizedVariants(hostile, {}, brandKit, { channels: ["email"], variants: ["B"] });
+    expect(e.subject).not.toMatch(/[\r\n]/);
+  });
+
+  it("drops a non-http call-to-action link", () => {
+    const [e] = generatePersonalizedVariants(prospect, {}, { ...brandKit, cta_url: "javascript:alert(1)" }, { channels: ["email"], variants: ["A"] });
+    expect(`${e.body}${e.bodyHtml}`).not.toContain("javascript:");
+  });
+
+  it("escapeHtml covers the five characters that matter", () => {
+    expect(escapeHtml(`<a href="x" title='y'>&</a>`)).toBe("&lt;a href=&quot;x&quot; title=&#39;y&#39;&gt;&amp;&lt;/a&gt;");
   });
 });
 

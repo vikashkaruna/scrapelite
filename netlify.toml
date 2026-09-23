@@ -73,6 +73,12 @@
 [functions."bulk-runner"]
   schedule = "*/5 * * * *"
 
+# Prospect Engagement Engine send queue. Claims per message (queued -> sending),
+# so it is safe alongside the dashboard's "Send approved". No-ops unless
+# ENGAGEMENT_ENABLED=1.
+[functions."engagement-dispatcher"]
+  schedule = "*/5 * * * *"
+
 # PRD 5's "retry failed actions". Re-attempts dispatches whose backoff has
 # elapsed. Every 5 minutes, matching the first step of the backoff schedule
 # (1m, 5m, 30m, 2h, 12h) closely enough that an early retry is not left waiting.
@@ -362,37 +368,6 @@
 [[redirects]]
   from = "/api/integrations/*"
   to = "/.netlify/functions/integrations-router/:splat"
-  status = 200
-  force = true
-
-# ── Engagement Engine API ────────────────────────────────────────────────────
-[[redirects]]
-  from = "/api/engagement-engine"
-  to = "/.netlify/functions/engagement-engine"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/engagement-engine/*"
-  to = "/.netlify/functions/engagement-engine"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/engagement/engine"
-  to = "/.netlify/functions/engagement-engine"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/engagement-webhook"
-  to = "/.netlify/functions/engagement-webhook"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/engagement/webhook"
-  to = "/.netlify/functions/engagement-webhook"
   status = 200
   force = true
 

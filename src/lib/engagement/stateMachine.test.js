@@ -128,3 +128,13 @@ describe("stateMachine — stale prospect detection", () => {
     expect(stale.map((p) => p.id)).toEqual(["1", "2", "5"]);
   });
 });
+
+describe("scoring — repeated events (review F-24)", () => {
+  it("a self-transition records the event but does not score it again", () => {
+    const p = { id: "p", campaign_id: "c", status: PROSPECT_STATUSES.OPENED, engagement_score: 22 };
+    const t = transitionProspect(p, PROSPECT_STATUSES.OPENED, { eventType: "webhook_opened" });
+    expect(t.ok).toBe(true);
+    expect(t.prospect.engagement_score).toBe(22);
+    expect(t.activity.details.score_delta).toBe(0);
+  });
+});

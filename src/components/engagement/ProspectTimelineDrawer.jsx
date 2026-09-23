@@ -5,6 +5,7 @@ import Button from "../Button.jsx";
 import FaviconDot from "../FaviconDot.jsx";
 import { PROSPECT_STATUSES, STATUS_METADATA, isValidTransition } from "../../lib/engagement/stateMachine.js";
 import { fmtDate, timeAgo } from "../../lib/utils.js";
+import ConsentPanel from "./ConsentPanel.jsx";
 
 export default function ProspectTimelineDrawer({
   prospect,
@@ -14,6 +15,10 @@ export default function ProspectTimelineDrawer({
   onTransition,
   onAddNote,
   onGenerateMessage,
+  suppressions = [],
+  onOptOut,
+  onLiftSuppression,
+  consentBusy = false,
 }) {
   const [noteText, setNoteText] = useState("");
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
@@ -118,7 +123,10 @@ export default function ProspectTimelineDrawer({
               }}
             >
               {Object.values(PROSPECT_STATUSES)
-                .filter((st) => st === prospect.status || isValidTransition(prospect.status, st))
+                // Opting out is done per channel in the Consent panel, so it is
+                // recorded against the address, not just this row's stage.
+                .filter((st) => st === prospect.status
+                  || (st !== PROSPECT_STATUSES.OPTED_OUT && isValidTransition(prospect.status, st)))
                 .map((st) => (
                   <option key={st} value={st}>
                     {STATUS_METADATA[st]?.label || st}
@@ -183,15 +191,23 @@ export default function ProspectTimelineDrawer({
           </div>
         </div>
 
+        <ConsentPanel
+          prospect={prospect}
+          suppressions={suppressions}
+          onOptOut={onOptOut ? (channels, note) => onOptOut(prospect.id, channels, note) : undefined}
+          onLift={onLiftSuppression}
+          busy={consentBusy}
+        />
+
         {/* Quick Action: Generate AI Copy / Dispatch */}
         {onGenerateMessage && (
           <div className="eng-drawer-actions">
             <Button
               variant="secondary"
               icon="sparkles"
-              onClick={() => onGenerateMessage(prospect.id, prospect.channel_preference || "email")}
+              onClick={() => onGenerateMessage(prospect.id, "email")}
             >
-              Draft AI Message
+              Draft email
             </Button>
           </div>
         )}

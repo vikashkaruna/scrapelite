@@ -194,10 +194,12 @@ grant usage on schema public to anon, authenticated;
 // Taking these to 118 / 59 / 29.
 // 0081 (Prospect Engagement Engine: +5 tables, +1 function
 // engagement_touch_updated_at, +4 updated_at triggers). Taking these to 123 / 60 / 33.
+// 0082 (+1 table engagement_suppressions, +1 function
+// engagement_activity_log_immutable, +1 trigger). Taking these to 124 / 61 / 34.
 const EXPECT = {
-  tables: 123,
-  functions: 60,
-  triggers: 33,
+  tables: 124,
+  functions: 61,
+  triggers: 34,
   tablesWithoutRls: 0,
 };
 
@@ -2464,6 +2466,65 @@ group("pql — 'no data' and 'unqualified' must not be the same row");
   eq("...and cascades to sync configs", remSync.c, 0);
 }
 
+// ── 0082: engagement send safety ──────────────────────────────────────
+// The review (docs/PROSPECT-ENGAGEMENT-ENGINE-REVIEW-AND-ROLLOUT.md) found a
+// dispatcher that re-sent on every call, opt-outs stored as a campaign-row
+// status, and an "immutable" audit log nothing protected. These pin the
+// database half of each fix.
+{
+  group("engagement send safety — suppressions, send claims, append-only log");
+  const U5 = "88888888-8888-8888-8888-888888888802";
+  const U6 = "88888888-8888-8888-8888-888888888803";
+  await db.query(`insert into auth.users (id, email) values ($1, 'a@send.test'), ($2, 'b@send.test') on conflict do nothing`, [U5, U6]);
+  const c5 = await one(`insert into public.engagement_campaigns (user_id, name) values ($1, 'S') returning id, sender`, [U5]);
+  eq("a campaign carries a sender, empty by default", c5.sender, {});
+
+  // One suppression per (tenant, channel, address) — per channel, per tenant.
+  await db.query(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'email', 'x@y.test', 'unsubscribe')`, [U5]);
+  check("the same tenant cannot suppress the same address twice on a channel", Boolean(await throws(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'email', 'x@y.test', 'manual')`, [U5])));
+  await db.query(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'sms', 'x@y.test', 'manual')`, [U5]);
+  check("...but the same address on another channel is a separate row", true);
+  await db.query(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'email', 'x@y.test', 'manual')`, [U6]);
+  check("...and another tenant's list is independent", true);
+  check("an unknown suppression reason is refused", Boolean(await throws(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'email', 'z@y.test', 'because')`, [U5])));
+  check("an empty address is refused", Boolean(await throws(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'email', '  ', 'manual')`, [U5])));
+
+  // Prospect uniqueness per campaign, case-insensitive.
+  await db.query(`insert into public.engagement_prospects (user_id, campaign_id, email) values ($1, $2, 'ana@x.test')`, [U5, c5.id]);
+  check("a campaign cannot hold the same email twice (case-insensitive)", Boolean(await throws(`insert into public.engagement_prospects (user_id, campaign_id, email) values ($1, $2, 'ANA@x.test')`, [U5, c5.id])));
+  const p5 = await one(`select id from public.engagement_prospects where campaign_id = $1`, [c5.id]);
+
+  // Send-claim statuses and provider-id uniqueness.
+  const m5 = await one(
+    `insert into public.engagement_messages (user_id, campaign_id, prospect_id, channel, body, status, approval_status)
+     values ($1, $2, $3, 'email', 'hi', 'queued', 'approved') returning id, attempts`, [U5, c5.id, p5.id]);
+  eq("a new message has made no attempts", m5.attempts, 0);
+  const claimed = await q(`update public.engagement_messages set status = 'sending', claimed_at = now()
+     where id = $1 and status = 'queued' returning id`, [m5.id]);
+  eq("the first claim takes the message", claimed.length, 1);
+  const again = await q(`update public.engagement_messages set status = 'sending', claimed_at = now()
+     where id = $1 and status = 'queued' returning id`, [m5.id]);
+  eq("a second claim finds nothing to take", again.length, 0);
+  await db.query(`update public.engagement_messages set status = 'sent', provider = 'resend', external_message_id = 're_1' where id = $1`, [m5.id]);
+  check("two messages cannot share one provider message id", Boolean(await throws(`insert into public.engagement_messages (user_id, campaign_id, prospect_id, channel, body, provider, external_message_id)
+       values ($1, $2, $3, 'email', 'x', 'resend', 're_1')`, [U5, c5.id, p5.id])));
+  await db.query(`update public.engagement_messages set status = 'skipped' where id = $1`, [m5.id]);
+  check("'skipped' is a legal message status", true);
+
+  // Append-only activity log — but a campaign delete still cascades.
+  const a5 = await one(`insert into public.engagement_activity_log (user_id, campaign_id, prospect_id, event_type)
+     values ($1, $2, $3, 'note') returning id`, [U5, c5.id, p5.id]);
+  check("the activity log refuses UPDATE", Boolean(await throws(`update public.engagement_activity_log set event_type = 'edited' where id = $1`, [a5.id])));
+  await db.query(`delete from public.engagement_campaigns where id = $1`, [c5.id]);
+  const gone = await one(`select count(*)::int c from public.engagement_activity_log where id = $1`, [a5.id]);
+  eq("...while deleting the campaign still cascades", gone.c, 0);
+
+  // The ledger can record a sent message.
+  const U7 = U5;
+  await db.query(`insert into public.credit_ledger (user_id, reason, credits, unit, quantity) values ($1, 'outreach', 1, 'message', 1)`, [U7]);
+  check("credit_ledger accepts reason 'outreach' / unit 'message'", true);
+}
+
 // ── 0044: workflow RLS lockdown (Phases 4-6 & Engagement) ───────────────────
 // 0041-0043 shipped `grant all ... to anon` plus a policy whose
 // `or auth.uid() is null` branch is TRUE for exactly the anonymous role, making
@@ -2480,7 +2541,7 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     "field_changes", "change_feedback",
     "signal_rules", "rule_executions",
     "engagement_campaigns", "engagement_prospects", "engagement_messages",
-    "engagement_activity_log", "engagement_sync_configs",
+    "engagement_activity_log", "engagement_sync_configs", "engagement_suppressions",
   ];
 
   for (const t of LOCKED) {

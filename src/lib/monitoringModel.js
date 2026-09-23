@@ -116,6 +116,22 @@ export const AUTOMATION_JOBS = [
     manualRunAllowed: true,
   },
   {
+    id: "engagement-dispatcher",
+    label: "Engagement send queue",
+    schedule: "*/5 * * * *",
+    cron: "*/5 * * * *",
+    expectedIntervalMs: 5 * 60 * 1000,
+    category: "extraction",
+    description:
+      "Sends approved Prospect Engagement Engine messages the dashboard did not reach in its own " +
+      "request, re-takes sends whose function died mid-flight, and releases messages deferred for " +
+      "credits. Rechecks every opt-out at send time. No-ops unless ENGAGEMENT_ENABLED=1.",
+    destructive: false,
+    // Safe by hand: every message is claimed with a conditional update and sent
+    // with the message id as the provider idempotency key.
+    manualRunAllowed: true,
+  },
+  {
     id: "signal-retry",
     label: "Signal dispatch retry",
     schedule: "*/5 * * * *",

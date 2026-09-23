@@ -10,14 +10,35 @@ import ApprovalQueue from "../components/engagement/ApprovalQueue.jsx";
 import ProspectTimelineDrawer from "../components/engagement/ProspectTimelineDrawer.jsx";
 import AnalyticsPanel from "../components/engagement/AnalyticsPanel.jsx";
 import BrandKitEditor from "../components/engagement/BrandKitEditor.jsx";
+import SendPanel from "../components/engagement/SendPanel.jsx";
+import { useAuth } from "../components/AuthProvider.jsx";
 import * as api from "../lib/engagement/engagementClient.js";
 import { PROSPECT_STATUSES, STATUS_METADATA } from "../lib/engagement/stateMachine.js";
 import { fmtDate, timeAgo } from "../lib/utils.js";
+
+/** Why generate_messages skipped a prospect, in words. */
+const SKIP_COPY = {
+  no_live_channel: "This contact has no email address.",
+  no_address: "This contact has no email address.",
+  opted_out: "This contact has opted out.",
+  already_drafted: "There's already an open draft for this contact.",
+  suppressed_unsubscribe: "This contact unsubscribed from email.",
+  suppressed_bounce: "This contact's email bounced earlier.",
+  suppressed_complaint: "This contact marked a previous email as spam.",
+  suppressed_manual: "Your team opted this contact out of email.",
+};
 
 export default function Engagement() {
   const location = useLocation();
   const navigate = useNavigate();
   const showToast = useToast();
+  const { user, authLoading, openAuth } = useAuth();
+
+  // Beta gate: { enabled, code, message, sender_domains, mock_sending } from the server.
+  const [access, setAccess] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [suppressions, setSuppressions] = useState([]);
+  const [consentBusy, setConsentBusy] = useState(false);
 
   const [activeTab, setActiveTab] = useState("board"); // "board" | "approval" | "prospects" | "analytics" | "settings"
   const [campaigns, setCampaigns] = useState([]);
@@ -25,7 +46,6 @@ export default function Engagement() {
   const [prospects, setProspects] = useState([]);
   const [messages, setMessages] = useState([]);
   const [analytics, setAnalytics] = useState({});
-  const [syncConfig, setSyncConfig] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Selected prospect for timeline drawer
@@ -65,16 +85,14 @@ export default function Engagement() {
     if (!campaignId) return;
     setLoading(true);
     try {
-      const [pRes, mRes, aRes, sRes] = await Promise.all([
+      const [pRes, mRes, aRes] = await Promise.all([
         api.listProspects(campaignId),
         api.listMessages(campaignId),
         api.getAnalytics(campaignId),
-        api.getSyncConfig(campaignId),
       ]);
       setProspects(pRes.prospects || []);
       setMessages(mRes.messages || []);
-      setAnalytics(aRes.analytics || aRes || {});
-      setSyncConfig(sRes.config || null);
+      setAnalytics(aRes || {});
     } catch (e) {
       showToast(e.message || "Failed to load campaign data");
     } finally {
@@ -83,8 +101,22 @@ export default function Engagement() {
   };
 
   useEffect(() => {
-    loadCampaigns();
-  }, []);
+    if (authLoading || !user) return;
+    let alive = true;
+    api.getAccess()
+      .then((a) => {
+        if (!alive) return;
+        setAccess(a);
+        if (a.enabled) loadCampaigns();
+        else setLoading(false);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setAccess({ enabled: false, code: e.code || "unavailable", message: e.message });
+        setLoading(false);
+      });
+    return () => { alive = false; };
+  }, [user, authLoading]);
 
   useEffect(() => {
     if (selectedCampaignId) {
@@ -120,14 +152,74 @@ export default function Engagement() {
   }, [messages, prospects]);
 
   // Open prospect timeline drawer
+  const loadProspectDetail = async (prospectId) => {
+    const [logsRes, supRes] = await Promise.allSettled([
+      api.getActivityLogs(selectedCampaignId, prospectId),
+      api.listSuppressions(prospectId),
+    ]);
+    setActivityLogs(logsRes.status === "fulfilled" ? logsRes.value.logs || [] : []);
+    setSuppressions(supRes.status === "fulfilled" ? supRes.value.suppressions || [] : []);
+  };
+
   const handleSelectProspect = async (prospectId) => {
     setActiveProspectId(prospectId);
     if (!selectedCampaignId) return;
+    await loadProspectDetail(prospectId);
+  };
+
+  const handleOptOut = async (prospectId, channels, note) => {
+    setConsentBusy(true);
     try {
-      const logsRes = await api.getActivityLogs(selectedCampaignId, prospectId);
-      setActivityLogs(logsRes.logs || []);
-    } catch {
-      setActivityLogs([]);
+      const res = await api.optOut(prospectId, channels, note);
+      showToast(res.allChannels
+        ? "Opted out of every channel"
+        : `Opted out of ${channels.length} channel${channels.length > 1 ? "s" : ""}`);
+      await Promise.all([loadCampaignData(selectedCampaignId), loadProspectDetail(prospectId)]);
+    } catch (e) {
+      showToast(e.message || "Could not record the opt-out");
+    } finally {
+      setConsentBusy(false);
+    }
+  };
+
+  const handleLiftSuppression = async (suppressionId) => {
+    setConsentBusy(true);
+    try {
+      await api.liftSuppression(suppressionId);
+      showToast("Opt-out removed");
+      if (activeProspectId) await loadProspectDetail(activeProspectId);
+    } catch (e) {
+      showToast(e.message || "Could not remove the opt-out");
+    } finally {
+      setConsentBusy(false);
+    }
+  };
+
+  const handleSend = async (messageIds) => {
+    if (!selectedCampaignId) return;
+    setSending(true);
+    try {
+      const res = await api.sendApproved(selectedCampaignId, messageIds);
+      const parts = [`${res.sent} sent`];
+      if (res.skipped) parts.push(`${res.skipped} not sent`);
+      if (res.failed) parts.push(`${res.failed} failed`);
+      if (res.remaining || res.deferred) parts.push(`${(res.remaining || 0) + (res.deferred || 0)} will go out shortly`);
+      showToast(parts.join(" · "));
+      await loadCampaignData(selectedCampaignId);
+    } catch (e) {
+      showToast(e.message || "Sending failed");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleRetry = async (messageId) => {
+    try {
+      await api.retryMessage(messageId);
+      showToast("Queued to send again");
+      await loadCampaignData(selectedCampaignId);
+    } catch (e) {
+      showToast(e.message || "Could not retry");
     }
   };
 
@@ -142,10 +234,7 @@ export default function Engagement() {
       await api.updateProspectStatus(selectedCampaignId, prospectId, newStatus);
       showToast(`Prospect updated to ${STATUS_METADATA[newStatus]?.label || newStatus}`);
       await loadCampaignData(selectedCampaignId);
-      if (activeProspectId === prospectId) {
-        const logsRes = await api.getActivityLogs(selectedCampaignId, prospectId);
-        setActivityLogs(logsRes.logs || []);
-      }
+      if (activeProspectId === prospectId) await loadProspectDetail(prospectId);
     } catch (e) {
       showToast(e.message || "Transition failed");
     }
@@ -163,16 +252,13 @@ export default function Engagement() {
     }
   };
 
-  const handleGenerateMessage = async (prospectId, channel, customInstructions) => {
+  const handleGenerateMessage = async (prospectId, channel = "email") => {
     if (!selectedCampaignId) return;
     try {
-      const res = await api.generateProspectMessage(
-        selectedCampaignId,
-        prospectId,
-        channel,
-        customInstructions
-      );
-      showToast("AI outreach message generated!");
+      const res = await api.generateProspectMessage(selectedCampaignId, prospectId, channel);
+      const skipped = res.skipped?.[0];
+      if (res.messages?.length) showToast("Draft ready for review in the Approval queue");
+      else if (skipped) showToast(SKIP_COPY[skipped.code] || "No draft was created for this contact");
       await loadCampaignData(selectedCampaignId);
       return res;
     } catch (e) {
@@ -184,7 +270,7 @@ export default function Engagement() {
     if (!selectedCampaignId) return;
     try {
       await api.approveMessage(selectedCampaignId, messageId, edits);
-      showToast("Message approved and scheduled for dispatch!");
+      showToast("Approved — send it from the panel above the queue");
       await loadCampaignData(selectedCampaignId);
     } catch (e) {
       showToast(e.message || "Approval failed");
@@ -204,15 +290,20 @@ export default function Engagement() {
 
   const handleApproveAll = async () => {
     if (!selectedCampaignId || pendingQueueItems.length === 0) return;
-    try {
-      for (const item of pendingQueueItems) {
+    let approved = 0;
+    let refused = 0;
+    for (const item of pendingQueueItems) {
+      try {
         await api.approveMessage(selectedCampaignId, item.message.id);
+        approved += 1;
+      } catch {
+        // A draft that fails its compliance check stays in the queue for a
+        // person to fix — it is counted, not silently dropped.
+        refused += 1;
       }
-      showToast(`Approved ${pendingQueueItems.length} messages!`);
-      await loadCampaignData(selectedCampaignId);
-    } catch (e) {
-      showToast(e.message || "Batch approval failed");
     }
+    showToast(refused ? `Approved ${approved} · ${refused} need changes before approval` : `Approved ${approved}`);
+    await loadCampaignData(selectedCampaignId);
   };
 
   const handleCreateCampaign = async (e) => {
@@ -258,7 +349,10 @@ export default function Engagement() {
       }
 
       const res = await api.addProspects(selectedCampaignId, rows);
-      showToast(`Successfully imported ${res.imported_count || rows.length} prospects!`);
+      const added = res.prospects?.length || 0;
+      const dup = res.stats?.dupCount || 0;
+      const invalid = res.stats?.invalidCount || 0;
+      showToast([`Imported ${added}`, dup && `${dup} duplicates skipped`, invalid && `${invalid} without an email or phone`].filter(Boolean).join(" · "));
       setShowImportModal(false);
       setImportCsvText("");
       await loadCampaignData(selectedCampaignId);
@@ -273,32 +367,21 @@ export default function Engagement() {
     if (!selectedCampaignId) return;
     try {
       await api.updateCampaign(selectedCampaignId, { brand_kit: brandKit });
-      showToast("Brand Kit and Tone guidelines saved!");
+      showToast("Brand kit saved");
       await loadCampaigns();
     } catch (e) {
       showToast(e.message || "Failed to save brand kit");
     }
   };
 
-  const handleSaveSync = async (cfg) => {
+  const handleSaveSender = async (sender) => {
     if (!selectedCampaignId) return;
     try {
-      await api.saveSyncConfig(selectedCampaignId, cfg);
-      showToast("Two-way CRM sync settings saved!");
-      setSyncConfig(cfg);
+      await api.updateCampaign(selectedCampaignId, { sender });
+      showToast("Sender saved");
+      await loadCampaigns();
     } catch (e) {
-      showToast(e.message || "Failed to save sync configuration");
-    }
-  };
-
-  const handleTriggerSync = async () => {
-    if (!selectedCampaignId) return;
-    try {
-      const res = await api.triggerSync(selectedCampaignId);
-      showToast(`Sync complete: ${res.synced_count ?? "records"} updated!`);
-      await loadCampaignData(selectedCampaignId);
-    } catch (e) {
-      showToast(e.message || "Sync failed");
+      showToast(e.message || "Failed to save sender");
     }
   };
 
@@ -324,6 +407,34 @@ export default function Engagement() {
     return prospects.find((p) => p.id === activeProspectId) || null;
   }, [prospects, activeProspectId]);
 
+  const prospectsById = useMemo(() => new Map(prospects.map((p) => [p.id, p])), [prospects]);
+
+  // ── Gates: signed out, or not in the beta ──
+  if (!authLoading && !user) {
+    return (
+      <div className="eng-page-root">
+        <div className="eng-gate">
+          <Icon name="lock" size={22} />
+          <h1 className="eng-page-title">Prospect Engagement</h1>
+          <p>Sign in to run outreach campaigns.</p>
+          <Button variant="primary" onClick={() => openAuth?.("signin")}>Sign in</Button>
+        </div>
+      </div>
+    );
+  }
+  if (access && !access.enabled) {
+    return (
+      <div className="eng-page-root">
+        <div className="eng-gate">
+          <Icon name="lock" size={22} />
+          <h1 className="eng-page-title">Prospect Engagement is in private beta</h1>
+          <p>{access.message || "It isn't available on this account yet."}</p>
+          <Button variant="secondary" onClick={() => navigate("/contact")}>Ask for access</Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="eng-page-root">
       {/* Top Header Banner */}
@@ -334,11 +445,11 @@ export default function Engagement() {
           </div>
           <div>
             <div className="eng-title-row">
-              <h1 className="eng-page-title">Prospect Engagement Engine</h1>
-              <span className="eng-version-pill">v2.4</span>
+              <h1 className="eng-page-title">Prospect Engagement</h1>
+              <span className="eng-version-pill">Beta</span>
             </div>
             <p className="eng-page-subtitle">
-              Automated multi-channel outreach, AI personalization & bidirectional CRM sync
+              Email outreach with human review, per-channel opt-out and delivery tracking
             </p>
           </div>
         </div>
@@ -433,12 +544,13 @@ export default function Engagement() {
           onClick={() => setActiveTab("settings")}
         >
           <Icon name="settings" size={15} />
-          <span>Brand Kit & Sync</span>
+          <span>Brand kit &amp; sender</span>
         </button>
       </nav>
 
       {/* Main Content Area */}
-      <main className="eng-tab-content">
+      {/* A div, not <main>: the app shell already renders the page's <main>. */}
+      <div className="eng-tab-content">
         {activeTab === "board" && (
           <KanbanBoard
             prospects={prospects}
@@ -448,12 +560,27 @@ export default function Engagement() {
           />
         )}
 
+        {activeTab === "approval" && access?.mock_sending && (
+          <p className="eng-send-note is-info">
+            <Icon name="alert-circle" size={13} /> Test mode: sending is simulated on this environment and no email leaves.
+          </p>
+        )}
+        {activeTab === "approval" && (
+          <SendPanel
+            messages={messages}
+            prospectsById={prospectsById}
+            onSend={handleSend}
+            onRetry={handleRetry}
+            busy={sending}
+            senderReady={Boolean(activeCampaign?.sender?.from_email)}
+          />
+        )}
         {activeTab === "approval" && (
           <ApprovalQueue
             queueItems={pendingQueueItems}
             onApprove={handleApproveMessage}
             onReject={handleRejectMessage}
-            onRegenerate={handleGenerateMessage}
+            onRegenerate={null}
             onApproveAll={pendingQueueItems.length > 0 ? handleApproveAll : null}
             isProcessing={loading}
           />
@@ -619,13 +746,12 @@ export default function Engagement() {
         {activeTab === "settings" && (
           <BrandKitEditor
             campaign={activeCampaign}
-            syncConfig={syncConfig}
+            senderDomains={access?.sender_domains || []}
             onSaveBrandKit={handleSaveBrandKit}
-            onSaveSyncConfig={handleSaveSync}
-            onTriggerSync={handleTriggerSync}
+            onSaveSender={handleSaveSender}
           />
         )}
-      </main>
+      </div>
 
       {/* Prospect Activity Timeline Drawer */}
       <ProspectTimelineDrawer
@@ -636,6 +762,10 @@ export default function Engagement() {
         onTransition={handleTransitionProspect}
         onAddNote={handleAddProspectNote}
         onGenerateMessage={handleGenerateMessage}
+        suppressions={suppressions}
+        onOptOut={handleOptOut}
+        onLiftSuppression={handleLiftSuppression}
+        consentBusy={consentBusy}
       />
 
       {/* Create Campaign Modal */}

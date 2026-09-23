@@ -49,23 +49,27 @@ if (typeof window !== "undefined") {
 
 beforeEach(() => {
   localStorage.clear();
-  sessionStorage.clear();
+  sessionStore.clear();
 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
-  delete window.__DATIQ_RUNTIME__;
+  if (typeof window !== "undefined") delete window.__DATIQ_RUNTIME__;
 });
 
 // jsdom intentionally omits these browser APIs. The app uses them only for
 // progressive enhancement / export behaviour, so deterministic no-op stubs
 // are sufficient for component tests.
-Object.defineProperty(window, "scrollTo", { value: vi.fn(), writable: true });
-Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-  value: vi.fn(),
-  writable: true,
-});
+// Guarded so a spec can opt into `@vitest-environment node` (e.g. the
+// engagement suites, which run a real Postgres that jsdom's fetch cannot load).
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "scrollTo", { value: vi.fn(), writable: true });
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    value: vi.fn(),
+    writable: true,
+  });
+}
 
 if (!URL.createObjectURL) URL.createObjectURL = vi.fn(() => "blob:test");
 if (!URL.revokeObjectURL) URL.revokeObjectURL = vi.fn();

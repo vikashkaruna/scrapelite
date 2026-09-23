@@ -1,7 +1,8 @@
 # Prospect Engagement Engine — Review, Gaps & Rollout Plan
 
 > **Date:** 2026-09-23 · **Branch:** `feat/prospect-engagement-engine` @ `62898232`
-> **Status:** NOT OPERATIONAL. Builds, tests green, **not safe to send a real message.**
+> **Status:** Phase 1 (safe email MVP) **built and verified on the branch; not deployed**. Migrations
+> `0081` + `0082` are unapplied everywhere. ⚠️ **The next migration number is `0083`.**
 > Supersedes the rollout parts of [PROSPECT-ENGAGEMENT-ENGINE-TEST-AND-CONFIG.md](PROSPECT-ENGAGEMENT-ENGINE-TEST-AND-CONFIG.md);
 > that file is still the reference for the UI walkthrough.
 
@@ -18,6 +19,67 @@
 
 ---
 
+## Phase 1 status — built and verified (2026-09-23)
+
+**Built on this branch; not yet applied to any real database or run against real Resend.**
+
+| Finding | Status | Where |
+|---|---|---|
+| F-1 re-send on every dispatch | ✅ Per-message claim (`queued → sending`, conditional update), provider id recorded, `Idempotency-Key` = message id, stale claims re-taken by the cron | `lib/engagement/dispatcher.js`, `0082` |
+| F-2 five messages per prospect | ✅ One channel, one assigned A/B variant per prospect; no duplicate open draft | `engagement-engine.js` `generate_messages`, `assignVariant()` |
+| F-3 opt-out not enforced | ✅ Per-channel `engagement_suppressions`, checked **at send time**; `adminOverride` never read from a request; complaint + permanent bounce suppress | `suppressionModel.js`, `optOut.js` |
+| F-4 fabricated "sent" | ✅ Unconfigured = `failed/email_not_configured`; mock only with `ENGAGEMENT_MOCK_SEND=1` outside production | `emailSender.js` |
+| F-5 webhook auth | ✅ Svix verification; 503 when the secret is unset; Twilio/Telegram 404 until Phase 3 | `engagement-webhook.js` |
+| F-6 cross-tenant matching | ✅ Correlated by provider message id only | same |
+| F-7 mass assignment | ✅ Field allow-lists everywhere | `engagementStore.js` |
+| F-8 sender / unsubscribe | ✅ Sender restricted to `ENGAGEMENT_SENDER_DOMAINS`; separate `ENGAGEMENT_RESEND_API_KEY`; signed unsubscribe link + RFC 8058 one-click headers | `engagementGuards.js`, `engagement-unsubscribe.js` |
+| F-10 credits | ✅ `affords()` before, `outreach_email` charged after — **weight 1 is PROVISIONAL** | `creditWeights.js` |
+| F-11 invented claims, DatIQ default brand | ✅ Removed; no default brand | `aiMessageGenerator.js` |
+| F-12 HTML injection | ✅ Escaped; CR/LF stripped; non-http CTA dropped | same |
+| F-13 parent ids | ✅ Ownership-checked, 404 | `engagementStore.js` |
+| F-14 localStorage fallback + PII | ✅ Removed; legacy keys swept on sign-out | `engagementClient.js`, `GuestTrialProvider.jsx` |
+| F-15 in-memory store | ✅ 503 when unconfigured | `engagementStore.js` |
+| F-16 n8n can't authenticate | ✅ Five workflows retired; `engagement-dispatcher` cron (`*/5`) | `netlify.toml`, `AUTOMATION_JOBS` |
+| F-18 Telegram by phone | ✅ Telegram address is a chat id | `suppressionModel.js` |
+| F-20 timeouts | ✅ Request sends within budget; cron drains the rest | `dispatcher.js` |
+| F-21…F-29 | ✅ Search sanitised, log append-only, uniqueness indexes, no re-scoring, codes not messages, approval checks guardrails, aliases removed | various |
+| F-17 WhatsApp templates · F-19 Sheets/Airtable | ⏳ Phase 3 / Phase 4 | — |
+
+**Also found and fixed while building** (none were in the review):
+- Reviewer edits in the approval queue were **discarded** — the approved text was not the sent text.
+- The brand-kit editor saved field names the generator never read, so **no brand-kit edit ever reached a message**.
+- The board could mark a prospect **Sent / Delivered by hand** with nothing sent.
+- The first dispatcher required 8.5s free per send against a 7–8s budget, so **it would never have sent anything** — caught by the real-Postgres suite, not by review.
+- `verify:rls` counted a table that does not exist as a pass.
+
+**Verified:** db-verify **82 migrations / 952 assertions / 0 failed** · engagement suites **63 server + 16 UI + unit** against real Postgres (PGlite), two tenants · full vitest green · build + prerender clean. Guards confirmed RED by mutation (consent-at-send, mass assignment, key fallback) — and the first consent mutant **stayed green**, which exposed a missing per-channel test that now exists.
+
+### What Phase 1 still needs from you
+
+1. **`canLiftSuppression()`** in `src/lib/engagement/suppressionModel.js` — the policy for which opt-outs your team may remove. Ships returning `false` (nothing liftable).
+2. **Credit weight** for `outreach_email` (provisional: 1).
+3. **Sending domain**: verify a dedicated domain/subdomain in a Resend account for outreach; list it in `ENGAGEMENT_SENDER_DOMAINS`.
+4. **Legal review** of the unsubscribe page copy and Terms/AUP for customer-sent outreach.
+
+### Environment variables (Phase 1, server-only, per Netlify context)
+
+| Var | Required | Notes |
+|---|---|---|
+| `ENGAGEMENT_ENABLED` | yes | `1` to turn the module on. Anything else = off (API 403, cron no-op). |
+| `ENGAGEMENT_ALLOWLIST` | yes | Comma-separated user ids, or `*`. Beta = DatIQ accounts only. |
+| `ENGAGEMENT_SENDER_DOMAINS` | yes | Domains verified in the outreach Resend account. |
+| `ENGAGEMENT_RESEND_API_KEY` | yes | **Not** `RESEND_API_KEY` — never falls back to it. |
+| `ENGAGEMENT_RESEND_WEBHOOK_SECRET` | yes | `whsec_…` from Resend's webhook settings. Unset = webhook 503. |
+| `ENGAGEMENT_UNSUBSCRIBE_SECRET` | yes | ≥16 random chars (`openssl rand -hex 32`). **Rotating it breaks every unsubscribe link already sent** — never rotate casually. |
+| `ENGAGEMENT_PUBLIC_URL` | recommended | Origin for unsubscribe links; falls back to Netlify's `URL`. |
+| `ENGAGEMENT_MOCK_SEND` | staging only | `1` = simulated sends (ignored in production). |
+| `ENGAGEMENT_SEND_BUDGET_MS` / `ENGAGEMENT_DISPATCH_BUDGET_MS` | optional | Defaults 7000 / 8000. |
+
+Register the Resend webhook at `https://<site>/api/engagement-webhook?provider=resend`
+for `email.delivered`, `email.opened`, `email.clicked`, `email.bounced`, `email.complained`.
+
+---
+
 ## 0. What was done in this pass
 
 | Step | Result |
@@ -31,7 +93,7 @@
 
 ⚠️ **Green here means "does not break the rest of DatIQ".** It does not mean the engine works: the
 engagement tests assert what functions *return*, not what they *write* or *send* (see §3, F-1).
-⚠️ **The next migration number is `0082`.**
+⚠️ **The next migration number was `0082` at this point; it is now `0083`.**
 
 ---
 
@@ -255,7 +317,7 @@ Production pass is **read-only + owner allowlist only**, sending to the owner's 
 | Pricing: is this a paid-plan feature? credit weight per send per channel | Owner | Needed for F-10. |
 | Apply migrations `0081` (+ `0082`) staging → production | Operator | [DB-MIGRATION-RUNBOOK.md](DB-MIGRATION-RUNBOOK.md) subset procedure; then `npm run verify:rls` with engagement tables added. |
 
-### Environment variables (per Netlify context, server-only)
+### Environment variables (per Netlify context, server-only) — ⚠️ superseded by "Phase 1 status" above
 
 | Var | Phase | Purpose |
 |---|---|---|

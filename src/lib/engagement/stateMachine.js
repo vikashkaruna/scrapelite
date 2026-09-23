@@ -163,7 +163,10 @@ export function transitionProspect(prospect, toStatus, meta = {}) {
 
   const fromStatus = prospect.status || PROSPECT_STATUSES.NEW;
 
-  // Enforce opt-out compliance: if prospect is already opted_out and not explicit admin override
+  // Enforce opt-out compliance: if prospect is already opted_out and not explicit admin override.
+  // ⚠️ `adminOverride` is a SERVER-side decision. No endpoint may forward it
+  // from a request body — that made it a client-settable "un-opt-out" flag
+  // (review F-3). engagement-engine.js builds `meta` itself for that reason.
   if (fromStatus === PROSPECT_STATUSES.OPTED_OUT && !meta.adminOverride) {
     return {
       ok: false,
@@ -181,7 +184,13 @@ export function transitionProspect(prospect, toStatus, meta = {}) {
   }
 
   const now = new Date().toISOString();
-  const newScore = calculateEngagementScore(prospect.engagement_score || 0, toStatus);
+  // A self-transition records the event but must not score it again: Resend
+  // reports every open, and Apple Mail Privacy Protection pre-opens mail, so
+  // re-scoring made "opened" worth +15 per open (review F-24).
+  const selfTransition = fromStatus === toStatus;
+  const newScore = selfTransition
+    ? prospect.engagement_score || 0
+    : calculateEngagementScore(prospect.engagement_score || 0, toStatus);
 
   const updatedProspect = {
     ...prospect,
@@ -203,7 +212,7 @@ export function transitionProspect(prospect, toStatus, meta = {}) {
     to_status: toStatus,
     message_id: meta.messageId || null,
     details: {
-      score_delta: (SCORE_DELTAS[toStatus] || 0),
+      score_delta: selfTransition ? 0 : (SCORE_DELTAS[toStatus] || 0),
       new_score: newScore,
       ...(meta.details || {}),
     },

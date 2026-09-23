@@ -111,7 +111,7 @@ describe("jobEnabledMap (J-02)", () => {
     const map = await mod.jobEnabledMap();
     expect(Object.keys(map).sort()).toEqual([
       "billing-lifecycle", "billing-purge", "bulk-runner",
-      "discoverability-monitor", "health-monitor",
+      "discoverability-monitor", "engagement-dispatcher", "health-monitor",
       // W6.5. Sorted here by the .sort() above, not by registry order.
       "prompt-monitor",
       "reengagement",

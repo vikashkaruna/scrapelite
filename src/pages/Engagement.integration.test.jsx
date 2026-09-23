@@ -13,7 +13,6 @@ import {
 } from "../lib/engagement/aiMessageGenerator.js";
 import {
   resolveChannelForProspect,
-  dispatchMessage,
 } from "../lib/engagement/channelRouter.js";
 import {
   dedupeProspects,
@@ -106,7 +105,7 @@ describe("DatIQ Prospect Engagement Engine — E2E Lifecycle", () => {
     expect(smsVariants[0].body.length).toBeLessThanOrEqual(160);
   });
 
-  it("Step 3: Dispatches message through channel router and advances state machine", async () => {
+  it("Step 3: Resolves a channel and advances queued → sent", async () => {
     const prospect = {
       id: "prs_test_01",
       status: PROSPECT_STATUSES.NEW,
@@ -128,17 +127,13 @@ describe("DatIQ Prospect Engagement Engine — E2E Lifecycle", () => {
     const resolvedChannel = resolveChannelForProspect(prospect, ["email", "whatsapp"]);
     expect(resolvedChannel).toBe("email");
 
-    const message = {
-      id: "msg_test_01",
-      channel: "email",
-      subject: "Apex Tech Intelligence",
-      body: "Hi Elena, here is your intelligence report.",
-    };
-
-    const dispatchResult = await dispatchMessage(message, prospect);
-    expect(dispatchResult.ok).toBe(true);
-    expect(dispatchResult.status).toBe("sent");
-    expect(dispatchResult.external_message_id).toBeDefined();
+    // The send itself is not exercised here: it lives server-side and is
+    // tested against a real Postgres with a stubbed provider in
+    // netlify/__tests__/engagement-engine.test.js. This step used to assert
+    // that a mock dispatcher reported "sent" with no provider configured —
+    // the fabricated success review F-4 removed.
+    const message = { id: "msg_test_01" };
+    const dispatchResult = { external_message_id: "re_test_1" };
 
     // Transition QUEUED -> SENT
     const sentRes = transitionProspect(

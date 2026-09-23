@@ -60,6 +60,7 @@ const RUNNABLE = {
   "discoverability-monitor": () => import("./discoverability-monitor.js"),
   "watchlist-monitor": () => import("./watchlist-monitor.js"),
   "bulk-runner": () => import("./bulk-runner.js"),
+  "engagement-dispatcher": () => import("./engagement-dispatcher.js"),
   "signal-retry": () => import("./signal-retry.js"),
   "workflow-orchestrator-cron": () => import("./workflow-orchestrator-cron.js"),
   "sxo-analytics-import-worker": () => import("./sxo-analytics-import-worker.js"),
@@ -87,6 +88,7 @@ const JOB_PLATFORM = {
   "discoverability-monitor": "db",
   "watchlist-monitor":       "db",
   "bulk-runner":             "db",
+  "engagement-dispatcher":   "db",
   "signal-retry":            "db",
   "sxo-analytics-import-worker": "db",
   // The orchestrator's own work is an outbound POST to n8n; the queue read is

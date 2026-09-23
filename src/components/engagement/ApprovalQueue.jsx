@@ -1,4 +1,4 @@
-// src/components/engagement/ApprovalQueue.jsx — Human-in-the-Loop Message Review & Dispatch
+// src/components/engagement/ApprovalQueue.jsx — Human review of every draft before it can be sent
 import { useState, useMemo } from "react";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
@@ -86,7 +86,7 @@ export default function ApprovalQueue({
         </div>
         <h3 className="eng-queue-empty-title">All Caught Up!</h3>
         <p className="eng-queue-empty-desc">
-          There are no messages pending human review. New AI-drafted messages requiring approval will appear here.
+          There are no messages pending human review. New drafts waiting for review will appear here.
         </p>
       </div>
     );
@@ -99,7 +99,7 @@ export default function ApprovalQueue({
         <div className="eng-queue-header-left">
           <span className="eng-queue-badge">{queueItems.length}</span>
           <span className="eng-queue-title">Pending Human Review</span>
-          <span className="eng-queue-sub">Verify AI personalization and compliance before dispatch</span>
+          <span className="eng-queue-sub">Check each draft before it can be sent. Edits you make here are what gets sent.</span>
         </div>
         {onApproveAll && (
           <Button
@@ -243,12 +243,14 @@ export default function ApprovalQueue({
                 />
               </div>
 
-              {/* Prompt feedback / Regeneration instructions */}
+              {/* Regeneration — shown only when a generator that can honour
+                  instructions is wired (Phase 2 LLM drafting). */}
+              {onRegenerate && (
               <div className="eng-regen-field">
                 <input
                   type="text"
                   className="eng-input-field eng-regen-input"
-                  placeholder="Custom AI adjustments (e.g. 'Make it shorter and mention our recent case study')..."
+                  placeholder="Adjustments (e.g. 'Make it shorter and mention our recent case study')..."
                   value={instructions}
                   onChange={(e) => setInstructions(e.target.value)}
                   onKeyDown={(e) => {
@@ -262,9 +264,10 @@ export default function ApprovalQueue({
                   disabled={regeneratingId === activeMessage.id}
                   icon="sparkles"
                 >
-                  {regeneratingId === activeMessage.id ? "Regenerating..." : "Regenerate AI"}
+                  {regeneratingId === activeMessage.id ? "Regenerating..." : "Regenerate"}
                 </Button>
               </div>
+              )}
             </div>
 
             {/* Action Buttons */}
@@ -282,10 +285,11 @@ export default function ApprovalQueue({
                 <Button
                   variant="primary"
                   onClick={handleApproveCurrent}
-                  disabled={isProcessing}
-                  icon="send"
+                  disabled={isProcessing || !guardrailCheck.passed}
+                  title={guardrailCheck.passed ? undefined : "Fix the compliance issues above before approving"}
+                  icon="check"
                 >
-                  Approve & Dispatch Now
+                  Approve
                 </Button>
               </div>
             </div>

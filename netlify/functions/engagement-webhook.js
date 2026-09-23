@@ -1,237 +1,140 @@
-// netlify/functions/engagement-webhook.js — Inbound Engagement Webhook Receiver
+// netlify/functions/engagement-webhook.js — delivery and engagement events.
 //
-// Receives and processes delivery and engagement signals:
-//   1. Resend webhooks (email.delivered, email.opened, email.clicked, email.bounced)
-//   2. Twilio webhooks (WhatsApp/SMS status callbacks & inbound replies)
-//   3. Telegram Bot updates (inbound messages & replies)
+// Register the provider with its OWN URL:
+//   https://<site>/api/engagement-webhook?provider=resend
 //
-// Automatically advances the prospect state machine:
-//   Delivered ➔ Opened ➔ Clicked ➔ Replied
-//   Inbound "STOP" / "Unsubscribe" keywords immediately trigger the OPTED_OUT state for strict compliance.
+// ── WHAT CHANGED, AND WHY (review F-5, F-6) ─────────────────────────────────
+//
+// 1. AUTHENTICATION IS THE PROVIDER'S OWN SIGNATURE. 0081 compared a static
+//    `x-engagement-secret` header that Resend, Twilio and Telegram never send,
+//    and accepted EVERYTHING when that secret was unset. Resend is verified
+//    with Svix (engagementGuards.verifyResendSignature); an unset secret is a
+//    503, never an open door — the payment-webhook.js rule.
+//
+// 2. EVENTS CORRELATE BY PROVIDER MESSAGE ID, NEVER BY ADDRESS. 0081 looked up
+//    `engagement_prospects` by email across EVERY tenant with limit(1), so one
+//    customer's bounce or opt-out landed on another customer's row. The id
+//    Resend returned when we sent is stored on the message (unique per
+//    provider); an event for an id we never sent is acknowledged and ignored.
+//
+// 3. THE PROVIDER IS NAMED BY THE URL, NOT GUESSED FROM THE BODY. A body can
+//    say anything; the URL is what the operator registered.
+//
+// Twilio (WhatsApp/SMS) arrives in Phase 3 with X-Twilio-Signature
+// verification. Until then those providers get a 404 — a channel we do not
+// send on has no events to receive.
 
-import { PROSPECT_STATUSES, transitionProspect } from "../../src/lib/engagement/stateMachine.js";
-import { serviceDb } from "./lib/engagement/engagementStore.js";
-import crypto from "crypto";
-
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { serviceDb, updateProspectStatus } from "./lib/engagement/engagementStore.js";
+import { verifyResendSignature } from "./lib/engagement/engagementGuards.js";
+import { applyOptOut } from "./lib/engagement/optOut.js";
+import { PROSPECT_STATUSES } from "../../src/lib/engagement/stateMachine.js";
+import { SUPPRESSION_REASONS } from "../../src/lib/engagement/suppressionModel.js";
 
 const json = (status, body) => ({
   statusCode: status,
-  headers: { ...CORS, "Content-Type": "application/json" },
+  headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   body: JSON.stringify(body),
 });
 
+/** Resend event type → what it means here. */
+const RESEND_EVENTS = {
+  "email.delivered": { prospect: PROSPECT_STATUSES.DELIVERED, stamp: "delivered_at", message: "delivered" },
+  "email.opened": { prospect: PROSPECT_STATUSES.OPENED, stamp: "opened_at", message: "opened" },
+  "email.clicked": { prospect: PROSPECT_STATUSES.CLICKED, stamp: "clicked_at", message: "clicked" },
+  "email.bounced": { prospect: PROSPECT_STATUSES.UNRESPONSIVE, suppress: SUPPRESSION_REASONS.BOUNCE, message: "failed" },
+  "email.complained": { prospect: PROSPECT_STATUSES.OPTED_OUT, suppress: SUPPRESSION_REASONS.COMPLAINT },
+};
+
+/** Message statuses may only move forward; a late "delivered" never overwrites "opened". */
+const MESSAGE_RANK = { sent: 1, delivered: 2, opened: 3, clicked: 4, replied: 5 };
+
 export const handler = async (event) => {
-  if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
 
-  // Webhook signature verification
-  const webhookSecret = process.env.ENGAGEMENT_WEBHOOK_SECRET;
-  if (webhookSecret) {
-    const providedSecret = event.headers["x-engagement-secret"] || "";
-    try {
-      const expected = Buffer.from(webhookSecret, "utf8");
-      const provided = Buffer.from(providedSecret, "utf8");
-      if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
-        console.warn("[engagement-webhook] Signature verification failed");
-        return json(401, { error: "Invalid webhook signature" });
-      }
-    } catch {
-      console.warn("[engagement-webhook] Signature verification error");
-      return json(401, { error: "Invalid webhook signature" });
-    }
+  const provider = event.queryStringParameters?.provider;
+  if (provider !== "resend") return json(404, { ok: false, code: "provider_not_enabled" });
+
+  const secret = process.env.ENGAGEMENT_RESEND_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error("[engagement-webhook] ENGAGEMENT_RESEND_WEBHOOK_SECRET is not set — refusing all events.");
+    return json(503, { ok: false, code: "not_configured" });
   }
 
+  const rawBody = event.isBase64Encoded ? Buffer.from(event.body || "", "base64").toString("utf8") : event.body || "";
+  const verified = verifyResendSignature({ headers: event.headers, rawBody, secret });
+  if (!verified.ok) {
+    console.warn("[engagement-webhook] rejected:", verified.code);
+    return json(401, { ok: false, code: "invalid_signature" });
+  }
+
+  let payload;
+  try { payload = JSON.parse(rawBody); } catch { return json(400, { ok: false, code: "invalid_json" }); }
+
   try {
-    let payload = {};
-    const rawBody = event.body || "";
-
-    // Handle both JSON (Resend, Telegram) and URL-encoded form bodies (Twilio)
-    if (event.headers["content-type"]?.includes("application/x-www-form-urlencoded")) {
-      const params = new URLSearchParams(rawBody);
-      payload = Object.fromEntries(params.entries());
-    } else {
-      try {
-        payload = JSON.parse(rawBody || "{}");
-      } catch {
-        payload = { raw: rawBody };
-      }
-    }
-
-    const provider = detectProvider(event, payload);
-    const parsedEvent = parseWebhookEvent(provider, payload);
-
-    if (!parsedEvent || !parsedEvent.eventType) {
-      return json(200, { ok: true, status: "ignored_unrecognized_event" });
-    }
-
-    const db = serviceDb(process.env);
-    if (!db) {
-      // Mock environment acknowledgement
-      return json(200, { ok: true, mock: true, parsed: parsedEvent });
-    }
-
-    // Lookup matching prospect by email or phone
-    let prospect = null;
-    if (parsedEvent.email) {
-      const { data } = await db
-        .from("engagement_prospects")
-        .select("*")
-        .eq("email", parsedEvent.email.toLowerCase().trim())
-        .limit(1);
-      if (data && data.length > 0) prospect = data[0];
-    } else if (parsedEvent.phone) {
-      const cleanPhone = parsedEvent.phone.replace(/[^\d+]/g, "");
-      const { data } = await db
-        .from("engagement_prospects")
-        .select("*")
-        .ilike("phone", `%${cleanPhone.slice(-8)}%`)
-        .limit(1);
-      if (data && data.length > 0) prospect = data[0];
-    }
-
-    if (!prospect) {
-      return json(200, { ok: true, status: "prospect_not_found_logged" });
-    }
-
-    // Determine target status
-    let targetStatus = null;
-    if (parsedEvent.isOptOut) {
-      targetStatus = PROSPECT_STATUSES.OPTED_OUT;
-    } else if (parsedEvent.eventType === "reply") {
-      targetStatus = PROSPECT_STATUSES.REPLIED;
-    } else if (parsedEvent.eventType === "click") {
-      targetStatus = PROSPECT_STATUSES.CLICKED;
-    } else if (parsedEvent.eventType === "open") {
-      targetStatus = PROSPECT_STATUSES.OPENED;
-    } else if (parsedEvent.eventType === "delivered") {
-      targetStatus = PROSPECT_STATUSES.DELIVERED;
-    } else if (parsedEvent.eventType === "bounce" || parsedEvent.eventType === "failed") {
-      targetStatus = PROSPECT_STATUSES.UNRESPONSIVE;
-    }
-
-    if (!targetStatus) {
-      return json(200, { ok: true, status: "no_status_change_needed" });
-    }
-
-    // Execute state transition
-    const transitionRes = transitionProspect(prospect, targetStatus, {
-      channel: parsedEvent.channel,
-      eventType: `webhook_${parsedEvent.eventType}`,
-      details: {
-        provider,
-        raw_message: parsedEvent.text || null,
-        timestamp: new Date().toISOString(),
-      },
-    });
-
-    if (!transitionRes.ok) {
-      return json(200, { ok: true, skipped_transition: transitionRes.reason });
-    }
-
-    // Update database
-    await db
-      .from("engagement_prospects")
-      .update({
-        status: transitionRes.prospect.status,
-        engagement_score: transitionRes.prospect.engagement_score,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", prospect.id);
-
-    // Log activity
-    await db.from("engagement_activity_log").insert({
-      ...transitionRes.activity,
-      user_id: prospect.user_id,
-    });
-
-    return json(200, {
-      ok: true,
-      status: "transitioned",
-      from: prospect.status,
-      to: targetStatus,
-      prospect_id: prospect.id,
-    });
+    return json(200, await handleResendEvent(payload));
   } catch (err) {
-    console.error("[engagement-webhook] Handler error:", err);
-    return json(500, { error: err.message });
+    // A 500 makes Resend retry, which is what we want for a transient failure.
+    console.error("[engagement-webhook] handler error:", err);
+    return json(500, { ok: false, code: "internal_error" });
   }
 };
 
-export function detectProvider(event, payload) {
-  if (event.queryStringParameters?.provider) return event.queryStringParameters.provider;
-  if (payload.type?.startsWith("email.")) return "resend";
-  if (payload.MessageSid || payload.SmsSid || payload.AccountSid) return "twilio";
-  if (payload.update_id || payload.message?.chat) return "telegram";
-  return "generic";
-}
+export async function handleResendEvent(payload, env = process.env) {
+  const rule = RESEND_EVENTS[payload?.type];
+  if (!rule) return { ok: true, status: "ignored_event_type" };
 
-export function parseWebhookEvent(provider, payload) {
-  if (provider === "resend") {
-    const type = payload.type || "";
-    const email = payload.data?.to?.[0] || null;
-    let eventType = null;
-    if (type.includes("delivered")) eventType = "delivered";
-    else if (type.includes("opened")) eventType = "open";
-    else if (type.includes("clicked")) eventType = "click";
-    else if (type.includes("bounced")) eventType = "bounce";
+  const emailId = payload?.data?.email_id;
+  if (!emailId) return { ok: true, status: "ignored_no_email_id" };
 
-    return {
-      channel: "email",
-      eventType,
-      email,
-      isOptOut: false,
-    };
+  const db = serviceDb(env);
+  if (!db) throw new Error("store_unconfigured");
+
+  const { data: msg, error } = await db.from("engagement_messages").select("*")
+    .eq("provider", "resend").eq("external_message_id", String(emailId)).maybeSingle();
+  if (error) throw new Error(error.message);
+  // Not ours: transactional mail on the same account, or a message deleted
+  // since. Acknowledge so Resend stops retrying.
+  if (!msg) return { ok: true, status: "unknown_message" };
+
+  const { data: prospect } = await db.from("engagement_prospects").select("*")
+    .eq("id", msg.prospect_id).eq("user_id", msg.user_id).maybeSingle();
+
+  // ── message row ──
+  const patch = {};
+  if (rule.stamp && !msg[rule.stamp]) patch[rule.stamp] = payload.created_at || new Date().toISOString();
+  if (rule.message === "failed") {
+    patch.status = "failed";
+    patch.failure_code = "bounced";
+  } else if (rule.message && (MESSAGE_RANK[rule.message] || 0) > (MESSAGE_RANK[msg.status] || 0)) {
+    patch.status = rule.message;
+  }
+  if (Object.keys(patch).length) {
+    await db.from("engagement_messages").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", msg.id);
   }
 
-  if (provider === "twilio") {
-    const isWhatsApp = payload.From?.startsWith("whatsapp:") || payload.To?.startsWith("whatsapp:");
-    const channel = isWhatsApp ? "whatsapp" : "sms";
-    const phone = (payload.From || "").replace("whatsapp:", "");
-    const bodyText = (payload.Body || "").trim();
-
-    // Check for inbound reply vs delivery status callback
-    if (bodyText) {
-      const isStop = /^\s*(stop|unsubscribe|cancel|quit|optout)\b/i.test(bodyText);
-      return {
-        channel,
-        eventType: "reply",
-        phone,
-        text: bodyText,
-        isOptOut: isStop,
-      };
+  // ── consent ──
+  if (rule.suppress && prospect) {
+    // Only a PERMANENT bounce means the address does not exist. A transient
+    // one (mailbox full, greylisting) is not a reason to stop for ever.
+    const bounceType = payload?.data?.bounce?.type;
+    const permanent = rule.suppress !== SUPPRESSION_REASONS.BOUNCE || !bounceType || /permanent|hard/i.test(bounceType);
+    if (permanent) {
+      await applyOptOut({
+        userId: msg.user_id, prospect, channels: [msg.channel],
+        reason: rule.suppress, source: "resend_webhook",
+      }, env);
     }
-
-    const messageStatus = payload.MessageStatus || "";
-    let eventType = null;
-    if (messageStatus === "delivered") eventType = "delivered";
-    else if (messageStatus === "failed" || messageStatus === "undelivered") eventType = "failed";
-
-    return {
-      channel,
-      eventType,
-      phone: (payload.To || "").replace("whatsapp:", ""),
-      isOptOut: false,
-    };
   }
 
-  if (provider === "telegram") {
-    const msg = payload.message || {};
-    const text = msg.text || "";
-    const isStop = /^\s*(\/stop|stop|unsubscribe)\b/i.test(text);
-
-    return {
-      channel: "telegram",
-      eventType: "reply",
-      phone: msg.from?.username || String(msg.chat?.id || ""),
-      text,
-      isOptOut: isStop,
-    };
+  // ── prospect funnel ──
+  if (prospect && rule.prospect && rule.prospect !== PROSPECT_STATUSES.OPTED_OUT) {
+    const t = await updateProspectStatus(prospect.id, msg.campaign_id, msg.user_id, rule.prospect, {
+      channel: msg.channel, messageId: msg.id, eventType: `webhook_${payload.type.replace("email.", "")}`,
+      details: { provider: "resend" },
+    }, env);
+    // An out-of-order event (a "delivered" arriving after "opened") is a legal
+    // no-op, not an error.
+    return { ok: true, status: t.ok ? "transitioned" : "no_transition", message_id: msg.id };
   }
-
-  return null;
+  return { ok: true, status: "recorded", message_id: msg.id };
 }

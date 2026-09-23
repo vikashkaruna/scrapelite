@@ -176,29 +176,11 @@ export default function KanbanBoard({
                             </button>
                           )}
 
-                          {prospect.status === PROSPECT_STATUSES.QUEUED && (
-                            <button
-                              className="eng-action-btn primary"
-                              title="Mark Dispatched / Sent"
-                              disabled={transitioningId === prospect.id}
-                              onClick={(e) => handleQuickMove(e, prospect, PROSPECT_STATUSES.SENT)}
-                            >
-                              <Icon name="send" size={11} /> Sent
-                            </button>
-                          )}
-
-                          {prospect.status === PROSPECT_STATUSES.SENT && (
-                            <button
-                              className="eng-action-btn"
-                              title="Mark Delivered"
-                              disabled={transitioningId === prospect.id}
-                              onClick={(e) => handleQuickMove(e, prospect, PROSPECT_STATUSES.DELIVERED)}
-                            >
-                              <Icon name="check" size={11} /> Delivered
-                            </button>
-                          )}
-
-                          {(prospect.status === PROSPECT_STATUSES.DELIVERED ||
+                          {/* No "mark Sent" / "mark Delivered": those stages are set by an
+                              actual send and by the provider's delivery event. A hand-set
+                              "Sent" was a funnel entry for a message nobody sent. */}
+                          {(prospect.status === PROSPECT_STATUSES.SENT ||
+                            prospect.status === PROSPECT_STATUSES.DELIVERED ||
                             prospect.status === PROSPECT_STATUSES.OPENED ||
                             prospect.status === PROSPECT_STATUSES.CLICKED) && (
                             <button

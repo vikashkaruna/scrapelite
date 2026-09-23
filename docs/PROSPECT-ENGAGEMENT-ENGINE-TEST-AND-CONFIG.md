@@ -1,3 +1,9 @@
+> ⚠️ **SUPERSEDED IN PART (2026-09-23).** The n8n workflows, `ENGAGEMENT_WEBHOOK_SECRET`,
+> the localStorage demo mode and the multi-channel dispatch described below were
+> removed in the Phase 1 rework. Configuration, env vars and the test plan now live in
+> [PROSPECT-ENGAGEMENT-ENGINE-REVIEW-AND-ROLLOUT.md](PROSPECT-ENGAGEMENT-ENGINE-REVIEW-AND-ROLLOUT.md)
+> and [DB-MIGRATION-RUNBOOK.md §4h](DB-MIGRATION-RUNBOOK.md). Treat this file as history.
+
 # DatIQ Prospect Engagement Engine — Deployment, Configuration & Testing Guide
 
 > **Module**: Prospect Engagement Engine (Autonomous Multi-Channel Outreach, AI Copy Generation, Human-in-the-Loop Review, and Two-Way CRM Sync)  

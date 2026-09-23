@@ -1,10 +1,27 @@
-// src/lib/engagement/aiMessageGenerator.js — AI Personalized Message Generation & Guardrails
+// src/lib/engagement/aiMessageGenerator.js — outreach drafts + compliance guardrails
 //
-// Implements the message generation sub-workflow from DatIQ - Prospect Engagement Engine.md:
-//   - Structured input: prospect attributes + campaign intent + brand kit
-//   - Multi-variant A/B output (Variant A: Direct/Value, Variant B: Insight/Challenge)
-//   - Channel formatting: Email (HTML/MD), WhatsApp (conversational), Telegram, SMS (160 char bounded)
-//   - Compliance Guardrail Layer: Spam phrase detection, length limits, mandatory opt-out notices.
+// ⚠️ PHASE 1 DRAFTS ARE TEMPLATES, NOT MODEL OUTPUT. Phase 2 (owner decision
+// 2026-09-23) keeps these skeletons and has an LLM fill the named slots from
+// prospect fields only. Until then the slots are filled directly.
+//
+// ── THREE RULES THE TEMPLATES OBEY ──────────────────────────────────────────
+//
+// 1. NO CLAIM THE RECORD DOES NOT SUPPORT. 0081's copy told every prospect
+//    "we set up an automated intelligence monitor for {company}. It uncovered a
+//    few interesting shifts" — for companies nobody had monitored. That is a
+//    fabricated statement sent under the customer's name (review F-11).
+//
+// 2. PROSPECT DATA IS ESCAPED IN HTML. Names and companies arrive from CSVs,
+//    spreadsheets and scraped pages; interpolating them raw into body_html put
+//    attacker-controlled markup into outbound email (review F-12).
+//
+// 3. ONE CHANNEL, ONE VARIANT, PER CALL. 0081 generated two emails, two
+//    WhatsApps and an SMS for every prospect and the dispatcher sent all five
+//    (review F-2). A/B means different prospects receive different variants —
+//    never one prospect receiving both. assignVariant() makes that stable.
+//
+// The unsubscribe link is the literal `{{unsubscribe_url}}`; emailSender fills
+// it with a signed per-recipient URL at send time.
 
 export const CAMPAIGN_INTENTS = {
   COLD_INTRO: "cold_intro",
@@ -123,144 +140,142 @@ export function validateMessageGuardrails(message) {
 
 export const validateComplianceGuardrails = validateMessageGuardrails;
 
+/** Escape a value for interpolation into HTML. */
+export function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Strip control characters (incl. CR/LF) and cap length — slot values end up in subjects too. */
+function clean(value, max = 120) {
+  return String(value ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/** Only http(s) URLs are allowed as the call to action. */
+function safeUrl(value) {
+  try {
+    const u = new URL(String(value));
+    return u.protocol === "https:" || u.protocol === "http:" ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Deterministically constructs personalized outreach variants for a prospect.
- * In production, this can call an LLM (Claude, OpenAI, Gemini), but it provides
- * clean, reliable template-guided copy generation when operating offline or mock.
+ * Stable A/B assignment: the same prospect always gets the same variant, so a
+ * regenerate never flips someone into the other arm of the test.
+ */
+export function assignVariant(prospectId, variants = ["A", "B"]) {
+  const s = String(prospectId || "");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return variants[h % variants.length];
+}
+
+export const UNSUBSCRIBE_PLACEHOLDER = "{{unsubscribe_url}}";
+
+function slots(prospect = {}, brandKit = {}) {
+  const company = clean(prospect.company) || "your team";
+  const firstName = clean(prospect.first_name, 60) || "there";
+  return {
+    firstName,
+    company,
+    role: clean(prospect.role, 80),
+    industry: clean(prospect.industry, 60),
+    // No DatIQ default: an unfilled brand kit must not turn a customer's
+    // campaign into an advert for DatIQ.
+    sender: clean(brandKit.company_name, 80) || "our team",
+    valueProp: clean(brandKit.value_prop, 200),
+    ctaUrl: safeUrl(brandKit.cta_url),
+    ctaLabel: clean(brandKit.cta_label, 60) || "Learn more",
+    signoff: clean(brandKit.signoff_name, 80),
+  };
+}
+
+function emailDraft(variant, s) {
+  const roleLine = s.role ? ` as ${s.role}` : "";
+  const valueLine = s.valueProp ? `At ${s.sender}, we offer ${s.valueProp}.` : `I'm getting in touch from ${s.sender}.`;
+  const cta = s.ctaUrl ? `${s.ctaLabel}: ${s.ctaUrl}` : "Would a short call next week be useful?";
+  const sign = s.signoff ? `${s.signoff}\n${s.sender}` : `The ${s.sender} team`;
+
+  const subject = variant === "B"
+    ? `A question for ${s.company}`
+    : `${s.sender} × ${s.company}`;
+
+  const opening = variant === "B"
+    ? `Hi ${s.firstName},\n\nA quick question for you${roleLine} at ${s.company}: is this something your team is looking at this quarter?`
+    : `Hi ${s.firstName},\n\nI'm reaching out to you${roleLine} at ${s.company}${s.industry ? `, given your work in ${s.industry}` : ""}.`;
+
+  const body = `${opening}\n\n${valueLine}\n\n${cta}\n\nBest regards,\n${sign}\n\n---\nIf you'd rather not hear from us, unsubscribe here: ${UNSUBSCRIBE_PLACEHOLDER}`;
+
+  const e = (v) => escapeHtml(v);
+  const openingHtml = variant === "B"
+    ? `<p>Hi ${e(s.firstName)},</p><p>A quick question for you${e(roleLine)} at ${e(s.company)}: is this something your team is looking at this quarter?</p>`
+    : `<p>Hi ${e(s.firstName)},</p><p>I'm reaching out to you${e(roleLine)} at ${e(s.company)}${s.industry ? `, given your work in ${e(s.industry)}` : ""}.</p>`;
+  const ctaHtml = s.ctaUrl
+    ? `<p><a href="${e(s.ctaUrl)}">${e(s.ctaLabel)}</a></p>`
+    : `<p>Would a short call next week be useful?</p>`;
+  const signHtml = s.signoff ? `${e(s.signoff)}<br/>${e(s.sender)}` : `The ${e(s.sender)} team`;
+  const bodyHtml = `${openingHtml}<p>${e(valueLine)}</p>${ctaHtml}<p>Best regards,<br/>${signHtml}</p>`
+    + `<hr/><p style="font-size:11px;color:#888">If you'd rather not hear from us, <a href="${UNSUBSCRIBE_PLACEHOLDER}">unsubscribe here</a>.</p>`;
+
+  return { subject, body, bodyHtml };
+}
+
+function shortDraft(channel, variant, s) {
+  const cta = s.ctaUrl ? ` ${s.ctaUrl}` : "";
+  if (channel === CHANNELS.SMS) {
+    return `Hi ${s.firstName}, ${s.sender} here.${cta} Reply STOP to opt out`;
+  }
+  const opener = variant === "B"
+    ? `Hi ${s.firstName}, a quick question for ${s.company} from ${s.sender}.`
+    : `Hi ${s.firstName}, this is ${s.sender} reaching out to ${s.company}.`;
+  const value = s.valueProp ? ` We offer ${s.valueProp}.` : "";
+  const stop = channel === CHANNELS.TELEGRAM ? "" : "\n\nReply STOP to opt out.";
+  return `${opener}${value}${cta}${stop}`;
+}
+
+/**
+ * Build outreach drafts for one prospect.
  *
  * @param {object} prospect
- * @param {object} campaign
- * @param {object} brandKit
- * @returns {Array<object>} Array of message variants (Variant A & Variant B)
+ * @param {object} campaign  { intent?, channels? }
+ * @param {object} brandKit  { company_name, value_prop, cta_url, cta_label, signoff_name }
+ * @param {{ channels?: string[], variants?: string[] }} [opts]
+ *   Callers that SEND must pass exactly one channel and one variant
+ *   (see assignVariant). The defaults exist for previews.
+ * @returns {Array<{ channel, variant, subject, body, bodyHtml, guardrails }>}
  */
-export function generatePersonalizedVariants(prospect = {}, campaign = {}, brandKit = {}) {
-  const firstName = prospect.first_name || (prospect.company ? `Team ${prospect.company}` : "there");
-  const company = prospect.company || "your team";
-  const role = prospect.role ? ` as ${prospect.role}` : "";
-  const industry = prospect.industry || "B2B";
-  const senderCompany = brandKit.company_name || "DatIQ";
-  const valueProp = brandKit.value_prop || "real-time web intelligence and structured competitive signals";
-  const ctaUrl = brandKit.cta_url || "https://datiq.app";
-  const ctaLabel = brandKit.cta_label || "View Live Intelligence";
-  const intent = campaign.intent || CAMPAIGN_INTENTS.COLD_INTRO;
-
-  // Determine channels requested
-  const channels = campaign.channels || [CHANNELS.EMAIL, CHANNELS.WHATSAPP, CHANNELS.SMS];
-
-  const variants = [];
+export function generatePersonalizedVariants(prospect = {}, campaign = {}, brandKit = {}, opts = {}) {
+  const s = slots(prospect, brandKit || {});
+  const channels = opts.channels || campaign.channels || [CHANNELS.EMAIL];
+  const variants = opts.variants || ["A", "B"];
+  const out = [];
 
   for (const channel of channels) {
-    if (channel === CHANNELS.EMAIL) {
-      // Variant A: Direct Value & ROI
-      const subjectA = `Streamlining competitive intelligence for ${company}`;
-      const bodyA = `Hi ${firstName},
-
-I noticed your work at ${company}${role}. Companies in the ${industry} space often spend hours manually tracking competitor movements, pricing shifts, and account signals.
-
-At ${senderCompany}, we provide ${valueProp} — giving your team automated daily visibility without manual scraping.
-
-Would you be open to a brief look at what we've synthesized for ${company}?
-
-${ctaLabel}: ${ctaUrl}
-
-Best regards,
-The ${senderCompany} Team
-
----
-To unsubscribe or adjust preferences, reply "Unsubscribe" or visit ${ctaUrl}/privacy`;
-
-      // Variant B: Insight & Challenge
-      const subjectB = `Quick question regarding ${company}'s market tracking`;
-      const bodyB = `Hi ${firstName},
-
-When competitors in ${industry} adjust their packaging or launch new offerings, how quickly does ${company} pick up on the delta?
-
-We set up an automated intelligence monitor for ${company} using ${senderCompany}. It uncovered a few interesting shifts that your team might want to see:
-
-${ctaLabel}: ${ctaUrl}
-
-Happy to share the brief breakdown if you find it helpful.
-
-Warmly,
-The ${senderCompany} Team
-
----
-To opt-out of future updates, reply "Unsubscribe".`;
-
-      variants.push(
-        {
-          channel: CHANNELS.EMAIL,
-          variant: "A",
-          subject: subjectA,
-          body: bodyA,
-          bodyHtml: `<p>Hi ${firstName},</p><p>I noticed your work at ${company}${role}. Companies in the ${industry} space often spend hours manually tracking competitor movements, pricing shifts, and account signals.</p><p>At <strong>${senderCompany}</strong>, we provide ${valueProp}.</p><p><a href="${ctaUrl}">${ctaLabel}</a></p><p>Best regards,<br/>The ${senderCompany} Team</p><hr/><p style="font-size: 11px; color: #888;">To unsubscribe, reply "Unsubscribe" or visit <a href="${ctaUrl}/privacy">privacy</a>.</p>`,
-          guardrails: validateMessageGuardrails({ channel: CHANNELS.EMAIL, subject: subjectA, body: bodyA }),
-        },
-        {
-          channel: CHANNELS.EMAIL,
-          variant: "B",
-          subject: subjectB,
-          body: bodyB,
-          bodyHtml: `<p>Hi ${firstName},</p><p>When competitors in ${industry} adjust their packaging, how quickly does ${company} pick up on the delta?</p><p>We set up an automated monitor for ${company} with ${senderCompany}:</p><p><a href="${ctaUrl}">${ctaLabel}</a></p><p>Warmly,<br/>The ${senderCompany} Team</p><hr/><p style="font-size: 11px; color: #888;">To opt-out of future updates, reply "Unsubscribe".</p>`,
-          guardrails: validateMessageGuardrails({ channel: CHANNELS.EMAIL, subject: subjectB, body: bodyB }),
-        }
-      );
-    } else if (channel === CHANNELS.WHATSAPP) {
-      // Variant A
-      const bodyWaA = `Hi ${firstName}! 👋 Noticed your focus at *${company}*. We built an automated feed with ${senderCompany} tracking ${industry} market shifts and competitor pricing.
-
-Check your snapshot here: ${ctaUrl}
-
-Reply STOP to opt out.`;
-
-      // Variant B
-      const bodyWaB = `Hey ${firstName}, quick insight for *${company}* — we track competitor changes across ${industry} so RevOps teams don't miss pricing moves.
-
-Explore the live brief: ${ctaUrl}
-
-Reply STOP to opt out.`;
-
-      variants.push(
-        {
-          channel: CHANNELS.WHATSAPP,
-          variant: "A",
-          subject: null,
-          body: bodyWaA,
-          bodyHtml: null,
-          guardrails: validateMessageGuardrails({ channel: CHANNELS.WHATSAPP, body: bodyWaA }),
-        },
-        {
-          channel: CHANNELS.WHATSAPP,
-          variant: "B",
-          subject: null,
-          body: bodyWaB,
-          bodyHtml: null,
-          guardrails: validateMessageGuardrails({ channel: CHANNELS.WHATSAPP, body: bodyWaB }),
-        }
-      );
-    } else if (channel === CHANNELS.TELEGRAM) {
-      const bodyTgA = `Hi ${firstName}! 🚀 Tracking market & competitor moves for ${company}? We put together a structured intelligence report via ${senderCompany}: ${ctaUrl}`;
-      variants.push({
-        channel: CHANNELS.TELEGRAM,
-        variant: "A",
-        subject: null,
-        body: bodyTgA,
-        bodyHtml: null,
-        guardrails: validateMessageGuardrails({ channel: CHANNELS.TELEGRAM, body: bodyTgA }),
-      });
-    } else if (channel === CHANNELS.SMS) {
-      // Strict 160 char limit
-      const bodySmsA = `Hi ${firstName}, ${senderCompany} synthesized market shifts for ${company}. See brief: ${ctaUrl} Reply STOP to opt out`;
-      variants.push({
-        channel: CHANNELS.SMS,
-        variant: "A",
-        subject: null,
-        body: bodySmsA,
-        bodyHtml: null,
-        guardrails: validateMessageGuardrails({ channel: CHANNELS.SMS, body: bodySmsA }),
-      });
+    if (!Object.values(CHANNELS).includes(channel)) continue;
+    // SMS and Telegram carry one variant: at 160 characters there is no room
+    // for two meaningfully different messages.
+    const vs = channel === CHANNELS.EMAIL || channel === CHANNELS.WHATSAPP ? variants : [variants[0]];
+    for (const variant of vs) {
+      if (channel === CHANNELS.EMAIL) {
+        const d = emailDraft(variant, s);
+        out.push({
+          channel, variant, subject: d.subject, body: d.body, bodyHtml: d.bodyHtml,
+          guardrails: validateMessageGuardrails({ channel, subject: d.subject, body: d.body }),
+        });
+      } else {
+        const body = shortDraft(channel, variant, s);
+        out.push({
+          channel, variant, subject: null, body, bodyHtml: null,
+          guardrails: validateMessageGuardrails({ channel, body }),
+        });
+      }
     }
   }
-
-  return variants;
+  return out;
 }

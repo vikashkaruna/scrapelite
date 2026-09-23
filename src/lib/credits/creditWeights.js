@@ -30,6 +30,7 @@ export const UNITS = Object.freeze({
   AUDIT: "audit",
   MONITOR_CHECK: "monitor_check",
   RUN: "run",
+  MESSAGE: "message",
 });
 
 /** AI tiers. `deep` is a pricing decision (D17), not a placeholder. */
@@ -56,6 +57,13 @@ export const CREDIT_WEIGHTS = Object.freeze({
   // D12 — identical whether a human pressed the button or a cron did. The cost
   // is the same and the unattended one is the larger risk.
   citation_prompt_extra: 2,
+  // 0082 — one outbound email from the Prospect Engagement Engine.
+  // ⚠️ PROVISIONAL (2026-09-23): priced like one page fetch pending the owner's
+  // pricing decision. Resend's marginal cost is well under a page fetch; the
+  // weight is set by what the send is worth to the customer, not what it costs
+  // us. WhatsApp and SMS carry real per-message carrier cost and must get their
+  // own, higher weights before those channels open — never reuse this one.
+  outreach_email: 1,
 });
 
 /**
@@ -132,6 +140,7 @@ export const KIND_TO_REASON = Object.freeze({
   bulk_row: "enrichment",
   citation_prompt_extra: "ai_call",
   discoverability: "audit",
+  outreach_email: "outreach",
 });
 
 /** Which ledger `unit` a metered kind is recorded under. */
@@ -146,4 +155,5 @@ export const KIND_TO_UNIT = Object.freeze({
   bulk_row: UNITS.ENRICHMENT,
   citation_prompt_extra: UNITS.AI_CALL,
   discoverability: UNITS.AUDIT,
+  outreach_email: UNITS.MESSAGE,
 });
