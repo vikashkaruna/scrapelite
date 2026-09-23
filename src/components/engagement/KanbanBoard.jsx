@@ -1,227 +1,122 @@
-// src/components/engagement/KanbanBoard.jsx — Interactive Outreach Pipeline Kanban Board
-import { useState, useMemo } from "react";
-import Icon from "../Icon.jsx";
-import Button from "../Button.jsx";
-import FaviconDot from "../FaviconDot.jsx";
-import { PROSPECT_STATUSES, STATUS_METADATA } from "../../lib/engagement/stateMachine.js";
+// src/components/engagement/KanbanBoard.jsx — the campaign pipeline, one column per stage.
+//
+// Stages move by EVENTS (a send, a delivery webhook, a reply) — the only moves a
+// person makes here are the ones only a person can know about: they replied,
+// they converted, follow up now. There is deliberately no "mark Sent".
+//
+// Channel filters are gone: email is the only live channel, and chips for
+// WhatsApp/Telegram/SMS filtered to nothing while implying those channels work.
 
-const KANBAN_COLUMNS = [
-  { id: "col_new", title: "New", statuses: [PROSPECT_STATUSES.NEW], icon: "inbox" },
-  { id: "col_queued", title: "Queued", statuses: [PROSPECT_STATUSES.QUEUED], icon: "clock" },
-  { id: "col_sent", title: "Sent", statuses: [PROSPECT_STATUSES.SENT], icon: "send" },
-  { id: "col_delivered", title: "Delivered", statuses: [PROSPECT_STATUSES.DELIVERED], icon: "check" },
-  { id: "col_engaged", title: "Opened / Clicked", statuses: [PROSPECT_STATUSES.OPENED, PROSPECT_STATUSES.CLICKED], icon: "eye" },
-  { id: "col_replied", title: "Replied", statuses: [PROSPECT_STATUSES.REPLIED], icon: "message-circle" },
-  { id: "col_followup", title: "Follow-up Due", statuses: [PROSPECT_STATUSES.FOLLOWUP_DUE], icon: "phone-call" },
-  { id: "col_converted", title: "Converted", statuses: [PROSPECT_STATUSES.CONVERTED], icon: "thumbs-up" },
-  { id: "col_unresponsive", title: "Closed / Opted Out", statuses: [PROSPECT_STATUSES.UNRESPONSIVE, PROSPECT_STATUSES.OPTED_OUT], icon: "thumbs-down" },
+import { useMemo, useState } from "react";
+import Icon from "../Icon.jsx";
+import { PROSPECT_STATUSES as S } from "../../lib/engagement/stateMachine.js";
+
+const COLUMNS = [
+  { id: "new", title: "New", statuses: [S.NEW], icon: "inbox" },
+  { id: "queued", title: "Queued", statuses: [S.QUEUED], icon: "clock" },
+  { id: "sent", title: "Sent", statuses: [S.SENT], icon: "send" },
+  { id: "delivered", title: "Delivered", statuses: [S.DELIVERED], icon: "check" },
+  { id: "engaged", title: "Opened / clicked", statuses: [S.OPENED, S.CLICKED], icon: "eye" },
+  { id: "replied", title: "Replied", statuses: [S.REPLIED], icon: "message-circle" },
+  { id: "followup", title: "Follow-up due", statuses: [S.FOLLOWUP_DUE], icon: "refresh-cw" },
+  { id: "converted", title: "Converted", statuses: [S.CONVERTED], icon: "thumbs-up" },
+  { id: "closed", title: "Closed / opted out", statuses: [S.UNRESPONSIVE, S.OPTED_OUT], icon: "slash" },
 ];
 
-export default function KanbanBoard({
-  prospects = [],
-  onTransition,
-  onSelectProspect,
-  onGenerateMessage,
-}) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedChannel, setSelectedChannel] = useState("all");
-  const [transitioningId, setTransitioningId] = useState(null);
+/** The one move a person can make from each stage, if any. */
+function nextMove(status) {
+  if (status === S.NEW) return { kind: "draft", label: "Draft email", icon: "sparkles" };
+  if ([S.SENT, S.DELIVERED, S.OPENED, S.CLICKED].includes(status)) return { kind: "move", to: S.REPLIED, label: "They replied", icon: "message-circle" };
+  if (status === S.REPLIED) return { kind: "move", to: S.CONVERTED, label: "Converted", icon: "thumbs-up" };
+  if (status === S.FOLLOWUP_DUE) return { kind: "move", to: S.QUEUED, label: "Follow up", icon: "refresh-cw" };
+  return null;
+}
 
-  const filteredProspects = useMemo(() => {
-    return prospects.filter((p) => {
-      if (selectedChannel !== "all" && p.channel_preference !== selectedChannel) {
-        return false;
-      }
-      if (!searchTerm) return true;
-      const s = searchTerm.toLowerCase();
-      return (
-        (p.first_name && p.first_name.toLowerCase().includes(s)) ||
-        (p.last_name && p.last_name.toLowerCase().includes(s)) ||
-        (p.company && p.company.toLowerCase().includes(s)) ||
-        (p.role && p.role.toLowerCase().includes(s)) ||
-        (p.email && p.email.toLowerCase().includes(s))
-      );
-    });
-  }, [prospects, searchTerm, selectedChannel]);
+export const initials = (p) => {
+  const a = (p.first_name || p.email || "?").trim()[0] || "?";
+  const b = (p.last_name || "").trim()[0] || "";
+  return (a + b).toUpperCase();
+};
 
-  const columnsData = useMemo(() => {
-    return KANBAN_COLUMNS.map((col) => {
-      const items = filteredProspects.filter((p) => col.statuses.includes(p.status));
-      return { ...col, items };
-    });
-  }, [filteredProspects]);
+export default function KanbanBoard({ prospects = [], testSentIds = new Set(), onTransition, onSelectProspect, onGenerateMessage, busy = false }) {
+  const [search, setSearch] = useState("");
+  const [moving, setMoving] = useState(null);
 
-  const handleQuickMove = async (e, prospect, nextStatus) => {
+  const columns = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const shown = q
+      ? prospects.filter((p) => [p.first_name, p.last_name, p.company, p.role, p.email].some((v) => v && v.toLowerCase().includes(q)))
+      : prospects;
+    return COLUMNS.map((c) => ({ ...c, items: shown.filter((p) => c.statuses.includes(p.status)) }));
+  }, [prospects, search]);
+
+  const act = async (e, p, move) => {
     e.stopPropagation();
-    if (!onTransition) return;
-    setTransitioningId(prospect.id);
+    setMoving(p.id);
     try {
-      await onTransition(prospect.id, nextStatus);
+      if (move.kind === "draft") await onGenerateMessage?.(p.id, "email");
+      else await onTransition?.(p.id, move.to);
     } finally {
-      setTransitioningId(null);
+      setMoving(null);
     }
   };
 
   return (
-    <div className="eng-kanban-root">
-      {/* Controls: Search & Channel Filter */}
-      <div className="eng-kanban-controls">
-        <div className="eng-search-box">
-          <Icon name="search" size={14} className="eng-search-icon" />
-          <input
-            type="text"
-            placeholder="Search prospects by name, company, role, email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="eng-input-field"
-          />
-          {searchTerm && (
-            <button className="eng-clear-search" onClick={() => setSearchTerm("")}>
-              <Icon name="x" size={12} />
-            </button>
-          )}
-        </div>
-
-        <div className="eng-channel-chips">
-          {["all", "email", "whatsapp", "telegram", "sms"].map((ch) => (
-            <button
-              key={ch}
-              className={`eng-filter-chip ${selectedChannel === ch ? "active" : ""}`}
-              onClick={() => setSelectedChannel(ch)}
-            >
-              {ch === "all" ? "All Channels" : ch.toUpperCase()}
-            </button>
-          ))}
-        </div>
+    <div className="engx-board">
+      <div className="engx-toolbar">
+        <label className="engx-search">
+          <Icon name="search" size={14} />
+          <input type="search" placeholder="Search name, company, role or email" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search prospects" />
+        </label>
+        <span className="engx-toolbar-note">Stages advance on real sends and delivery events; replies and conversions are yours to mark. Scroll sideways for every stage.</span>
       </div>
 
-      {/* Columns Grid */}
-      <div className="eng-kanban-grid">
-        {columnsData.map((col) => (
-          <div key={col.id} className="eng-column">
-            <div className="eng-col-header">
-              <div className="eng-col-title">
-                <Icon name={col.icon} size={14} />
-                <span>{col.title}</span>
-              </div>
-              <span className="eng-col-count">{col.items.length}</span>
-            </div>
-
-            <div className="eng-col-body">
-              {col.items.length === 0 ? (
-                <div className="eng-col-empty">
-                  <span>No prospects</span>
-                </div>
-              ) : (
-                col.items.map((prospect) => {
-                  const meta = STATUS_METADATA[prospect.status] || {};
-                  const fullName = [prospect.first_name, prospect.last_name].filter(Boolean).join(" ") || "Unnamed Prospect";
-
-                  return (
-                    <div
-                      key={prospect.id}
-                      className="eng-card"
-                      onClick={() => onSelectProspect && onSelectProspect(prospect.id)}
-                    >
-                      <div className="eng-card-top">
-                        <div className="eng-card-identity">
-                          <FaviconDot domain={prospect.company || "datiq.app"} />
-                          <div className="eng-card-names">
-                            <strong className="eng-name">{fullName}</strong>
-                            <span className="eng-company">{prospect.company || "Unknown Company"}</span>
-                          </div>
-                        </div>
-                        {prospect.engagement_score > 0 && (
-                          <span className="eng-score-pill" title="Engagement score">
-                            <Icon name="zap" size={10} />
-                            {prospect.engagement_score}
-                          </span>
+      <div className="engx-columns" role="list" aria-label="Pipeline">
+        {columns.map((col) => (
+          <section key={col.id} className="engx-col" role="listitem" aria-label={`${col.title}: ${col.items.length}`}>
+            <header className="engx-col-head">
+              <Icon name={col.icon} size={14} />
+              <span className="engx-col-title">{col.title}</span>
+              <span className="engx-count">{col.items.length}</span>
+            </header>
+            <div className="engx-col-body">
+              {col.items.length === 0 && <p className="engx-col-empty">None</p>}
+              {col.items.map((p) => {
+                const name = [p.first_name, p.last_name].filter(Boolean).join(" ") || p.email || "Unnamed";
+                const move = nextMove(p.status);
+                return (
+                  <article
+                    key={p.id}
+                    className="engx-card"
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`Open ${name}`}
+                    onClick={() => onSelectProspect?.(p.id)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectProspect?.(p.id); } }}
+                  >
+                    <div className="engx-card-top">
+                      <span className="engx-avatar" aria-hidden="true">{initials(p)}</span>
+                      <div className="engx-card-id">
+                        <strong className="engx-card-name">{name}</strong>
+                        <span className="engx-card-sub">{[p.role, p.company].filter(Boolean).join(" · ") || p.email}</span>
+                      </div>
+                      {p.engagement_score > 0 && <span className="engx-score" title="Engagement score"><Icon name="zap" size={10} />{p.engagement_score}</span>}
+                    </div>
+                    {(testSentIds.has(p.id) || move) && (
+                      <div className="engx-card-foot">
+                        {testSentIds.has(p.id) && <span className="engx-tag is-warn" title="Sent in test mode — nothing was delivered"><Icon name="flask" size={10} /> Test send</span>}
+                        {move && (
+                          <button type="button" className="engx-card-action" disabled={busy || moving === p.id} onClick={(e) => act(e, p, move)}>
+                            <Icon name={move.icon} size={11} /> {move.label}
+                          </button>
                         )}
                       </div>
-
-                      {prospect.role && (
-                        <div className="eng-card-role">
-                          <Icon name="briefcase" size={11} />
-                          <span>{prospect.role}</span>
-                        </div>
-                      )}
-
-                      <div className="eng-card-footer">
-                        <span className="eng-channel-badge" title={`Channel: ${prospect.channel_preference}`}>
-                          <Icon
-                            name={
-                              prospect.channel_preference === "whatsapp"
-                                ? "message-circle"
-                                : prospect.channel_preference === "sms"
-                                ? "phone"
-                                : "mail"
-                            }
-                            size={11}
-                          />
-                          {prospect.channel_preference || "auto"}
-                        </span>
-
-                        {/* Quick action buttons based on status */}
-                        <div className="eng-card-actions">
-                          {prospect.status === PROSPECT_STATUSES.NEW && (
-                            <button
-                              className="eng-action-btn"
-                              title="Draft AI personalized message"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onGenerateMessage && onGenerateMessage(prospect);
-                              }}
-                            >
-                              <Icon name="wand" size={11} /> Draft
-                            </button>
-                          )}
-
-                          {/* No "mark Sent" / "mark Delivered": those stages are set by an
-                              actual send and by the provider's delivery event. A hand-set
-                              "Sent" was a funnel entry for a message nobody sent. */}
-                          {(prospect.status === PROSPECT_STATUSES.SENT ||
-                            prospect.status === PROSPECT_STATUSES.DELIVERED ||
-                            prospect.status === PROSPECT_STATUSES.OPENED ||
-                            prospect.status === PROSPECT_STATUSES.CLICKED) && (
-                            <button
-                              className="eng-action-btn success"
-                              title="Mark Replied"
-                              disabled={transitioningId === prospect.id}
-                              onClick={(e) => handleQuickMove(e, prospect, PROSPECT_STATUSES.REPLIED)}
-                            >
-                              <Icon name="message-circle" size={11} /> Replied
-                            </button>
-                          )}
-
-                          {prospect.status === PROSPECT_STATUSES.REPLIED && (
-                            <button
-                              className="eng-action-btn success"
-                              title="Convert Lead"
-                              disabled={transitioningId === prospect.id}
-                              onClick={(e) => handleQuickMove(e, prospect, PROSPECT_STATUSES.CONVERTED)}
-                            >
-                              <Icon name="thumbs-up" size={11} /> Convert
-                            </button>
-                          )}
-
-                          {prospect.status === PROSPECT_STATUSES.FOLLOWUP_DUE && (
-                            <button
-                              className="eng-action-btn"
-                              title="Queue Follow-up"
-                              disabled={transitioningId === prospect.id}
-                              onClick={(e) => handleQuickMove(e, prospect, PROSPECT_STATUSES.QUEUED)}
-                            >
-                              <Icon name="repeat" size={11} /> Follow up
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+                    )}
+                  </article>
+                );
+              })}
             </div>
-          </div>
+          </section>
         ))}
       </div>
     </div>

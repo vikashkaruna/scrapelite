@@ -42,7 +42,7 @@ export async function applyOptOut({ userId, prospect, channels, reason, source, 
     for (const r of rows) {
       await db.from("engagement_activity_log").insert({
         user_id: userId, campaign_id: prospect.campaign_id, prospect_id: prospect.id,
-        event_type: "channel_opted_out", channel: r.channel, details: { reason, source },
+        event_type: "channel_opted_out", channel: r.channel, details: { reason, source, ...(note ? { note } : {}) },
       });
     }
 

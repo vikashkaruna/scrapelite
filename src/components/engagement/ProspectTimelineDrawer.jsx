@@ -1,276 +1,150 @@
-// src/components/engagement/ProspectTimelineDrawer.jsx — Chronological Activity Audit Log Drawer
-import { useState } from "react";
+// src/components/engagement/ProspectTimelineDrawer.jsx — one prospect: who they
+// are, whether we may contact them, what has happened, and a note.
+//
+// The timeline reads the log's real columns (`event_type`, `timestamp`) through
+// describeActivity(); it used to read `action`/`created_at`, which do not
+// exist, and showed "Invalid Date" over raw JSON for every entry.
+
+import { useEffect, useState } from "react";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
-import FaviconDot from "../FaviconDot.jsx";
 import { PROSPECT_STATUSES, STATUS_METADATA, isValidTransition } from "../../lib/engagement/stateMachine.js";
 import { fmtDate, timeAgo } from "../../lib/utils.js";
+import { describeActivity, activityTime } from "../../lib/engagement/activityCopy.js";
 import ConsentPanel from "./ConsentPanel.jsx";
+import { initials } from "./KanbanBoard.jsx";
+
+const MANUAL = [PROSPECT_STATUSES.NEW, PROSPECT_STATUSES.QUEUED, PROSPECT_STATUSES.REPLIED,
+  PROSPECT_STATUSES.FOLLOWUP_DUE, PROSPECT_STATUSES.CONVERTED, PROSPECT_STATUSES.UNRESPONSIVE];
 
 export default function ProspectTimelineDrawer({
-  prospect,
-  activityLogs = [],
-  isOpen,
-  onClose,
-  onTransition,
-  onAddNote,
-  onGenerateMessage,
-  suppressions = [],
-  onOptOut,
-  onLiftSuppression,
-  consentBusy = false,
+  prospect, activityLogs = [], isOpen, onClose, onTransition, onAddNote, onGenerateMessage,
+  suppressions = [], onOptOut, onLiftSuppression, consentBusy = false, busy = false,
 }) {
-  const [noteText, setNoteText] = useState("");
-  const [isSubmittingNote, setIsSubmittingNote] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState(prospect?.status || "new");
+  const [note, setNote] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+  useEffect(() => { setNote(""); }, [prospect?.id]);
 
   if (!isOpen || !prospect) return null;
 
-  const currentMeta = STATUS_METADATA[prospect.status] || {
-    label: prospect.status,
-    color: "var(--text-3)",
-    bgColor: "var(--surface)",
-  };
+  const name = [prospect.first_name, prospect.last_name].filter(Boolean).join(" ") || prospect.email || "Prospect";
+  // Only stages a person may set — delivery stages come from real events, and
+  // opting out is per channel in the consent panel.
+  const stageOptions = Object.values(PROSPECT_STATUSES).filter((s) => s === prospect.status
+    || (MANUAL.includes(s) && isValidTransition(prospect.status, s)));
 
-  const fullName = `${prospect.first_name || ""} ${prospect.last_name || ""}`.trim() || prospect.email || "Prospect";
-
-  const handleStatusChange = async (e) => {
-    const newStatus = e.target.value;
-    setSelectedStatus(newStatus);
-    if (onTransition) {
-      await onTransition(prospect.id, newStatus);
-    }
-  };
-
-  const handleNoteSubmit = async (e) => {
+  const saveNote = async (e) => {
     e.preventDefault();
-    if (!noteText.trim() || !onAddNote) return;
-    setIsSubmittingNote(true);
+    const text = note.trim();
+    if (!text || !onAddNote) return;
+    setSavingNote(true);
     try {
-      await onAddNote(prospect.id, noteText.trim());
-      setNoteText("");
+      const ok = await onAddNote(prospect.id, text);
+      if (ok !== false) setNote("");
     } finally {
-      setIsSubmittingNote(false);
-    }
-  };
-
-  const getActivityIcon = (action) => {
-    switch (action) {
-      case "ingested":
-        return "inbox";
-      case "ai_message_generated":
-      case "message_drafted":
-        return "sparkles";
-      case "queued":
-        return "clock";
-      case "dispatched":
-      case "sent":
-        return "send";
-      case "delivered":
-        return "check";
-      case "opened":
-      case "read":
-        return "eye";
-      case "clicked":
-        return "external-link";
-      case "replied":
-        return "message-circle";
-      case "status_transition":
-        return "arrow-right";
-      case "note_added":
-        return "file-text";
-      case "opted_out":
-        return "slash";
-      case "converted":
-        return "award";
-      default:
-        return "activity";
+      setSavingNote(false);
     }
   };
 
   return (
-    <div className="eng-drawer-backdrop" onClick={onClose}>
-      <div className="eng-drawer-panel" onClick={(e) => e.stopPropagation()}>
-        {/* Drawer Header */}
-        <div className="eng-drawer-header">
-          <div className="eng-drawer-identity">
-            {prospect.company && <FaviconDot domain={prospect.company} size={28} />}
-            <div className="eng-drawer-names">
-              <h3 className="eng-drawer-title">{fullName}</h3>
-              <div className="eng-drawer-sub">
-                {prospect.role && <span>{prospect.role}</span>}
-                {prospect.role && prospect.company && <span>·</span>}
-                {prospect.company && <span>{prospect.company}</span>}
-              </div>
-            </div>
+    <div className="engx-drawer-backdrop" onClick={onClose}>
+      <aside className="engx-drawer" role="dialog" aria-modal="true" aria-labelledby="engx-drawer-title" onClick={(e) => e.stopPropagation()}>
+        <header className="engx-drawer-head">
+          <span className="engx-avatar is-lg" aria-hidden="true">{initials(prospect)}</span>
+          <div className="engx-drawer-id">
+            <h3 id="engx-drawer-title">{name}</h3>
+            <p>{[prospect.role, prospect.company].filter(Boolean).join(" · ") || prospect.email}</p>
           </div>
-          <button className="eng-drawer-close" onClick={onClose} aria-label="Close drawer">
-            <Icon name="x" size={18} />
-          </button>
-        </div>
+          <button type="button" className="engx-icon-btn" onClick={onClose} aria-label="Close drawer"><Icon name="x" size={18} /></button>
+        </header>
 
-        {/* Prospect Status & Quick Transition Ribbon */}
-        <div className="eng-drawer-ribbon">
-          <div className="eng-ribbon-item">
-            <span className="eng-ribbon-label">Current Stage</span>
-            <select
-              className="eng-status-select"
-              value={prospect.status}
-              onChange={handleStatusChange}
-              style={{
-                borderColor: currentMeta.color,
-                color: currentMeta.color,
-              }}
-            >
-              {Object.values(PROSPECT_STATUSES)
-                // Opting out is done per channel in the Consent panel, so it is
-                // recorded against the address, not just this row's stage.
-                .filter((st) => st === prospect.status
-                  || (st !== PROSPECT_STATUSES.OPTED_OUT && isValidTransition(prospect.status, st)))
-                .map((st) => (
-                  <option key={st} value={st}>
-                    {STATUS_METADATA[st]?.label || st}
-                  </option>
-                ))}
-            </select>
+        <div className="engx-drawer-body">
+          <div className="engx-drawer-facts">
+            <label className="engx-fact">
+              <span>Stage</span>
+              <select className="engx-select" value={prospect.status} disabled={busy}
+                onChange={(e) => e.target.value !== prospect.status && onTransition?.(prospect.id, e.target.value)}>
+                {stageOptions.map((s) => <option key={s} value={s}>{STATUS_METADATA[s]?.label || s}</option>)}
+              </select>
+            </label>
+            <div className="engx-fact"><span>Score</span><strong><Icon name="zap" size={12} /> {prospect.engagement_score ?? 0}</strong></div>
+            <div className="engx-fact"><span>Added</span><strong>{prospect.created_at ? fmtDate(prospect.created_at) : "—"}</strong></div>
+            <div className="engx-fact"><span>Last contact</span><strong>{prospect.last_contacted_at ? timeAgo(prospect.last_contacted_at) : "Never"}</strong></div>
           </div>
 
-          <div className="eng-ribbon-item">
-            <span className="eng-ribbon-label">Engagement Score</span>
-            <span className="eng-score-value">
-              <Icon name="zap" size={12} /> {prospect.engagement_score ?? 0}
-            </span>
-          </div>
-
-          <div className="eng-ribbon-item">
-            <span className="eng-ribbon-label">Channel</span>
-            <span className={`eng-channel-pill eng-ch-${prospect.channel_preference || "email"}`}>
-              {(prospect.channel_preference || "email").toUpperCase()}
-            </span>
-          </div>
-        </div>
-
-        {/* Contact Info Card */}
-        <div className="eng-drawer-card">
-          <h4 className="eng-card-title">Contact & Attributes</h4>
-          <div className="eng-attr-grid">
-            {prospect.email && (
-              <div className="eng-attr-row">
-                <span className="eng-attr-key"><Icon name="mail" size={12} /> Email</span>
-                <span className="eng-attr-val">{prospect.email}</span>
-              </div>
+          <section className="engx-drawer-section">
+            <h4>Contact</h4>
+            <dl className="engx-dl">
+              {prospect.email && <><dt><Icon name="mail" size={12} /> Email</dt><dd>{prospect.email}</dd></>}
+              {prospect.phone && <><dt><Icon name="phone" size={12} /> Phone</dt><dd>{prospect.phone}</dd></>}
+              {prospect.industry && <><dt><Icon name="briefcase" size={12} /> Industry</dt><dd>{prospect.industry}</dd></>}
+              {prospect.country && <><dt><Icon name="globe" size={12} /> Country</dt><dd>{prospect.country}</dd></>}
+            </dl>
+            {onGenerateMessage && (
+              <Button type="button" variant="secondary" size="sm" icon="sparkles" disabled={busy} onClick={() => onGenerateMessage(prospect.id, "email")}>
+                Draft email
+              </Button>
             )}
-            {prospect.phone && (
-              <div className="eng-attr-row">
-                <span className="eng-attr-key"><Icon name="phone" size={12} /> Phone</span>
-                <span className="eng-attr-val">{prospect.phone}</span>
-              </div>
-            )}
-            {prospect.industry && (
-              <div className="eng-attr-row">
-                <span className="eng-attr-key"><Icon name="briefcase" size={12} /> Industry</span>
-                <span className="eng-attr-val">{prospect.industry}</span>
-              </div>
-            )}
-            {prospect.country && (
-              <div className="eng-attr-row">
-                <span className="eng-attr-key"><Icon name="globe" size={12} /> Location</span>
-                <span className="eng-attr-val">{prospect.country}</span>
-              </div>
-            )}
-            <div className="eng-attr-row">
-              <span className="eng-attr-key"><Icon name="calendar" size={12} /> Added</span>
-              <span className="eng-attr-val">{fmtDate(prospect.created_at)}</span>
-            </div>
-            {prospect.last_contacted_at && (
-              <div className="eng-attr-row">
-                <span className="eng-attr-key"><Icon name="clock" size={12} /> Last Contacted</span>
-                <span className="eng-attr-val">{timeAgo(prospect.last_contacted_at)}</span>
-              </div>
-            )}
-          </div>
-        </div>
+          </section>
 
-        <ConsentPanel
-          prospect={prospect}
-          suppressions={suppressions}
-          onOptOut={onOptOut ? (channels, note) => onOptOut(prospect.id, channels, note) : undefined}
-          onLift={onLiftSuppression}
-          busy={consentBusy}
-        />
+          <ConsentPanel
+            prospect={prospect}
+            suppressions={suppressions}
+            onOptOut={onOptOut ? (channels, n) => onOptOut(prospect.id, channels, n) : undefined}
+            onLift={onLiftSuppression}
+            busy={consentBusy}
+          />
 
-        {/* Quick Action: Generate AI Copy / Dispatch */}
-        {onGenerateMessage && (
-          <div className="eng-drawer-actions">
-            <Button
-              variant="secondary"
-              icon="sparkles"
-              onClick={() => onGenerateMessage(prospect.id, "email")}
-            >
-              Draft email
-            </Button>
-          </div>
-        )}
+          <section className="engx-drawer-section">
+            <h4>Add a note</h4>
+            <form className="engx-note" onSubmit={saveNote}>
+              <textarea
+                rows={2}
+                maxLength={1000}
+                placeholder="Log a call, a meeting or anything worth remembering"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                aria-label="Note"
+              />
+              <Button type="submit" variant="primary" size="sm" icon="plus" disabled={!note.trim() || savingNote}>
+                {savingNote ? "Saving…" : "Save note"}
+              </Button>
+            </form>
+          </section>
 
-        {/* Add Note Form */}
-        <div className="eng-note-box">
-          <form onSubmit={handleNoteSubmit}>
-            <input
-              type="text"
-              className="eng-input-field eng-note-input"
-              placeholder="Log a touchpoint or note (e.g. Spoke on call, interested in demo)..."
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              type="submit"
-              disabled={!noteText.trim() || isSubmittingNote}
-              icon="plus"
-            >
-              Add Note
-            </Button>
-          </form>
-        </div>
-
-        {/* Activity Timeline */}
-        <div className="eng-timeline-section">
-          <h4 className="eng-timeline-heading">Activity & Audit Trail ({activityLogs.length})</h4>
-          {activityLogs.length === 0 ? (
-            <div className="eng-timeline-empty">No activity events recorded yet.</div>
-          ) : (
-            <div className="eng-timeline-list">
-              {activityLogs.map((log) => {
-                const iconName = getActivityIcon(log.action);
-                return (
-                  <div key={log.id || log.created_at} className="eng-timeline-item">
-                    <div className="eng-timeline-icon-wrap">
-                      <Icon name={iconName} size={13} />
-                    </div>
-                    <div className="eng-timeline-content">
-                      <div className="eng-timeline-top">
-                        <span className="eng-timeline-action">
-                          {log.action?.replace(/_/g, " ").toUpperCase()}
-                        </span>
-                        <span className="eng-timeline-time">{timeAgo(log.created_at)}</span>
-                      </div>
-                      {log.details && (
-                        <div className="eng-timeline-details">
-                          {typeof log.details === "string" ? log.details : JSON.stringify(log.details)}
+          <section className="engx-drawer-section">
+            <h4>Activity <span className="engx-count">{activityLogs.length}</span></h4>
+            {activityLogs.length === 0 ? (
+              <p className="engx-muted">Nothing has happened yet.</p>
+            ) : (
+              <ol className="engx-timeline">
+                {activityLogs.map((log, i) => {
+                  const a = describeActivity(log);
+                  return (
+                    <li key={log.id || i} className={`engx-tl-item is-${a.tone}`}>
+                      <span className="engx-tl-icon" aria-hidden="true"><Icon name={a.icon} size={12} /></span>
+                      <div className="engx-tl-body">
+                        <div className="engx-tl-top">
+                          <strong>{a.title}</strong>
+                          <time dateTime={a.at || undefined} title={a.at ? new Date(a.at).toLocaleString() : undefined}>{activityTime(a.at)}</time>
                         </div>
-                      )}
-                      {log.payload?.subject && (
-                        <div className="eng-timeline-subject">"{log.payload.subject}"</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                        {a.detail && <p className={a.tone === "note" ? "engx-tl-note" : "engx-tl-detail"}>{a.detail}</p>}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </section>
         </div>
-      </div>
+      </aside>
     </div>
   );
 }

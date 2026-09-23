@@ -149,9 +149,18 @@ async function handlePost(event, userId) {
   switch (action) {
     // ── Campaigns ────────────────────────────────────────────────────────────
     case "create_campaign": return reply(await store.createCampaign(userId, body));
-    case "update_campaign":
+    case "update_campaign": {
       if (!campaignId) return json(400, { ok: false, code: "campaign_required", error: "Missing campaign_id." });
-      return reply(await store.updateCampaign(campaignId, userId, body.updates || {}));
+      const updates = body.updates || {};
+      const res = await store.updateCampaign(campaignId, userId, updates);
+      // A new brand kit rewrites the drafts that have not left yet (owner
+      // request 2026-09-24); the response says what changed.
+      if (res.ok && updates && typeof updates === "object" && "brand_kit" in updates) {
+        const refresh = await store.refreshUnsentMessages(campaignId, userId);
+        return reply({ ...res, refresh: refresh.ok ? { refreshed: refresh.refreshed, backToReview: refresh.backToReview, keptEdited: refresh.keptEdited } : null });
+      }
+      return reply(res);
+    }
     case "delete_campaign":
       if (!campaignId) return json(400, { ok: false, code: "campaign_required", error: "Missing campaign_id." });
       return reply(await store.deleteCampaign(campaignId, userId));

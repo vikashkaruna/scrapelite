@@ -87,17 +87,16 @@ describe("Engagement — the hub", () => {
     const { container } = setup();
     expect(await screen.findByRole("heading", { name: "Prospect Engagement" })).toBeTruthy();
     expect(screen.queryByText(/v2\.4/)).toBeNull();
-    expect(screen.queryByText(/AI personalization|bidirectional CRM sync/i)).toBeNull();
-    for (const tab of ["Pipeline Board", "Approval Queue", "Prospects Table", "Analytics & Funnel", "Brand kit & sender"]) {
-      expect(screen.getByRole("button", { name: new RegExp(tab, "i") })).toBeTruthy();
-    }
+    expect(screen.queryByText(/AI personalization|bidirectional CRM sync|CAN-SPAM|TRAI Compliant/i)).toBeNull();
+    const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(tabs.map((t) => t.replace(/\d+$/, ""))).toEqual(["Pipeline", "Review & send", "Prospects", "Results", "Brand kit & sender"]);
     expect(container.querySelectorAll("main")).toHaveLength(0);
   });
 
   it("the settings tab has a sender form and no fake sync form", async () => {
     setup();
     await screen.findByRole("heading", { name: "Prospect Engagement" });
-    fireEvent.click(screen.getByRole("button", { name: /Brand kit & sender/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /Brand kit & sender/i }));
     expect(screen.getByLabelText("From email")).toBeTruthy();
     expect(screen.queryByText(/Two-Way CRM/i)).toBeNull();
     expect(screen.getByText(/isn't available yet/i)).toBeTruthy();
@@ -110,7 +109,7 @@ describe("Engagement — sending", () => {
   it("sends approved messages only when a person presses Send", async () => {
     setup({ messages: [queued] });
     await screen.findByRole("heading", { name: "Prospect Engagement" });
-    fireEvent.click(screen.getByRole("button", { name: /Approval Queue/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /Review & send/i }));
     expect(api.sendApproved).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: /Send 1 now/i }));
     await waitFor(() => expect(api.sendApproved).toHaveBeenCalledWith("c1", ["m1"]));
@@ -119,7 +118,7 @@ describe("Engagement — sending", () => {
   it("cannot send from a campaign with no sender", async () => {
     setup({ messages: [queued], camp: { ...campaign, sender: {} } });
     await screen.findByRole("heading", { name: "Prospect Engagement" });
-    fireEvent.click(screen.getByRole("button", { name: /Approval Queue/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /Review & send/i }));
     expect((await screen.findByRole("button", { name: /Send 1 now/i })).disabled).toBe(true);
     expect(screen.getByText(/has no sender yet/i)).toBeTruthy();
   });
@@ -127,53 +126,99 @@ describe("Engagement — sending", () => {
   it("explains why a message was not sent", async () => {
     setup({ messages: [{ ...queued, id: "m2", status: "skipped", failure_code: "suppressed_unsubscribe" }] });
     await screen.findByRole("heading", { name: "Prospect Engagement" });
-    fireEvent.click(screen.getByRole("button", { name: /Approval Queue/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /Review & send/i }));
     fireEvent.click(await screen.findByRole("button", { name: /1 not sent/i }));
     expect(screen.getByText("The contact unsubscribed.")).toBeTruthy();
   });
 });
 
 describe("Engagement — per-channel consent", () => {
-  it("opts a contact out of every channel from the drawer, after confirmation", async () => {
-    setup();
+  const openDrawer = async () => {
     await screen.findByRole("heading", { name: "Prospect Engagement" });
-    fireEvent.click(screen.getByRole("button", { name: /Prospects Table/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Prospects$/ }));
     fireEvent.click(await screen.findByText("Ana"));
+    return (await screen.findByRole("heading", { name: "Consent by channel" })).closest("section");
+  };
 
-    const panel = (await screen.findByRole("heading", { name: "Consent by channel" })).closest("section");
-    expect(within(panel).getAllByText("Can be contacted")).toHaveLength(3); // email, WhatsApp, SMS
-    expect(within(panel).getByText("No Telegram chat on file")).toBeTruthy();
+  it("starts with every reachable channel ticked (consent on by default)", async () => {
+    setup();
+    const panel = await openDrawer();
+    for (const ch of ["Email", "WhatsApp", "SMS"]) expect(within(panel).getByLabelText(`Contact by ${ch}`).checked).toBe(true);
+    const tg = within(panel).getByLabelText("Contact by Telegram");
+    expect([tg.checked, tg.disabled]).toEqual([false, true]);
+    expect(within(panel).getAllByText("Can be contacted")).toHaveLength(3);
+    expect(within(panel).getByRole("button", { name: "Save consent" }).disabled).toBe(true);
+  });
 
-    fireEvent.click(within(panel).getByRole("button", { name: "Opt out of all channels" }));
+  it("unticking a channel and saving opts out of that channel only, after confirmation", async () => {
+    setup();
+    const panel = await openDrawer();
+    fireEvent.click(within(panel).getByLabelText("Contact by SMS"));
+    expect(within(panel).getByText("Will stop on save")).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("button", { name: "Save consent" }));
     expect(api.optOut).not.toHaveBeenCalled();
-    fireEvent.click(within(panel).getByRole("button", { name: "Confirm opt-out" }));
+    fireEvent.change(within(panel).getByLabelText("Reason for opting out"), { target: { value: "asked on a call" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(api.optOut).toHaveBeenCalledWith("p1", ["sms"], "asked on a call"));
+  });
+
+  it("opts out of every channel in one action", async () => {
+    setup();
+    const panel = await openDrawer();
+    fireEvent.click(within(panel).getByRole("button", { name: "Opt out of all channels" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(api.optOut).toHaveBeenCalledWith("p1", ["email", "whatsapp", "sms"], null));
   });
 
-  it("opts out of only the selected channel", async () => {
-    setup();
-    await screen.findByRole("heading", { name: "Prospect Engagement" });
-    fireEvent.click(screen.getByRole("button", { name: /Prospects Table/i }));
-    fireEvent.click(await screen.findByText("Ana"));
-    const panel = (await screen.findByRole("heading", { name: "Consent by channel" })).closest("section");
-    fireEvent.click(within(panel).getByLabelText("Select SMS"));
-    fireEvent.click(within(panel).getByRole("button", { name: /Opt out of selected/ }));
-    fireEvent.click(within(panel).getByRole("button", { name: "Confirm opt-out" }));
-    await waitFor(() => expect(api.optOut).toHaveBeenCalledWith("p1", ["sms"], null));
-  });
-
-  it("shows an opt-out the recipient made as theirs, with no remove button", async () => {
+  it("shows an opt-out the recipient made as theirs, unticked and locked", async () => {
     setup();
     api.listSuppressions.mockResolvedValue({
       suppressions: [{ id: "s1", channel: "email", address: "ana@buyer.test", reason: "unsubscribe", created_at: "2026-09-01T00:00:00Z" }],
     });
-    await screen.findByRole("heading", { name: "Prospect Engagement" });
-    fireEvent.click(screen.getByRole("button", { name: /Prospects Table/i }));
-    fireEvent.click(await screen.findByText("Ana"));
-    const panel = (await screen.findByRole("heading", { name: "Consent by channel" })).closest("section");
+    const panel = await openDrawer();
     expect(await within(panel).findByText(/Unsubscribed/)).toBeTruthy();
+    const email = within(panel).getByLabelText("Contact by Email");
+    expect([email.checked, email.disabled]).toEqual([false, true]);
     expect(within(panel).getByText("Recipient's choice")).toBeTruthy();
-    expect(within(panel).queryByRole("button", { name: "Remove opt-out" })).toBeNull();
+  });
+});
+
+describe("Engagement — notes and activity", () => {
+  it("saves a note and shows the timeline in words, never raw JSON or Invalid Date", async () => {
+    setup();
+    api.addProspectNote.mockResolvedValue({ ok: true });
+    api.getActivityLogs.mockResolvedValue({ logs: [
+      { id: "a1", event_type: "note", details: { note: "Testing First Time" }, timestamp: new Date().toISOString() },
+    ] });
+    await screen.findByRole("heading", { name: "Prospect Engagement" });
+    fireEvent.click(screen.getByRole("tab", { name: /^Prospects$/ }));
+    fireEvent.click(await screen.findByText("Ana"));
+    fireEvent.change(await screen.findByLabelText("Note"), { target: { value: "Testing First Time" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save note" }));
+    await waitFor(() => expect(api.addProspectNote).toHaveBeenCalledWith("c1", "p1", "Testing First Time"));
+    expect(await screen.findByText("Testing First Time", { selector: "p" })).toBeTruthy();
+    expect(screen.queryByText(/Invalid Date/)).toBeNull();
+    expect(screen.queryByText(/\{"note"/)).toBeNull();
+  });
+});
+
+describe("Engagement — test mode and brand kit", () => {
+  it("says test mode on every tab and labels a simulated send", async () => {
+    setup({ access: { enabled: true, sender_domains: ["outreach.example.com"], mock_sending: true },
+      messages: [{ id: "m9", prospect_id: "p1", channel: "email", status: "sent", provider: "mock", sent_at: "2026-09-20T00:00:00Z" }] });
+    expect(await screen.findByText(/Test mode — no email leaves this environment/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: /^Prospects$/ }));
+    expect(await screen.findByText("Test")).toBeTruthy();
+  });
+
+  it("reports which drafts a brand-kit save refreshed", async () => {
+    setup();
+    api.updateCampaign.mockResolvedValue({ ok: true, campaign, refresh: { refreshed: 2, backToReview: 1, keptEdited: 1 } });
+    await screen.findByRole("heading", { name: "Prospect Engagement" });
+    fireEvent.click(screen.getByRole("tab", { name: /Brand kit & sender/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Save brand kit/i }));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(
+      "Brand kit saved · 2 drafts updated · 1 approved message updated and back in review · 1 hand-edited draft left as written", undefined));
   });
 });
 
@@ -239,13 +284,23 @@ describe("Engagement — importing prospects", () => {
     return screen.getByLabelText("CSV to import");
   };
 
-  it("explains a pasted row with no header instead of importing nothing", async () => {
+  it("accepts a typed contact row with no header, and shows how its columns were read", async () => {
     setup();
+    api.addProspects.mockResolvedValue({ ok: true, prospects: [{ id: "n1" }], stats: { dupCount: 0, invalidCount: 0 } });
     const box = await openImport();
     fireEvent.change(box, { target: { value: "Alice,Smith,alice@acme.com,Acme,VP,+15551234567" } });
-    expect(screen.getByText(/looks like a contact, not a header row/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Import prospects" }).disabled).toBe(true);
-    expect(api.addProspects).not.toHaveBeenCalled();
+    expect(screen.getByText(/No header row — columns read as/)).toBeTruthy();
+    expect(screen.getByText("3. Email")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Import 1 prospect" }));
+    await waitFor(() => expect(api.addProspects).toHaveBeenCalledWith("c1", [
+      { first_name: "Alice", last_name: "Smith", email: "alice@acme.com", company: "Acme", role: "VP", phone: "+15551234567", source: "csv" },
+    ]));
+  });
+
+  it("offers a template download", async () => {
+    setup();
+    await openImport();
+    expect(screen.getByRole("button", { name: "Download template" })).toBeTruthy();
   });
 
   it("lists row problems by line, imports the good rows, and shows what happened", async () => {

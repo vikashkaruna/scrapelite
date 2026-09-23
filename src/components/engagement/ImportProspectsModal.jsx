@@ -14,7 +14,8 @@
 import { useMemo, useState } from "react";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
-import { analyzeProspectCsv, importOutcome, FIELD_LABELS } from "../../lib/engagement/prospectImport.js";
+import { analyzeProspectCsv, importOutcome, FIELD_LABELS, TEMPLATE_CSV } from "../../lib/engagement/prospectImport.js";
+import { downloadText } from "./ProspectsTable.jsx";
 
 const SAMPLE = "first_name,last_name,email,company,role,phone\nAlice,Smith,alice@acme.com,Acme Corp,VP Engineering,+15551234567\nBob,Jones,bob@apex.io,\"Apex, Inc.\",CEO,";
 
@@ -72,11 +73,32 @@ export default function ImportProspectsModal({ campaignName, onImport, onClose }
           </div>
         ) : (
           <form onSubmit={submit} className="eng-modal-form">
-            <p className="eng-modal-intro">
-              Paste CSV with a <strong>header row first</strong>, then one contact per line. Each contact needs an
-              email or a phone. Recognised columns: <code>first_name, last_name, name, email, phone, company, role, industry, country</code>.
-              Other columns are kept as custom fields. Wrap values that contain a comma in double quotes.
-            </p>
+            <div className="engx-import-intro">
+              <p className="eng-modal-intro">
+                Paste CSV — with a header row, or just contact rows (the columns are then read from what they contain).
+                Each contact needs an email or a phone. Wrap a value that contains a comma in double quotes.
+              </p>
+              <Button type="button" variant="secondary" size="sm" icon="download"
+                onClick={() => downloadText("datiq-prospects-template.csv", TEMPLATE_CSV)}>
+                Download template
+              </Button>
+            </div>
+            {analysis?.headerless && analysis.columns.length > 0 && (
+              <div className="engx-import-inferred" role="status">
+                <Icon name="info" size={14} />
+                <div>
+                  <strong>No header row — columns read as:</strong>
+                  <div className="eng-import-cols">
+                    {analysis.columns.map((c, i) => (
+                      <span key={i} className={`eng-import-col ${c.field ? "is-known" : "is-custom"}`}>
+                        {i + 1}. {c.field ? FIELD_LABELS[c.field] : "custom"}
+                      </span>
+                    ))}
+                  </div>
+                  <span className="engx-muted">If that's wrong, add a header line (or use the template).</span>
+                </div>
+              </div>
+            )}
             <div className="eng-form-group">
               <textarea
                 className="eng-textarea-field eng-import-textarea"
@@ -112,7 +134,7 @@ function ImportCheck({ analysis }) {
   const recognised = columns.filter((c) => c.field);
   return (
     <div className={`eng-import-check ${analysis.ok ? "" : "is-blocked"}`}>
-      {recognised.length > 0 && (
+      {recognised.length > 0 && !analysis.headerless && (
         <div className="eng-import-cols">
           {columns.map((c, i) => (
             <span key={`${c.header}-${i}`} className={`eng-import-col ${c.field ? "is-known" : "is-custom"}`} title={c.field ? `Read as ${FIELD_LABELS[c.field]}` : "Kept as a custom field"}>
