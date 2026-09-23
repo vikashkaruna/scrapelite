@@ -160,11 +160,30 @@ export async function getCampaign(campaignId, userId, env = process.env) {
   return { ok: true, campaign: data };
 }
 
+// Campaign names are unique per account, compared case- and space-insensitively.
+// Two campaigns called "Q4 outreach" are indistinguishable in the selector, and a
+// person who picks the wrong one sends to the wrong list. Checked here rather
+// than by a unique index: accounts already holding duplicates must still load,
+// and the loser of a simultaneous create gets a duplicate, not lost work.
+const nameKey = (n) => String(n || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+async function nameTaken(db, userId, name, exceptId = null) {
+  const { data, error } = await db.from("engagement_campaigns").select("id,name").eq("user_id", userId);
+  if (error) return { error: dbFail("campaignNameCheck", error) };
+  const key = nameKey(name);
+  const clash = (data || []).find((c) => c.id !== exceptId && nameKey(c.name) === key);
+  return clash
+    ? { error: { ok: false, status: 409, code: "campaign_name_taken", error: `A campaign called "${clash.name}" already exists. Choose a different name.` } }
+    : {};
+}
+
 export async function createCampaign(userId, payload = {}, env = process.env) {
   const { db, fail } = withDb(userId, env);
   if (fail) return fail;
   const v = campaignFields(payload, env, { partial: false });
   if (v.error) return v.error;
+  const taken = await nameTaken(db, userId, v.fields.name);
+  if (taken.error) return taken.error;
   const row = {
     user_id: userId,
     status: "active",
@@ -185,6 +204,10 @@ export async function updateCampaign(campaignId, userId, updates = {}, env = pro
   const v = campaignFields(plainObject(updates) || {}, env, { partial: true });
   if (v.error) return v.error;
   if (Object.keys(v.fields).length === 0) return getCampaign(campaignId, userId, env);
+  if ("name" in v.fields) {
+    const taken = await nameTaken(db, userId, v.fields.name, campaignId);
+    if (taken.error) return taken.error;
+  }
   const { data, error } = await db.from("engagement_campaigns").update(v.fields)
     .eq("id", campaignId).eq("user_id", userId).select("*");
   if (error) return error.code === "22P02" ? notFound("Campaign") : dbFail("updateCampaign", error);

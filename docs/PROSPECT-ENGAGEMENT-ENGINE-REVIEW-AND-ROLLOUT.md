@@ -61,17 +61,24 @@
 3. **Sending domain**: verify a dedicated domain/subdomain in a Resend account for outreach; list it in `ENGAGEMENT_SENDER_DOMAINS`.
 4. **Legal review** of the unsubscribe page copy and Terms/AUP for customer-sent outreach.
 
+### Beta feedback fixes (2026-09-23, after first preview test)
+
+- **Import said nothing.** A pasted contact line with no header became the header (zero rows); `First Name`/`Email Address` headers matched no field; a quoted `"Acme, Inc."` shifted columns; rows without email/phone were dropped uncounted — and the dialog closed after a toast either way. New pure `src/lib/engagement/prospectImport.js` (RFC 4180 parse, `,`/`;`/tab, header aliases, per-row reasons with line numbers, 1000-row cap) drives a live check in the dialog; Import is disabled with the reason shown until a row is importable, and the dialog stays open with a result panel (added / already in campaign / repeated in paste / rejected).
+- **Duplicate campaign names** are refused per account, case- and space-insensitively (`409 campaign_name_taken`), in the dialog and on the server. Deliberately NOT a unique index: accounts that already hold duplicates must still load.
+- **Campaigns are editable**: Edit → name, description, status; Delete behind a second confirmation that says opt-outs are kept (they are account-wide — pinned by test).
+- **The selector identifies one campaign**: same-named campaigns get their creation date (and a short id if the date is shared); non-active status is shown; a line under the header shows the selected campaign's description, date and prospect count.
+
 ### Environment variables (Phase 1, server-only, per Netlify context)
 
 | Var | Required | Notes |
 |---|---|---|
 | `ENGAGEMENT_ENABLED` | yes | `1` to turn the module on. Anything else = off (API 403, cron no-op). |
-| `ENGAGEMENT_ALLOWLIST` | yes | Comma-separated user ids, or `*`. Beta = DatIQ accounts only. |
+| `ENGAGEMENT_ALLOWLIST` | yes | Comma-separated **account ids (UUIDs)**, or a bare `*`. ⚠️ Emails are NOT matched (the 5-min send job has only the id), and `*` must stand alone — `*.BETA=…` is not a wildcard. A wrong value fails as "private beta" for everyone. |
 | `ENGAGEMENT_SENDER_DOMAINS` | yes | Domains verified in the outreach Resend account. |
 | `ENGAGEMENT_RESEND_API_KEY` | yes | **Not** `RESEND_API_KEY` — never falls back to it. |
 | `ENGAGEMENT_RESEND_WEBHOOK_SECRET` | yes | `whsec_…` from Resend's webhook settings. Unset = webhook 503. |
 | `ENGAGEMENT_UNSUBSCRIBE_SECRET` | yes | ≥16 random chars (`openssl rand -hex 32`). **Rotating it breaks every unsubscribe link already sent** — never rotate casually. |
-| `ENGAGEMENT_PUBLIC_URL` | recommended | Origin for unsubscribe links; falls back to Netlify's `URL`. |
+| `ENGAGEMENT_PUBLIC_URL` | recommended | Bare origin for unsubscribe links, e.g. `https://staging.datiq.app` — **no path, no `/**`, no `*.` glob**. Falls back to Netlify's `URL`, which on a deploy preview is the PRODUCTION site. |
 | `ENGAGEMENT_MOCK_SEND` | staging only | `1` = simulated sends (ignored in production). |
 | `ENGAGEMENT_SEND_BUDGET_MS` / `ENGAGEMENT_DISPATCH_BUDGET_MS` | optional | Defaults 7000 / 8000. |
 

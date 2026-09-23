@@ -11,6 +11,9 @@ import ProspectTimelineDrawer from "../components/engagement/ProspectTimelineDra
 import AnalyticsPanel from "../components/engagement/AnalyticsPanel.jsx";
 import BrandKitEditor from "../components/engagement/BrandKitEditor.jsx";
 import SendPanel from "../components/engagement/SendPanel.jsx";
+import CampaignModal from "../components/engagement/CampaignModal.jsx";
+import ImportProspectsModal from "../components/engagement/ImportProspectsModal.jsx";
+import { campaignOptionLabel } from "../lib/engagement/campaignLabels.js";
 import { useAuth } from "../components/AuthProvider.jsx";
 import * as api from "../lib/engagement/engagementClient.js";
 import { PROSPECT_STATUSES, STATUS_METADATA } from "../lib/engagement/stateMachine.js";
@@ -53,13 +56,10 @@ export default function Engagement() {
   const [activityLogs, setActivityLogs] = useState([]);
 
   // Modals
-  const [showNewCampaignModal, setShowNewCampaignModal] = useState(false);
-  const [newCampaignName, setNewCampaignName] = useState("");
-  const [newCampaignDesc, setNewCampaignDesc] = useState("");
+  // null | "create" | "edit"
+  const [campaignModal, setCampaignModal] = useState(null);
 
   const [showImportModal, setShowImportModal] = useState(false);
-  const [importCsvText, setImportCsvText] = useState("");
-  const [importing, setImporting] = useState(false);
 
   // Prospects Table controls
   const [prospectSearch, setProspectSearch] = useState("");
@@ -128,10 +128,15 @@ export default function Engagement() {
   useEffect(() => {
     if (location.state?.importProspects && selectedCampaignId) {
       const initial = location.state.importProspects;
-      api.addProspects(selectedCampaignId, initial).then(() => {
-        showToast(`Imported ${initial.length} contacts into campaign!`);
-        loadCampaignData(selectedCampaignId);
-      });
+      api.addProspects(selectedCampaignId, initial)
+        .then((res) => {
+          const added = res.prospects?.length || 0;
+          const dup = res.stats?.dupCount || 0;
+          const invalid = res.stats?.invalidCount || 0;
+          showToast([`Added ${added} of ${initial.length} contacts`, dup && `${dup} already in the campaign`, invalid && `${invalid} without an email or phone`].filter(Boolean).join(" · "));
+          loadCampaignData(selectedCampaignId);
+        })
+        .catch((e) => showToast(`Nothing was imported. ${e.message || ""}`.trim()));
     }
   }, [location.state, selectedCampaignId]);
 
@@ -306,61 +311,40 @@ export default function Engagement() {
     await loadCampaignData(selectedCampaignId);
   };
 
-  const handleCreateCampaign = async (e) => {
-    e.preventDefault();
-    if (!newCampaignName.trim()) return;
-    try {
-      const res = await api.createCampaign({
-        name: newCampaignName.trim(),
-        description: newCampaignDesc.trim(),
-      });
-      const newCmp = res.campaign || res;
-      setCampaigns((prev) => [newCmp, ...prev]);
-      setSelectedCampaignId(newCmp.id);
-      setShowNewCampaignModal(false);
-      setNewCampaignName("");
-      setNewCampaignDesc("");
-      showToast(`Campaign "${newCmp.name}" created!`);
-    } catch (e) {
-      showToast(e.message || "Failed to create campaign");
+  // Throws on failure so the dialog can show the server's reason next to the field.
+  const handleSaveCampaign = async (payload) => {
+    if (campaignModal === "edit" && selectedCampaignId) {
+      const res = await api.updateCampaign(selectedCampaignId, payload);
+      const updated = res.campaign;
+      setCampaigns((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      showToast(`Campaign "${updated.name}" saved`);
+    } else {
+      const res = await api.createCampaign(payload);
+      const created = res.campaign;
+      setCampaigns((prev) => [created, ...prev]);
+      setSelectedCampaignId(created.id);
+      showToast(`Campaign "${created.name}" created`);
     }
+    setCampaignModal(null);
   };
 
-  const handleImportCsv = async (e) => {
-    e.preventDefault();
-    if (!importCsvText.trim() || !selectedCampaignId) return;
-    setImporting(true);
-    try {
-      // Parse basic CSV: first_name,last_name,email,company,role,phone
-      const lines = importCsvText.trim().split("\n").map((l) => l.trim()).filter(Boolean);
-      if (lines.length === 0) throw new Error("CSV input is empty");
+  const handleDeleteCampaign = async () => {
+    if (!selectedCampaignId) return;
+    const gone = campaigns.find((c) => c.id === selectedCampaignId);
+    await api.deleteCampaign(selectedCampaignId);
+    const rest = campaigns.filter((c) => c.id !== selectedCampaignId);
+    setCampaigns(rest);
+    setSelectedCampaignId(rest[0]?.id || null);
+    if (!rest.length) { setProspects([]); setMessages([]); setAnalytics({}); }
+    setCampaignModal(null);
+    showToast(`Campaign "${gone?.name || ""}" deleted`);
+  };
 
-      const header = lines[0].toLowerCase().split(",").map((h) => h.trim());
-      const rows = [];
-      for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split(",").map((p) => p.trim());
-        const row = {};
-        header.forEach((h, idx) => {
-          row[h] = parts[idx] || "";
-        });
-        if (row.email || row.phone) {
-          rows.push(row);
-        }
-      }
-
-      const res = await api.addProspects(selectedCampaignId, rows);
-      const added = res.prospects?.length || 0;
-      const dup = res.stats?.dupCount || 0;
-      const invalid = res.stats?.invalidCount || 0;
-      showToast([`Imported ${added}`, dup && `${dup} duplicates skipped`, invalid && `${invalid} without an email or phone`].filter(Boolean).join(" · "));
-      setShowImportModal(false);
-      setImportCsvText("");
-      await loadCampaignData(selectedCampaignId);
-    } catch (e) {
-      showToast(e.message || "Import failed");
-    } finally {
-      setImporting(false);
-    }
+  // Returns the server's answer for the dialog's result panel; throws on failure.
+  const handleImportRows = async (rows) => {
+    const res = await api.addProspects(selectedCampaignId, rows);
+    await loadCampaignData(selectedCampaignId);
+    return res;
   };
 
   const handleSaveBrandKit = async (brandKit) => {
@@ -464,8 +448,8 @@ export default function Engagement() {
               onChange={(e) => setSelectedCampaignId(e.target.value)}
             >
               {campaigns.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+                <option key={c.id} value={c.id} title={c.description || undefined}>
+                  {campaignOptionLabel(c, campaigns)}
                 </option>
               ))}
             </select>
@@ -474,8 +458,20 @@ export default function Engagement() {
           <Button
             variant="ghost"
             size="sm"
+            icon="pencil"
+            onClick={() => setCampaignModal("edit")}
+            disabled={!activeCampaign}
+            aria-label="Edit campaign"
+            title="Rename, describe, pause or delete this campaign"
+          >
+            Edit
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
             icon="plus"
-            onClick={() => setShowNewCampaignModal(true)}
+            onClick={() => setCampaignModal("create")}
           >
             New Campaign
           </Button>
@@ -485,6 +481,7 @@ export default function Engagement() {
             size="sm"
             icon="upload"
             onClick={() => setShowImportModal(true)}
+            disabled={!selectedCampaignId}
           >
             Import
           </Button>
@@ -500,6 +497,18 @@ export default function Engagement() {
           </Button>
         </div>
       </header>
+
+      {activeCampaign && (
+        <p className="eng-campaign-meta">
+          <strong>{activeCampaign.name}</strong>
+          {activeCampaign.description ? <> — {activeCampaign.description}</> : null}
+          <span className="eng-campaign-meta-sub">
+            {activeCampaign.created_at ? ` · created ${fmtDate(activeCampaign.created_at)}` : ""}
+            {activeCampaign.status && activeCampaign.status !== "active" ? ` · ${activeCampaign.status}` : ""}
+            {` · ${prospects.length} prospect${prospects.length === 1 ? "" : "s"}`}
+          </span>
+        </p>
+      )}
 
       {/* Navigation Tabs */}
       <nav className="eng-tabs-nav" aria-label="Engagement Views">
@@ -768,87 +777,24 @@ export default function Engagement() {
         consentBusy={consentBusy}
       />
 
-      {/* Create Campaign Modal */}
-      {showNewCampaignModal && (
-        <div className="eng-modal-backdrop" onClick={() => setShowNewCampaignModal(false)}>
-          <div className="eng-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="eng-modal-header">
-              <h3 className="eng-modal-title">Create Outreach Campaign</h3>
-              <button className="eng-modal-close" onClick={() => setShowNewCampaignModal(false)}>
-                <Icon name="x" size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleCreateCampaign} className="eng-modal-form">
-              <div className="eng-form-group">
-                <label className="eng-field-label">Campaign Name</label>
-                <input
-                  type="text"
-                  className="eng-input-field"
-                  placeholder="e.g. Q4 Healthcare SaaS Leaders"
-                  value={newCampaignName}
-                  onChange={(e) => setNewCampaignName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="eng-form-group">
-                <label className="eng-field-label">Campaign Intent & Description</label>
-                <textarea
-                  className="eng-textarea-field"
-                  rows={3}
-                  placeholder="Target audience, persona objectives, key signals..."
-                  value={newCampaignDesc}
-                  onChange={(e) => setNewCampaignDesc(e.target.value)}
-                />
-              </div>
-              <div className="eng-modal-actions">
-                <Button variant="ghost" onClick={() => setShowNewCampaignModal(false)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" type="submit" icon="check">
-                  Create Campaign
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {campaignModal && (
+        <CampaignModal
+          mode={campaignModal}
+          campaign={campaignModal === "edit" ? activeCampaign : null}
+          campaigns={campaigns}
+          prospectCount={prospects.length}
+          onSave={handleSaveCampaign}
+          onDelete={campaignModal === "edit" ? handleDeleteCampaign : undefined}
+          onClose={() => setCampaignModal(null)}
+        />
       )}
 
-      {/* Import Prospects Modal */}
-      {showImportModal && (
-        <div className="eng-modal-backdrop" onClick={() => setShowImportModal(false)}>
-          <div className="eng-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="eng-modal-header">
-              <h3 className="eng-modal-title">Import Prospects</h3>
-              <button className="eng-modal-close" onClick={() => setShowImportModal(false)}>
-                <Icon name="x" size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleImportCsv} className="eng-modal-form">
-              <p className="eng-modal-intro">
-                Paste CSV data including headers: <code>first_name,last_name,email,company,role,phone</code>.
-                Duplicates will automatically be matched and merged.
-              </p>
-              <div className="eng-form-group">
-                <textarea
-                  className="eng-textarea-field"
-                  rows={8}
-                  placeholder="first_name,last_name,email,company,role,phone&#10;Alice,Smith,alice@acme.com,Acme Corp,VP Engineering,+15551234567&#10;Bob,Jones,bob@apex.io,Apex,CEO,+15559876543"
-                  value={importCsvText}
-                  onChange={(e) => setImportCsvText(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="eng-modal-actions">
-                <Button variant="ghost" onClick={() => setShowImportModal(false)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" type="submit" disabled={importing} icon="upload">
-                  {importing ? "Importing..." : "Import Prospects"}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {showImportModal && selectedCampaignId && (
+        <ImportProspectsModal
+          campaignName={activeCampaign?.name}
+          onImport={handleImportRows}
+          onClose={() => setShowImportModal(false)}
+        />
       )}
     </div>
   );

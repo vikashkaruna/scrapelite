@@ -28,6 +28,7 @@ const api = vi.hoisted(() => ({
   updateCampaign: vi.fn(),
   addProspects: vi.fn(),
   createCampaign: vi.fn(),
+  deleteCampaign: vi.fn(),
   approveMessage: vi.fn(),
   rejectMessage: vi.fn(),
   retryMessage: vi.fn(),
@@ -173,5 +174,105 @@ describe("Engagement — per-channel consent", () => {
     expect(await within(panel).findByText(/Unsubscribed/)).toBeTruthy();
     expect(within(panel).getByText("Recipient's choice")).toBeTruthy();
     expect(within(panel).queryByRole("button", { name: "Remove opt-out" })).toBeNull();
+  });
+});
+
+describe("Engagement — campaigns", () => {
+  it("tells two same-named campaigns apart in the selector", async () => {
+    setup();
+    const twin = { ...campaign, id: "c2", created_at: "2026-09-10T00:00:00Z" };
+    api.listCampaigns.mockResolvedValue({ campaigns: [{ ...campaign, created_at: "2026-09-01T00:00:00Z" }, twin] });
+    await screen.findByRole("heading", { name: "Prospect Engagement" });
+    const options = await screen.findAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual(["Q4 outreach · created Sep 1, 2026", "Q4 outreach · created Sep 10, 2026"]);
+  });
+
+  it("refuses a duplicate name before sending anything", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "Prospect Engagement" });
+    fireEvent.click(screen.getByRole("button", { name: /New Campaign/i }));
+    fireEvent.change(screen.getByLabelText("Campaign name"), { target: { value: "q4 OUTREACH" } });
+    expect(screen.getByText(/already exists/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create campaign" }).disabled).toBe(true);
+    expect(api.createCampaign).not.toHaveBeenCalled();
+  });
+
+  it("renames the campaign from the Edit dialog", async () => {
+    setup();
+    api.updateCampaign.mockResolvedValue({ ok: true, campaign: { ...campaign, name: "Q4 EU", description: "EU only" } });
+    await screen.findByRole("heading", { name: "Prospect Engagement" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit campaign" }));
+    fireEvent.change(screen.getByLabelText("Campaign name"), { target: { value: "Q4 EU" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "EU only" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.updateCampaign).toHaveBeenCalledWith("c1", { name: "Q4 EU", description: "EU only", status: "active" }));
+    expect(await screen.findByRole("option", { name: "Q4 EU" })).toBeTruthy();
+  });
+
+  it("keeps a server refusal in the dialog", async () => {
+    setup();
+    api.createCampaign.mockRejectedValue(Object.assign(new Error('A campaign called "Other" already exists.'), { code: "campaign_name_taken" }));
+    await screen.findByRole("heading", { name: "Prospect Engagement" });
+    fireEvent.click(screen.getByRole("button", { name: /New Campaign/i }));
+    fireEvent.change(screen.getByLabelText("Campaign name"), { target: { value: "Other" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create campaign" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", 'A campaign called "Other" already exists.');
+  });
+
+  it("deletes only after a second, explicit confirmation", async () => {
+    setup();
+    api.deleteCampaign.mockResolvedValue({ ok: true });
+    await screen.findByRole("heading", { name: "Prospect Engagement" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit campaign" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(api.deleteCampaign).not.toHaveBeenCalled();
+    expect(screen.getByText(/Opt-outs are kept/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete campaign" }));
+    await waitFor(() => expect(api.deleteCampaign).toHaveBeenCalledWith("c1"));
+  });
+});
+
+describe("Engagement — importing prospects", () => {
+  const openImport = async () => {
+    await screen.findByRole("heading", { name: "Prospect Engagement" });
+    fireEvent.click(screen.getByRole("button", { name: /^Import$/ }));
+    return screen.getByLabelText("CSV to import");
+  };
+
+  it("explains a pasted row with no header instead of importing nothing", async () => {
+    setup();
+    const box = await openImport();
+    fireEvent.change(box, { target: { value: "Alice,Smith,alice@acme.com,Acme,VP,+15551234567" } });
+    expect(screen.getByText(/looks like a contact, not a header row/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Import prospects" }).disabled).toBe(true);
+    expect(api.addProspects).not.toHaveBeenCalled();
+  });
+
+  it("lists row problems by line, imports the good rows, and shows what happened", async () => {
+    setup();
+    api.addProspects.mockResolvedValue({ ok: true, prospects: [{ id: "n1" }], stats: { dupCount: 1, invalidCount: 0 } });
+    const box = await openImport();
+    fireEvent.change(box, { target: { value: "first_name,email\nAna,ana@buyer.test\nBo,bo@new.test\nCy,not-an-email" } });
+    expect(screen.getByText(/2/, { selector: "strong" })).toBeTruthy();
+    expect(screen.getByText(/"not-an-email" is not a valid email/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Import 2 prospects" }));
+    await waitFor(() => expect(api.addProspects).toHaveBeenCalledWith("c1", [
+      { first_name: "Ana", email: "ana@buyer.test", source: "csv" },
+      { first_name: "Bo", email: "bo@new.test", source: "csv" },
+    ]));
+    expect(await screen.findByText("Imported 1 of 3 rows.")).toBeTruthy();
+    const stats = screen.getByRole("status");
+    expect(within(stats).getByText("Already in this campaign (skipped)").nextSibling.textContent).toBe("1");
+    expect(within(stats).getByText(/Rejected/).nextSibling.textContent).toBe("1");
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+  });
+
+  it("says nothing was imported when the server refuses", async () => {
+    setup();
+    api.addProspects.mockRejectedValue(new Error("Import at most 1000 prospects at a time."));
+    const box = await openImport();
+    fireEvent.change(box, { target: { value: "email\nana@x.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Import 1 prospect" }));
+    expect(await screen.findByText(/Nothing was imported\. Import at most 1000/)).toBeTruthy();
   });
 });
