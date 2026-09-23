@@ -365,7 +365,8 @@ export default function Pricing() {
           <div className="eyebrow"><Icon name="zap" />Pricing</div>
           <h1 className="pricing-title">Simple, transparent pricing</h1>
           <p className="pricing-sub">
-            Start free. Upgrade when you need more extractions, team features, or automation.
+            Start free. Everything is priced in one unit — credits — so upgrading buys a bigger pool,
+            not another allowance to keep track of.
           </p>
 
           {discount.active && (

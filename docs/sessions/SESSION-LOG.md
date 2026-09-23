@@ -100,11 +100,25 @@ New `publicPricingCopy.test.js` checks **numbers** against `PLANS`, in both
 directions: each plan's real allowance must appear, and each retired extraction
 claim must not. **17 assertions confirmed RED** against the pre-fix copy.
 
+### 6. The copy guard had the blind spot it was written to prevent
+
+⚠️ **The first version of `publicPricingCopy.test.js` scanned three files and
+passed — while the Free plan card rendered *"25-extraction trial credit"* live
+on the deploy preview.** That string lives in the plan's own `features` array in
+`pricingConfig.js`, which the test did not scan. So did the hero line *"upgrade
+when you need more extractions"*.
+
+**A guard that enumerates its surfaces has the same blind spot as the
+hand-written lists this repo has been bitten by twice** (`STORE_EXPORTS`,
+`EVENT_TO_SOURCE`). `pricingConfig.js` now heads the list, and the retired-claim
+sweep also walks every plan's `features` directly. **Found by opening the deploy
+preview in a browser, not by any test.**
+
 ### Verified
 
-vitest **451 files / 7,228 passed / 0 failed** · db-verify **79 migrations /
+vitest **451 files / 7,231 passed / 0 failed** · db-verify **79 migrations /
 888 assertions / 0 failed** · referral **19** · workflows **56** · build clean ·
-prerender **32 rendered / 128 refs**. **30 guards confirmed RED first.**
+prerender **32 rendered / 128 refs**. **32 guards confirmed RED first.**
 
 ### Outstanding — operator actions I cannot perform
 

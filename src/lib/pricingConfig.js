@@ -83,7 +83,6 @@ export const PLANS = [
       { label: "Fork & edit workflow templates", included: false },
       { label: "Full AI features",              included: true },
       { label: "CSV export",                    included: true },
-      { label: "25-extraction trial credit",    included: true },
       { label: "Batch mode (up to 5 URLs)",     included: true },
       { label: "PDF export",                    included: false },
       { label: "Markdown / JSON export",        included: false },
