@@ -24,6 +24,7 @@ import { useSeo } from "../hooks/useSeo.js";
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient.js";
 import DangerZone from "../components/DangerZone.jsx";
 import DiscoverabilityStats from "../components/DiscoverabilityStats.jsx";
+import { creditPressure } from "../lib/credits/creditPressure.js";
 import PersonaUsage from "../components/PersonaUsage.jsx";
 import { fetchAccountState } from "../lib/accountStateService.js";
 
@@ -289,7 +290,7 @@ export default function Account() {
   });
   const navigate = useNavigate();
   const {
-    plan: ctxPlan, planId, usage, bonus, currency, rates,
+    plan: ctxPlan, planId, usage, bonus, credits, currency, rates,
     applyCoupon, redeemAdminGrant, adminGrantCoupon, removeCoupon, couponError, couponSuccess,
     subscription, initiatePayment, paymentLoading, paymentError, setPaymentError,
     paymentHistory, dbSubscription, hasPayment,
@@ -465,9 +466,22 @@ export default function Account() {
     return () => { cancelled = true; };
   }, []);
 
-  const totalExtractionLimit = plan.limits.extractions === Infinity
-    ? Infinity
-    : plan.limits.extractions + (bonus || 0);
+  // 🔴 THE HEADLINE METER IS CREDITS NOW. It used to read the extraction quota
+  // (`plan.limits.extractions` plus the bonus counter), which nothing enforces
+  // after the switch — so an account with 100 credits saw "10 / 10 used" and an
+  // account that bought a credit pack saw the bar stay full. `pressure.known`
+  // is false for a guest, an account never granted credits, or an unreadable
+  // read, and in every one of those the meter is omitted rather than drawn at
+  // zero; see src/lib/credits/creditPressure.js.
+  const pressure = creditPressure({ credits, allowance: plan.limits.credits });
+  const creditAllowance = pressure.allowance ?? plan.limits.credits ?? null;
+  // Spent-this-period, derived: what the allowance holds minus what is left.
+  // ⚠️ Clamped at 0 because rollover can leave MORE than one month's allowance
+  // in the pool, and a negative "used" is not a smaller number, it is a wrong
+  // one. The bar is a month's worth; the count beside it is the truth.
+  const creditsUsed = pressure.known && creditAllowance
+    ? Math.max(0, creditAllowance - pressure.available)
+    : 0;
 
   const enrichmentEntries = Object.entries(usage?.enrichments ?? {});
   const totalEnrichments  = enrichmentEntries.reduce((s, [, v]) => s + v, 0);
@@ -808,10 +822,12 @@ export default function Account() {
                 <div className="apc-upgrade-hint">
                   <Icon name="trending-up" size={14} />
                   <span>
+                    {/* Sells the CREDIT pool, because that is what the upgrade
+                        actually buys. `limits.extractions` is kept on the plan
+                        for historical reads and is no longer enforced, so
+                        quoting it here would promise a ceiling nothing applies. */}
                     Upgrade to <strong>{nextTier.name}</strong> for{" "}
-                    {nextTier.limits.extractions === Infinity
-                      ? "unlimited extractions"
-                      : `${nextTier.limits.extractions.toLocaleString()} extractions / month`}
+                    {`${(nextTier.limits.credits ?? 0).toLocaleString()} credits / month`}
                   </span>
                   <Button variant="primary" size="sm"
                     onClick={() => handleUpgrade(nextTier.id)}
@@ -849,7 +865,7 @@ export default function Account() {
                 {user?.user_metadata?.bonus_extractions > 0 && (
                   <div className="my-offer-row">
                     <Icon name="zap" size={13} />
-                    <span>+{user.user_metadata.bonus_extractions} bonus extractions granted by admin</span>
+                    <span>+{user.user_metadata.bonus_extractions} bonus credits granted by admin</span>
                   </div>
                 )}
               </div>
@@ -891,7 +907,15 @@ export default function Account() {
                 Usage this month ({usage?.month ?? "—"})
               </div>
               <div className="usage-meters">
-                <UsageMeter label="Extractions used"   icon="zap"       used={usage?.extractions ?? 0} limit={totalExtractionLimit} />
+                {pressure.known && (
+                  <UsageMeter
+                    label="Credits used"
+                    icon="zap"
+                    used={creditsUsed}
+                    limit={creditAllowance ?? Infinity}
+                  />
+                )}
+                <UsageMeter label="Extractions run"   icon="file-text" used={usage?.extractions ?? 0} limit={Infinity} />
                 <UsageMeter label="Enrichments (total)" icon="sparkles"  used={totalEnrichments}        limit={plan.limits.enrichments_per_extraction === Infinity ? Infinity : null} />
                 {hasBatchAccess && (
                   <div className="usage-meter">
@@ -902,10 +926,25 @@ export default function Account() {
                   </div>
                 )}
               </div>
-              {bonus > 0 && (
+              {pressure.known && (
                 <div className="usage-bonus-note">
                   <Icon name="zap" size={13} />
-                  <span>+{bonus} bonus extractions from top-up bundle or coupon.</span>
+                  <span>
+                    {pressure.available.toLocaleString()} credit{pressure.available === 1 ? "" : "s"} available
+                    {creditAllowance ? ` · ${creditAllowance.toLocaleString()} renew each month` : ""}
+                    {pressure.remainingPct !== null && pressure.remainingPct > 1
+                      ? " (includes last month's rollover)"
+                      : ""}
+                  </span>
+                </div>
+              )}
+              {/* Pre-switch grants an account was given before credits existed.
+                  Shown so nobody loses sight of what they were promised; it is
+                  display-only and decides nothing (BillingProvider §bonus). */}
+              {bonus > 0 && (
+                <div className="usage-bonus-note">
+                  <Icon name="gift" size={13} />
+                  <span>+{bonus} bonus extractions granted before the switch to credits.</span>
                 </div>
               )}
               {!hasBatchAccess && (
@@ -942,15 +981,18 @@ export default function Account() {
             <div className="card card-pad account-stats">
               <div className="card-section-title"><Icon name="database" size={15} />Quick stats</div>
               <div className="astat-row">
-                <span className="astat-label">Extractions used</span>
+                <span className="astat-label">Extractions run</span>
                 <span className="astat-val">{(usage?.extractions ?? 0).toLocaleString()}</span>
               </div>
+              {/* "Credits remaining", not "remaining this month": rollover means
+                  the pool can outlive the month it was granted in, so the older
+                  label would have been wrong for exactly the accounts that
+                  carried a balance forward. Omitted when the balance is unknown
+                  — a dash is honest, a zero is not. */}
               <div className="astat-row">
-                <span className="astat-label">Remaining this month</span>
+                <span className="astat-label">Credits remaining</span>
                 <span className="astat-val">
-                  {totalExtractionLimit === Infinity
-                    ? "∞"
-                    : Math.max(0, totalExtractionLimit - (usage?.extractions ?? 0)).toLocaleString()}
+                  {pressure.known ? pressure.available.toLocaleString() : "—"}
                 </span>
               </div>
               <div className="astat-row">

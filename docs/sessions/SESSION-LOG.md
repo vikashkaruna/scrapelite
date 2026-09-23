@@ -18,6 +18,231 @@
 
 ---
 
+## 2026-09-23 (latest) — Repricing: one maintained table, INR set not converted, and a snapshot so it cannot cut a period already paid for
+
+**Branch:** `claude/credits-switch` (continues PR [#216](https://github.com/vikashkaruna/scrapelite/pull/216)).
+**Source:** the owner's pricing sheet, applied verbatim.
+
+### 1. The table is the product now
+
+Prices and limits come from a single `PLAN_TABLE` literal. The plan objects, the
+numeric line on every card, the comparison matrix and the **server's own charge
+table** are all derived from it, so a repricing is one edit.
+
+🔴 **INR IS A PRICE, NOT A CONVERSION.** `resolvePlanPrice` used to fall back to
+`convertPrice(plan.price_usd, rates, "INR")`. A converted price moves when the
+rate moves, so the figure on the card and the figure charged could differ
+between page load and checkout — and the server never converted anything, so the
+two sides were computing a price by different rules. Every plan carries a set
+INR price and the conversion path is gone.
+
+🔴 **THE SERVER'S TABLE WAS A HAND-WRITTEN MIRROR** carrying the comment *"MUST
+MIRROR src/lib/pricingConfig.js"* — a request, not a mechanism, and the one
+table where a divergence charges a customer something other than the number they
+were shown. Derived now.
+
+### 2. A bulk list is not a batch, and it was gated as one
+
+Both read `batch_max_urls`, which is fine while every plan sets them equal and
+wrong for Free — now batch 5 / bulk 0. So Free's 5-URL batch silently granted it
+a 5-row account list: a product that fetches, enriches **and** ICP-scores each
+row at 3 credits apiece. ⚠️ The new `bulk_list_max` falls back to
+`batch_max_urls`, because an operator override written before the split would
+otherwise be stripped of bulk enrichment entirely.
+
+### 3. `0080` — the grandfathering the repricing made necessary
+
+Developer went 500 → 250 batch and bulk. Without a snapshot a subscriber three
+weeks into a paid month would have found their list size halved, with no notice.
+There were no paid accounts that day, which is exactly why it was the right day.
+
+🔴 **THE RULE: while the paid period runs, nothing gets worse and improvements
+still reach you.** Price is the one charged; each limit is the better of bought
+and current. ⚠️ **A merge, not a substitution** — replacing it with
+`{...snap.limits}` fails two tests: a limit key added after the snapshot would
+read `undefined` for every grandfathered account (and a gate reading undefined
+refuses or allows everything, depending on the key), and a genuine increase
+would be withheld from the people still on the old plan.
+
+### 4. 🔴 An admin repricing Go never reached the server
+
+`SERVER_PLAN_IDS` was the hand-written list `["select","pro","business","agency"]`,
+so the "Generate SQL" panel produced config that never mentioned **go** or
+**developer**. The pricing page would show the new price immediately while the
+server went on charging the static one. **A literal array is how that happened**,
+and a test restating the array would not have caught it — the test asserts an
+editor exists for everything that has a price instead.
+
+Credit packs had no override layer and no editor at all. They do now, with
+`credits` editable beside the price, because that field is what `verify-payment`
+writes to the ledger.
+
+### 5. Two things only the browser found
+
+- **The matrix promised Free a bulk list the gate refuses.** Its "Bulk account
+  list" and "ICP scoring" rows still derived from `batch_max_urls`.
+- **The Batch Pack carried `hidden: true`** and so appeared on no screen, while
+  still being priced, purchasable by id and honoured by the gate — a product
+  nobody could find and everybody paid to maintain.
+
+### 6. The copy guard found a file I had already "finished"
+
+Widening it to `pricingConfig`, the FAQ page and the user guide turned up:
+`public/faq/index.html` carrying every pricing claim **twice** (visible answer
+and FAQPage JSON-LD, both stale); a **second, larger pricing table** at line 230
+of `llms-full.txt`; and a "25-extraction trial credit" still on `/use-cases`.
+
+⚠️ It now also asserts INR is **quoted**, not just set. Before this the copy said
+"INR pricing is available" and gave no rupee figures — which is what let them
+drift unnoticed. **A currency you set by hand and never print is a currency
+nobody proofreads.**
+
+### Two numbers worth a second look
+
+- **Agency's overage now equals its committed rate.** $200 / 100,000 = $0.002 a
+  credit, and `AGENCY_OVERAGE` is $2.00 / 1,000 — the same figure. Coherent as a
+  policy ("past fair use you keep paying the plan rate"), but the guard had to be
+  relaxed from `>` to `>=`. Below the committed rate would make overrunning
+  cheaper than the plan and is still refused.
+- **The large credit pack was ₹11,449 against a converted ₹8,722** — flagged on
+  review as the one number that did not follow the pattern, and **confirmed a
+  typo by the owner: it is ₹8,719.** At ₹11,449 the *biggest* pack was the
+  *dearest* per credit, so a customer buying 10,000 credits in rupees paid more
+  each than one buying 500. 🔴 **Nothing failed**: every other pack assertion is
+  per-pack, and the value ladder had only ever been checked across *plans*, and
+  only in USD. `pricingConfig.test.js` now asserts a bigger pack is cheaper per
+  credit **in both currencies**, confirmed RED against the typo.
+
+### Verified
+
+pre-push gate **9/9 green** · vitest **453 files / 7,284 passed** · db-verify
+**80 migrations / 896 assertions** · referral 19 · workflows 56 · readiness
+**5 pass / 2 warn / 0 fail** (gallery coverage, which can never clear from
+source). All 11 screenshots regenerated. Browser-verified at both currencies:
+every plan, pack and add-on figure matches the sheet.
+
+### Outstanding
+
+- 🔴 **Apply `0078`–`0080`** — [DB-MIGRATION-RUNBOOK.md §4g](../DB-MIGRATION-RUNBOOK.md).
+  Until `0080` lands, a repricing applies to everyone immediately.
+- 🔴 **Step C** — calibrate §1 against real provider invoices before the first
+  paid signup.
+
+---
+
+## 2026-09-23 (later) — Credits, steps E+F+G: the pre-flight was refusing runs the server allows
+
+**Branch:** `claude/credits-switch`, cut from `staging` @ `581ffb35` after the
+owner merged PR [#214](https://github.com/vikashkaruna/scrapelite/pull/214).
+
+**Owner decisions taken this session, both explicit:**
+1. **Ship the measured weights and recalibrate later.** §6 of the proposal puts
+   step C (calibration against real provider invoices) *before* the switch, and
+   its first "what NOT to do" is *"❌ Ship §1 un-calibrated."* Overridden on the
+   grounds that no customer pays today. 🔴 **That is a decision with an expiry:
+   re-run step C before the first paid signup.**
+2. **Ship all of it to staging, public copy included.** Staging is 401-gated
+   behind Netlify Edge Access, so the copy is not publicly readable yet.
+
+### 1. The one defect that was actively harmful
+
+🔴 **`creditEstimator` LIED IN THE BLOCKING DIRECTION.** It read
+`plan.limits.extractions` (free = 10) minus `usage.extractions` — a quota
+nothing enforces after the switch — so a free account holding a full 100-credit
+pool was told *"Blocked — 10 remaining, 12 needed"* for a batch the gate runs
+for 12 credits.
+
+**A pre-flight that refuses a run the gate would allow is worse than no
+pre-flight**, because the user never learns it was wrong: they never press the
+button, so the server never gets to disagree. The other four surfaces in this
+sweep only mislabelled a number.
+
+⚠️ **Its own tests were green throughout**, because they checked the estimator
+against itself. The new suite runs the real `can()` beside it over the same
+inputs and asserts the two reach the same verdict — **13 of its assertions were
+confirmed RED against the old module**, including the exact 12-URL case.
+
+### 2. A second signup grant that only the browser knew about
+
+🔴 **`trialCredit: 25`** had the client add 25 to `bonusExtractions` in
+localStorage on `SIGNED_IN`, while the server grants `FREE_GRANT` once under
+`grant_period = 'signup'` (idempotent by a partial unique index rather than by
+a flag in a store the user can edit). Every surface reading the local
+subscription showed a pool **25 larger than the ledger would spend from**.
+
+**That is the referral-loop defect exactly** — this repo's own history records a
+banner saying *"you have 25 bonus extractions"* on the same screen that refused
+to extract. Retired. ⚠️ **`applyTrialCredit` stays as a no-op** rather than
+being deleted: two live call sites invoke it, one of them inside an auth event
+handler, and a no-op is the smaller change.
+
+### 3. `CREDIT_PACKS` was imported by `/pricing` and rendered nowhere
+
+So the packs that replaced the removed Extractions Bundle were **purchasable by
+the server and reachable from no screen**. `verify-payment` already grants them
+keyed `pack:<paymentId>` with no expiry; only the page was missing.
+
+⚠️ **`purchaseBatchPack` does NOT write a pack's credits locally.** It refreshes
+the cached balance instead, and demo mode returns `creditsPending` rather than
+faking a number nothing backs — which would have re-created §2 the same day it
+was removed.
+
+### 4. `creditPressure()` — one answer to "is this account low?"
+
+Three surfaces (`UsageUpsellBanner`, `ReferralBanner`, Account's meter) each
+answered it separately against the retired quota, so on a free account they
+fired at the 8th extraction while the pool still held 92 credits, and kept
+firing after a pack refilled it.
+
+⚠️ **The load-bearing field is `known`, not the threshold.** A guest, an account
+never granted credits, and an unreadable read must all render **nothing** —
+`low` and `empty` are both `false` there, so a surface branching on `low` alone
+still cannot invent an outage. ⚠️ **`remainingPct` is not clamped at 1**:
+rollover means two grants can be live, and a full bar for an account holding
+twice the allowance would be its own small lie.
+
+### 5. The public pricing copy had rotted for the third time
+
+`llms.txt`, `llms-full.txt` and `pageSeo.js`'s JSON-LD all quoted extraction
+allowances. ⚠️ **The readiness audit's "pricing coherence" check compares plan
+NAMES, not numbers, and passed through every incident** — including the one this
+file already records, where the FAQ JSON-LD advertised eight wrong figures.
+
+New `publicPricingCopy.test.js` checks **numbers** against `PLANS`, in both
+directions: each plan's real allowance must appear, and each retired extraction
+claim must not. **17 assertions confirmed RED** against the pre-fix copy.
+
+### 6. The copy guard had the blind spot it was written to prevent
+
+⚠️ **The first version of `publicPricingCopy.test.js` scanned three files and
+passed — while the Free plan card rendered *"25-extraction trial credit"* live
+on the deploy preview.** That string lives in the plan's own `features` array in
+`pricingConfig.js`, which the test did not scan. So did the hero line *"upgrade
+when you need more extractions"*.
+
+**A guard that enumerates its surfaces has the same blind spot as the
+hand-written lists this repo has been bitten by twice** (`STORE_EXPORTS`,
+`EVENT_TO_SOURCE`). `pricingConfig.js` now heads the list, and the retired-claim
+sweep also walks every plan's `features` directly. **Found by opening the deploy
+preview in a browser, not by any test.**
+
+### Verified
+
+vitest **451 files / 7,231 passed / 0 failed** · db-verify **79 migrations /
+888 assertions / 0 failed** · referral **19** · workflows **56** · build clean ·
+prerender **32 rendered / 128 refs**. **32 guards confirmed RED first.**
+
+### Outstanding — operator actions I cannot perform
+
+- 🔴 **Apply `0074`–`0079`.** No Supabase credential is reachable from here:
+  `supabase projects list` hangs on an interactive login prompt, and there is no
+  stored connection string. **Nothing in the credit system enforces anything
+  until `0078` is applied**, and `0079` must follow it.
+- 🔴 **Step C — calibrate §1 against a month of real provider invoices**,
+  before the first paid signup.
+
+---
+
 ## 2026-09-23 — Unified credits (steps A+B+D), and entity approval was reporting a raw Postgres dump
 
 **Branches:** `claude/entity-approval-diagnosis` → PR [#212](https://github.com/vikashkaruna/scrapelite/pull/212) **MERGED** · `claude/credits-unification` → PR [#214](https://github.com/vikashkaruna/scrapelite/pull/214).

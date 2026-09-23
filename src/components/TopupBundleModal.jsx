@@ -50,6 +50,11 @@ export default function TopupBundleModal({
 
   const bonusUrls = (bundle.bonusBatchUrls || 0) * qty;
   const bonusExtr = (bundle.bonusExtractions || 0) * qty;
+  // A credit pack carries `credits`; an add-on does not. The two are granted in
+  // different places — the pack by verify-payment into the ledger, the add-on
+  // locally — so they are counted separately here rather than merged into one
+  // "bonus" line that would imply they behave the same way.
+  const packCredits = (Number(bundle.credits) || 0) * qty;
 
   // Get up to 2 plans with higher price_usd than current, excluding comingSoon
   const allPlans = getEffectivePlans();
@@ -146,7 +151,13 @@ export default function TopupBundleModal({
           {bonusExtr > 0 && (
             <div className="tbm-summary-bonus">
               <Icon name="zap" size={13} />
-              <span>+{bonusExtr.toLocaleString()} bonus extractions added to your plan</span>
+              <span>+{bonusExtr.toLocaleString()} bonus credits added to your plan</span>
+            </div>
+          )}
+          {packCredits > 0 && (
+            <div className="tbm-summary-bonus">
+              <Icon name="zap" size={13} />
+              <span>+{packCredits.toLocaleString()} credits — they never expire</span>
             </div>
           )}
         </div>

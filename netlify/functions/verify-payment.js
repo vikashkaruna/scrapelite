@@ -7,6 +7,14 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { activateFromInvoice, finalizeInvoice } from "./lib/invoiceService.js";
 import { sendInvoiceEmail } from "./lib/invoiceEmail.js";
+import { grant as grantCredits } from "./lib/creditMeter.js";
+import { CREDIT_PACK_BY_ID } from "../../src/lib/pricingConfig.js";
+
+/** How many credits buying this id grants. 0 for anything that is not a pack. */
+function creditsForPack(id) {
+  const n = Number(CREDIT_PACK_BY_ID[id]?.credits);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 export const handler = async (event) => {
   const headers = {
@@ -246,12 +254,43 @@ export const handler = async (event) => {
         );
       }
 
+      // ── A CREDIT PACK GRANTS CREDITS, SERVER-SIDE, ONCE ────────────────
+      //
+      // 🔴 KEYED ON THE PAYMENT ID, NOT THE PACK. credit_grant is idempotent
+      // by a unique index on (user_id, grant_period), so `pack:<paymentId>`
+      // means this payment can be verified twice — by a retried client call
+      // and again by the webhook — and grants exactly once. Keying it on the
+      // pack id would instead let a customer buy the same pack only once,
+      // ever, which is the opposite mistake and just as silent.
+      //
+      // ⚠️ NO EXPIRY. A pack was BOUGHT, not allowanced; putting the monthly
+      // rollover expiry on it would delete something the customer paid for.
+      const packCredits = creditsForPack(resolvedPlanId);
+      let packGranted = null;
+      if (packCredits > 0 && sessionId) {
+        const res = await grantCredits(sessionId, packCredits, {
+          period: `pack:${paymentId}`,
+          expiresAt: null,
+          meta: { kind: "pack", pack: resolvedPlanId, payment_id: paymentId },
+        });
+        packGranted = res?.ok ? packCredits : (res?.reason === "already_granted" ? 0 : null);
+        if (packGranted === null) {
+          // The money is captured and the credits are not. Say so loudly —
+          // this is the one failure a customer cannot discover for themselves.
+          console.error(
+            `[verify-payment] PAID BUT NOT CREDITED: ${packCredits} credits for `
+            + `${resolvedPlanId}, user=${sessionId}, payment=${paymentId}, reason=${res?.reason}`,
+          );
+        }
+      }
+
       console.log(`[verify-payment/razorpay] ✓ Verified & captured: orderId=${orderId} paymentId=${paymentId} amount=${order.amount}${order.currency} planId=${resolvedPlanId}`);
       return {
         statusCode: 200, headers,
         body: JSON.stringify({
           verified:      true,
           planId:        resolvedPlanId,
+          creditsGranted: packCredits > 0 ? packGranted : undefined,
           sessionId:     sessionId,
           paymentId:     paymentId,
           orderId:       orderId,

@@ -2,6 +2,7 @@
 // in localStorage. BillingProvider syncs to Supabase via usageRepo.js.
 import { getEffectivePlanById, getEffectivePlanMap } from "./pricingOverrides.js";
 import { activeEntitlement, can } from "./entitlementModel.js";
+import { getCachedCredits } from "./credits/creditClient.js";
 
 const USAGE_KEY = "datiq.usage";
 const SUB_KEY   = "datiq.subscription";
@@ -20,30 +21,29 @@ export function readSubscription() {
 export function writeSubscription(sub) { lsSet(SUB_KEY, sub); }
 
 /**
- * Apply the once-only signup trial credit for a given plan.
+ * 🔴 RETIRED, AND KEPT AS A NO-OP ON PURPOSE. DO NOT RE-IMPLEMENT IT.
  *
- * Reads `getEffectivePlanById(planId).trialCredit ?? 0` — only the Free plan
- * currently defines a credit (25 extractions per the Q2 2026-07-15 decision).
- * The grant is persisted in `datiq.subscription` as `trialCreditAppliedAt` so
- * subsequent calls (e.g. a re-render or a fallback path) are idempotent.
+ * This used to be FR-Z-02 (Q2 2026-07-15): on signup the BROWSER granted itself
+ * the Free plan's `trialCredit` (25) by adding it to `bonusExtractions` in
+ * localStorage. After the credit switch the signup grant belongs to the server
+ * — `creditMeter.ensureAllowance` writes FREE_GRANT credits once per account
+ * under `grant_period = 'signup'`, which is idempotent by a partial unique
+ * index rather than by a flag in a store the user can edit.
  *
- * @param {string} planId
- * @returns {{ applied: boolean, credit: number, sub: object }}
+ * Leaving the client grant in place meant the two disagreed by 25: every
+ * surface reading the local subscription showed a pool the ledger would refuse
+ * to honour. That is the referral-loop defect exactly — a number nothing
+ * downstream reads, shown next to a refusal.
+ *
+ * It stays as a no-op because two live call sites invoke it (AuthProvider on
+ * SIGNED_IN, BillingProvider's `trackExtraction` fallback) and a no-op is a
+ * smaller, safer change than removing a call from an auth event handler. The
+ * shape is unchanged so callers need no branch.
+ *
+ * @returns {{ applied: false, credit: 0, sub: object }}
  */
-export function applyTrialCredit(planId) {
-  const plan = getEffectivePlanById(planId);
-  const credit = plan?.trialCredit ?? 0;
-  const sub = readSubscription();
-  if (credit <= 0 || sub.trialCreditAppliedAt) {
-    return { applied: false, credit: 0, sub };
-  }
-  const updated = {
-    ...sub,
-    trialCreditAppliedAt: new Date().toISOString(),
-    bonusExtractions: (sub.bonusExtractions || 0) + credit,
-  };
-  writeSubscription(updated);
-  return { applied: true, credit, sub: updated };
+export function applyTrialCredit(_planId) {
+  return { applied: false, credit: 0, sub: readSubscription() };
 }
 
 // ── Monthly usage ─────────────────────────────────────────────────────────────
@@ -168,15 +168,36 @@ export function incrementContentGenerations(count = 1, personaId = null) {
 // in good standing". Lifecycle (suspended / deactivated) is applied one level
 // up, in BillingProvider, where the real entitlement row is available.
 //
-// Signatures and return shapes are unchanged so the ~28 existing call sites in
-// Preview / Dashboard / Batch / ExtractionProvider keep working untouched —
-// including canExport/canEmailExport returning a bare boolean.
+// Signatures and return shapes are unchanged, including canExport /
+// canEmailExport returning a bare boolean.
+//
+// ⚠️ The comment here used to claim "~28 existing call sites in Preview /
+// Dashboard / Batch / ExtractionProvider". There are none: the gates moved to
+// BillingProvider, which calls `can()` directly, and nobody updated this. It
+// is left corrected rather than deleted because the wrappers are still the
+// documented client-side API and now read the credit pool like everything
+// else.
 function planCtx(extra) {
-  return { planMap: getEffectivePlanMap(), usage: readUsage(), ...extra };
+  // ── THE CREDIT BALANCE, FROM THE UX CACHE ──────────────────────────────
+  // ⚠️ A HINT, NEVER AUTHORIZATION. This is the browser's 60s-cached copy so
+  // a button can be disabled without a round-trip; the server re-sums the
+  // ledger at the moment it charges. A stale or missing cache reads as
+  // "unknown", which entitlementModel deliberately lets through — refusing a
+  // paying customer because the browser had not fetched yet would be far
+  // worse than letting one request reach a server that will decide properly.
+  return {
+    planMap: getEffectivePlanMap(),
+    usage: readUsage(),
+    credits: getCachedCredits() || undefined,
+    ...extra,
+  };
 }
 
-export function canExtract(planId, bonusExtractions = 0) {
-  return can(activeEntitlement(planId), "extract", planCtx({ bonus: bonusExtractions }));
+// `bonusExtractions` is accepted and ignored: top-up extraction bundles are
+// retired (D15) and the pool is the budget. Kept in the signature so a caller
+// passing it does not become a TypeError on the day it stops meaning anything.
+export function canExtract(planId, _bonusExtractions = 0) {
+  return can(activeEntitlement(planId), "extract", planCtx());
 }
 
 export function canEnrich(planId, url) {
@@ -197,11 +218,7 @@ export function canBatch(planId, urlCount = 1, bonusBatchUrls = 0) {
   return can(activeEntitlement(planId), "batch", planCtx({ urlCount, bonusBatchUrls }));
 }
 
-// Does the account have enough monthly extraction quota to run a batch of N URLs?
-export function canExtractBatch(planId, urlCount, bonusExtractions = 0) {
-  return can(
-    activeEntitlement(planId),
-    "extract.batch",
-    planCtx({ urlCount, bonus: bonusExtractions }),
-  );
+// Does the account have enough CREDIT to run a batch of N URLs? One page = 1.
+export function canExtractBatch(planId, urlCount, _bonusExtractions = 0) {
+  return can(activeEntitlement(planId), "extract.batch", planCtx({ urlCount }));
 }

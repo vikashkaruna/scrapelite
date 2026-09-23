@@ -5,6 +5,7 @@
 const OVERRIDES_KEY       = "datiq.pricingOverrides";
 const GLOBAL_DISCOUNT_KEY = "datiq.globalDiscount";
 const TOPUP_OVERRIDES_KEY = "datiq.topupOverrides";
+const PACK_OVERRIDES_KEY  = "datiq.creditPackOverrides";
 
 function ls(k)      { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
 function lsSet(k,v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
@@ -34,7 +35,12 @@ export function resetAllOverrides() {
 
 // ── Effective plans ───────────────────────────────────────────────────────────
 // Merges default plan config with any admin overrides.
-import { PLANS as DEFAULT_PLANS, TOPUP_BUNDLES as DEFAULT_BUNDLES, PLAN_BY_ID as DEFAULT_BY_ID } from "./pricingConfig.js";
+import {
+  PLANS as DEFAULT_PLANS,
+  TOPUP_BUNDLES as DEFAULT_BUNDLES,
+  CREDIT_PACKS as DEFAULT_PACKS,
+  PLAN_BY_ID as DEFAULT_BY_ID,
+} from "./pricingConfig.js";
 
 export function getEffectivePlans() {
   const overrides = getPricingOverrides();
@@ -113,5 +119,38 @@ export function getEffectiveBundles() {
   return DEFAULT_BUNDLES.map((b) => {
     const ov = overrides[b.id];
     return ov ? { ...b, ...ov } : b;
+  });
+}
+
+// ── Credit-pack overrides ─────────────────────────────────────────────────────
+//
+// Its own key rather than sharing the bundle one, because the two are different
+// products: a bundle buys a CAPABILITY (a monitor slot, 50 URLs of list size)
+// and a pack buys CREDITS outright. They land in the same `bundles` row of the
+// server's `pricing_config` — that table is keyed by purchasable id and does
+// not care about the distinction — but an admin editing "Batch Pack" and an
+// admin editing "2,000 credits" are doing different jobs and should not be able
+// to collide in one storage key.
+//
+// ⚠️ `credits` IS OVERRIDABLE AND MUST REACH THE SERVER TOO. It decides how
+// many credits a purchase GRANTS (verify-payment reads it), so an override that
+// changed the price on screen and left the grant behind would sell 2,000
+// credits and deliver 500.
+export function getCreditPackOverrides() {
+  return ls(PACK_OVERRIDES_KEY) ?? {};
+}
+export function setCreditPackOverride(packId, override) {
+  const all = getCreditPackOverrides();
+  all[packId] = { ...(all[packId] ?? {}), ...override };
+  lsSet(PACK_OVERRIDES_KEY, all);
+}
+export function resetCreditPackOverrides() {
+  try { localStorage.removeItem(PACK_OVERRIDES_KEY); } catch { /* private mode */ }
+}
+export function getEffectiveCreditPacks() {
+  const overrides = getCreditPackOverrides();
+  return DEFAULT_PACKS.map((p) => {
+    const ov = overrides[p.id];
+    return ov ? { ...p, ...ov } : p;
   });
 }

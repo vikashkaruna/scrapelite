@@ -166,6 +166,12 @@ export const apiClient = {
    */
   credits: () => request("/credits", "GET"),
 
+  /**
+   * Redeem a credit coupon. Server-side by necessity: the ledger sits behind
+   * the service key and the browser cannot — and must not — write to it.
+   */
+  redeemCredits: (code) => request("/credits", "POST", { code }),
+
   // ── AI (Anthropic Claude) ──────────────────────────────────────────────────
   /** Send a messages-API request. Payload: { model?, max_tokens?, messages }. */
   ai: (payload) => request("/ai", "POST", payload),

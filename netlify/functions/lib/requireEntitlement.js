@@ -27,8 +27,10 @@
 // overrides are per-operator-browser and must never influence a server-side
 // authorization decision.
 import { PLAN_BY_ID } from "../../../src/lib/pricingConfig.js";
+import { effectivePlanFor } from "../../../src/lib/planSnapshot.js";
 import { can, computeLifecycle, isAccountBlocked } from "../../../src/lib/entitlementModel.js";
 import { authenticateBearer, getUserScopedClient } from "./supabaseServerClient.js";
+import { creditsContextFor } from "./creditMeter.js";
 
 /** Service-key REST handle. Deliberately not the SDK — matches the house style. */
 /**
@@ -87,6 +89,25 @@ export async function fetchEntitlement(userId) {
  * @returns {{userId: string|null, guest: boolean, entitlement: object|null,
  *            degraded: boolean, planMap: object, supabase: object|null}}
  */
+/**
+ * The caller's network address, as the CDN reports it.
+ *
+ * ⚠️ Used ONLY for a coarse, hashed, 24-hour count of free grants. It is not
+ * stored as an address, not treated as an identity, and never used to link
+ * sessions — see freeTierPolicy's header on why there is no fingerprinting.
+ * x-nf-client-connection-ip is Netlify's own and is not client-settable;
+ * x-forwarded-for is a fallback and its FIRST hop is the only one worth
+ * reading, since anything after it can be appended by the caller.
+ */
+export function clientIp(event) {
+  const h = event?.headers || {};
+  const direct = h["x-nf-client-connection-ip"] || h["X-NF-Client-Connection-Ip"];
+  if (direct) return String(direct).trim();
+  const fwd = h["x-forwarded-for"] || h["X-Forwarded-For"];
+  if (!fwd) return null;
+  return String(fwd).split(",")[0].trim() || null;
+}
+
 export async function resolveRequestEntitlement(event) {
   const authHeader = bearerFromEvent(event);
   const base = { planMap: PLAN_BY_ID, supabase: null };
@@ -117,6 +138,32 @@ export async function resolveRequestEntitlement(event) {
   }
 
   const { row, degraded } = await fetchEntitlement(user.id);
+
+  // ── THE BALANCE TRAVELS WITH THE ENTITLEMENT ────────────────────────────
+  // Resolved HERE, and injected by checkCapability below, so every existing
+  // call site is credit-gated without being edited. Pricing per call site is
+  // how the three budgets this replaces drifted apart in the first place.
+  //
+  // ⚠️ It also ensures the allowance, which is why it is a write-capable call
+  // on a read path. The alternative was a cron, and this repo has an incident
+  // where four crons declared a schedule and were scheduled nowhere.
+  //
+  // ⚠️ A FAILURE HERE IS A DEGRADED BALANCE, NEVER A ZERO ONE.
+  // creditsContextFor returns `{degraded:true, available:null}`, which
+  // entitlementModel's creditGate reads through — the same asymmetry rule 1
+  // at the top of this file states for the entitlement row itself.
+  const credits = await creditsContextFor(user.id, row?.plan_id || "free", process.env, {
+    email: user.email || "",
+    // ⚠️ `null` where the field is absent, NOT false. freeGrantEligibility
+    // refuses on an explicit false and reads through on an unknown — an
+    // account resolved without its verification state must not be punished
+    // for our lookup.
+    emailVerified: user.email_confirmed_at ? true : (user.email_confirmed_at === null ? false : null),
+    ip: clientIp(event),
+  }).catch(() => ({
+    enforced: false, degraded: true, available: null, reason: "threw",
+  }));
+
   return {
     ...base,
     supabase,
@@ -124,6 +171,7 @@ export async function resolveRequestEntitlement(event) {
     guest: false,
     entitlement: row,
     degraded,
+    credits,
   };
 }
 
@@ -139,10 +187,41 @@ export function checkCapability(resolved, capability, ctx = {}) {
     // Signed in, no row yet → free plan, active. Plan limits still apply.
     return can({ plan_id: "free", status: "active" }, capability, {
       planMap: resolved.planMap,
+      credits: resolved.credits,
       ...ctx,
     });
   }
-  return can(resolved.entitlement, capability, { planMap: resolved.planMap, ...ctx });
+  // ⚠️ `credits` goes in BEFORE ...ctx so a caller can still override it —
+  // an audit that already knows its prompt count, say — but never has to
+  // remember to supply it.
+  return can(resolved.entitlement, capability, {
+    planMap: grandfatheredPlanMap(resolved.entitlement, resolved.planMap),
+    credits: resolved.credits,
+    ...ctx,
+  });
+}
+
+/**
+ * The plan map this account is actually entitled to.
+ *
+ * 🔴 A REPRICING MUST NOT CUT A PERIOD SOMEBODY ALREADY PAID FOR. The live
+ * table is what a new customer buys; the snapshot on the entitlement row is
+ * what this one did. `effectivePlanFor` takes the better of the two for every
+ * limit and the purchased price, and falls back to the live plan the moment
+ * the period ends — which is where a repricing takes effect.
+ *
+ * ⚠️ ONLY THE CALLER'S OWN PLAN IS SUBSTITUTED. The rest of the map is left
+ * live on purpose: `can()` reads other plans to name an upgrade target, and
+ * quoting a grandfathered customer's frozen limits as another plan's would
+ * describe a product nobody can buy.
+ */
+export function grandfatheredPlanMap(entitlement, planMap) {
+  const id = entitlement?.plan_id;
+  if (!id || !entitlement?.plan_snapshot) return planMap;
+  const live = planMap?.[id];
+  const effective = effectivePlanFor(entitlement, live);
+  if (!effective || effective === live) return planMap;
+  return { ...planMap, [id]: effective };
 }
 
 /** Convenience: resolve + check in one call. */

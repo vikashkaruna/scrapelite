@@ -229,8 +229,9 @@ GET    /v1/benchmarks/{id}
 | `prompt_sample_set_id` | string | no | A saved prompt set for citation sampling. |
 | `tags` | string[] | no | Up to 10 labels. |
 
-Returns an **Audit object**. Audits have their own monthly allowance, separate
-from extraction credits.
+Returns an **Audit object**. An audit costs **19 credits** from the same pool as
+every other operation, plus 2 for each citation prompt beyond the five included.
+There is no separate audit allowance.
 
 **Report formats**
 

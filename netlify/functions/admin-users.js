@@ -7,6 +7,7 @@
 // Falls back gracefully when SUPABASE_URL / SUPABASE_SERVICE_KEY are absent.
 import { bearerFromEvent, verifyAdminToken } from "./lib/adminToken.js";
 import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
+import { grant as grantCredits } from "./lib/creditMeter.js";
 
 const HEADERS = {
   "Content-Type": "application/json",
@@ -265,22 +266,34 @@ export const handler = async (event) => {
         return respond(410, { error: "Legacy admin discount assignment is disabled. Issue a complimentary plan grant instead." });
       }
 
-      // ── extend bonus extractions (default) ──
+      // ── grant credits (default) ──────────────────────────────────────────
+      // §4.6 — this used to add to `user_metadata.bonus_extractions`, one of
+      // three writers of a field the Extractions Bundle appeared to own. The
+      // bundle is retired (D15) and the quota that read that field is retired
+      // with it, so writing it now would record a grant nothing can spend.
+      //
+      // ⚠️ IT GOES TO THE LEDGER, NOT TO USER METADATA. A grant in auth
+      // metadata is invisible to the balance, unauditable, and editable by
+      // anything holding the service key without leaving a trace. The ledger
+      // is append-only and is what credit_available() actually sums.
       const { userId, bonus } = body;
       if (!userId || !Number.isFinite(Number(bonus)) || Number(bonus) < 1) {
         return respond(400, { error: "userId and bonus (≥1) required." });
       }
 
-      const au   = await sbFetch(db, `/auth/v1/admin/users/${userId}`);
-      const meta = au.raw_user_meta_data || {};
-      const newBonus = Number(meta.bonus_extractions || 0) + Number(bonus);
-
-      await sbFetch(db, `/auth/v1/admin/users/${userId}`, {
-        method: "PUT",
-        body: JSON.stringify({ user_metadata: { ...meta, bonus_extractions: newBonus } }),
+      // A distinct period key per grant, so an admin can top the same account
+      // up more than once — unlike a monthly allowance, which is once each.
+      const period = `admin:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+      const granted = await grantCredits(userId, Number(bonus), {
+        period,
+        expiresAt: null,   // an administrative grant was GIVEN, not allowanced
+        meta: { kind: "admin_grant" },
       });
+      if (!granted?.ok) {
+        return respond(502, { error: `Could not record the grant: ${granted?.reason || "unknown"}` });
+      }
 
-      return respond(200, { ok: true, userId, newBonus });
+      return respond(200, { ok: true, userId, granted: Number(bonus), unit: "credits", available: granted.available });
     } catch (err) {
       if (/coupon_code_already_exists|duplicate key|already exists/i.test(err.message)) {
         return respond(409, { error: "That grant coupon code is already assigned. Choose another code." });

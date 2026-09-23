@@ -38,9 +38,22 @@ describe("GET /api/credits", () => {
     expect(out).toMatchObject({ degraded: true, available: null, enforced: false });
   });
 
-  it("is read-only", async () => {
-    expect((await handler({ ...GET, httpMethod: "POST" })).statusCode).toBe(405);
+  // POST is coupon redemption (§4.6) — everything else is refused.
+  it("refuses methods other than GET and POST", async () => {
+    for (const m of ["PUT", "DELETE", "PATCH"]) {
+      expect((await handler({ ...GET, httpMethod: m })).statusCode).toBe(405);
+    }
     expect(available).not.toHaveBeenCalled();
+  });
+
+  // ⚠️ A credit grant has to attach to an account. An anonymous identity can
+  // be re-made without limit — the same reasoning scrape consent and
+  // referrals already hold.
+  it("refuses a guest redeeming a credit coupon", async () => {
+    authenticateBearer.mockResolvedValue({ ok: false });
+    const res = await handler({ ...GET, httpMethod: "POST", body: JSON.stringify({ code: "X" }) });
+    expect(res.statusCode).toBe(401);
+    expect(body(res).code).toBe("SIGN_IN_REQUIRED");
   });
 
   it("is never cached — a balance is not a static asset", async () => {

@@ -558,6 +558,67 @@ Approve. Check the two queries above.
 
 ---
 
+## 4g. `0078`–`0080` — credits, referral rewards, and the plan snapshot
+
+Apply in order. `0079` depends on `0078`'s `credit_grant`, and `0080` is
+independent but belongs with them.
+
+| # | What it adds | If it is missing |
+|---|---|---|
+| `0078` | `credit_ledger.expires_at` / `.grant_period`, `credit_available()`, `credit_status()`, `credit_grant()`, `credit_grant_monthly()`, `enrichment_jobs.paused_reason` | **The whole credit system is inert.** `credit_status()` returns `PGRST202`, `available()` reports `degraded`, and every gate fails OPEN. Nothing is charged and nothing is refused. |
+| `0079` | Replaces `redeem_referral_code` so a referral pays both sides in CREDITS | A referral writes `bonus_extractions`, which no gate reads any more — the programme rewards nobody, and nothing errors. |
+| `0080` | `entitlements.plan_snapshot` + `snapshot_at` | A repricing applies to everyone the moment it deploys, including mid-period subscribers. Harmless while nobody pays; not harmless after the first paid signup. |
+
+### Apply
+
+```bash
+PROD_SUPABASE_DB_URL=... npm run migrate:prod -- --include=0078,0079,0080
+```
+
+### Verify
+
+```sql
+-- 0078: the four functions exist and are service-key only.
+select p.proname, pg_get_function_identity_arguments(p.oid) args
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.proname in ('credit_available','credit_status','credit_grant','credit_grant_monthly')
+ order by 1;
+-- Expect 4 rows.
+
+-- 0079: ONE redeem_referral_code, not two. 🔴 THE FAILURE MODE THAT HAS NO
+-- SYMPTOM: `create or replace` with a different parameter ORDER creates a
+-- SECOND function and leaves the original live, so the old one goes on writing
+-- bonus_extractions and nothing anywhere reports a problem.
+select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname='public' and p.proname='redeem_referral_code';
+-- Expect exactly 1.
+
+-- 0080: both columns, and STILL exactly one policy on entitlements.
+select column_name from information_schema.columns
+ where table_schema='public' and table_name='entitlements'
+   and column_name in ('plan_snapshot','snapshot_at');
+-- Expect 2 rows.
+
+select cmd, count(*) from pg_policies
+ where schemaname='public' and tablename='entitlements' group by cmd;
+-- Expect one row: SELECT | 1.
+-- ⚠️ A user who could write their own plan_snapshot could grant themselves any
+-- limit they liked. `entitlements` has had select-own and NO write policy for
+-- anyone since 0012, and 0080 deliberately adds neither.
+```
+
+### After applying `0078`, nothing changes until a grant lands
+
+`credit_status().enforced` is *has this account ever been granted credits*, and
+it is false everywhere on apply day — so `credit_available()` correctly reads 0
+for every account and **no gate refuses anything**. Enforcement arms itself
+per-account on the first grant. `CREDITS_ENFORCEMENT_DISABLED=1` is the
+break-glass, read from the environment so that, unlike a database flag, it
+cannot itself fail open.
+
+---
+
 ## 5. Database functions — no separate step
 
 There is nothing to run beyond the migrations. All **9 functions and 2 triggers**

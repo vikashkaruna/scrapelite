@@ -15,6 +15,7 @@ import {
   readUsage,
   writeSubscription,
 } from "./usageService.js";
+import { clearCreditsCache } from "./credits/creditClient.js";
 
 /**
  * U-18..25 — usageService is the metering layer that the billing gate
@@ -33,71 +34,106 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("canExtract (U-18)", () => {
-  it("Free plan: 0/10/100/101 extractions", () => {
+// ── U-18 — THE AXIS MOVED FROM A COUNTER TO A POOL ─────────────────────────
+// These tests used to drive `incrementExtractions()` against a per-plan
+// extraction cap. That cap is retired (D1): one page read costs one credit,
+// and an extraction and an audit now draw on the same budget, so a customer
+// can no longer be refused an audit while holding a month of unused
+// extractions. The counter still exists for DISPLAY and is asserted elsewhere
+// in this file; it simply no longer gates anything.
+describe("canExtract (U-18) — decided by the credit pool", () => {
+  // ⚠️ creditClient holds an in-process cache as well as the localStorage
+  // one, so writing the key alone would be ignored after the first read.
+  const withBalance = (available) => {
+    clearCreditsCache();
+    localStorage.setItem("datiq.credits", JSON.stringify({
+      status: { enforced: true, available }, fetchedAt: Date.now(),
+    }));
+  };
+
+  it("allows while the pool covers the page, and refuses when it cannot", () => {
+    withBalance(3);
     expect(canExtract("free").allowed).toBe(true);
-    expect(canExtract("free").remaining).toBe(10);
-
-    incrementExtractions(10);
+    withBalance(0);
     expect(canExtract("free").allowed).toBe(false);
-    expect(canExtract("free").remaining).toBe(0);
   });
 
-  it("Select plan: starts with 500 remaining", () => {
-    expect(canExtract("select").remaining).toBe(500);
-    incrementExtractions(50);
-    expect(canExtract("select").remaining).toBe(450);
+  it("reports what would be left after the run", () => {
+    withBalance(42);
+    expect(canExtract("select").remaining).toBe(41);
   });
 
-  it("bonusExtractions extends the limit (top-up bundle)", () => {
-    incrementExtractions(10);
-    const r = canExtract("free", 50);
-    expect(r.allowed).toBe(true);
-    expect(r.remaining).toBe(50);
+  // 🔴 THE FAIL-OPEN RULE, client side. A browser that has not fetched the
+  // balance yet must not disable the button — the server decides, and a UI
+  // that refuses on a cache miss refuses paying customers during a blip.
+  it("reads through when the browser has no cached balance", () => {
+    clearCreditsCache();
+    expect(canExtract("free").allowed).toBe(true);
   });
 
-  it("returns a reason string when blocked", () => {
-    incrementExtractions(10);
-    const r = canExtract("free");
-    expect(r.allowed).toBe(false);
-    expect(r.reason).toMatch(/Upgrade|top-up|bundle/i);
+  it("reads through for an account that is not on the credit system", () => {
+    clearCreditsCache();
+    localStorage.setItem("datiq.credits", JSON.stringify({
+      status: { enforced: false, available: 0 }, fetchedAt: Date.now(),
+    }));
+    expect(canExtract("free").allowed).toBe(true);
+  });
+
+  // ⚠️ The extraction counter no longer participates. Pinned, because the
+  // obvious "fix" when something looks off is to wire it back in.
+  it("ignores the extraction counter entirely", () => {
+    withBalance(5);
+    incrementExtractions(10_000);
+    expect(canExtract("free").allowed).toBe(true);
+  });
+
+  it("names the cost and the balance when it refuses", () => {
+    withBalance(0);
+    expect(canExtract("free").reason).toMatch(/costs 1 credit and you have 0/);
   });
 });
 
-describe("canExtract — Agency with Infinity limit (U-19)", () => {
-  it("returns remaining: Infinity", () => {
-    const r = canExtract("agency");
-    expect(r.allowed).toBe(true);
-    expect(r.remaining).toBe(Infinity);
-  });
-
-  it("stays allowed even after 1000 extractions", () => {
+// U-19 — Agency no longer has an "Infinity" extraction limit; it has the
+// largest pool (100,000) plus a published fair-use overage. An unlimited plan
+// was always a promise the metering could not keep: the provider bills us for
+// every call whatever the plan says.
+describe("canExtract — Agency draws on the largest pool (U-19)", () => {
+  it("is allowed with a large balance and unaffected by the counter", () => {
+    clearCreditsCache();
+    localStorage.setItem("datiq.credits", JSON.stringify({
+      status: { enforced: true, available: 100_000 }, fetchedAt: Date.now(),
+    }));
     incrementExtractions(1000);
     const r = canExtract("agency");
     expect(r.allowed).toBe(true);
-    expect(r.remaining).toBe(Infinity);
+    expect(r.remaining).toBe(99_999);
   });
 });
 
 describe("canExtract — month rollover (U-20)", () => {
+  // The DISPLAY counter still rolls monthly; it just no longer gates. The
+  // allowance itself now rolls over through the ledger (0078): a monthly
+  // grant expires at the end of the FOLLOWING month, which is what bounds the
+  // carry at one month's worth.
   it("new month starts at 0 (counter reset)", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-15T10:00:00.000Z"));
     incrementExtractions(10);
-    expect(canExtract("free").allowed).toBe(false);
+    expect(readUsage().extractions).toBe(10);
 
     // Roll into August
     vi.setSystemTime(new Date("2026-08-15T10:00:00.000Z"));
-    expect(canExtract("free").allowed).toBe(true);
-    expect(canExtract("free").remaining).toBe(10);
+    expect(readUsage().extractions).toBe(0);
   });
 });
 
 describe("canEnrich (U-21)", () => {
-  it("Free plan: enrichments_per_extraction is Infinity → always allowed", () => {
-    const r = canEnrich("free", "https://example.com/a");
-    expect(r.allowed).toBe(true);
-    expect(r.remaining).toBe(Infinity);
+  // `enrichments_per_extraction` is retired — it capped DEPTH per URL while
+  // the cost is per CALL, and every plan had it at Infinity anyway. What is
+  // left is the credit pool plus a runaway guard.
+  it("is allowed when the browser has no cached balance", () => {
+    clearCreditsCache();
+    expect(canEnrich("free", "https://example.com/a").allowed).toBe(true);
   });
 
   it("tracks per-URL enrichment count when a plan has a finite limit", () => {
@@ -166,20 +202,35 @@ describe("canBatch (U-23)", () => {
   });
 });
 
-describe("canExtractBatch (U-24)", () => {
-  it("Free plan: 5 extractions when 6 are used blocks with reason", () => {
-    incrementExtractions(6);
-    const r = canExtractBatch("free", 5, 0);
+describe("canExtractBatch (U-24) — priced by page count", () => {
+  const withBalance = (available) => {
+    clearCreditsCache();
+    localStorage.setItem("datiq.credits", JSON.stringify({
+      status: { enforced: true, available }, fetchedAt: Date.now(),
+    }));
+  };
+
+  it("refuses a batch the pool cannot cover, and names the cost", () => {
+    withBalance(4);
+    const r = canExtractBatch("free", 5);
     expect(r.allowed).toBe(false);
-    expect(r.reason).toMatch(/5 extractions|remaining/i);
+    expect(r.reason).toMatch(/5 credits/);
     expect(r.remaining).toBe(4);
   });
 
-  it("Select plan: enough quota allows (500 - 50 used = 450 remaining)", () => {
-    incrementExtractions(50);
-    const r = canExtractBatch("select", 50, 0);
+  it("allows one that fits, reporting what is left", () => {
+    withBalance(500);
+    const r = canExtractBatch("select", 50);
     expect(r.allowed).toBe(true);
     expect(r.remaining).toBe(450);
+  });
+
+  // The old signature took bonusExtractions from a top-up bundle. The bundle
+  // is retired; the argument is accepted and ignored rather than becoming a
+  // TypeError for any caller that still passes it.
+  it("ignores the retired bonusExtractions argument", () => {
+    withBalance(4);
+    expect(canExtractBatch("free", 5, 500).allowed).toBe(false);
   });
 });
 
@@ -224,33 +275,39 @@ describe("readSubscription / writeSubscription", () => {
   });
 });
 
-describe("applyTrialCredit (FR-Z-02 / Q2 2026-07-15)", () => {
-  it("Free plan → applies the 25-extraction credit once", async () => {
+describe("applyTrialCredit is RETIRED (FR-Z-02 → the server's signup grant)", () => {
+  // The signup grant moved to `creditMeter.ensureAllowance`, which writes
+  // FREE_GRANT credits once per account under grant_period 'signup'. What these
+  // assert is that the CLIENT no longer grants anything: a browser-side grant
+  // would read 25 higher than the ledger the server refuses runs against.
+  it("grants nothing on Free", async () => {
     const { applyTrialCredit } = await import("./usageService.js");
     const r = applyTrialCredit("free");
-    expect(r.applied).toBe(true);
-    expect(r.credit).toBe(25);
-    expect(r.sub.bonusExtractions).toBe(25);
-    expect(r.sub.trialCreditAppliedAt).toBeTruthy();
-  });
-
-  it("is idempotent — re-running after the grant is a no-op", async () => {
-    const { applyTrialCredit } = await import("./usageService.js");
-    applyTrialCredit("free");
-    const r2 = applyTrialCredit("free");
-    expect(r2.applied).toBe(false);
-    expect(r2.credit).toBe(0);
-    // bonusExtractions stayed at 25 (not 50).
-    expect(readSubscription().bonusExtractions).toBe(25);
-  });
-
-  it("Paid plans (no trialCredit defined) → no credit applied", async () => {
-    const { applyTrialCredit, writeSubscription } = await import("./usageService.js");
-    writeSubscription({ planId: "select", bonusExtractions: 0 });
-    const r = applyTrialCredit("select");
     expect(r.applied).toBe(false);
     expect(r.credit).toBe(0);
-    expect(r.sub.bonusExtractions).toBe(0);
+  });
+
+  it("writes NOTHING to localStorage — no bonus, no applied-at flag", async () => {
+    const { applyTrialCredit } = await import("./usageService.js");
+    applyTrialCredit("free");
+    const sub = readSubscription();
+    expect(sub.bonusExtractions || 0).toBe(0);
+    expect(sub.trialCreditAppliedAt).toBeUndefined();
+  });
+
+  it("leaves an existing bonus untouched rather than adding to it", async () => {
+    const { applyTrialCredit, writeSubscription } = await import("./usageService.js");
+    writeSubscription({ planId: "free", bonusExtractions: 40 });
+    const r = applyTrialCredit("free");
+    expect(r.applied).toBe(false);
+    expect(readSubscription().bonusExtractions).toBe(40);
+  });
+
+  it("no plan defines trialCredit any more", async () => {
+    const { PLANS } = await import("./pricingConfig.js");
+    for (const p of PLANS) {
+      expect(p.trialCredit, `${p.id} must not carry a client-side signup grant`).toBeUndefined();
+    }
   });
 });
 
@@ -281,20 +338,15 @@ describe("RC-02 — concurrent usage writes are atomic (race conditions)", () =>
     expect(readUsage().extractions).toBe(7);
   });
 
-  it("applyTrialCredit concurrent calls — first wins, rest are no-ops", async () => {
+  it("applyTrialCredit repeated in one tick grants nothing at all", async () => {
     const { applyTrialCredit, readSubscription } = await import("./usageService.js");
-    // Fire 5 concurrent calls (in the same tick). The first one applies
-    // the credit (25), the rest are no-ops because trialCreditAppliedAt
-    // is already set.
+    // The old version granted 25 on the first call and no-opped after. The
+    // no-op now covers the first call too, so there is no window in which the
+    // client's number exceeds the ledger's.
     const results = [];
-    for (let i = 0; i < 5; i++) {
-      results.push(applyTrialCredit("free"));
-    }
-    const applied = results.filter((r) => r.applied);
-    expect(applied.length).toBe(1);
-    expect(applied[0].credit).toBe(25);
-    // The persisted bonusExtractions is exactly 25.
-    expect(readSubscription().bonusExtractions).toBe(25);
+    for (let i = 0; i < 5; i++) results.push(applyTrialCredit("free"));
+    expect(results.filter((r) => r.applied).length).toBe(0);
+    expect(readSubscription().bonusExtractions || 0).toBe(0);
   });
 });
 

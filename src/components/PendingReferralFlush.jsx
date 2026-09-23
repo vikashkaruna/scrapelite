@@ -46,7 +46,7 @@ export default function PendingReferralFlush() {
         // reload — but without this the user would have to refresh before the
         // extractions they were just told about became usable.
         billing?.applyBonus?.(result.bonus);
-        showToast(`Welcome bonus: ${result.bonus} extractions added to your account.`, "gift");
+        showToast(`Welcome bonus: ${result.bonus} credits added to your account.`, "gift");
         return;
       }
       // "unavailable" is the only retryable verdict — the store could not
