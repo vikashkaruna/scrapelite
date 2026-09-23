@@ -74,8 +74,13 @@ const FEATURE_ROWS = [
   // discoverability rows below came to be missing in the first place.
   { key: "templates",      group: "Intelligence workflows", label: "Workflow template library",            render: () => fmtBool(true) },
   { key: "template_fork",  group: "Intelligence workflows", label: "Fork & edit templates",                render: (p) => fmtBool(p.limits?.template_duplicate) },
-  { key: "bulk_lists",     group: "Intelligence workflows", label: "Bulk account list (accounts per list)", render: (p) => fmtNum(p.limits?.batch_max_urls) },
-  { key: "icp",            group: "Intelligence workflows", label: "ICP scoring & review queue",           render: (p) => fmtBool((p.limits?.batch_max_urls || 0) > 0) },
+  // 🔴 `bulk_list_max`, NOT `batch_max_urls`. They were one key until the
+  // 2026-09-23 repricing split them, and Free is now batch 5 / bulk 0 — so
+  // reading the batch limit here would tell a Free visitor they get a 5-account
+  // bulk list and ICP scoring, both of which `bulk.enrich` refuses. The matrix
+  // promising what the server declines is the one thing it must never do.
+  { key: "bulk_lists",     group: "Intelligence workflows", label: "Bulk account list (accounts per list)", render: (p) => fmtNum(p.limits?.bulk_list_max ?? p.limits?.batch_max_urls) },
+  { key: "icp",            group: "Intelligence workflows", label: "ICP scoring & review queue",           render: (p) => fmtBool(((p.limits?.bulk_list_max ?? p.limits?.batch_max_urls) || 0) > 0) },
   { key: "watchlists",     group: "Intelligence workflows", label: "Competitor watchlists",                render: (p) => fmtNum(p.limits?.scheduled_monitoring) },
   { key: "signal_rules",   group: "Intelligence workflows", label: "Signal routing rules",                 render: (p) => fmtBool(p.limits?.integrations) },
   { key: "reports",        group: "Intelligence workflows", label: "Shareable reports",                    render: () => fmtBool(true) },

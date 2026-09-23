@@ -497,11 +497,20 @@ export const TOPUP_BUNDLES = [
     icon: "layers",
     price_usd: ADDON_PRICES["batch-pack"].usd,
     price_inr: ADDON_PRICES["batch-pack"].inr,
-    description: "Unlock batch mode for 50 URLs. Run multi-URL extractions with combined CSV/JSON/Markdown output. Stackable in multiples of 50.",
+    // ⚠️ SAME RULE AS THE MONITOR SLOT: this buys LIST SIZE, not the work. A
+    // bulk row still costs 3 credits to enrich and a batch page still costs 1,
+    // so copy that stopped at "unlock 50 URLs" would let a customer expect the
+    // runs included — the kind of thing discovered on an invoice.
+    description: "Raises your batch and bulk-list size by 50 rows. Stackable in multiples of 50. The rows themselves draw on your credit pool (3 credits per enriched row, 1 per page read).",
     unit: "per 50 URLs",
     stackable: true,
     bonusBatchUrls: 50,
-    hidden: true,           // hidden from the Pricing page top-up section
+    // 🔴 NO LONGER HIDDEN. It carried `hidden: true` and so appeared on no
+    // screen, while still being priced, still being purchasable by id and still
+    // being honoured by the gate — a product nobody could find and everybody
+    // paid to maintain. The 2026-09-23 sheet prices it as a capacity add-on
+    // alongside the monitor slot and the extra workspace, so it is sold like
+    // one.
   },
   {
     id: "scheduler-addon",
