@@ -1,17 +1,24 @@
 // AdminPricing.jsx — fully configurable plan pricing and limits editor.
 import { useState } from "react";
 import {
-  getEffectivePlans, getEffectiveBundles,
+  getEffectivePlans, getEffectiveBundles, getEffectiveCreditPacks,
   setPlanOverride, resetPlanOverride, resetAllOverrides,
   getGlobalDiscount, setGlobalDiscount,
-  setTopupOverride,
+  setTopupOverride, setCreditPackOverride, resetCreditPackOverrides,
 } from "../../lib/pricingOverrides.js";
 import { getCoupons } from "../../lib/adminService.js";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
 
 // Chargeable plan ids that the server (pricingSource.js) knows about.
-const SERVER_PLAN_IDS = ["select", "pro", "business", "agency"];
+// 🔴 DERIVED, NOT LISTED. This was the hand-written set
+// ["select","pro","business","agency"] — which omitted **go** and
+// **developer**, so an admin repricing Go got SQL that never mentioned it: the
+// pricing page would show the new price while the server went on charging the
+// static one. That is the single most expensive shape of drift this screen can
+// produce, and a literal array is how it happened. Every purchasable plan is
+// every plan with a price.
+const serverPlanIds = (plans) => plans.filter((p) => Number(p.price_usd) > 0).map((p) => p.id);
 
 const INF_LABEL = "Unlimited";
 
@@ -273,6 +280,82 @@ function BundleEditor({ bundle, onSave }) {
   );
 }
 
+/**
+ * Credit packs — price AND the number of credits the purchase grants.
+ *
+ * 🔴 `credits` IS EDITABLE AND MUST REACH THE SERVER. It is what
+ * `verify-payment` reads to decide how many credits the ledger is granted, so
+ * a screen that let an admin change the price and not the grant would sell
+ * "2,000 credits" at a new price and deliver whatever the server still held.
+ * `buildServerConfig` carries it into the generated SQL for the same reason.
+ *
+ * ⚠️ The per-credit rate is shown live because it is the number that actually
+ * matters: a pack must stay worse value than every plan, or nobody upgrades.
+ * pricingConfig.test.js asserts that property against the shipped table; this
+ * shows an operator the same thing before they save something that breaks it.
+ */
+function CreditPackEditor({ pack, onSave }) {
+  const [form, setForm] = useState({
+    price_usd: pack.price_usd,
+    price_inr: pack.price_inr ?? 0,
+    credits:   pack.credits,
+    name:      pack.name,
+  });
+  const [saved, setSaved] = useState(false);
+  const f = (k, v) => { setForm((p) => ({ ...p, [k]: v })); setSaved(false); };
+
+  const credits = Number(form.credits) || 0;
+  const perCredit = credits > 0 ? Number(form.price_usd) / credits : 0;
+
+  return (
+    <div className="bundle-editor-row card card-pad">
+      <div className="cf-row">
+        <div className="cf-field" style={{ flex: 2 }}>
+          <label>{pack.id} — Name</label>
+          <input type="text" value={form.name} onChange={(e) => f("name", e.target.value)} />
+        </div>
+        <div className="cf-field">
+          <label>Credits granted</label>
+          <input type="number" min="1" step="1" value={form.credits}
+            onChange={(e) => f("credits", e.target.value)} />
+        </div>
+        <div className="cf-field">
+          <label>Price (USD)</label>
+          <div className="price-input-wrap">
+            <span className="price-prefix">$</span>
+            <input type="number" min="0" step="0.01" value={form.price_usd}
+              onChange={(e) => f("price_usd", e.target.value)} />
+          </div>
+        </div>
+        <div className="cf-field">
+          <label>Price (INR, base)</label>
+          <div className="price-input-wrap">
+            <span className="price-prefix">₹</span>
+            <input type="number" min="0" step="1" value={form.price_inr}
+              onChange={(e) => f("price_inr", e.target.value)} />
+          </div>
+          {inrGst(form.price_inr) && <p className="cf-hint">{inrGst(form.price_inr)} charged</p>}
+        </div>
+      </div>
+      <p className="cf-hint">
+        ${perCredit.toFixed(4)} per credit · packs must stay dearer per credit than every plan,
+        or a customer is better off buying credits than upgrading.
+      </p>
+      <Button variant="secondary" size="sm" onClick={() => {
+        onSave(pack.id, {
+          price_usd: Number(form.price_usd),
+          price_inr: Number(form.price_inr),
+          credits:   Number(form.credits),
+          name:      form.name,
+        });
+        setSaved(true);
+      }}>
+        {saved ? "Saved" : "Save"}
+      </Button>
+    </div>
+  );
+}
+
 function GlobalDiscountEditor() {
   const [disc, setDisc]  = useState(() => getGlobalDiscount());
   const [saved, setSaved] = useState(false);
@@ -319,10 +402,11 @@ function GlobalDiscountEditor() {
 
 // Builds the operator-managed server config (mirrors netlify/functions/lib/pricingSource.js
 // shapes) from the current effective plans/bundles/coupons/global discount.
-function buildServerConfig(plans, bundles) {
+function buildServerConfig(plans, bundles, packs = []) {
+  const ids = new Set(serverPlanIds(plans));
   const planMap = {};
   for (const p of plans) {
-    if (!SERVER_PLAN_IDS.includes(p.id)) continue;
+    if (!ids.has(p.id)) continue;
     planMap[p.id] = {
       usd:        Number(p.price_usd)        || 0,
       usd_annual: Number(p.price_usd_annual) || 0,
@@ -330,9 +414,21 @@ function buildServerConfig(plans, bundles) {
       inr_annual: Number(p.price_inr_annual) || 0,
     };
   }
+  // Packs and capacity add-ons share one server row: `pricing_config.bundles` is
+  // keyed by purchasable id and does not care which kind a thing is.
+  // ⚠️ A pack carries `credits`, which decides how many credits the purchase
+  // GRANTS (verify-payment reads it). Omitting it here would sell 2,000 credits
+  // at the new price and deliver whatever the static table still says.
   const bundleMap = {};
   for (const b of bundles) {
     bundleMap[b.id] = { usd: Number(b.price_usd) || 0, inr: Number(b.price_inr) || 0 };
+  }
+  for (const p of packs) {
+    bundleMap[p.id] = {
+      usd: Number(p.price_usd) || 0,
+      inr: Number(p.price_inr) || 0,
+      credits: Number(p.credits) || 0,
+    };
   }
   const coupons = {};
   for (const c of getCoupons()) {
@@ -359,11 +455,11 @@ function toSql(config) {
   );
 }
 
-function ServerConfigPanel({ plans, bundles }) {
+function ServerConfigPanel({ plans, bundles, packs = [] }) {
   const [sql, setSql]     = useState("");
   const [copied, setCopied] = useState(false);
 
-  const generate = () => { setSql(toSql(buildServerConfig(plans, bundles))); setCopied(false); };
+  const generate = () => { setSql(toSql(buildServerConfig(plans, bundles, packs))); setCopied(false); };
   const copy = async () => {
     try { await navigator.clipboard.writeText(sql); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
   };
@@ -372,7 +468,7 @@ function ServerConfigPanel({ plans, bundles }) {
     <div className="card card-pad" style={{ marginTop: 28 }}>
       <div className="admin-chart-title"><Icon name="database" size={14} />Live-charge config (server source of truth)</div>
       <p className="admin-section-sub" style={{ marginTop: 6 }}>
-        Plan/bundle prices and limits above take effect on the <strong>pricing page</strong> immediately.
+        Plan, pack and add-on prices above take effect on the <strong>pricing page</strong> immediately.
         To make them apply to <strong>real charges</strong>, run this SQL in Supabase (table&nbsp;
         <code>pricing_config</code>). The server uses the static table until a row exists, then operator
         overrides prevail. Coupons and the global discount are included.
@@ -393,6 +489,7 @@ function ServerConfigPanel({ plans, bundles }) {
 export default function AdminPricing() {
   const [plans, setPlans]     = useState(() => getEffectivePlans());
   const [bundles, setBundles] = useState(() => getEffectiveBundles());
+  const [packs, setPacks]     = useState(() => getEffectiveCreditPacks());
   const [resetKey, setResetKey] = useState(0);
 
   const handleSave = (planId, overrides) => {
@@ -406,12 +503,18 @@ export default function AdminPricing() {
   const handleResetAll = () => {
     if (!window.confirm("Reset ALL plan pricing to defaults? This cannot be undone.")) return;
     resetAllOverrides();
+    resetCreditPackOverrides();
     setPlans(getEffectivePlans());
+    setPacks(getEffectiveCreditPacks());
     setResetKey((k) => k + 1);
   };
   const handleBundleSave = (bundleId, ov) => {
     setTopupOverride(bundleId, ov);
     setBundles(getEffectiveBundles());
+  };
+  const handlePackSave = (packId, ov) => {
+    setCreditPackOverride(packId, ov);
+    setPacks(getEffectiveCreditPacks());
   };
 
   return (
@@ -438,15 +541,32 @@ export default function AdminPricing() {
       </div>
 
       <div className="admin-chart-title" style={{ marginTop: 28, marginBottom: 12 }}>
-        <Icon name="zap" size={14} />Top-up bundle pricing
+        <Icon name="zap" size={14} />Credit pack pricing
       </div>
+      <p className="admin-section-sub" style={{ marginTop: -6, marginBottom: 12 }}>
+        Packs buy credits outright and never expire. Both the price and the number of credits
+        granted are editable — the grant is what <code>verify-payment</code> writes to the ledger.
+      </p>
+      <div className="plan-editors" key={`packs-${resetKey}`}>
+        {packs.map((p) => (
+          <CreditPackEditor key={p.id} pack={p} onSave={handlePackSave} />
+        ))}
+      </div>
+
+      <div className="admin-chart-title" style={{ marginTop: 28, marginBottom: 12 }}>
+        <Icon name="layers" size={14} />Capacity add-on pricing
+      </div>
+      <p className="admin-section-sub" style={{ marginTop: -6, marginBottom: 12 }}>
+        An add-on buys the right to do something; the doing still costs credits. Changing a price
+        here does not change what a run consumes.
+      </p>
       <div className="plan-editors">
         {bundles.map((b) => (
           <BundleEditor key={b.id} bundle={b} onSave={handleBundleSave} />
         ))}
       </div>
 
-      <ServerConfigPanel plans={plans} bundles={bundles} />
+      <ServerConfigPanel plans={plans} bundles={bundles} packs={packs} />
     </div>
   );
 }
