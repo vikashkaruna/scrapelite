@@ -7,6 +7,17 @@
 
 ---
 
+## Decisions (owner, 2026-09-23)
+
+| Question | Decision | Consequence for the plan |
+|---|---|---|
+| Audience | **Both — built customer-ready, opened to DatIQ only as a beta** | Phase 1 builds per-tenant sender identity, credit metering and plan gating, then gates *access* with `ENGAGEMENT_ALLOWLIST`. Legal/Terms work can run in parallel with the beta rather than blocking it. |
+| Channels | **Phased: Email first, then WhatsApp + SMS** | Phase 1 is email-only. Start Meta Business verification and India DLT registration **now** — they are the long pole for Phase 3. Telegram stays out of outbound. |
+| Source documents at repo root | **Removed from the branch; local copies kept** | Saved to `~/Downloads/DatIQ-source-docs/` (byte-identical, SHA-256 checked). `.gitignore` now blocks `/DatIQ *.md` and `/DatIQ *.pdf` at the root. They remain in this branch's *history* — squash-merge the branch so they never reach `staging`/`main`. |
+| Message generation | **LLM fills template slots** | Phase 2: approved skeletons per campaign intent; the model fills named slots from prospect fields only, through `runChain` (metered, budgeted, schema output). Guardrails run on the filled result. |
+
+---
+
 ## 0. What was done in this pass
 
 | Step | Result |
@@ -143,7 +154,7 @@ acceptable-use terms also restrict unsolicited/cold email — **confirm before r
 "unsubscribe" link is `${cta_url}/privacy`, not an unsubscribe, and there is no `List-Unsubscribe`
 header (required by Gmail/Yahoo bulk-sender rules since 2024).
 
-**F-9 · Two source documents are committed to the root of a public repository.**
+**F-9 · ✅ RESOLVED 2026-09-23 — Two source documents were committed to the root of a public repository.**
 `DatIQ - Prospect Engagement Engine.md` and `DatIQ  - Persona Specific Templates & Shareable Reports.pdf`
 (the latter unrelated to this feature). CLAUDE.md's standing rule is that source documents are not
 committed because the repo is public. They are already visible on the pushed branch.
@@ -186,7 +197,7 @@ dependency (templates, DLT, business verification) measured in weeks.
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| **0 · Hygiene** (½ day) | Remove the two root documents (F-9). Delete redundant redirects. | Repo root clean; decision on history rewrite recorded. |
+| **0 · Hygiene** | ✅ Root documents removed (F-9). Remaining: delete redundant redirects (F-29). Start Meta Business verification + DLT registration in parallel. | Repo root clean; squash-merge noted on the PR. |
 | **1 · Safe email MVP** | F-1, F-2, F-3, F-4, F-5 (Resend/Svix only), F-6, F-7, F-8, F-10, F-12, F-13, F-14, F-15, F-26, F-28. New migration **`0082`**: `engagement_suppressions`, `external_message_id` unique, message send-claim columns, prospect uniqueness. **Send button in the UI** behind a feature flag. Queue-based dispatch worker (cron, per-item claim). | Every P0 test RED→GREEN; two-tenant real-Postgres suite green; a staging campaign to Resend test addresses produces exactly one send per prospect, correct state, suppression on bounce/complaint/unsubscribe. |
 | **2 · Real personalisation + follow-ups** | LLM generation through `runChain` (metered, budgeted, schema output, template skeleton + slots, *no factual claims not in the prospect record*). Scheduled follow-up worker replaces the n8n state monitor. Per-variant/per-channel analytics. | Follow-up fires once after N days, never to replied/opted-out; generated copy passes guardrails and cites only supplied fields. |
 | **3 · WhatsApp + SMS** | Twilio Content Templates, Twilio signature verification, India DLT headers/templates for SMS, STOP handling per channel. | Template approved; sandbox + one real number round-trip; STOP suppresses across campaigns. |
