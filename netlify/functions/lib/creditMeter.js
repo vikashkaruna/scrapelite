@@ -31,6 +31,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   creditsFor, KIND_TO_REASON, KIND_TO_UNIT, CREDIT_WEIGHTS,
 } from "../../../src/lib/credits/creditWeights.js";
+import { PLAN_BY_ID } from "../../../src/lib/pricingConfig.js";
 
 function serviceDb(env = process.env) {
   const url = env.SUPABASE_URL;
@@ -370,3 +371,86 @@ export async function grantMonthly(userId, credits, period, env = process.env) {
 }
 
 export { CREDIT_WEIGHTS };
+
+// ── THE ALLOWANCE ───────────────────────────────────────────────────────────
+//
+// Granted LAZILY, on first access in a period, rather than by a cron.
+//
+// 🔴 THAT IS A DELIBERATE CHOICE, NOT A SHORTCUT. This repo has a documented
+// incident where four crons declared a schedule and were scheduled nowhere —
+// they simply never fired, with no build error and no runtime error, for
+// months. A monthly allowance that depends on a cron somebody remembered to
+// register in netlify.toml has that failure mode, and its symptom would be
+// customers quietly unable to work. A lazy grant cannot silently not-happen:
+// the first request that needs the balance creates it.
+//
+// ⚠️ IT IS SAFE TO CALL ON EVERY REQUEST because credit_grant() is idempotent
+// by a unique index, but it is memoised per container anyway so the common
+// case is zero round trips.
+//
+// ⚠️ ONE GRANT PER USER PER MONTH, keyed on the period ALONE and not on the
+// plan. Keying it `2026-09:pro` would top a customer up again on every plan
+// change, which is farmable; keying it on the period means an upgrade
+// mid-month does not add the new plan's pool until the month turns. That is
+// the less generous reading and the safe one — recorded here rather than left
+// to be discovered.
+const allowanceMemo = new Map();   // `${userId}:${period}` → true
+
+/** 'YYYY-MM' in UTC — the same key usageService and credit_balance use. */
+export function periodKey(now = Date.now()) {
+  const d = new Date(now);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Make sure this account has had its allowance for the current period.
+ *
+ * Free (D3) is a ONE-TIME lifetime grant with no expiry — it does not reset,
+ * so its key is `signup` and it can never be issued twice. Every paid plan
+ * gets a monthly grant carrying 0078's rollover expiry.
+ */
+export async function ensureAllowance(userId, planId, env = process.env, now = Date.now()) {
+  if (!userId) return { ok: false, reason: "no_user" };
+  const plan = PLAN_BY_ID[planId || "free"];
+  const credits = plan?.limits?.credits;
+  if (!Number.isFinite(credits) || credits <= 0) return { ok: false, reason: "no_pool" };
+
+  const lifetime = (planId || "free") === "free";
+  const period = lifetime ? "signup" : periodKey(now);
+  const memoKey = `${userId}:${period}`;
+  if (allowanceMemo.get(memoKey)) return { ok: true, memoised: true };
+
+  const res = lifetime
+    ? await grant(userId, credits, {
+        period,
+        expiresAt: null,   // 🔴 a lifetime pool. An expiry here would quietly
+                           // delete the taster from under someone who came
+                           // back a month later.
+        meta: { kind: "signup", plan: planId || "free" },
+      }, env)
+    : await grantMonthly(userId, credits, period, env);
+
+  // `already_granted` is a SUCCESS: the allowance exists, which is what the
+  // caller asked about. Collapsing it into a failure is how a retry loop
+  // starts.
+  if (res?.ok || res?.reason === "already_granted") {
+    allowanceMemo.set(memoKey, true);
+    return { ok: true, granted: Boolean(res?.ok), credits };
+  }
+  return { ok: false, reason: res?.reason || "grant_failed" };
+}
+
+/** Test seam — the memo is per container and otherwise invisible. */
+export function resetAllowanceMemo() { allowanceMemo.clear(); }
+
+/**
+ * The balance a gate should decide against, with the allowance ensured first.
+ * Returns the shape entitlementModel.creditGate() reads.
+ */
+export async function creditsContextFor(userId, planId, env = process.env) {
+  if (!userId) return { enforced: false, guest: true, available: 0 };
+  await ensureAllowance(userId, planId, env);
+  const status = await available(userId, env);
+  if (status.degraded) return { enforced: false, degraded: true, available: null, reason: status.reason };
+  return { enforced: status.enforced, available: status.available };
+}

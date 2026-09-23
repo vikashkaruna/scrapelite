@@ -104,9 +104,12 @@ beforeEach(() => {
 
 // ═══ W14 · D9 — the entitlement gate the P2 layer shipped without ═══════════
 
-const asPlan = (planId) => entitlement.mockResolvedValue({
+const asPlan = (planId, credits = null) => entitlement.mockResolvedValue({
   userId: "user-1", guest: false, degraded: false,
   entitlement: { plan_id: planId, status: "active" }, planMap: PLAN_BY_ID,
+  // Omitted by default so plan-capability tests below are not accidentally
+  // answering a credit question instead of the one they are asking.
+  ...(credits ? { credits } : {}),
 });
 
 const P2_WRITES = [
@@ -282,18 +285,23 @@ describe("🔴 POST /recommendations/{id}/revalidate", () => {
     storeMock.claimRevalidation = vi.fn(async () => ({
       ok: true, claimed: true, recommendation: { ...REC, revalidation_requested_at: "t" },
     }));
-    storeMock.countAuditsThisMonth = vi.fn(async () => ({ count: 0, degraded: false }));
     const allowed = await call("POST", "recommendations/rec-1/revalidate", { body: {} });
     expect(allowed.statusCode).toBe(201);
 
-    // ...and the same plan with its month spent is refused, naming the quota.
+    // ...and the same plan with an empty pool is refused, naming the cost.
+    //
+    // ⚠️ THE AXIS MOVED, THE POINT DID NOT. This used to spend the audit ROW
+    // count; a revalidation is a re-audit, so it is still gated on whatever
+    // an audit costs — which is now the one credit pool rather than a second
+    // monthly budget that could disagree with it.
+    asPlan("free", { enforced: true, available: 2 });
     storeMock.getRecommendation = vi.fn(async () => REC);
     storeMock.claimRevalidation = vi.fn();
-    storeMock.countAuditsThisMonth = vi.fn(async () => ({ count: 3, degraded: false }));
     const refused = await call("POST", "recommendations/rec-1/revalidate", { body: {} });
     expect(refused.statusCode).toBe(402);
     expect(parse(refused).capability).toBe("audit.revalidate");
-    expect(parse(refused).code).toBe("QUOTA_EXCEEDED");
+    expect(parse(refused).code).toBe("INSUFFICIENT_CREDITS");
+    expect(parse(refused).error).toMatch(/19 credits/);
     expect(storeMock.claimRevalidation).not.toHaveBeenCalled();
   });
 });

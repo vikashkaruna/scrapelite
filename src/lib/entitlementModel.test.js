@@ -232,24 +232,63 @@ describe("unknown plan denies instead of falling back to Free", () => {
 });
 
 describe("active accounts fall through to plan limits", () => {
-  it("blocks a Free user at their monthly extraction cap", () => {
-    const r = can(activeEntitlement("free"), "extract", ctx({ usage: { extractions: 10 } }));
+  // ── THE SWITCH: ONE POOL, NOT THREE BUDGETS ─────────────────────────────
+  // `usage.extractions` and `L.extractions` are no longer consulted by
+  // anything. These tests used to pin the extraction cap and the top-up
+  // bundle that fed it; both are retired (D1, D15). What replaces them is a
+  // single credit balance, supplied by the caller.
+  it("blocks a Free user who has spent their pool", () => {
+    const r = can(activeEntitlement("free"), "extract",
+      ctx({ credits: { enforced: true, available: 0 } }));
     expect(r.allowed).toBe(false);
-    expect(r.code).toBe("QUOTA_EXCEEDED");
+    expect(r.code).toBe("INSUFFICIENT_CREDITS");
   });
 
-  it("counts top-up bonus extractions toward the cap", () => {
-    const r = can(
-      activeEntitlement("free"),
-      "extract",
-      ctx({ usage: { extractions: 10 }, bonus: 25 }),
-    );
-    expect(r.allowed).toBe(true);
-    expect(r.remaining).toBe(25);
+  // ⚠️ The message NAMES THE COST. "Not enough credits" is not actionable;
+  // "costs 19 and you have 4" tells them whether to buy or wait.
+  it("names the cost and the balance in the refusal", () => {
+    const r = can(activeEntitlement("free"), "audit",
+      ctx({ credits: { enforced: true, available: 4 } }));
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toMatch(/19 credits/);
+    expect(r.reason).toMatch(/you have 4/);
   });
 
-  it("treats an Infinity plan limit as unlimited", () => {
-    expect(can(activeEntitlement("agency"), "extract", ctx()).remaining).toBe(Infinity);
+  // 🔴 THE FAIL-OPEN RULE. A browser that has not fetched the balance, a
+  // Supabase blip, or an account never granted credits must all read through
+  // — refusing a paying customer because we could not look is far worse than
+  // letting one request past.
+  it("reads through when the balance is unknown, degraded, or not enforced", () => {
+    const stale = can(activeEntitlement("free"), "extract", ctx());
+    const degraded = can(activeEntitlement("free"), "extract",
+      ctx({ credits: { degraded: true, enforced: true, available: null } }));
+    const notOnSystem = can(activeEntitlement("free"), "extract",
+      ctx({ credits: { enforced: false, available: 0 } }));
+    for (const r of [stale, degraded, notOnSystem]) expect(r.allowed).toBe(true);
+  });
+
+  it("charges a batch by its page count", () => {
+    const ten = ctx({ urlCount: 10, credits: { enforced: true, available: 9 } });
+    expect(can(activeEntitlement("pro"), "extract.batch", ten).allowed).toBe(false);
+    const enough = ctx({ urlCount: 10, credits: { enforced: true, available: 10 } });
+    expect(can(activeEntitlement("pro"), "extract.batch", enough).allowed).toBe(true);
+  });
+
+  // The surcharge falls out of charging actuals: a ten-prompt run spends more
+  // AI calls, so it costs more, with no separate rule.
+  it("prices a Discoverability run by its prompt set", () => {
+    const bal = (n) => ctx({ credits: { enforced: true, available: n } });
+    expect(can(activeEntitlement("pro"), "audit", bal(19)).allowed).toBe(true);
+    expect(can(activeEntitlement("pro"), "audit", { ...bal(19), promptCount: 10 }).allowed).toBe(false);
+    expect(can(activeEntitlement("pro"), "audit", { ...bal(29), promptCount: 10 }).allowed).toBe(true);
+  });
+
+  // ⚠️ Benchmarks stay a PLAN capability. Letting them through on balance
+  // alone would sell Select's headline feature to anyone with the credits.
+  it("keeps competitive benchmarks behind the plan, not just the balance", () => {
+    const rich = ctx({ urlCount: 3, credits: { enforced: true, available: 10_000 } });
+    expect(can(activeEntitlement("free"), "audit.benchmark", rich).code).toBe("PLAN_REQUIRED");
+    expect(can(activeEntitlement("select"), "audit.benchmark", rich).allowed).toBe(true);
   });
 
   it("blocks batch on Free with an upgrade target", () => {

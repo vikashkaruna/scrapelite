@@ -29,6 +29,7 @@
 import { PLAN_BY_ID } from "../../../src/lib/pricingConfig.js";
 import { can, computeLifecycle, isAccountBlocked } from "../../../src/lib/entitlementModel.js";
 import { authenticateBearer, getUserScopedClient } from "./supabaseServerClient.js";
+import { creditsContextFor } from "./creditMeter.js";
 
 /** Service-key REST handle. Deliberately not the SDK — matches the house style. */
 /**
@@ -117,6 +118,24 @@ export async function resolveRequestEntitlement(event) {
   }
 
   const { row, degraded } = await fetchEntitlement(user.id);
+
+  // ── THE BALANCE TRAVELS WITH THE ENTITLEMENT ────────────────────────────
+  // Resolved HERE, and injected by checkCapability below, so every existing
+  // call site is credit-gated without being edited. Pricing per call site is
+  // how the three budgets this replaces drifted apart in the first place.
+  //
+  // ⚠️ It also ensures the allowance, which is why it is a write-capable call
+  // on a read path. The alternative was a cron, and this repo has an incident
+  // where four crons declared a schedule and were scheduled nowhere.
+  //
+  // ⚠️ A FAILURE HERE IS A DEGRADED BALANCE, NEVER A ZERO ONE.
+  // creditsContextFor returns `{degraded:true, available:null}`, which
+  // entitlementModel's creditGate reads through — the same asymmetry rule 1
+  // at the top of this file states for the entitlement row itself.
+  const credits = await creditsContextFor(user.id, row?.plan_id || "free").catch(() => ({
+    enforced: false, degraded: true, available: null, reason: "threw",
+  }));
+
   return {
     ...base,
     supabase,
@@ -124,6 +143,7 @@ export async function resolveRequestEntitlement(event) {
     guest: false,
     entitlement: row,
     degraded,
+    credits,
   };
 }
 
@@ -139,10 +159,18 @@ export function checkCapability(resolved, capability, ctx = {}) {
     // Signed in, no row yet → free plan, active. Plan limits still apply.
     return can({ plan_id: "free", status: "active" }, capability, {
       planMap: resolved.planMap,
+      credits: resolved.credits,
       ...ctx,
     });
   }
-  return can(resolved.entitlement, capability, { planMap: resolved.planMap, ...ctx });
+  // ⚠️ `credits` goes in BEFORE ...ctx so a caller can still override it —
+  // an audit that already knows its prompt count, say — but never has to
+  // remember to supply it.
+  return can(resolved.entitlement, capability, {
+    planMap: resolved.planMap,
+    credits: resolved.credits,
+    ...ctx,
+  });
 }
 
 /** Convenience: resolve + check in one call. */

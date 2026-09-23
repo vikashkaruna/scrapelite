@@ -6,6 +6,8 @@ import {
   PLANS,
   PLAN_BY_ID,
   TOPUP_BUNDLES,
+  CREDIT_PACKS,
+  AGENCY_OVERAGE,
 } from "./pricingConfig.js";
 
 /**
@@ -16,6 +18,11 @@ import {
  */
 
 const ALLOWED_LIMIT_KEYS = new Set([
+  // 🔴 THE ONE AXIS EVERYTHING IS SOLD ON. 1 credit = one page fetch; every
+  // other weight is a multiple of it (src/lib/credits/creditWeights.js).
+  // `extractions` and `audits` below are now DESCRIPTIVE — three public
+  // surfaces still print them — and are no longer what any gate reads.
+  "credits",
   "extractions",
   "enrichments_per_extraction",
   "exports",
@@ -218,5 +225,122 @@ describe("CURRENCIES + CURRENCY_META", () => {
     expect(Object.keys(CURRENCY_META).sort()).toEqual(["INR", "USD"]);
     expect(CURRENCY_META.USD.symbol).toBe("$");
     expect(CURRENCY_META.INR.symbol).toBe("₹");
+  });
+});
+
+// ── §4.1 — the monthly pools, pinned ────────────────────────────────────────
+// Moving one of these re-prices a plan. Pinning them means an "align the
+// numbers" pass fails the build with the reasoning attached rather than
+// silently changing what a customer gets, which is the same guard
+// creditWeights.test.js puts on the price list itself.
+describe("credit pools", () => {
+  it("every plan carries one, and it is a positive integer", () => {
+    for (const plan of PLANS) {
+      expect(Number.isInteger(plan.limits.credits), `${plan.id}`).toBe(true);
+      expect(plan.limits.credits, `${plan.id}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("holds the §4.1 table exactly", () => {
+    expect(Object.fromEntries(PLANS.map((p) => [p.id, p.limits.credits]))).toEqual({
+      free: 100, go: 750, select: 2500, pro: 6000,
+      developer: 28000, business: 40000, agency: 100000,
+    });
+  });
+
+  // 🔴 A ladder where a bigger plan costs MORE per credit is not a ladder —
+  // it makes upgrading worse value per unit, which is the opposite of what
+  // the tiers are for.
+  it("price per credit falls monotonically across the paid ladder", () => {
+    const paid = ["go", "select", "pro", "developer", "business", "agency"]
+      .map((id) => PLANS.find((p) => p.id === id))
+      .map((p) => p.price_usd / p.limits.credits);
+    for (let i = 1; i < paid.length; i++) {
+      expect(paid[i], `step ${i}`).toBeLessThanOrEqual(paid[i - 1]);
+    }
+  });
+
+  // ⚠️ Free reserves exactly one Discoverability run. A pool that could not
+  // cover it would make the action that demonstrates the product the one a
+  // free user cannot reach.
+  it("Free's pool covers a Discoverability run with room left over", () => {
+    const free = PLANS.find((p) => p.id === "free");
+    expect(free.limits.credits).toBeGreaterThan(19);
+  });
+});
+
+describe("top-ups sell capacity, never consumption", () => {
+  // D15 — it sold pure consumption at 14x Go's plan rate.
+  it("the Extractions Bundle is gone", () => {
+    expect(TOPUP_BUNDLES.find((b) => b.id === "extractions-bundle")).toBeUndefined();
+    expect(TOPUP_BUNDLES.some((b) => b.bonusExtractions)).toBe(false);
+  });
+
+  it("every remaining bundle is a structural cap, not spend", () => {
+    expect(TOPUP_BUNDLES.map((b) => b.id).sort())
+      .toEqual(["batch-pack", "scheduler-addon", "workspace-addon"]);
+  });
+
+  // D16 — the price is unchanged but it buys strictly less, so the copy must
+  // say so or a customer reasonably expects the runs included.
+  it("the Scheduled Monitor states that its runs cost credits", () => {
+    const sched = TOPUP_BUNDLES.find((b) => b.id === "scheduler-addon");
+    expect(sched.slotOnly).toBe(true);
+    expect(sched.description).toMatch(/credit/i);
+    expect(sched.price_usd).toBe(5);
+  });
+});
+
+describe("credit packs", () => {
+  it("ship the §4.4 table", () => {
+    expect(CREDIT_PACKS.map((p) => [p.credits, p.price_usd]))
+      .toEqual([[500, 9], [2000, 29], [10000, 119]]);
+  });
+
+  // The packs must be worse value than any plan, or nobody upgrades.
+  it("are more expensive per credit than every plan", () => {
+    const worstPlanRate = Math.max(
+      ...PLANS.filter((p) => p.price_usd > 0).map((p) => p.price_usd / p.limits.credits),
+    );
+    for (const pack of CREDIT_PACKS) {
+      expect(pack.price_usd / pack.credits, pack.id).toBeGreaterThan(worstPlanRate);
+    }
+  });
+
+  // ...but far cheaper than the bundle they replace ($0.09/credit).
+  it("are dramatically cheaper per credit than the bundle they replace", () => {
+    for (const pack of CREDIT_PACKS) {
+      expect(pack.price_usd / pack.credits, pack.id).toBeLessThan(0.09 / 2);
+    }
+  });
+
+  it("get cheaper per credit as they get bigger", () => {
+    const rates = CREDIT_PACKS.map((p) => p.price_usd / p.credits);
+    for (let i = 1; i < rates.length; i++) expect(rates[i]).toBeLessThan(rates[i - 1]);
+  });
+});
+
+describe("Agency overage (D13)", () => {
+  it("is quoted above the published fair-use pool", () => {
+    const agency = PLANS.find((p) => p.id === "agency");
+    expect(AGENCY_OVERAGE.fairUseCredits).toBe(agency.limits.credits);
+    expect(AGENCY_OVERAGE.usdPer1000).toBe(2.0);
+  });
+
+  // 🔴 An agency has client deliverables. A hard stop mid-month damages THEIR
+  // customer, not ours.
+  it("never hard-stops mid-month", () => {
+    expect(AGENCY_OVERAGE.hardStop).toBe(false);
+    expect(AGENCY_OVERAGE.commitAtPct).toBeGreaterThan(AGENCY_OVERAGE.notifyAtPct);
+  });
+
+  // ~2x the committed rate: enough that the pool is worth committing to, far
+  // below any top-up pack.
+  it("prices overage above Agency's committed rate but below a pack", () => {
+    const agency = PLANS.find((p) => p.id === "agency");
+    const committed = agency.price_usd / agency.limits.credits;
+    const overage = AGENCY_OVERAGE.usdPer1000 / 1000;
+    expect(overage).toBeGreaterThan(committed);
+    expect(overage).toBeLessThan(Math.min(...CREDIT_PACKS.map((p) => p.price_usd / p.credits)));
   });
 });

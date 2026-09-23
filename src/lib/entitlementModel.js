@@ -16,6 +16,8 @@
 // any unknown id, so modelling suspension as a "suspended" pseudo-plan would
 // silently GRANT Free-tier access to a lapsed user instead of denying them.
 
+import { CREDIT_WEIGHTS, discoverabilityCredits } from "./credits/creditWeights.js";
+
 /** Every capability the product gates. Keep in sync with the switch in can(). */
 export const CAPS = Object.freeze([
   "extract",
@@ -132,6 +134,63 @@ export const ACCOUNT_BLOCKED_CODES = new Set([
   "SUSPENDED", "DEACTIVATED", "GRANT_EXPIRED", "PURGED",
 ]);
 export const isAccountBlocked = (code) => ACCOUNT_BLOCKED_CODES.has(code);
+
+// ── THE CREDIT GATE ────────────────────────────────────────────────────────
+//
+// One pool, one axis. `extractions`, `audits` and `enrichments_per_extraction`
+// are no longer consulted by anything here — they were three budgets for the
+// same underlying spend, which meant a customer could be refused an audit
+// while holding a month of unused extractions, and a module that added a new
+// kind of provider call had no budget to answer to at all.
+//
+// 🔴 `ctx.credits` ABSENT MEANS "WE DO NOT KNOW", AND IT READS THROUGH.
+// This is the same asymmetry requireEntitlement holds over the entitlement
+// row: fail OPEN on infrastructure, closed only on a known state. A browser
+// that has not yet fetched the balance, a Supabase blip, or an environment
+// where 0078 has not been applied must not refuse a paying customer — and
+// `enforced:false` (an account that has never been granted credits) is not a
+// zero balance, it is an account the credit system does not yet apply to.
+//
+// The server is what actually decides: creditMeter.affords() re-sums the
+// ledger at the moment it spends. Everything here is so the UI can gate a
+// button without a round-trip, exactly as entitlementClient is.
+const CREDIT_UNKNOWN = Object.freeze({ known: false });
+
+/**
+ * A soft ceiling on enrichments against ONE url, per §5's L0. Not a quota —
+ * the credit pool is the budget — just a stop on a runaway loop.
+ */
+export const RUNAWAY_PER_URL = 25;
+
+function creditsCtx(ctx) {
+  const c = ctx?.credits;
+  if (!c || typeof c !== "object") return CREDIT_UNKNOWN;
+  if (c.degraded || c.enforced !== true) return CREDIT_UNKNOWN;
+  const available = Number(c.available);
+  if (!Number.isFinite(available)) return CREDIT_UNKNOWN;
+  return { known: true, available };
+}
+
+/**
+ * Would this cost fit in the pool? `what` is the customer-facing noun.
+ *
+ * ⚠️ The message NAMES THE COST. "You do not have enough credits" tells
+ * somebody nothing they can act on; "this run costs 19 and you have 4" tells
+ * them whether to buy a pack or wait for the month to turn.
+ */
+function creditGate(ctx, cost, what, upgradeTo = "go") {
+  const c = creditsCtx(ctx);
+  if (!c.known) return ok();
+  if (c.available >= cost) return ok(c.available - cost);
+  return deny(
+    "INSUFFICIENT_CREDITS",
+    `${what} costs ${cost} credit${cost === 1 ? "" : "s"} and you have `
+      + `${Math.max(0, c.available)}. Top up with a credit pack, upgrade your plan, `
+      + `or wait for your allowance to renew.`,
+    Math.max(0, c.available),
+    upgradeTo,
+  );
+}
 
 const ok = (remaining = Infinity) => ({
   allowed: true,
@@ -357,34 +416,19 @@ export function can(ent, capability, ctx = {}) {
 
   // ── 3. Plan capability + quota ─────────────────────────────────────────────
   switch (capability) {
-    case "extract": {
-      const limit =
-        L.extractions === Infinity ? Infinity : L.extractions + (ctx.bonus || 0);
-      if (limit === Infinity) return ok(Infinity);
-      const used = usage.extractions || 0;
-      if (used >= limit) {
-        return deny(
-          "QUOTA_EXCEEDED",
-          `You've used all ${limit} extraction${limit === 1 ? "" : "s"} this month. Upgrade or purchase a top-up bundle.`,
-        );
-      }
-      return ok(limit - used);
-    }
+    // 🔴 ONE POOL. `L.extractions` and `usage.extractions` are no longer read.
+    // A page read costs one credit — the anchor every other weight is a
+    // multiple of — so an extraction and an audit now draw on the same budget
+    // and a customer can spend it on whichever they need.
+    case "extract":
+      return creditGate(ctx, CREDIT_WEIGHTS.page_fetch * (ctx.urlCount ?? 1), "An extraction");
 
     case "extract.batch": {
       const urlCount = ctx.urlCount ?? 1;
-      const limit =
-        L.extractions === Infinity ? Infinity : L.extractions + (ctx.bonus || 0);
-      if (limit === Infinity) return ok(Infinity);
-      const remaining = limit - (usage.extractions || 0);
-      if (remaining < urlCount) {
-        return deny(
-          "QUOTA_EXCEEDED",
-          `You need ${urlCount} extraction${urlCount > 1 ? "s" : ""} but only have ${Math.max(0, remaining)} remaining this month. Upgrade or purchase a top-up bundle.`,
-          Math.max(0, remaining),
-        );
-      }
-      return ok(remaining);
+      return creditGate(
+        ctx, CREDIT_WEIGHTS.page_fetch * urlCount,
+        `Extracting ${urlCount} page${urlCount === 1 ? "" : "s"}`,
+      );
     }
 
     case "batch": {
@@ -418,29 +462,21 @@ export function can(ent, capability, ctx = {}) {
       return ok(effective - urlCount);
     }
 
+    // 🔴 THE AUDIT ROW COUNT IS RETIRED. It was the one quota counted from the
+    // rows themselves rather than a column, and that reasoning still holds —
+    // it is why the ledger is a ledger. But an audit is now priced in the same
+    // unit as everything else, so it draws on the same pool.
+    //
+    // ⚠️ The COST follows the prompt set. A ten-prompt run costs 29 where the
+    // default five-prompt run costs 19, because that is what it spends — the
+    // surcharge falls out of charging actuals rather than needing a rule.
     case "audit": {
       const count = ctx.auditCount ?? 1;
-      const limit = L.audits === Infinity ? Infinity : (L.audits || 0) + (ctx.bonusAudits || 0);
-      if (limit === Infinity) return ok(Infinity);
-      if (limit <= 0) {
-        return deny(
-          "PLAN_REQUIRED",
-          "Discoverability audits are not included in your plan.",
-          0,
-          "go",
-        );
-      }
-      const used = usage.audits || 0;
-      if (used + count > limit) {
-        return deny(
-          "QUOTA_EXCEEDED",
-          used >= limit
-            ? `You've used all ${limit} discoverability audit${limit === 1 ? "" : "s"} this month.`
-            : `This needs ${count} audits but only ${Math.max(0, limit - used)} remain this month.`,
-          Math.max(0, limit - used),
-        );
-      }
-      return ok(limit - used - count);
+      const each = discoverabilityCredits(ctx.promptCount);
+      return creditGate(
+        ctx, each * count,
+        count === 1 ? "A Discoverability run" : `${count} Discoverability runs`,
+      );
     }
 
     // A benchmark audits several URLs at once, so it is gated on the audit
@@ -448,12 +484,12 @@ export function can(ent, capability, ctx = {}) {
     // is not a smaller comparison, it is a misleading one.
     case "audit.benchmark": {
       const urlCount = ctx.urlCount ?? 2;
-      if (!L.audits) {
-        return deny("PLAN_REQUIRED", "Competitive benchmarks are not included in your plan.", 0, "pro");
-      }
-      // Benchmarking is a paid-plan capability: the free taster exists to show
-      // what a single audit looks like, not to run competitor sets.
-      if (L.audits !== Infinity && L.audits < 25) {
+      // ⚠️ STILL A PLAN CAPABILITY, NOT JUST A COST. The free taster exists to
+      // show what ONE audit looks like; a competitor set is a paid feature,
+      // and letting it through on credits alone would sell Select's headline
+      // capability to anyone who happened to have the balance for it.
+      // `credits` is the axis for SPEND; this is a question about the plan.
+      if ((L.credits || 0) < 2500) {
         return deny(
           "PLAN_REQUIRED",
           "Competitive benchmarks are available from the Select plan upward.",
@@ -568,17 +604,24 @@ export function can(ent, capability, ctx = {}) {
       return can(ent, "audit", { ...ctx, auditCount: ctx.auditCount ?? 1 });
     }
 
+    // 🔴 `enrichments_per_extraction` WAS THE WRONG AXIS and is retired. It
+    // capped DEPTH per URL while the cost is per CALL — so ten enrichments on
+    // one page and one enrichment on ten pages cost the same and were
+    // budgeted completely differently. Every plan had it at Infinity anyway,
+    // which is the tell: a limit nobody ever set is a limit nobody wanted.
+    //
+    // ⚠️ RUNAWAY_PER_URL is NOT a quota. It is a guard against a loop, and
+    // the pool is what bounds real spend. Keeping it means a bug that
+    // enriches the same page forever costs 25 credits, not the month's.
     case "enrich": {
-      const limit = L.enrichments_per_extraction;
-      if (limit === Infinity) return ok(Infinity);
       const used = usage.enrichments?.[ctx.url] ?? 0;
-      if (used >= limit) {
+      if (used >= RUNAWAY_PER_URL) {
         return deny(
           "PLAN_LIMIT",
-          `Your ${plan.name} plan allows ${limit} enrichment${limit === 1 ? "" : "s"} per extraction. Upgrade to unlock more.`,
+          `That's ${RUNAWAY_PER_URL} enrichments on the same page — stopping here in case something is looping. Run it again if that was deliberate.`,
         );
       }
-      return ok(limit - used);
+      return creditGate(ctx, CREDIT_WEIGHTS.enrichment, "An enrichment");
     }
 
     case "export.csv":

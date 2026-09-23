@@ -16,6 +16,22 @@ export const CURRENCY_META = {
 // price_inr         = monthly INR price (base, pre-GST — 18% GST added at checkout)
 // price_inr_annual  = promotional annual price per month (INR, base, pre-GST) — fixed rate
 // trialCredit       = once-only signup extraction credit (Free plan only)
+//
+// ── credits: THE ONE AXIS EVERYTHING IS SOLD ON ────────────────────────────
+// 1 credit = one page fetch; every other weight is a multiple of it. The table
+// lives in src/lib/credits/creditWeights.js and is shared with the server, so
+// the number quoted and the number billed cannot diverge.
+//
+// 🔴 `extractions` and `audits` ARE NO LONGER ENFORCED. They are kept because
+// three public surfaces still print them (the plan cards, the comparison
+// matrix and llms-full.txt) and because removing a limit key silently changes
+// what getEffectivePlanById returns for an operator override written against
+// the old shape. The gate is `credits`; these are descriptive.
+//
+// ⚠️ Free's pool is a LIFETIME grant (D3), not a monthly one — it does not
+// reset, and 19 of its 100 are reserved for the first Discoverability run so
+// the action that demonstrates the product cannot be spent away on
+// extractions first.
 export const PLANS = [
   {
     id: "free",
@@ -30,6 +46,7 @@ export const PLANS = [
     highlight: false,
     trialCredit: 25,
     limits: {
+      credits: 100,
       extractions: 10,
       audits: 3,
       enrichments_per_extraction: Infinity,
@@ -83,6 +100,7 @@ export const PLANS = [
     badge: null,
     highlight: false,
     limits: {
+      credits: 750,
       extractions: 200,
       audits: 10,
       enrichments_per_extraction: Infinity,
@@ -133,6 +151,7 @@ export const PLANS = [
     badge: null,
     highlight: false,
     limits: {
+      credits: 2500,
       extractions: 500,
       audits: 25,
       enrichments_per_extraction: Infinity,
@@ -183,6 +202,7 @@ export const PLANS = [
     badge: "Recommended",
     highlight: true,
     limits: {
+      credits: 6000,
       extractions: 1000,
       audits: 100,
       enrichments_per_extraction: Infinity,
@@ -234,6 +254,7 @@ export const PLANS = [
     badge: null,
     highlight: false,
     limits: {
+      credits: 40000,
       extractions: 10000,
       audits: 500,
       enrichments_per_extraction: Infinity,
@@ -291,6 +312,7 @@ export const PLANS = [
     badge: "Best Value",
     highlight: false,
     limits: {
+      credits: 100000,
       extractions: Infinity,
       audits: 2000,
       enrichments_per_extraction: Infinity,
@@ -346,6 +368,7 @@ export const PLANS = [
     highlight: false,
     comingSoon: true,
     limits: {
+      credits: 28000,
       extractions: 10000,
       audits: 250,
       enrichments_per_extraction: Infinity,
@@ -408,18 +431,24 @@ export const PLAN_BY_ID = Object.fromEntries(PLANS.map((p) => [p.id, p]));
 
 // All price_inr are BASE prices (pre-GST). 18% GST added at checkout.
 // hidden: true → not shown in top-up section on Pricing page.
+// ── A CONSUMPTION LIMIT IS CREDITS. A CAPACITY LIMIT IS NOT. ───────────────
+//
+// That distinction decides this whole list. Extractions, audits and enrichment
+// are SPEND — once credits exist, a bundle selling them is a second currency
+// for the same thing, and the two drift. Monitor slots, workspaces and batch
+// size are STRUCTURAL CAPS that protect the cron tick and the runner.
+//
+// 🔴 The rule, stated once: AN ADD-ON BUYS THE RIGHT TO DO SOMETHING; THE
+// DOING STILL COSTS CREDITS. A monitor slot that included its own runs would
+// be a second, unmetered budget — which is exactly the shape of leaks L1, L2
+// and L6.
+//
+// ⚠️ THE EXTRACTIONS BUNDLE IS GONE (D15). It sold pure consumption at
+// $0.09/credit — FOURTEEN TIMES Go's plan rate — which was never a decision
+// anyone made. CREDIT_PACKS below replace it at roughly a fifth of that.
+// Removing it is one line; migrating the three OTHER writers of
+// `bonus_extractions` was not — see CREDITS-UNIFICATION-PROPOSAL.md §4.6.
 export const TOPUP_BUNDLES = [
-  {
-    id: "extractions-bundle",
-    name: "Extractions Bundle",
-    icon: "zap",
-    price_usd: 9,
-    price_inr: 749,
-    description: "100 extra extractions with all enrichments, CSV + PDF, and email export.",
-    unit: "per 100 extractions",
-    bonusExtractions: 100,
-    stackable: true,
-  },
   {
     id: "batch-pack",
     name: "Batch Pack",
@@ -438,8 +467,14 @@ export const TOPUP_BUNDLES = [
     icon: "clock",
     price_usd: 5,
     price_inr: 399,
-    description: "Monitor one URL daily — email alert when content changes are detected.",
-    unit: "per URL / month",
+    // D16 — SLOT ONLY, and the copy has to say so. The price is unchanged but
+    // it now buys strictly less than it appeared to: the runs draw on your
+    // credit pool (1 credit per page read). Leaving the old wording would let
+    // a customer reasonably expect the runs included, which is the kind of
+    // thing discovered on an invoice.
+    description: "Adds one monitoring slot — one URL checked daily, with an email alert when the content changes. The checks themselves draw on your credit pool (1 credit per page read).",
+    unit: "per slot / month",
+    slotOnly: true,
     stackable: true,
   },
   {
@@ -463,3 +498,66 @@ export const TOPUP_BUNDLES = [
     cappedByParentTeamSeats: true,
   },
 ];
+
+// ── Credit Packs (D18) ─────────────────────────────────────────────────────
+//
+// Anchored at roughly 3x the Select plan rate, with volume breaks: expensive
+// enough that upgrading usually wins, cheap enough to be a reasonable answer
+// to "I hit my cap on the 20th".
+//
+// ⚠️ A PACK NEVER EXPIRES AND NEVER ROLLS OVER, because it was not an
+// allowance — it was bought. Granting it with the monthly expiry would delete
+// something the customer paid for; that is why credit_grant() takes the expiry
+// as a parameter instead of assuming one.
+export const CREDIT_PACKS = [
+  {
+    id: "credits-500",
+    name: "500 credits",
+    icon: "zap",
+    price_usd: 9,
+    price_inr: 749,
+    credits: 500,
+    description: "Roughly 26 Discoverability runs, or 500 page extractions.",
+    unit: "one-off",
+    stackable: true,
+  },
+  {
+    id: "credits-2000",
+    name: "2,000 credits",
+    icon: "zap",
+    price_usd: 29,
+    price_inr: 2399,
+    credits: 2000,
+    description: "Roughly 105 Discoverability runs, or 2,000 page extractions.",
+    unit: "one-off",
+    stackable: true,
+    badge: "Best value",
+  },
+  {
+    id: "credits-10000",
+    name: "10,000 credits",
+    icon: "zap",
+    price_usd: 119,
+    price_inr: 9899,
+    credits: 10000,
+    description: "Roughly 526 Discoverability runs, or 10,000 page extractions.",
+    unit: "one-off",
+    stackable: true,
+  },
+];
+
+export const CREDIT_PACK_BY_ID = Object.fromEntries(CREDIT_PACKS.map((p) => [p.id, p]));
+
+// ── Agency fair use (D13) ──────────────────────────────────────────────────
+// ⚠️ PUBLISH THIS. An undisclosed cap is the version that loses trust, and the
+// same is true of the overage rate and the rollover cap.
+export const AGENCY_OVERAGE = Object.freeze({
+  fairUseCredits: 100_000,
+  usdPer1000: 2.0,
+  // The soft landing: notify at 100%, require a commitment at 150%, NEVER
+  // hard-stop mid-month. An agency has client deliverables, and a hard stop
+  // damages their customer rather than ours.
+  notifyAtPct: 100,
+  commitAtPct: 150,
+  hardStop: false,
+});
