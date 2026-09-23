@@ -595,7 +595,7 @@ export const CREDIT_PACKS = [
     name: "10,000 credits",
     icon: "zap",
     price_usd: 89,
-    price_inr: 11449,
+    price_inr: 8719,
     credits: 10000,
     description: packDescription(10000),
     unit: "one-off",

@@ -1003,7 +1003,7 @@ sales.
 Two different things, and the difference matters:
 
 - **Credit packs** buy credits outright — 500 for $5 / ₹490, 2,000 for
-  $19 / ₹1,849, 10,000 for $89 / ₹11,449. They work on any plan including Free,
+  $19 / ₹1,849, 10,000 for $89 / ₹8,719. They work on any plan including Free,
   and **they never expire**.
 - **Capacity add-ons** buy the *right* to do something: a Scheduled Monitor slot
   ($5 / ₹490), a Batch Pack of 50 extra rows ($9 / ₹879), an Extra Workspace

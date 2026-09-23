@@ -1,9 +1,13 @@
 # Unified Usage Credits — plan v5 (decision-complete)
 
-> **Status: STEPS A, B and D ARE IMPLEMENTED (2026-09-23). C, E, F and G are
-> not.** Every decision is settled; §7 records the last four. §8 records what
-> shipped, the two places implementation proved this document wrong, and why
-> the remaining steps are still gated on C.
+> **Status: A, B, D, E, F and G ARE IMPLEMENTED (2026-09-23). ONLY STEP C —
+> CALIBRATION — REMAINS, and it was deliberately deferred.** §8 records A/B/D,
+> §9 records E/F/G, and **§10 records the 2026-09-23 repricing** that landed on
+> top of them. §7 records the last four decisions.
+>
+> 🔴 **THE WEIGHTS SHIPPED UN-CALIBRATED, on the owner's explicit override of
+> §6's own ordering**, because no customer pays today. **That is a decision with
+> an expiry: re-run step C before the first paid signup.**
 >
 > Supersedes v4. Evidence trail:
 > [CREDITS-UNIFICATION-ADDENDUM.md](./CREDITS-UNIFICATION-ADDENDUM.md).
@@ -518,8 +522,133 @@ vitest **451 files / 7,228 passed / 0 failed** · db-verify **79 migrations /
 - 🔴 **Migrations `0074`–`0079` are OPERATOR ACTIONS** and have only met WASM
   Postgres. Nothing in the credit system enforces anything until `0078` is
   applied, and `0079` must follow it. See
-  [DB-MIGRATION-RUNBOOK.md §4f](DB-MIGRATION-RUNBOOK.md).
+  [DB-MIGRATION-RUNBOOK.md §4g](DB-MIGRATION-RUNBOOK.md).
 - 🔴 **Step C**, above — before the first paid signup.
 - ⚠️ `bonus_extractions` survives as a stored wire name on three writers. It is
   read as credits and decides nothing; renaming the column would orphan every
   row already written.
+
+---
+
+## 10. The 2026-09-23 repricing
+
+Applied from the owner's pricing sheet, on top of the credit switch. The prices
+below are the **shipped** ones; this section is the record, not the source —
+`PLAN_TABLE` in `src/lib/pricingConfig.js` is.
+
+### The table
+
+| Plan | Per month | Annual (per month) | Credits | Extract | Discover | Batch | Bulk list | Monitors | Seats |
+|---|---|---|---|---|---|---|---|---|---|
+| Free | Free | — | 100 one-time | 10 | 1 | 5 | — | — | 1 |
+| Go | $5 · ₹490 | $4 · ₹409 | 750 | 200 | 10 | 20 | 20 | — | 1 |
+| Select | $15 · ₹1,449 | $12 · ₹1,209 | 2,500 | 500 | 25 | 50 | 50 | 5 | 1 |
+| Pro | $25 · ₹2,449 | $20 · ₹2,049 | 6,000 | 1,000 | 100 | 100 | 100 | 10 | 1 |
+| Developer | $55 · ₹5,449 | $45 · ₹4,549 | 25,000 | 10,000 | 250 | 250 | 250 | 10 | 1 |
+| Business | $85 · ₹7,849 | $70 · ₹6,549 | 40,000 | 10,000 | 500 | 250 | 250 | 25 | 3 |
+| Agency | $200 · ₹19,449 | $165 · ₹16,249 | 100,000 | 100,000 | 2,000 | 500 | 500 | 100 | 5 |
+
+**Credit packs** — 500 for $5 / ₹490 · 2,000 for $19 / ₹1,849 · 10,000 for
+$89 / ₹8,719. Any plan including Free; they never expire.
+
+**Capacity add-ons** — Scheduled Monitor $5 / ₹490 · Batch Pack $9 / ₹879 ·
+Extra Workspace $19 / ₹1,849. An add-on buys the right to do something; the
+runs still cost credits.
+
+⚠️ **`extract` and `discover` are DESCRIPTIVE and enforced by nothing.** Credits
+are the gate. They are kept because they are the figures customers use to judge
+a plan's size, and because dropping a limit key changes what an operator
+override written against the old shape resolves to.
+
+⚠️ **`seats: 1` is SOLO, not zero.** The sheet writes 0 for plans with no team
+feature, but the account owner is themselves a seat — a plan with 0 seats could
+not be used by the person who bought it. 0 in the sheet means "no TEAM".
+
+### Four structural changes, not just numbers
+
+🔴 **INR IS A PRICE, NOT A CONVERSION.** `resolvePlanPrice` used to fall back to
+`convertPrice(plan.price_usd, rates, "INR")`. A converted price **moves when the
+rate moves**, so the figure on the card and the figure charged could differ
+between the page load and the checkout — and the server never converted
+anything, so the two sides were computing a price by different rules. Every plan
+carries a set INR price and the fallback is gone.
+
+🔴 **THE SERVER'S PRICE TABLE WAS A HAND-WRITTEN MIRROR** carrying the comment
+*"MUST MIRROR src/lib/pricingConfig.js"* — a request, not a mechanism, and the
+one table where a divergence charges a customer something other than the number
+they were shown. It is derived from `PLANS` now.
+
+🔴 **A BULK LIST IS NOT A BATCH, AND IT WAS GATED AS ONE.** Both read
+`batch_max_urls` — fine while every plan sets them equal, wrong for Free, now
+**batch 5 / bulk 0**. Free's 5-URL batch silently granted it a 5-row account
+list: a product that fetches, enriches **and** ICP-scores each row at 3 credits
+apiece. ⚠️ The new `bulk_list_max` **falls back to `batch_max_urls`**, because an
+operator override written before the split would otherwise lose bulk enrichment
+entirely.
+
+🔴 **`0080` — A REPRICING MUST NOT CUT A PERIOD SOMEBODY ALREADY PAID FOR.**
+Developer went 500 → 250 batch and bulk, so without a snapshot a subscriber
+three weeks into a paid month would have found their list size halved with no
+notice. **While the paid period runs, nothing gets worse and improvements still
+reach you**: the price is the one charged, each limit is the *better* of bought
+and current, renewal is where a repricing lands.
+
+⚠️ **A MERGE, NOT A SUBSTITUTION** — `{...snap.limits}` fails two tests. A limit
+key added after the snapshot would read `undefined` for every grandfathered
+account, and a gate reading `undefined` either refuses everything or allows
+everything depending on the key; and a genuine *increase* would be withheld from
+the people still on the old plan, leaving them worse off than a new signup for
+having paid earlier.
+
+### Defects the repricing surfaced
+
+| Where | What |
+|---|---|
+| `AdminPricing.jsx` | 🔴 **`SERVER_PLAN_IDS` was the literal `["select","pro","business","agency"]`**, so an admin repricing **go** or **developer** got SQL that never mentioned them — the page showed the new price while the server charged the static one. Derived now. |
+| `AdminPricing.jsx` | **Credit packs had no override layer and no editor at all.** They do now, with `credits` editable beside the price, because that field is what `verify-payment` writes to the ledger. |
+| `PricingMatrix.jsx` | Its "Bulk account list" and "ICP scoring" rows still derived from `batch_max_urls`, **promising Free a list the gate refuses**. |
+| `pricingConfig.js` | The **Batch Pack carried `hidden: true`** — priced, purchasable by id and honoured by the gate, but rendered on no screen. |
+| `public/faq/index.html` | Carried every pricing claim **twice** — visible answer and FAQPage JSON-LD — and both were stale. |
+| `public/llms-full.txt` | A **second, larger pricing table** at line 230 that the first sweep missed entirely. |
+
+### The number that was a typo, and the guard that now catches it
+
+The large credit pack was first entered at **₹11,449**, which made the *biggest*
+pack the *dearest* per credit — a customer buying 10,000 credits in rupees paid
+more each than one buying 500. **Nothing failed.** Every other pack assertion is
+per-pack, and the value ladder had only ever been checked across *plans*, and
+only in USD.
+
+Corrected to **₹8,719**, and `pricingConfig.test.js` now asserts that a bigger
+pack is cheaper per credit **in both currencies** — confirmed RED against the
+typo. ⚠️ The "both currencies" half is the point: they are set independently
+now, so a ladder that holds in dollars says nothing about rupees.
+
+### What the copy guard is and is not
+
+`publicPricingCopy.test.js` checks the **numbers** against `PLANS` across
+`pricingConfig`, `Pricing.jsx`, `llms.txt`, `llms-full.txt`, `pageSeo.js`, the
+FAQ page and the user guide, in both directions — each plan's real allowance
+must appear, each retired extraction claim must not — and it requires **INR to
+be quoted, not merely set**. Before the repricing the copy said *"INR pricing is
+available"* and gave no rupee figures, which is exactly what let them drift:
+**a currency you set by hand and never print is a currency nobody proofreads.**
+
+⚠️ **It cannot catch a wrong number in the table**, because every surface and the
+test both read `PLANS`. That is what the absolute pins in `pricingConfig.test.js`
+and the value-ladder invariants are for. The e2e price claim has the same limit
+and says so — it is confirmed RED against the INR conversion fallback returning,
+not against a typo.
+
+### Verified
+
+pre-push gate **9/9 green** · vitest **453 files / 7,287 passed** · db-verify
+**80 migrations / 896 assertions** · referral 19 · workflows 56 · e2e smoke
+**159** · readiness **5 pass / 2 warn / 0 fail**. All 11 screenshots
+regenerated; browser-verified at both currencies.
+
+### Still outstanding
+
+- 🔴 **Apply `0078`–`0080`** — [DB-MIGRATION-RUNBOOK.md §4g](DB-MIGRATION-RUNBOOK.md).
+  Until `0080` lands, a repricing applies to everyone the moment it deploys.
+- 🔴 **Step C — calibration**, before the first paid signup.

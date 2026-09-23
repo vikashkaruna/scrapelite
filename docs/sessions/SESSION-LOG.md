@@ -104,10 +104,14 @@ nobody proofreads.**
   policy ("past fair use you keep paying the plan rate"), but the guard had to be
   relaxed from `>` to `>=`. Below the committed rate would make overrunning
   cheaper than the plan and is still refused.
-- **The large credit pack is ₹11,449 against a converted ₹8,722** — a 31% INR
-  premium where the other two packs sit at parity. Implemented as the sheet
-  specifies; flagged because the sheet shows both columns and the difference may
-  or may not be deliberate.
+- **The large credit pack was ₹11,449 against a converted ₹8,722** — flagged on
+  review as the one number that did not follow the pattern, and **confirmed a
+  typo by the owner: it is ₹8,719.** At ₹11,449 the *biggest* pack was the
+  *dearest* per credit, so a customer buying 10,000 credits in rupees paid more
+  each than one buying 500. 🔴 **Nothing failed**: every other pack assertion is
+  per-pack, and the value ladder had only ever been checked across *plans*, and
+  only in USD. `pricingConfig.test.js` now asserts a bigger pack is cheaper per
+  credit **in both currencies**, confirmed RED against the typo.
 
 ### Verified
 

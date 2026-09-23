@@ -1,7 +1,12 @@
 # Unified Credits — Addendum: enrichment, workflows, integrations, Agency, and going direct
 
-> **Status: PROPOSAL. Nothing implemented.** Companion to
-> [CREDITS-UNIFICATION-PROPOSAL.md](./CREDITS-UNIFICATION-PROPOSAL.md),
+> **Status: SHIPPED (2026-09-23).** Every recommendation below was implemented
+> and all four open decisions in §5 are closed — see **§6** for what shipped and
+> where it diverged. The analysis above is left as WRITTEN, not edited to match
+> the outcome: it is the reasoning that produced the decisions, and rewriting it
+> to agree with them would destroy the record of why they were made.
+>
+> Companion to [CREDITS-UNIFICATION-PROPOSAL.md](./CREDITS-UNIFICATION-PROPOSAL.md),
 > answering four questions raised 2026-09-22.
 
 ---
@@ -235,3 +240,65 @@ original proposal under-weighted.
 4. **Free tier:** a single pool means 50 credits ≈ 3 audits **or** ~16
    enrichments, not both. Today they get unlimited enrichment, so this is a
    **reduction** — deliberate, and worth stating plainly before it ships.
+
+---
+
+## 6. What shipped (2026-09-23) — every §5 decision, closed
+
+### The four open decisions
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | Agency: cap `scheduled_monitoring` at 100 and publish fair use? | **Yes to both, and further.** Agency is **100 monitors** exactly as recommended. Fair use is **100,000 credits**, not the suggested 150,000 — see below. |
+| 2 | Guest credits, and is server-side guest identity in scope? | **Guest identity was already server-side** (`guest_identities`, 0026/0073 — an HttpOnly cookie hashed SHA-256), so the prerequisite this section called "the only genuinely new infrastructure" turned out to be built. `/api/ai` **checks** the guest bucket and does not spend from it. |
+| 3 | Charge for a genuine `no_match`? | **Yes.** `record()` charges unless the call `failed`, was `cached` or was `skipped`. "They don't publish this" is a measurement and costs a provider call. |
+| 4 | Free tier is a reduction — state it plainly | **Stated, and the reduction is smaller than feared.** Free is **100 credits, granted once and never resetting** (not 50, and not monthly), of which 19 are reserved so the first Discoverability run cannot be spent away on extractions first. |
+
+### Where reality diverged from the recommendation
+
+🔴 **"Keep unlimited extractions as the headline" did NOT survive.** §3 argued
+that unlimited *extraction* is safe because it is attended, and only unattended
+monitors compound. That reasoning is sound and the owner overrode the
+conclusion anyway: the 2026-09-23 sheet gives Agency **100,000 extractions and
+100,000 credits**, both finite. **No shipped plan carries an `Infinity` limit on
+any axis now.**
+
+That is a stronger position than this document proposed, and it costs one thing
+worth knowing: `prorationMath`'s "drops from unlimited" wording is no longer
+reachable from any real plan pair. Its test drives a synthetic plan so the
+branch stays covered — an operator override can still set `Infinity`.
+
+⚠️ **Fair use is 100,000, not 150,000.** The addendum picked 150k as a number
+"far above real usage". The sheet sets the pool and the fair-use ceiling to the
+same 100,000, which makes the claim simpler to state and to keep. The soft
+landing survives intact: notify at 100%, commit at 150%, **never hard-stop**
+(`AGENCY_OVERAGE.hardStop: false`).
+
+🔴 **AND IT PRODUCED ONE CONSEQUENCE NOBODY CHOSE.** At $200 for 100,000
+credits, Agency's committed rate is **$0.002/credit** — and `AGENCY_OVERAGE` is
+$2.00 per 1,000, which is **the same number**. Overage now costs exactly what
+the plan does, so there is no margin on overrun and no penalty for it. That is
+defensible as a policy ("past fair use you keep paying the plan rate") and it
+is not what the 150k figure would have produced. The invariant was relaxed from
+`>` to `>=`; **below** the committed rate is still refused, because that would
+make overrunning cheaper than the plan that grants the credits.
+
+### The revised A–D plan, as executed
+
+| | Step | What happened |
+|---|---|---|
+| **A** | Stop the leaks | Done. The register (L0, L0b, L1, L2, L3, L5, L6) is closed and a parity test fails the build on a provider call with no caller id — it found **12** unmetered call sites on its first run, more than the register listed. |
+| **B** | Calibrate | 🔴 **NOT DONE, and deliberately so.** The owner overrode §6 of the main proposal on 2026-09-23: ship the measured call-counts, recalibrate later, on the grounds that nobody pays today. **This is the one step this document said "cannot be skipped or reordered", and it was skipped.** It is a decision with an expiry: re-run it before the first paid signup. |
+| **C** | Switch outright | Done — one pool, one ledger. `usage.extractions` and the audit row count survive as descriptive fields that no gate reads. |
+| **D** | Sell | Done. Credit packs are purchasable on any plan including Free and never expire; Agency fair use is published on `/pricing`, in `llms.txt` and in the help site. |
+
+### One thing this document did not anticipate
+
+**A repricing needed protecting against, not just a migration.** The addendum
+reasoned that "with no paid customers, none of that applies" — true of the
+*migration*, and it quietly assumed prices would not move again. They did, the
+same week: the 2026-09-23 sheet cut Developer's batch and bulk limits from 500
+to 250. Without a snapshot that would have halved a paying subscriber's list
+size mid-period. `0080` and `src/lib/planSnapshot.js` close it; the rule is
+**while the paid period runs nothing gets worse, and improvements still reach
+you**.

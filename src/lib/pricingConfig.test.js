@@ -327,7 +327,29 @@ describe("credit packs", () => {
     expect(CREDIT_PACKS.map((p) => [p.credits, p.price_usd]))
       .toEqual([[500, 5], [2000, 19], [10000, 89]]);
     expect(CREDIT_PACKS.map((p) => [p.credits, p.price_inr]))
-      .toEqual([[500, 490], [2000, 1849], [10000, 11449]]);
+      .toEqual([[500, 490], [2000, 1849], [10000, 8719]]);
+  });
+
+  // 🔴 THE GUARD THAT WOULD HAVE CAUGHT THE ₹11,449 TYPO. The large pack was
+  // first entered at ₹11,449 against a USD price of $89 — which made the
+  // BIGGEST pack the DEAREST per credit, so a customer buying 10,000 credits in
+  // rupees paid more each than someone buying 500. Nothing failed: every other
+  // pack assertion is per-pack, and the value ladder was only ever checked
+  // across plans, never across packs, and only ever in USD.
+  //
+  // ⚠️ BOTH CURRENCIES. They are set independently now, so a ladder that holds
+  // in dollars says nothing about rupees — which is exactly how the typo
+  // survived a green suite.
+  it("a bigger pack is cheaper per credit, in both currencies", () => {
+    const bySize = [...CREDIT_PACKS].sort((a, b) => a.credits - b.credits);
+    for (let i = 1; i < bySize.length; i++) {
+      const prev = bySize[i - 1];
+      const cur = bySize[i];
+      expect(cur.price_usd / cur.credits, `${cur.id} USD vs ${prev.id}`)
+        .toBeLessThan(prev.price_usd / prev.credits);
+      expect(cur.price_inr / cur.credits, `${cur.id} INR vs ${prev.id}`)
+        .toBeLessThan(prev.price_inr / prev.credits);
+    }
   });
 
   // The packs must be worse value than any plan, or nobody upgrades.
