@@ -268,6 +268,7 @@ export default function Batch() {
   const billing = useBilling();
   const subscription = billing?.subscription;
   const usage = billing?.usage;
+  const credits = billing?.credits;
   const { view } = useExtraction();
   const { user } = useAuth();
   const guestTrial = useGuestTrial();
@@ -464,10 +465,10 @@ export default function Batch() {
     () => estimateBatchCredits({
       urlCount: Math.max(1, urlCount),
       planId: subscription?.planId || "free",
-      bonusExtractions: subscription?.bonusExtractions || 0,
+      credits: credits || null,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [urlCount, subscription?.planId, subscription?.bonusExtractions, usage?.extractions],
+    [urlCount, subscription?.planId, credits],
   );
 
   // ── CSV file handling ────────────────────────────────────────────────────────

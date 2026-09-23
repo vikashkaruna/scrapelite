@@ -275,33 +275,39 @@ describe("readSubscription / writeSubscription", () => {
   });
 });
 
-describe("applyTrialCredit (FR-Z-02 / Q2 2026-07-15)", () => {
-  it("Free plan → applies the 25-extraction credit once", async () => {
+describe("applyTrialCredit is RETIRED (FR-Z-02 → the server's signup grant)", () => {
+  // The signup grant moved to `creditMeter.ensureAllowance`, which writes
+  // FREE_GRANT credits once per account under grant_period 'signup'. What these
+  // assert is that the CLIENT no longer grants anything: a browser-side grant
+  // would read 25 higher than the ledger the server refuses runs against.
+  it("grants nothing on Free", async () => {
     const { applyTrialCredit } = await import("./usageService.js");
     const r = applyTrialCredit("free");
-    expect(r.applied).toBe(true);
-    expect(r.credit).toBe(25);
-    expect(r.sub.bonusExtractions).toBe(25);
-    expect(r.sub.trialCreditAppliedAt).toBeTruthy();
-  });
-
-  it("is idempotent — re-running after the grant is a no-op", async () => {
-    const { applyTrialCredit } = await import("./usageService.js");
-    applyTrialCredit("free");
-    const r2 = applyTrialCredit("free");
-    expect(r2.applied).toBe(false);
-    expect(r2.credit).toBe(0);
-    // bonusExtractions stayed at 25 (not 50).
-    expect(readSubscription().bonusExtractions).toBe(25);
-  });
-
-  it("Paid plans (no trialCredit defined) → no credit applied", async () => {
-    const { applyTrialCredit, writeSubscription } = await import("./usageService.js");
-    writeSubscription({ planId: "select", bonusExtractions: 0 });
-    const r = applyTrialCredit("select");
     expect(r.applied).toBe(false);
     expect(r.credit).toBe(0);
-    expect(r.sub.bonusExtractions).toBe(0);
+  });
+
+  it("writes NOTHING to localStorage — no bonus, no applied-at flag", async () => {
+    const { applyTrialCredit } = await import("./usageService.js");
+    applyTrialCredit("free");
+    const sub = readSubscription();
+    expect(sub.bonusExtractions || 0).toBe(0);
+    expect(sub.trialCreditAppliedAt).toBeUndefined();
+  });
+
+  it("leaves an existing bonus untouched rather than adding to it", async () => {
+    const { applyTrialCredit, writeSubscription } = await import("./usageService.js");
+    writeSubscription({ planId: "free", bonusExtractions: 40 });
+    const r = applyTrialCredit("free");
+    expect(r.applied).toBe(false);
+    expect(readSubscription().bonusExtractions).toBe(40);
+  });
+
+  it("no plan defines trialCredit any more", async () => {
+    const { PLANS } = await import("./pricingConfig.js");
+    for (const p of PLANS) {
+      expect(p.trialCredit, `${p.id} must not carry a client-side signup grant`).toBeUndefined();
+    }
   });
 });
 
@@ -332,20 +338,15 @@ describe("RC-02 — concurrent usage writes are atomic (race conditions)", () =>
     expect(readUsage().extractions).toBe(7);
   });
 
-  it("applyTrialCredit concurrent calls — first wins, rest are no-ops", async () => {
+  it("applyTrialCredit repeated in one tick grants nothing at all", async () => {
     const { applyTrialCredit, readSubscription } = await import("./usageService.js");
-    // Fire 5 concurrent calls (in the same tick). The first one applies
-    // the credit (25), the rest are no-ops because trialCreditAppliedAt
-    // is already set.
+    // The old version granted 25 on the first call and no-opped after. The
+    // no-op now covers the first call too, so there is no window in which the
+    // client's number exceeds the ledger's.
     const results = [];
-    for (let i = 0; i < 5; i++) {
-      results.push(applyTrialCredit("free"));
-    }
-    const applied = results.filter((r) => r.applied);
-    expect(applied.length).toBe(1);
-    expect(applied[0].credit).toBe(25);
-    // The persisted bonusExtractions is exactly 25.
-    expect(readSubscription().bonusExtractions).toBe(25);
+    for (let i = 0; i < 5; i++) results.push(applyTrialCredit("free"));
+    expect(results.filter((r) => r.applied).length).toBe(0);
+    expect(readSubscription().bonusExtractions || 0).toBe(0);
   });
 });
 

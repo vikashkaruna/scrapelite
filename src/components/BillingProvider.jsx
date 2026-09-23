@@ -12,6 +12,7 @@ import { clearCreditsCache, fetchCredits, getCachedCredits } from "../lib/credit
 import { apiClient } from "../lib/apiClient.js";
 import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyService.js";
 import { getEffectivePlanMap, getEffectiveBundles } from "../lib/pricingOverrides.js";
+import { CREDIT_PACK_BY_ID } from "../lib/pricingConfig.js";
 import { validateCoupon, incrementCouponUses, checkCouponServer } from "../lib/adminService.js";
 import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
 import { fetchAdminGrantCoupon, redeemAdminGrantCoupon as redeemAdminGrantCouponRequest } from "../lib/billingRepo.js";
@@ -361,11 +362,24 @@ export function BillingProvider({ children }) {
     }
   }, [currency, rates, subscription, upgradePlan, planMap, handleStageChange]);
 
-  // ── Top-up bundle purchase (extractions, batch URLs, schedulers, workspaces) ─
+  // ── Top-up purchase — CREDIT PACKS and capability add-ons ───────────────────
+  //
+  // ⚠️ THE TWO KINDS ARE GRANTED IN DIFFERENT PLACES, AND THAT IS DELIBERATE.
+  // An add-on (`bonusBatchUrls`) unlocks a capability and is a local
+  // subscription field. A credit pack is MONEY IN THE LEDGER: `verify-payment`
+  // grants it server-side, keyed `pack:<paymentId>` so a retry cannot double it,
+  // and with NO expiry because a pack was bought rather than allowanced. The
+  // client must not write a credit balance of its own — doing so is how the
+  // retired signup grant came to show 25 credits the server would not spend.
+  //
+  // (Named `purchaseBatchPack` for its first caller; it handles every top-up.)
   const purchaseBatchPack = useCallback(async (bundleId = "batch-pack", qty = 1) => {
-    const bundle    = getEffectiveBundles().find((b) => b.id === bundleId);
+    const bundle    = getEffectiveBundles().find((b) => b.id === bundleId)
+                   || CREDIT_PACK_BY_ID[bundleId]
+                   || null;
     const bonusUrls = (bundle?.bonusBatchUrls || 0) * qty;
     const bonusExtr = (bundle?.bonusExtractions || 0) * qty;
+    const packCredits = (Number(bundle?.credits) || 0) * qty;
 
     const grantBundle = (sub) => {
       const updated = {
@@ -379,7 +393,17 @@ export function BillingProvider({ children }) {
 
     if (!hasPayment) {
       grantBundle(subscription);
-      return { status: "demo_mode", bonusUrls, bonusExtr };
+      // 🔴 A PACK IS NOT GRANTED IN DEMO MODE, AND THE RESULT SAYS SO.
+      // Faking it would put credits in the browser that no ledger row backs,
+      // and the first real run would then be refused against a balance the
+      // screen had just promised. Callers surface `creditsPending`.
+      return {
+        status: "demo_mode",
+        bonusUrls,
+        bonusExtr,
+        credits: packCredits,
+        creditsPending: packCredits > 0,
+      };
     }
 
     setPaymentPlanName(bundle?.name || bundleId);
@@ -400,9 +424,14 @@ export function BillingProvider({ children }) {
       });
       if (result?.status === "demo_mode" || result?.status === "success") {
         grantBundle(subscription);
+        // A pack's credits were written to the LEDGER by verify-payment, not
+        // here, so the cached balance is now stale by exactly the amount just
+        // bought. Re-read it rather than adding locally: the server's number is
+        // the one the next run will be charged against.
+        if (packCredits > 0) { refreshCredits().catch(() => {}); }
       }
       setPaymentStage(PAYMENT_STAGE.IDLE);
-      return result;
+      return { ...result, credits: packCredits || undefined };
     } catch (e) {
       const msg = e.message || "Purchase failed. Please try again.";
       setPaymentStage(PAYMENT_STAGE.ERROR);
@@ -412,7 +441,7 @@ export function BillingProvider({ children }) {
     } finally {
       setPaymentLoading(false);
     }
-  }, [currency, rates, subscription, handleStageChange]);
+  }, [currency, rates, subscription, handleStageChange, refreshCredits]);
 
   // ── Post-Stripe-redirect confirmation (called from PaymentSuccess page) ──
   const confirmPayment = useCallback(async (confirmedPlanId, { provider } = {}) => {

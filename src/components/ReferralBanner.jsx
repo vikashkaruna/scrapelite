@@ -1,16 +1,22 @@
 // src/components/ReferralBanner.jsx — FA2 (referral loop "give 25 / get 25" banner).
 //
+// The reward is a CREDIT GRANT (0079), not a bonus-extraction counter. Both
+// sides are granted REFERRAL_BONUS credits with no expiry, and credits are the
+// one pool every feature spends from — see CREDITS-UNIFICATION-PROPOSAL.md §4.6.
+//
 // Appears in the same slot as UsageUpsellBanner / GuestTrialBanner. Two
 // surfaces:
 //
-//  1. Quota-exhaustion trigger — when the user is at 100% of their plan
-//     limit, we show "Invite a friend, get 25 more extractions" with a
-//     copy-able invite URL (or share button on mobile).
+//  1. Low-pool trigger — when the CREDIT POOL is nearly spent we show
+//     "Invite a friend, get 25 more credits" with a copy-able invite URL (or
+//     share button on mobile). It used to trigger off `plan.limits.extractions`,
+//     a quota nothing enforces any more, so it fired on a free account holding
+//     90 unspent credits and never fired for anyone who topped up.
 //  2. Just-shared surface — when a successful referral redemption happens
 //     (the `?ref=CODE` URL handler in App.jsx flips `?ref_redeemed=1`),
-//     we show a one-time "Welcome bonus: 25 extractions added" toast.
+//     we show a one-time "Welcome bonus: 25 credits added" toast.
 //
-// The "invite code → bonus counter" wiring lives in src/lib/referralService.js.
+// The "invite code → credit grant" wiring lives in src/lib/referralService.js.
 // This component is pure presentation + a "Copy" button.
 
 import { useEffect, useMemo, useState } from "react";
@@ -20,8 +26,12 @@ import { useToast } from "./Toast.jsx";
 import { useBilling } from "./BillingProvider.jsx";
 import { useAuth } from "./AuthProvider.jsx";
 import { buildReferralUrl, fetchReferralStatus, REFERRAL_BONUS } from "../lib/referralService.js";
+import { creditPressure } from "../lib/credits/creditPressure.js";
 
 const DISMISS_KEY = "datiq.referralDismissedMonth";
+
+/** Show the invite once the pool is down to a tenth of a month's allowance. */
+const REFERRAL_TRIGGER_PCT = 0.1;
 
 function getCurrentMonth() {
   const d = new Date();
@@ -30,7 +40,7 @@ function getCurrentMonth() {
 
 export default function ReferralBanner() {
   const showToast = useToast();
-  const { usage, plan, subscription } = useBilling();
+  const { plan, credits } = useBilling();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [copied, setCopied] = useState(false);
@@ -64,7 +74,7 @@ export default function ReferralBanner() {
   // One-shot toast on a successful redemption.
   useEffect(() => {
     if (searchParams.get("ref_redeemed") === "1") {
-      showToast("Welcome bonus: 25 extractions added to your account.", "gift");
+      showToast(`Welcome bonus: ${REFERRAL_BONUS} credits added to your account.`, "gift");
       const next = new URLSearchParams(searchParams);
       next.delete("ref_redeemed");
       setSearchParams(next, { replace: true });
@@ -72,14 +82,13 @@ export default function ReferralBanner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Trigger: only when the user is at (or near) the plan limit.
-  const limit = plan?.limits?.extractions;
-  const used = usage?.extractions ?? 0;
-  if (!limit || limit === Infinity) return null;
-  const total = limit + (subscription?.bonusExtractions ?? 0);
-  const pct = total > 0 ? Math.floor((used / total) * 100) : 0;
-  const isOver = used >= total;
-  if (pct < 90 && !isOver) return null;
+  // Trigger: only when the credit pool is nearly spent. An unknown balance
+  // renders nothing — see creditPressure.js. `REFERRAL_TRIGGER_PCT` is tighter
+  // than the upsell banner's own band so the two do not both appear at once;
+  // the upsell is the first nudge, this is the second.
+  const pressure = creditPressure({ credits, allowance: plan?.limits?.credits });
+  if (!pressure.known) return null;
+  if (!pressure.empty && !(pressure.remainingPct !== null && pressure.remainingPct <= REFERRAL_TRIGGER_PCT)) return null;
   if (dismissed) return null;
   // No real code → no banner. Signed-out visitors and a store that cannot
   // answer both land here. Showing an invite link that nobody can be credited
@@ -90,7 +99,7 @@ export default function ReferralBanner() {
     try {
       await navigator.clipboard.writeText(myUrl);
       setCopied(true);
-      showToast("Invite link copied — share it to get 25 extractions.", "clipboard-copy");
+      showToast(`Invite link copied — share it to get ${REFERRAL_BONUS} credits.`, "clipboard-copy");
       setTimeout(() => setCopied(false), 1800);
     } catch {
       showToast("Copy failed. Select and copy manually.", "alert-triangle");
@@ -104,8 +113,8 @@ export default function ReferralBanner() {
     }
     try {
       await navigator.share({
-        title: "Try DatIQ — get 25 extractions",
-        text: `Use my invite code ${myCode} to get 25 extra extractions on DatIQ.`,
+        title: `Try DatIQ — get ${REFERRAL_BONUS} credits`,
+        text: `Use my invite code ${myCode} to get ${REFERRAL_BONUS} extra credits on DatIQ.`,
         url: myUrl,
       });
     } catch { /* user cancelled */ }
@@ -123,9 +132,11 @@ export default function ReferralBanner() {
           <Icon name="gift" size={16} />
         </div>
         <div className="uub-content">
-          <span className="uub-title">Out of extractions? Invite a friend, get 25 more.</span>
+          <span className="uub-title">
+            {pressure.empty ? "Out of credits?" : "Running low?"} Invite a friend, get {REFERRAL_BONUS} more.
+          </span>
           <span className="uub-desc">
-            You and your friend both get {REFERRAL_BONUS} extra extractions when they sign up with your link.
+            You and your friend both get {REFERRAL_BONUS} extra credits when they sign up with your link.
             {status.referrals > 0 && (
               <>{" "}
                 <strong>{status.referrals}</strong>

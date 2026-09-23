@@ -406,10 +406,10 @@ export default function Home() {
   const estimate = useMemo(
     () => estimateCredits({
       count: multiCount,
-      planId: billing?.subscription?.planId || "free",
-      bonusExtractions: billing?.subscription?.bonusExtractions || 0,
+      planId: billing?.planId || billing?.subscription?.planId || "free",
+      credits: billing?.credits || null,
     }),
-    [multiCount, billing?.subscription?.planId, billing?.subscription?.bonusExtractions, billing?.usage?.extractions],
+    [multiCount, billing?.planId, billing?.subscription?.planId, billing?.credits],
   );
 
   // Q3 (single-select) — outcome tile click. Picking a tile seeds the

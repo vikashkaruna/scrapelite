@@ -1,4 +1,16 @@
-// UsageUpsellBanner.jsx — shows an in-app banner when the user hits ≥80% of their plan limit.
+// UsageUpsellBanner.jsx — shows an in-app banner when the credit pool runs low.
+//
+// 🔴 IT TRIGGERS ON CREDITS NOW, NOT ON THE RETIRED EXTRACTION QUOTA. It used
+// to read `plan.limits.extractions` — 10 on Free — so it appeared at the 8th
+// extraction of a month in which the account still held 92 of its 100 credits,
+// and it kept appearing after a credit pack refilled the pool, because the
+// number it watched never moved. `creditPressure` is the one place the "are
+// they low?" rule lives; see src/lib/credits/creditPressure.js.
+//
+// ⚠️ NOTHING RENDERS WHEN THE BALANCE IS UNKNOWN. A guest, an account never
+// granted credits, or an unreadable read all yield `known: false`, and an
+// upsell that fires on "we could not read your balance" is an upsell shown to
+// a customer who is not actually short of anything.
 //
 // FA3 — task-aware paywall + annual anchoring. The banner reads the current
 // route (via useLocation) and uses `paywallCopy.buildPaywallCopy` to render a
@@ -10,6 +22,7 @@ import Icon from "./Icon.jsx";
 import { useBilling } from "./BillingProvider.jsx";
 import { buildPaywallCopy } from "../lib/paywallCopy.js";
 import { readPublicCount } from "../lib/publicQuota.js";
+import { creditPressure } from "../lib/credits/creditPressure.js";
 
 const DISMISS_KEY = "datiq.upsellDismissedMonth";
 
@@ -21,7 +34,7 @@ function getCurrentMonth() {
 export default function UsageUpsellBanner() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { usage, subscription, plan } = useBilling();
+  const { usage, subscription, plan, credits } = useBilling();
   const [dismissed, setDismissed] = useState(false);
 
   // Re-show the banner each month
@@ -42,23 +55,26 @@ export default function UsageUpsellBanner() {
 
   if (dismissed) return null;
 
-  const limit = plan?.limits?.extractions;
-  if (!limit || limit === Infinity) return null;
+  const pressure = creditPressure({ credits, allowance: plan?.limits?.credits });
+  if (!pressure.known) return null;
+  if (!pressure.low) return null;
 
-  const used = usage?.extractions ?? 0;
-  const bonus = subscription?.bonusExtractions ?? 0;
-  const total = limit + bonus;
-  const pct = total > 0 ? Math.floor((used / total) * 100) : 0;
-
-  if (pct < 80) return null;
-
-  const remaining = Math.max(0, total - used);
-  const isOver = used >= total;
+  const remaining = pressure.available;
+  const isOver = pressure.empty;
 
   // FA3 — derive task-aware copy from the current route + usage.
+  // ⚠️ `extractions` is passed only so `buildPaywallCopy`'s own "are they over?"
+  // branch resolves; the decision to show this banner at all was already made
+  // above, from the credit pool. Passing the plan's own (unenforced) extraction
+  // limit when the pool is empty keeps that branch agreeing with the pool
+  // rather than contradicting it.
   const paywall = buildPaywallCopy({
     route: location.pathname,
-    usage: { ...usage, extractions: used, batchUrls: usage?.batchUrls },
+    usage: {
+      ...usage,
+      extractions: isOver ? (plan?.limits?.extractions ?? 0) : (usage?.extractions ?? 0),
+      batchUrls: usage?.batchUrls,
+    },
     currentPlan: plan,
     currency: subscription?.currency || "USD",
   });
@@ -87,7 +103,7 @@ export default function UsageUpsellBanner() {
           <span className="uub-title">{paywall.title}</span>
           <span className="uub-desc">
             {isOver && !paywall.body
-              ? "You've used all your extractions this month."
+              ? "You've used all your credits."
               : paywall.body}
             {paywall.savingsLabel && (
               <>
@@ -98,7 +114,7 @@ export default function UsageUpsellBanner() {
             {!isOver && (
               <>
                 {" "}
-                <span className="uub-remaining">{remaining} left on {plan.name} this month</span>
+                <span className="uub-remaining">{remaining} credit{remaining === 1 ? "" : "s"} left on {plan.name}</span>
               </>
             )}
             {/* FA1 — show the public-quota mechanic if the user has

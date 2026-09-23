@@ -5,7 +5,8 @@ import {
   getEffectivePlans, getEffectiveBundles,
   getGlobalDiscount, applyGlobalDiscount,
 } from "../lib/pricingOverrides.js";
-import { CURRENCIES, CURRENCY_META, ENTERPRISE_PLAN } from "../lib/pricingConfig.js";
+import { CURRENCIES, CURRENCY_META, ENTERPRISE_PLAN, CREDIT_PACKS, AGENCY_OVERAGE } from "../lib/pricingConfig.js";
+import { DISCOVERABILITY_BASE, discoverabilityCredits } from "../lib/credits/creditWeights.js";
 import { getCouponsForPlan } from "../lib/offersService.js";
 import { formatPrice } from "../lib/currencyService.js";
 import { resolvePlanPrice, annualSavingsPercent } from "../lib/planPricing.js";
@@ -140,7 +141,7 @@ function PlanCard({ plan, currency, billingPeriod, rates, currentPlanId, onSelec
         <div key={c.id} className="plan-offer-chip">
           <Icon name={c.type === "extractions" ? "gift" : "tag"} size={12} />
           {c.type === "extractions"
-            ? <span>+{c.value} bonus extractions with <strong>{c.code}</strong></span>
+            ? <span>+{c.value} bonus credits with <strong>{c.code}</strong></span>
             : <span>{c.value}% off with <strong>{c.code}</strong></span>}
         </div>
       ))}
@@ -451,11 +452,39 @@ export default function Pricing() {
           </div>
         )}
 
+        {/* Credit packs — the ONE thing on this page that sells credits directly.
+            🔴 `CREDIT_PACKS` was imported here and never rendered, so the packs
+            that replaced the removed Extractions Bundle were purchasable by the
+            server and reachable from nowhere. They buy credits outright and
+            NEVER expire (verify-payment grants them with no expires_at), which
+            is what separates a pack from a monthly allowance. */}
+        <div className="topup-section">
+          <div className="topup-section-head">
+            <h2 className="topup-section-title">Credit packs</h2>
+            <p className="topup-section-sub">
+              Need more than your plan's monthly credits? Buy a pack on any plan, including Free.
+              Packs never expire.
+            </p>
+          </div>
+          <div className="topup-grid">
+            {CREDIT_PACKS.map((pack) => (
+              <TopupCard
+                key={pack.id}
+                bundle={pack}
+                currency={currency}
+                onBuy={handleBundleClick}
+                loading={loadingBundle}
+              />
+            ))}
+          </div>
+        </div>
+
         <div className="topup-section">
           <div className="topup-section-head">
             <h2 className="topup-section-title">Top-up bundles</h2>
             <p className="topup-section-sub">
-              Add capacity or features to any plan — no upgrade required.
+              Unlock a capability on any plan — no upgrade required. An add-on buys the
+              right to do something; the doing still costs credits.
             </p>
           </div>
           <div className="topup-grid">
@@ -475,10 +504,10 @@ export default function Pricing() {
         <div className="referral-teaser">
           <div className="referral-teaser-icon"><Icon name="gift" size={22} /></div>
           <div>
-            <div className="referral-teaser-title">Invite a friend, you both get 25 extractions</div>
+            <div className="referral-teaser-title">Invite a friend, you both get 25 credits</div>
             <div className="referral-teaser-desc">
               Sign in and share your invite link. When someone creates an account through it,
-              25 extractions are added to their account and 25 to yours — every time.
+              25 credits are added to their account and 25 to yours — every time. They never expire.
               <a href="mailto:hello@datiq.app?subject=Referral%20Program" className="referral-teaser-link"> Questions? Talk to us →</a>
             </div>
           </div>
@@ -497,7 +526,7 @@ export default function Pricing() {
           <div className="pricing-faq-row">
             <div className="pricing-faq-item">
               <Icon name="gift" size={16} />
-              <span>Free plan includes <strong>25 trial credits</strong> at signup — no card required.</span>
+              <span>Free plan includes <strong>100 credits</strong> at signup — no card required, and they never expire.</span>
             </div>
             <div className="pricing-faq-item">
               <Icon name="shield" size={16} />
@@ -505,7 +534,7 @@ export default function Pricing() {
             </div>
             <div className="pricing-faq-item">
               <Icon name="refresh" size={16} />
-              <span>Usage resets on the 1st of every month. Unused extractions don't roll over.</span>
+              <span>Your plan's credits renew on the 1st. Unused credits roll over for one month, so you can hold at most two months' worth.</span>
             </div>
             <div className="pricing-faq-item">
               <Icon name="info" size={16} />

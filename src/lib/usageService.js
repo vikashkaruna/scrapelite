@@ -21,30 +21,29 @@ export function readSubscription() {
 export function writeSubscription(sub) { lsSet(SUB_KEY, sub); }
 
 /**
- * Apply the once-only signup trial credit for a given plan.
+ * 🔴 RETIRED, AND KEPT AS A NO-OP ON PURPOSE. DO NOT RE-IMPLEMENT IT.
  *
- * Reads `getEffectivePlanById(planId).trialCredit ?? 0` — only the Free plan
- * currently defines a credit (25 extractions per the Q2 2026-07-15 decision).
- * The grant is persisted in `datiq.subscription` as `trialCreditAppliedAt` so
- * subsequent calls (e.g. a re-render or a fallback path) are idempotent.
+ * This used to be FR-Z-02 (Q2 2026-07-15): on signup the BROWSER granted itself
+ * the Free plan's `trialCredit` (25) by adding it to `bonusExtractions` in
+ * localStorage. After the credit switch the signup grant belongs to the server
+ * — `creditMeter.ensureAllowance` writes FREE_GRANT credits once per account
+ * under `grant_period = 'signup'`, which is idempotent by a partial unique
+ * index rather than by a flag in a store the user can edit.
  *
- * @param {string} planId
- * @returns {{ applied: boolean, credit: number, sub: object }}
+ * Leaving the client grant in place meant the two disagreed by 25: every
+ * surface reading the local subscription showed a pool the ledger would refuse
+ * to honour. That is the referral-loop defect exactly — a number nothing
+ * downstream reads, shown next to a refusal.
+ *
+ * It stays as a no-op because two live call sites invoke it (AuthProvider on
+ * SIGNED_IN, BillingProvider's `trackExtraction` fallback) and a no-op is a
+ * smaller, safer change than removing a call from an auth event handler. The
+ * shape is unchanged so callers need no branch.
+ *
+ * @returns {{ applied: false, credit: 0, sub: object }}
  */
-export function applyTrialCredit(planId) {
-  const plan = getEffectivePlanById(planId);
-  const credit = plan?.trialCredit ?? 0;
-  const sub = readSubscription();
-  if (credit <= 0 || sub.trialCreditAppliedAt) {
-    return { applied: false, credit: 0, sub };
-  }
-  const updated = {
-    ...sub,
-    trialCreditAppliedAt: new Date().toISOString(),
-    bonusExtractions: (sub.bonusExtractions || 0) + credit,
-  };
-  writeSubscription(updated);
-  return { applied: true, credit, sub: updated };
+export function applyTrialCredit(_planId) {
+  return { applied: false, credit: 0, sub: readSubscription() };
 }
 
 // ── Monthly usage ─────────────────────────────────────────────────────────────

@@ -97,9 +97,15 @@ describe("PLANS schema (U-12)", () => {
     }
   });
 
-  it("Free plan has a non-zero trialCredit (R4 FR-Z-02)", () => {
-    const free = PLAN_BY_ID.free;
-    expect(free.trialCredit).toBe(25);
+  it("Free's signup grant is the SERVER's, so no plan carries a trialCredit", () => {
+    // R4's FR-Z-02 had the browser grant itself 25 extractions on signup. The
+    // ledger grants FREE_GRANT once per account now (grant_period 'signup'), so
+    // a surviving client-side grant would show a pool 25 larger than the one
+    // the server will actually spend from.
+    for (const p of PLANS) {
+      expect(p.trialCredit, `${p.id} must not define trialCredit`).toBeUndefined();
+    }
+    expect(PLAN_BY_ID.free.limits.credits).toBeGreaterThan(0);
   });
 });
 

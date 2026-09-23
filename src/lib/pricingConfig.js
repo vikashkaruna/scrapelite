@@ -15,7 +15,16 @@ export const CURRENCY_META = {
 // price_usd_annual  = annual plan price per month (USD, ~17% off the monthly price)
 // price_inr         = monthly INR price (base, pre-GST — 18% GST added at checkout)
 // price_inr_annual  = promotional annual price per month (INR, base, pre-GST) — fixed rate
-// trialCredit       = once-only signup extraction credit (Free plan only)
+// trialCredit       = RETIRED (D-credits). It was a once-only 25-extraction
+//                     credit the BROWSER granted itself on signup, into
+//                     localStorage. The server now grants FREE_GRANT credits
+//                     once per account under grant_period 'signup'
+//                     (creditMeter.ensureAllowance), so keeping the client one
+//                     meant an account was told it had 125 while the ledger —
+//                     the thing that actually refuses a run — held 100. That is
+//                     the exact defect the referral loop already had once: a
+//                     banner promising a bonus on the same screen that refuses
+//                     to spend it. The field is gone; nothing reads it.
 //
 // ── credits: THE ONE AXIS EVERYTHING IS SOLD ON ────────────────────────────
 // 1 credit = one page fetch; every other weight is a multiple of it. The table
@@ -44,7 +53,6 @@ export const PLANS = [
     tagline: "Try DatIQ risk-free",
     badge: null,
     highlight: false,
-    trialCredit: 25,
     limits: {
       credits: 100,
       extractions: 10,
@@ -67,8 +75,7 @@ export const PLANS = [
       browser_extension: false,
     },
     features: [
-      { label: "10 extractions / month",        included: true },
-      { label: "3 discoverability audits / month",        included: true },
+      { label: "100 credits to start — never expires, no card needed", included: true },
       { label: "Workflow template library",     included: true },
       { label: "Bulk account lists (5 accounts)", included: true },
       { label: "Competitor watchlists",          included: false },
@@ -121,8 +128,7 @@ export const PLANS = [
       browser_extension: false,
     },
     features: [
-      { label: "200 extractions / month",          included: true },
-      { label: "10 discoverability audits / month",       included: true },
+      { label: "750 credits / month — about 750 pages or 39 Discoverability runs", included: true },
       { label: "Workflow template library",     included: true },
       { label: "Bulk account lists (20 accounts)", included: true },
       { label: "Competitor watchlists",          included: false },
@@ -172,8 +178,7 @@ export const PLANS = [
       browser_extension: true,
     },
     features: [
-      { label: "500 extractions / month",          included: true },
-      { label: "25 discoverability audits / month",       included: true },
+      { label: "2,500 credits / month — about 2,500 pages or 131 Discoverability runs", included: true },
       { label: "Workflow template library",     included: true },
       { label: "Bulk account lists (50 accounts)", included: true },
       { label: "Competitor watchlists",          included: true },
@@ -223,8 +228,7 @@ export const PLANS = [
       browser_extension: true,
     },
     features: [
-      { label: "1,000 extractions / month",        included: true },
-      { label: "100 discoverability audits / month",      included: true },
+      { label: "6,000 credits / month — about 6,000 pages or 315 Discoverability runs", included: true },
       { label: "Workflow template library",     included: true },
       { label: "Bulk account lists (100 accounts)", included: true },
       { label: "Competitor watchlists",          included: true },
@@ -279,8 +283,7 @@ export const PLANS = [
       browser_extension: true,
     },
     features: [
-      { label: "10,000 extractions / month",       included: true },
-      { label: "500 discoverability audits / month",      included: true },
+      { label: "40,000 credits / month — about 40,000 pages or 2105 Discoverability runs", included: true },
       { label: "Workflow template library",     included: true },
       { label: "Bulk account lists (250 accounts)", included: true },
       { label: "Competitor watchlists",          included: true },
@@ -333,8 +336,7 @@ export const PLANS = [
       browser_extension: true,
     },
     features: [
-      { label: "Unlimited extractions",            included: true },
-      { label: "2,000 discoverability audits / month",    included: true },
+      { label: "100,000 credits / month — about 100,000 pages or 5263 Discoverability runs", included: true },
       { label: "Workflow template library",     included: true },
       { label: "Bulk account lists (500 accounts)", included: true },
       { label: "Competitor watchlists",          included: true },
@@ -389,8 +391,8 @@ export const PLANS = [
       browser_extension: true,
     },
     features: [
+      { label: "28,000 credits / month — about 28,000 pages or 1473 Discoverability runs", included: true },
       { label: "10,000 row credits / month",   included: true },
-      { label: "250 discoverability audits / month",      included: true },
       { label: "Workflow template library",     included: true },
       { label: "Bulk account lists (500 accounts)", included: true },
       { label: "Competitor watchlists",          included: true },
