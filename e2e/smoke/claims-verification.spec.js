@@ -28,18 +28,57 @@ test("CLAIM: Monthly billing is the default toggle on /pricing", async ({ page }
   await expect(monthlyBtn).toHaveAttribute("aria-pressed", "true");
 });
 
-test("CLAIM: Select plan starts at $14.40/month (monthly billing)", async ({ page }) => {
+// 🔴 THE PRICE IS READ FROM THE TABLE, NOT TYPED IN. This pinned "$14.40" and
+// broke on the 2026-09-23 repricing — as one failing e2e spec at the very end
+// of a push, which is the most expensive place to discover a number you meant
+// to change. The claim worth verifying is not "Select costs $14.40", it is
+// "the price on the card is the price the app is configured to charge".
+//
+// ⚠️ BE CLEAR ABOUT WHAT THIS DOES AND DOES NOT CATCH. Both sides read the same
+// module, so changing a number in PLAN_TABLE changes the expectation too and
+// this stays green — a typo in the table is NOT caught here. What it catches is
+// the page failing to render the configured price: confirmed RED by
+// reintroducing `resolvePlanPrice`'s old INR conversion fallback, which puts
+// ₹1,470 on the card against a table that says ₹1,449. That is the regression
+// this exists for. The table's own values are pinned in
+// src/lib/pricingConfig.test.js.
+//
+// ⚠️ And it checks BOTH currencies, because they are set independently now. A
+// spec that only ever looked at USD is how the rupee prices drifted unnoticed
+// the last time.
+test("CLAIM: each plan card shows the configured price, in both currencies", async ({ page }) => {
   await page.goto("/pricing");
-  // Switch to monthly if it's not already
   const monthlyBtn = page.getByRole("button", { name: /Monthly billing/i });
   if (await monthlyBtn.isVisible()) await monthlyBtn.click();
   await expect(monthlyBtn).toHaveAttribute("aria-pressed", "true");
-  // Look for the $14.4 price in the Select card specifically. The page
-  // formats fractional USD to 1 decimal (so $14.40 displays as "$14.4" —
-  // same number, less visual noise). Scope to the plan card so we don't
-  // pick up the topup bundle prices.
-  const selectCard = page.locator(".plan-card").filter({ hasText: "Select" });
-  await expect(selectCard.getByText("$14.4")).toBeVisible();
+
+  // The page formats fractional USD to one decimal ($14.40 renders as "$14.4"),
+  // so compare on the same rule the page itself uses rather than on a literal.
+  const usd = (n) => `$${Math.round(n * 10) / 10}`;
+  const { PLANS } = await import("../../src/lib/pricingConfig.js");
+  const paid = PLANS.filter((p) => p.price_usd > 0 && !p.comingSoon);
+
+  for (const plan of paid) {
+    const card = page.locator(".plan-card").filter({ hasText: plan.name }).first();
+    await expect(card.getByText(usd(plan.price_usd), { exact: false }).first(),
+      `${plan.name} should show ${usd(plan.price_usd)}`).toBeVisible();
+  }
+
+  // Switch to INR through the PICKER, not through localStorage.
+  // ⚠️ `installOfflineMocks` pins `datiq.currency` to USD inside an
+  // addInitScript, and addInitScript re-runs on EVERY navigation including
+  // page.reload() — so a value written between navigations is overwritten on
+  // the next load. Driving the real control avoids that, and is the truer test
+  // anyway: it is what a visitor in India actually does.
+  await page.locator(".currency-btn").click();
+  await page.getByRole("option", { name: /INR/ }).click();
+
+  for (const plan of paid) {
+    const card = page.locator(".plan-card").filter({ hasText: plan.name }).first();
+    const inr = `₹${plan.price_inr.toLocaleString("en-IN")}`;
+    await expect(card.getByText(inr, { exact: false }).first(),
+      `${plan.name} should show ${inr}`).toBeVisible();
+  }
 });
 
 // ── Batch claims ──────────────────────────────────────────────────────────────

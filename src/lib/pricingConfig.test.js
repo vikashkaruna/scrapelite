@@ -257,6 +257,28 @@ describe("credit pools", () => {
     });
   });
 
+  // 🔴 INR IS A SET PRICE ON EVERY PAID PLAN, NOT A CONVERSION — and the only
+  // way to keep that true is to require it. `resolvePlanPrice` has no
+  // conversion fallback any more, so a paid plan with no INR price would
+  // resolve to 0 and render "₹0 / mo" on the card rather than failing loudly.
+  it("every paid plan carries a set INR price, monthly and annual", () => {
+    for (const p of PLANS.filter((x) => x.price_usd > 0)) {
+      expect(p.price_inr, `${p.id}.price_inr`).toBeGreaterThan(0);
+      expect(p.price_inr_annual, `${p.id}.price_inr_annual`).toBeGreaterThan(0);
+      expect(p.price_usd_annual, `${p.id}.price_usd_annual`).toBeGreaterThan(0);
+    }
+  });
+
+  // ⚠️ An annual rate at or above the monthly one would make the toggle a
+  // penalty, and `annualSavingsPercent` — which derives the advertised badge —
+  // would quietly report 0% rather than erroring.
+  it("annual is cheaper per month than monthly, in both currencies", () => {
+    for (const p of PLANS.filter((x) => x.price_usd > 0)) {
+      expect(p.price_usd_annual, `${p.id} USD`).toBeLessThan(p.price_usd);
+      expect(p.price_inr_annual, `${p.id} INR`).toBeLessThan(p.price_inr);
+    }
+  });
+
   // 🔴 A ladder where a bigger plan costs MORE per credit is not a ladder —
   // it makes upgrading worse value per unit, which is the opposite of what
   // the tiers are for.
