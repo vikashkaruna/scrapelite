@@ -94,8 +94,19 @@ export async function redeemCode(userId, code, env = process.env) {
 
 /**
  * How this user's referral stands: how many people they have invited
- * successfully, and the bonus balance the entitlement carries.
+ * successfully, and what those referrals have earned them.
  * Never throws — a stats read must not break the banner.
+ *
+ * ⚠️ `bonus` IS NOW THE SUM OF THE REFERRAL GRANTS, not
+ * `entitlements.bonus_extractions`. 0079 moved the reward to the credit
+ * ledger; reading the retired column would report 0 to every referrer while
+ * the reward itself worked perfectly — a banner that says the programme paid
+ * nothing is barely better than one that pays nothing.
+ *
+ * ⚠️ It is the REFERRAL total, not the balance. A referrer who has spent the
+ * credits still earned them, and "you have earned 50 from 2 referrals" is the
+ * sentence the banner is making; their current balance is a different
+ * question with its own endpoint.
  */
 export async function getReferralStats(userId, env = process.env) {
   const empty = { referrals: 0, bonus: 0, degraded: false };
@@ -103,22 +114,29 @@ export async function getReferralStats(userId, env = process.env) {
   const db = serviceDb(env);
   if (!db) return { ...empty, degraded: true };
   try {
-    const [countRes, entRes] = await Promise.all([
+    const [countRes, grantRes] = await Promise.all([
       fetch(
         `${db.base}/referral_redemptions?select=id&referrer_user_id=eq.${userId}`,
         { headers: { ...db.headers, Prefer: "count=exact" } },
       ),
       fetch(
-        `${db.base}/entitlements?select=bonus_extractions&user_id=eq.${userId}&limit=1`,
+        `${db.base}/credit_ledger?select=credits&user_id=eq.${userId}`
+          + `&reason=eq.grant&grant_period=like.referral-*`,
         { headers: db.headers },
       ),
     ]);
-    if (!countRes.ok || !entRes.ok) return { ...empty, degraded: true };
+    if (!countRes.ok || !grantRes.ok) return { ...empty, degraded: true };
     const rows = await countRes.json();
-    const ent = await entRes.json();
+    const grants = await grantRes.json();
     return {
       referrals: Array.isArray(rows) ? rows.length : 0,
-      bonus: Array.isArray(ent) && ent[0] ? ent[0].bonus_extractions || 0 : 0,
+      // Grant rows are stored NEGATIVE (0037's sign convention: positive is
+      // consumption). Flip it so the banner shows a number a human reads as
+      // earned rather than owed.
+      bonus: Array.isArray(grants)
+        ? grants.reduce((sum, g) => sum + Math.max(0, -Number(g.credits) || 0), 0)
+        : 0,
+      unit: "credits",
       degraded: false,
     };
   } catch (err) {

@@ -8,8 +8,12 @@ import {
 } from "../lib/usageService.js";
 import { can, computeLifecycle } from "../lib/entitlementModel.js";
 import { clearEntitlementCache, getCachedEntitlement, loadEntitlement } from "../lib/entitlementClient.js";
+import { clearCreditsCache, fetchCredits, getCachedCredits } from "../lib/credits/creditClient.js";
+import { apiClient } from "../lib/apiClient.js";
 import { getRates, getDefaultRates, detectCurrency } from "../lib/currencyService.js";
 import { getEffectivePlanMap, getEffectiveBundles } from "../lib/pricingOverrides.js";
+import { effectivePlanFor, isRepriced } from "../lib/planSnapshot.js";
+import { CREDIT_PACK_BY_ID } from "../lib/pricingConfig.js";
 import { validateCoupon, incrementCouponUses, checkCouponServer } from "../lib/adminService.js";
 import { syncUsageToDb, fetchUsageFromDb, getSessionId } from "../lib/usageRepo.js";
 import { fetchAdminGrantCoupon, redeemAdminGrantCoupon as redeemAdminGrantCouponRequest } from "../lib/billingRepo.js";
@@ -56,7 +60,7 @@ export function BillingProvider({ children }) {
   const confirmResolveRef                 = useRef(null);   // holds the resolve fn while modal is open
 
   // Reload effective plan map on every render to pick up admin overrides immediately
-  const planMap = getEffectivePlanMap();
+  const livePlanMap = getEffectivePlanMap();
 
   // Every mount fetch below is guarded by a `cancelled` flag. These resolve on
   // the network's schedule, so any of them can land after the provider has
@@ -146,8 +150,53 @@ export function BillingProvider({ children }) {
     return row;
   }, []);
 
+  /**
+   * The credit balance the gates decide against.
+   *
+   * ⚠️ UX ONLY — see creditClient's header. The server re-sums the ledger at
+   * the moment it charges; this exists so a button can be disabled without a
+   * round-trip per click.
+   */
+  const [credits, setCredits] = useState(() => getCachedCredits());
+  const refreshCredits = useCallback(async () => {
+    const next = await fetchCredits({ force: true }).catch(() => null);
+    if (next) setCredits(next);
+    return next;
+  }, []);
+
+  useEffect(() => {
+    // A sign-in or sign-out changes whose balance this is, so the cache must
+    // not survive it — the same reason entitlementClient is cleared there.
+    clearCreditsCache();
+    if (!user) { setCredits(null); return; }
+    fetchCredits({ force: true }).then(setCredits).catch(() => {});
+  }, [user?.id]);
+
   const planId = entitlementRow?.plan_id || (adminGrantCoupon?.status === "redeemed" ? adminGrantCoupon.planId : null) || subscription.planId || "free";
+  // ⚠️ `bonus` IS NOW DISPLAY-ONLY AND IS NOT PASSED TO ANY GATE.
+  // It summed three writers of `bonus_extractions` into an extraction quota
+  // that is retired (D1). The three writers moved to credit grants in §4.6 —
+  // the referral reward (0079), admin grants (admin-users.js) and credit
+  // coupons (POST /api/credits) — so the real balance is the ledger's, read
+  // through creditClient. This is kept so an account that was granted bonus
+  // extractions BEFORE the switch can still be shown what it was given;
+  // nothing decides anything from it.
   const bonus  = (entitlementRow?.bonus_extractions ?? 0) + (user?.user_metadata?.bonus_extractions ?? 0) + (subscription.bonusExtractions || 0);
+  // 🔴 GRANDFATHERING, CLIENT SIDE — the same substitution the server gate makes
+  // in requireEntitlement.grandfatheredPlanMap, and it has to be here too or the
+  // pre-flight checks would refuse work the server would allow. While the paid
+  // period is running the account keeps the better of what it bought and what
+  // the plan now offers, at the price it was charged; on renewal it tracks the
+  // live table. Only the CALLER'S OWN plan is substituted — the rest of the map
+  // stays live so an upgrade CTA quotes a plan somebody can actually buy.
+  const planMap = useMemo(() => {
+    if (!entitlementRow?.plan_snapshot || !planId) return livePlanMap;
+    const live = livePlanMap[planId];
+    const effective = effectivePlanFor(entitlementRow, live);
+    if (!effective || effective === live) return livePlanMap;
+    return { ...livePlanMap, [planId]: effective };
+  }, [livePlanMap, entitlementRow, planId]);
+
   const plan   = planMap[planId] ?? planMap.free;
 
   /**
@@ -329,11 +378,24 @@ export function BillingProvider({ children }) {
     }
   }, [currency, rates, subscription, upgradePlan, planMap, handleStageChange]);
 
-  // ── Top-up bundle purchase (extractions, batch URLs, schedulers, workspaces) ─
+  // ── Top-up purchase — CREDIT PACKS and capability add-ons ───────────────────
+  //
+  // ⚠️ THE TWO KINDS ARE GRANTED IN DIFFERENT PLACES, AND THAT IS DELIBERATE.
+  // An add-on (`bonusBatchUrls`) unlocks a capability and is a local
+  // subscription field. A credit pack is MONEY IN THE LEDGER: `verify-payment`
+  // grants it server-side, keyed `pack:<paymentId>` so a retry cannot double it,
+  // and with NO expiry because a pack was bought rather than allowanced. The
+  // client must not write a credit balance of its own — doing so is how the
+  // retired signup grant came to show 25 credits the server would not spend.
+  //
+  // (Named `purchaseBatchPack` for its first caller; it handles every top-up.)
   const purchaseBatchPack = useCallback(async (bundleId = "batch-pack", qty = 1) => {
-    const bundle    = getEffectiveBundles().find((b) => b.id === bundleId);
+    const bundle    = getEffectiveBundles().find((b) => b.id === bundleId)
+                   || CREDIT_PACK_BY_ID[bundleId]
+                   || null;
     const bonusUrls = (bundle?.bonusBatchUrls || 0) * qty;
     const bonusExtr = (bundle?.bonusExtractions || 0) * qty;
+    const packCredits = (Number(bundle?.credits) || 0) * qty;
 
     const grantBundle = (sub) => {
       const updated = {
@@ -347,7 +409,17 @@ export function BillingProvider({ children }) {
 
     if (!hasPayment) {
       grantBundle(subscription);
-      return { status: "demo_mode", bonusUrls, bonusExtr };
+      // 🔴 A PACK IS NOT GRANTED IN DEMO MODE, AND THE RESULT SAYS SO.
+      // Faking it would put credits in the browser that no ledger row backs,
+      // and the first real run would then be refused against a balance the
+      // screen had just promised. Callers surface `creditsPending`.
+      return {
+        status: "demo_mode",
+        bonusUrls,
+        bonusExtr,
+        credits: packCredits,
+        creditsPending: packCredits > 0,
+      };
     }
 
     setPaymentPlanName(bundle?.name || bundleId);
@@ -368,9 +440,14 @@ export function BillingProvider({ children }) {
       });
       if (result?.status === "demo_mode" || result?.status === "success") {
         grantBundle(subscription);
+        // A pack's credits were written to the LEDGER by verify-payment, not
+        // here, so the cached balance is now stale by exactly the amount just
+        // bought. Re-read it rather than adding locally: the server's number is
+        // the one the next run will be charged against.
+        if (packCredits > 0) { refreshCredits().catch(() => {}); }
       }
       setPaymentStage(PAYMENT_STAGE.IDLE);
-      return result;
+      return { ...result, credits: packCredits || undefined };
     } catch (e) {
       const msg = e.message || "Purchase failed. Please try again.";
       setPaymentStage(PAYMENT_STAGE.ERROR);
@@ -380,7 +457,7 @@ export function BillingProvider({ children }) {
     } finally {
       setPaymentLoading(false);
     }
-  }, [currency, rates, subscription, handleStageChange]);
+  }, [currency, rates, subscription, handleStageChange, refreshCredits]);
 
   // ── Post-Stripe-redirect confirmation (called from PaymentSuccess page) ──
   const confirmPayment = useCallback(async (confirmedPlanId, { provider } = {}) => {
@@ -400,7 +477,7 @@ export function BillingProvider({ children }) {
     }
     const u = incrementExtractions(count);
     setUsage(u);
-    const currentPlan = getEffectivePlanMap()[planId] ?? planMap.free;
+    const currentPlan = planMap[planId] ?? planMap.free;
     checkAndFireAlerts(u, currentPlan, subscription).catch(() => {});
   }, [planId, subscription, setUsage, user]);
 
@@ -419,9 +496,21 @@ export function BillingProvider({ children }) {
   // deactivated), which the existing per-call-site toasts cannot express. That
   // is deliberate: suspended UX belongs in one global banner and route guards
   // (PR3), not in 20 rewritten toast strings. Use whyCannot() for the reason.
+  // 🔴 `credits` REPLACES `bonus` HERE, and that is the whole switch on the
+  // client. The cached balance is a HINT so a button can be disabled without
+  // a round-trip; the server re-sums the ledger at the moment it charges. A
+  // missing or stale cache reads as "unknown", which entitlementModel lets
+  // through deliberately — a UI that refuses on a cache miss refuses paying
+  // customers during a blip.
   const gateCtx = useCallback(
-    (extra) => ({ planMap, usage: readUsage(), bonus, bonusBatchUrls: subscription.bonusBatchUrls || 0, ...extra }),
-    [planMap, bonus, subscription.bonusBatchUrls],
+    (extra) => ({
+      planMap,
+      usage: readUsage(),
+      credits: credits || undefined,
+      bonusBatchUrls: subscription.bonusBatchUrls || 0,
+      ...extra,
+    }),
+    [planMap, credits, subscription.bonusBatchUrls],
   );
 
   const checkCanExtract      = useCallback(() => can(entitlement, "extract", gateCtx()), [entitlement, gateCtx, usage]);
@@ -500,15 +589,27 @@ export function BillingProvider({ children }) {
     if (!valid) { setCouponError(reason); return false; }
     incrementCouponUses(trimmed);
     let sub = { ...subscription, coupon: { code: coupon.code, appliedAt: new Date().toISOString() } };
-    if (coupon.type === "extractions") sub.bonusExtractions = (sub.bonusExtractions || 0) + coupon.value;
+    // 🔴 A CREDIT COUPON IS REDEEMED ON THE SERVER, NOT HERE.
+    // This branch used to add the value to a localStorage object that fed the
+    // extraction quota. That quota is retired, and a balance lives in an
+    // append-only ledger behind the service key — so the same code today
+    // would show a success toast and grant nothing any gate could see.
+    if (coupon.type === "extractions" || coupon.type === "credits") {
+      try {
+        const res = await apiClient.redeemCredits(trimmed);
+        clearCreditsCache();
+        await refreshCredits();
+        setCouponSuccess(`Coupon applied — ${res.granted} credits added.`);
+        return true;
+      } catch (err) {
+        setCouponError(err?.message || "That coupon could not be applied.");
+        return false;
+      }
+    }
     if (coupon.type === "percent")     sub.discountPercent  = coupon.value;
     setSubscription(sub);
     writeSubscription(sub);
-    setCouponSuccess(
-      coupon.type === "extractions"
-        ? `Coupon applied — ${coupon.value} bonus extractions added.`
-        : `Coupon applied — ${coupon.value}% discount on your next upgrade.`
-    );
+    setCouponSuccess(`Coupon applied — ${coupon.value}% discount on your next upgrade.`);
     return true;
   }, [subscription, planId, planMap]);
 
@@ -601,7 +702,7 @@ export function BillingProvider({ children }) {
   }, [initiatePayment, dismissPaymentModal]);
 
   const ctx = useMemo(() => ({
-    subscription, plan, planId, bonus, usage,
+    subscription, plan, planId, bonus, usage, credits, refreshCredits,
     currency, rates, setCurrency,
     upgradePlan,
     initiatePayment, confirmPayment, purchaseBatchPack,
@@ -617,7 +718,7 @@ export function BillingProvider({ children }) {
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
     couponError, couponSuccess, adminGrantCoupon, redeemAdminGrant,
   }), [
-    subscription, plan, planId, bonus, usage,
+    subscription, plan, planId, bonus, usage, credits, refreshCredits,
     currency, rates, setCurrency,
     upgradePlan,
     initiatePayment, confirmPayment, purchaseBatchPack,

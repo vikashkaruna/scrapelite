@@ -1942,21 +1942,23 @@ async function gateAuditQuota(event, userId, count, rawWorkspaceId, capability =
       }),
     };
   }
-  const { count: used, degraded } = await store.countAuditsThisMonth(userId);
-  if (degraded) return { ok: true, resolved };
-
-  // ⚠️ `capability` IS A PARAMETER SO THERE IS ONE QUOTA GATE, NOT TWO.
-  // `audit.revalidate` delegates to `audit` inside the model, so it needs the
-  // same real monthly count — routing it through a feature-only gate reads
-  // `usage.audits` off an object nobody populated and 500s.
+  // ── THE AUDIT ROW COUNT IS RETIRED — ONE POOL DECIDES ───────────────────
+  // countAuditsThisMonth() stays (history, admin and the report header still
+  // ask "how many this month"), but it no longer GATES anything: an audit is
+  // priced in the same unit as every other provider call now, so it draws on
+  // the credit balance that resolveRequestEntitlement already resolved.
+  //
+  // ⚠️ `capability` IS STILL A PARAMETER SO THERE IS ONE GATE, NOT TWO.
+  // `audit.revalidate` delegates to `audit` inside the model.
   const check = checkCapability(resolved, capability, {
-    usage: { audits: used },
     auditCount: count,
-    bonusAudits: resolved.entitlement?.bonus_audits || 0,
     ...workspaceCtx,
   });
   if (!check.allowed) {
-    return { ok: false, response: json(DENY_STATUS, { ...denyBody(check), used, capability }) };
+    return {
+      ok: false,
+      response: json(DENY_STATUS, { ...denyBody(check), capability }),
+    };
   }
   return { ok: true, resolved };
 }
@@ -2081,13 +2083,12 @@ async function benchmarkRoute(event, userId, method, id, body) {
     const resolved = await resolveRequestEntitlement(event);
     const { ctx: workspaceCtx, refusal } = await buildWorkspaceCtx(resolved, body.workspace_id);
     if (refusal) return json(403, { error: refusal.message, code: refusal.code });
-    const { count: used, degraded } = await store.countAuditsThisMonth(userId);
-    if (!degraded) {
-      // Gated on the WHOLE set fitting. Half a competitive comparison is not a
-      // smaller comparison, it is a misleading one.
+    // Gated on the WHOLE set fitting. Half a competitive comparison is not a
+    // smaller comparison, it is a misleading one — so the model is asked about
+    // urlCount audits at once rather than one at a time.
+    {
       const check = checkCapability(resolved, "audit.benchmark", {
-        usage: { audits: used }, urlCount: urls.length,
-        bonusAudits: resolved.entitlement?.bonus_audits || 0,
+        urlCount: urls.length,
         ...workspaceCtx,
       });
       if (!check.allowed) return json(DENY_STATUS, { ...denyBody(check), capability: "audit.benchmark" });

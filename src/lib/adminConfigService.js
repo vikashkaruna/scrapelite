@@ -158,7 +158,10 @@ export async function fetchRealUsers() {
   return data;
 }
 
-/** Extend a user's bonus extractions by writing to their auth metadata. */
+/** Extend a user's bonus CREDITS by writing to their auth metadata.
+ *  The field is still named `bonus_extractions` — it is a stored wire name, and
+ *  renaming it would orphan every row already written. BillingProvider reads it
+ *  as credits; §4.6 of CREDITS-UNIFICATION-PROPOSAL.md records the migration. */
 export async function extendUserBonus(userId, bonus) {
   const res = await fetch(USERS_ENDPOINT, {
     method: "PATCH",

@@ -103,6 +103,19 @@ globalThis.fetch = async (url, options = {}) => {
     const r = await db.query(`select bonus_extractions from public.entitlements where user_id = $1`, [uid]);
     return new Response(JSON.stringify(r.rows), { status: 200 });
   }
+  // 0079 — the referral reward lives in the ledger now. PostgREST's `like`
+  // uses `*` as the wildcard where SQL uses `%`; translating it here rather
+  // than in the module keeps the module's query the real one.
+  if (path === "credit_ledger") {
+    const uid = (u.searchParams.get("user_id") || "").replace(/^eq\./, "");
+    const reason = (u.searchParams.get("reason") || "").replace(/^eq\./, "");
+    const like = (u.searchParams.get("grant_period") || "").replace(/^like\./, "").replace(/\*/g, "%");
+    const r = await db.query(
+      `select credits from public.credit_ledger
+        where user_id = $1 and reason = $2 and grant_period like $3`,
+      [uid, reason, like || "%"]);
+    return new Response(JSON.stringify(r.rows), { status: 200 });
+  }
   throw new Error(`unhandled REST path in shim: ${path}`);
 };
 
@@ -139,22 +152,27 @@ group("code issuance — the real module against real SQL");
   eq("a fresh account starts with no referrals", b.referrals, 0);
 }
 
-group("redemption — both sides credited in the real entitlements table");
+group("redemption — both sides credited as CREDITS in the real ledger");
 {
   const alice = await get(users.alice);
   const r = await redeem(users.bob, alice.code);
   eq("redemption succeeds", r.ok, true);
   eq("redemption reports the bonus", r.bonus, REFERRAL_BONUS);
 
-  // Read the TABLE, not the handler's own claim.
+  // Read the LEDGER, not the handler's own claim. 0079 moved the reward off
+  // entitlements.bonus_extractions; asserting the old column would have gone
+  // green against a programme that pays nobody.
   const rows = await db.query(
-    `select bonus_extractions b from public.entitlements
-      where user_id in ($1, $2)`, [users.alice, users.bob]);
-  eq("two entitlement rows carry the bonus", rows.rows.map((x) => x.b).sort(), [25, 25]);
+    `select public.credit_available(user_id) a from unnest(array[$1::uuid,$2::uuid]) user_id`,
+    [users.alice, users.bob]);
+  eq("both sides hold the reward as credits", rows.rows.map((x) => x.a).sort(), [25, 25]);
 
   const after = await get(users.alice);
   eq("the referrer now sees 1 referral", after.referrals, 1);
   eq("the referrer's bonus is reported back", after.bonus, 25);
+  // 🔴 Reported from the LEDGER. Reading the retired bonus_extractions column
+  // here would have shown every referrer 0 while the reward itself worked.
+  eq("...in credits, and named as such", after.unit, "credits");
 }
 
 group("refusals — each verdict reported distinctly");
@@ -176,16 +194,22 @@ group("real-world input and cache correctness");
   const pasted = await redeem(users.dave, `  ${carol.code.toLowerCase()}  `);
   eq("a lower-cased, padded code still redeems", pasted.ok, true);
 
-  // Without the version bump the invitee is told they have 25 extractions
-  // while the app keeps serving the old limit until the 60s cache expires.
+  // 🔴 Without the version bump the invitee is told they have just earned 25
+  // credits while the app keeps serving the pre-reward state until the 60s
+  // cache expires. The reward moved to the ledger in 0079; the cache
+  // generation did NOT move, and dropping it would have been a silent
+  // regression with the reward still arriving correctly.
   const before = await db.query(`select version v from public.entitlements where user_id = $1`, [users.alice]);
   const alice = await get(users.alice);
   await redeem(users.eve, alice.code);
   const post = await db.query(`select version v from public.entitlements where user_id = $1`, [users.alice]);
   ok("entitlements.version is bumped so the client cache busts",
      Number(post.rows[0].v) > Number(before.rows[0].v));
-  const total = await db.query(`select bonus_extractions b from public.entitlements where user_id = $1`, [users.alice]);
-  eq("the referrer accrues across referrals", total.rows[0].b, 50);
+  const total = await db.query(`select public.credit_available($1) a`, [users.alice]);
+  eq("the referrer accrues across referrals, in credits", total.rows[0].a, 50);
+  eq("...and nothing was written to the retired column", (await db.query(
+    `select bonus_extractions b from public.entitlements where user_id = $1`,
+    [users.alice])).rows[0].b, 0);
 }
 
 console.log(`\n${"─".repeat(62)}`);

@@ -2,6 +2,13 @@
 // C-35 — Static-then-operator merge, 60-s cache, missing config row → static.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PLAN_BY_ID, TOPUP_BUNDLES } from "../../src/lib/pricingConfig.js";
+
+// The server table is DERIVED from pricingConfig now, so these read it too —
+// what they prove is the RESOLUTION ORDER (static fallback, per-field operator
+// override), not any particular rupee figure.
+const PRO = PLAN_BY_ID.pro;
+const BATCH = TOPUP_BUNDLES.find((b) => b.id === "batch-pack");
 import {
   ALLOWED_BUNDLES,
   ALLOWED_PLANS,
@@ -34,8 +41,11 @@ describe("loadPricing — static defaults (C-35)", () => {
   it("returns static tables when Supabase is unconfigured", async () => {
     const { loadPricing } = await load();
     const p = await loadPricing();
-    expect(p.plans.pro).toEqual({ usd: 20.4, usd_annual: 17, inr: 1799, inr_annual: 1499 });
-    expect(p.bundles["batch-pack"]).toEqual({ usd: 9, inr: 749 });
+    expect(p.plans.pro).toEqual({
+      usd: PRO.price_usd, usd_annual: PRO.price_usd_annual,
+      inr: PRO.price_inr, inr_annual: PRO.price_inr_annual,
+    });
+    expect(p.bundles["batch-pack"]).toEqual({ usd: BATCH.price_usd, inr: BATCH.price_inr });
     expect(p.coupons.LAUNCH20).toMatchObject({ value: 20, planId: null, active: true });
     expect(p.global).toEqual({ percent: 0, active: false, expiresAt: null });
     // No fetch happened
@@ -48,7 +58,7 @@ describe("loadPricing — static defaults (C-35)", () => {
     fetchMock.mockResolvedValueOnce(new Response("[]", { status: 200 }));
     const { loadPricing } = await load();
     const p = await loadPricing();
-    expect(p.plans.pro.usd).toBe(20.4); // static
+    expect(p.plans.pro.usd).toBe(PRO.price_usd); // static
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -58,7 +68,7 @@ describe("loadPricing — static defaults (C-35)", () => {
     fetchMock.mockResolvedValueOnce(new Response("forbidden", { status: 403 }));
     const { loadPricing } = await load();
     const p = await loadPricing();
-    expect(p.plans.pro.usd).toBe(20.4);
+    expect(p.plans.pro.usd).toBe(PRO.price_usd);
   });
 });
 
@@ -78,8 +88,8 @@ describe("loadPricing — operator overrides (C-35)", () => {
     const p = await loadPricing();
     // operator override on usd only — other fields stay
     expect(p.plans.pro.usd).toBe(49);
-    expect(p.plans.pro.usd_annual).toBe(17);
-    expect(p.plans.pro.inr).toBe(1799);
+    expect(p.plans.pro.usd_annual).toBe(PRO.price_usd_annual);
+    expect(p.plans.pro.inr).toBe(PRO.price_inr);
   });
 
   it("operator can add a new coupon", async () => {
@@ -200,6 +210,11 @@ describe("ALLOWED_PLANS / ALLOWED_BUNDLES", () => {
     expect(ALLOWED_PLANS.has("go")).toBe(true);
     expect(ALLOWED_PLANS.has("unknown")).toBe(false);
     expect(ALLOWED_BUNDLES.has("batch-pack")).toBe(true);
-    expect(ALLOWED_BUNDLES.has("extractions-bundle")).toBe(true);
+    expect(ALLOWED_BUNDLES.has("credits-500")).toBe(true);
+    // 🔴 D15 — the Extractions Bundle sold pure consumption at 14x the
+    // cheapest plan's credit rate. It has to be gone from the SERVER too, or
+    // it stays purchasable by anyone who hand-builds the request, through a
+    // door the UI no longer shows.
+    expect(ALLOWED_BUNDLES.has("extractions-bundle")).toBe(false);
   });
 });

@@ -802,10 +802,20 @@ group("0029 referrals — unique codes, one redemption per account, both sides p
   // Redemption pays BOTH sides. The old client-side path never paid the referrer.
   const ok = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, a1])).result;
   eq("redemption succeeds", ok.ok, true);
-  const aliceEnt = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [alice]);
-  const bobEnt   = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [bob]);
-  eq("the referrer is credited", aliceEnt.b, 25);
-  eq("the invitee is credited", bobEnt.b, 25);
+  // ── 0079: THE REWARD IS A CREDIT GRANT, NOT bonus_extractions ───────────
+  // 🔴 Removing the Extractions Bundle without moving this would have left
+  // both sides with a row written and no reader — a referral programme that
+  // rewards nobody, with nothing erroring anywhere.
+  eq("the referrer is credited, in credits",
+    (await one(`select public.credit_available($1) a`, [alice])).a, 25);
+  eq("the invitee is credited, in credits",
+    (await one(`select public.credit_available($1) a`, [bob])).a, 25);
+  // ⚠️ EARNED, NOT ALLOWANCED — so it must not expire on the monthly clock.
+  eq("a referral reward never expires", (await q(
+    `select 1 from public.credit_ledger
+      where user_id=$1 and reason='grant' and expires_at is not null`, [alice])).length, 0);
+  eq("...and it is no longer written to the retired bonus_extractions column",
+    (await q(`select 1 from public.entitlements where user_id=$1 and bonus_extractions > 0`, [alice])).length, 0);
 
   // One per ACCOUNT, ever — the constraint that makes the reward finite.
   const replay = (await one(`select public.redeem_referral_code($1, $2, 25) result`, [bob, a1])).result;
@@ -824,8 +834,12 @@ group("0029 referrals — unique codes, one redemption per account, both sides p
   const lower = (await one(
     `select public.redeem_referral_code($1, $2, 25) result`, [dave, `  ${a1.toLowerCase()}  `])).result;
   eq("a lowercased, padded code still redeems", lower.ok, true);
-  const aliceAfter = await one(`select bonus_extractions b from public.entitlements where user_id = $1`, [alice]);
-  eq("the referrer accrues across referrals", aliceAfter.b, 50);
+  eq("the referrer accrues across referrals",
+    (await one(`select public.credit_available($1) a`, [alice])).a, 50);
+  // Each side is keyed independently, so twenty invitees pay twenty times
+  // while the same invitee can never be rewarded twice.
+  eq("...as two distinct grants, not one merged row", (await q(
+    `select 1 from public.credit_ledger where user_id=$1 and reason='grant'`, [alice])).length, 2);
 
   // The DB refuses a self-referral even if a handler bug ever tried to write one.
   let selfIns = null;
@@ -835,6 +849,47 @@ group("0029 referrals — unique codes, one redemption per account, both sides p
        values ($1, $2, $2, 25)`, [c1, carol]);
   } catch (err) { selfIns = err; }
   eq("a self-referral row is rejected by the check constraint", Boolean(selfIns), true);
+}
+
+// ── 0080: the plan a subscriber actually bought ──────────────────────────────
+group("plan snapshot — a repricing cannot cut a period already paid for");
+{
+  const u = (await one(`insert into auth.users (email) values ('snap@x.com') returning id`)).id;
+
+  // ⚠️ ADDITIVE AND NULLABLE. Every pre-0080 row keeps a null snapshot and
+  // therefore tracks the live price table exactly as it did before — so the
+  // migration changes no behaviour on the day it is applied.
+  await db.query(`insert into public.entitlements (user_id, plan_id) values ($1, 'pro')`, [u]);
+  const bare = await one(`select plan_snapshot, snapshot_at from public.entitlements where user_id=$1`, [u]);
+  eq("an existing row keeps a null snapshot", bare.plan_snapshot, null);
+  eq("...and a null snapshot_at", bare.snapshot_at, null);
+
+  const snap = JSON.stringify({
+    id: "developer", name: "Developer", price_usd: 32.4, price_usd_annual: 27,
+    price_inr: 2999, price_inr_annual: 2499,
+    limits: { credits: 28000, batch_max_urls: 500, bulk_list_max: 500 },
+  });
+  await db.query(
+    `update public.entitlements set plan_snapshot = $2::jsonb, snapshot_at = now(),
+            period_end = now() + interval '30 days' where user_id = $1`, [u, snap]);
+  const row = await one(
+    `select plan_snapshot->>'id' id,
+            (plan_snapshot->'limits'->>'bulk_list_max')::int bulk,
+            (plan_snapshot->>'price_usd')::numeric price
+       from public.entitlements where user_id = $1`, [u]);
+  eq("the snapshot stores the plan id", row.id, "developer");
+  eq("...the limits as purchased", row.bulk, 500);
+  eq("...and the price as charged", Number(row.price), 32.4);
+
+  // 🔴 THE COLUMN IS SERVICE-KEY ONLY, and that is load-bearing rather than
+  // incidental: a user who could write their own plan_snapshot could grant
+  // themselves any limit they liked. `entitlements` has had select-own and NO
+  // write policy for anyone since 0012; 0080 deliberately adds neither.
+  const pols = await q(
+    `select cmd from pg_policies where schemaname='public' and tablename='entitlements'`);
+  eq("entitlements still has exactly one policy", pols.length, 1);
+  eq("...and it is SELECT, so nobody can write their own snapshot",
+    String(pols[0].cmd).toUpperCase(), "SELECT");
 }
 
 // ── 0030: discoverability audits ─────────────────────────────────────────────

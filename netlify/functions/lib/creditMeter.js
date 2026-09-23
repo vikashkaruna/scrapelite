@@ -31,6 +31,9 @@ import { createClient } from "@supabase/supabase-js";
 import {
   creditsFor, KIND_TO_REASON, KIND_TO_UNIT, CREDIT_WEIGHTS,
 } from "../../../src/lib/credits/creditWeights.js";
+import { PLAN_BY_ID } from "../../../src/lib/pricingConfig.js";
+import { freeGrantEligibility, IP_WINDOW_HOURS } from "../../../src/lib/credits/freeTierPolicy.js";
+import { createHash } from "node:crypto";
 
 function serviceDb(env = process.env) {
   const url = env.SUPABASE_URL;
@@ -370,3 +373,150 @@ export async function grantMonthly(userId, credits, period, env = process.env) {
 }
 
 export { CREDIT_WEIGHTS };
+
+// ── THE ALLOWANCE ───────────────────────────────────────────────────────────
+//
+// Granted LAZILY, on first access in a period, rather than by a cron.
+//
+// 🔴 THAT IS A DELIBERATE CHOICE, NOT A SHORTCUT. This repo has a documented
+// incident where four crons declared a schedule and were scheduled nowhere —
+// they simply never fired, with no build error and no runtime error, for
+// months. A monthly allowance that depends on a cron somebody remembered to
+// register in netlify.toml has that failure mode, and its symptom would be
+// customers quietly unable to work. A lazy grant cannot silently not-happen:
+// the first request that needs the balance creates it.
+//
+// ⚠️ IT IS SAFE TO CALL ON EVERY REQUEST because credit_grant() is idempotent
+// by a unique index, but it is memoised per container anyway so the common
+// case is zero round trips.
+//
+// ⚠️ ONE GRANT PER USER PER MONTH, keyed on the period ALONE and not on the
+// plan. Keying it `2026-09:pro` would top a customer up again on every plan
+// change, which is farmable; keying it on the period means an upgrade
+// mid-month does not add the new plan's pool until the month turns. That is
+// the less generous reading and the safe one — recorded here rather than left
+// to be discovered.
+const allowanceMemo = new Map();   // `${userId}:${period}` → true
+
+/** 'YYYY-MM' in UTC — the same key usageService and credit_balance use. */
+export function periodKey(now = Date.now()) {
+  const d = new Date(now);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Make sure this account has had its allowance for the current period.
+ *
+ * Free (D3) is a ONE-TIME lifetime grant with no expiry — it does not reset,
+ * so its key is `signup` and it can never be issued twice. Every paid plan
+ * gets a monthly grant carrying 0078's rollover expiry.
+ */
+export async function ensureAllowance(userId, planId, env = process.env, now = Date.now(), identity = null) {
+  if (!userId) return { ok: false, reason: "no_user" };
+  const plan = PLAN_BY_ID[planId || "free"];
+  const credits = plan?.limits?.credits;
+  if (!Number.isFinite(credits) || credits <= 0) return { ok: false, reason: "no_pool" };
+
+  const lifetime = (planId || "free") === "free";
+  const period = lifetime ? "signup" : periodKey(now);
+  const memoKey = `${userId}:${period}`;
+  if (allowanceMemo.get(memoKey)) return { ok: true, memoised: true };
+
+  // ── STEP F: THE FREE POOL IS THE ONE WORTH FARMING ─────────────────────
+  // 100 credits is five Discoverability runs. A hundred throwaway addresses
+  // is five hundred, and nothing in the product would have noticed. Checked
+  // at the GRANT rather than at signup — see freeTierPolicy's header for why
+  // that is the better boundary, and why there is no device fingerprinting.
+  //
+  // ⚠️ PAID PLANS ARE NOT CHECKED. Somebody who paid has already proved the
+  // thing these controls are proxies for.
+  if (lifetime && identity) {
+    const ipGrants = await freeGrantsFromIp(identity.ip, env);
+    const verdict = freeGrantEligibility({
+      email: identity.email,
+      emailVerified: identity.emailVerified,
+      ipGrants,
+    });
+    if (!verdict.ok) {
+      // Memoised as refused so a page of requests does not re-run the lookup.
+      allowanceMemo.set(memoKey, true);
+      console.warn(`[DatIQ] free grant withheld (${verdict.reason}) for ${userId}`);
+      return { ok: false, reason: verdict.reason, message: verdict.message };
+    }
+  }
+
+  const res = lifetime
+    ? await grant(userId, credits, {
+        period,
+        expiresAt: null,   // 🔴 a lifetime pool. An expiry here would quietly
+                           // delete the taster from under someone who came
+                           // back a month later.
+        // ⚠️ The IP is stored HASHED and only so the windowed count below can
+        // be made. It is not an identifier, it is not linked to a device, and
+        // it is never read back as an address.
+        meta: {
+          kind: "signup", plan: planId || "free",
+          ...(identity?.ip ? { signup_ip: hashIp(identity.ip) } : {}),
+        },
+      }, env)
+    : await grantMonthly(userId, credits, period, env);
+
+  // `already_granted` is a SUCCESS: the allowance exists, which is what the
+  // caller asked about. Collapsing it into a failure is how a retry loop
+  // starts.
+  if (res?.ok || res?.reason === "already_granted") {
+    allowanceMemo.set(memoKey, true);
+    return { ok: true, granted: Boolean(res?.ok), credits };
+  }
+  return { ok: false, reason: res?.reason || "grant_failed" };
+}
+
+/** Test seam — the memo is per container and otherwise invisible. */
+export function resetAllowanceMemo() { allowanceMemo.clear(); }
+
+/** A salted, truncated hash. Enough to count, not enough to re-identify. */
+export function hashIp(ip) {
+  if (!ip) return null;
+  const salt = process.env.GUEST_ID_SALT || process.env.ADMIN_TOKEN_SECRET || "datiq";
+  return createHash("sha256").update(`${salt}:${String(ip)}`, "utf8").digest("hex").slice(0, 32);
+}
+
+/**
+ * How many Free grants this network has had in the window.
+ *
+ * 🔴 RETURNS null WHEN IT CANNOT COUNT, and null is NOT zero and NOT "over
+ * the limit". freeGrantEligibility treats an unknown as eligible, because
+ * refusing somebody their first 100 credits over a failed lookup is the
+ * worst possible first impression of the product.
+ */
+export async function freeGrantsFromIp(ip, env = process.env) {
+  if (!ip) return null;
+  const db = serviceDb(env);
+  if (!db) return null;
+  const since = new Date(Date.now() - IP_WINDOW_HOURS * 3600_000).toISOString();
+  try {
+    const { data, error } = await db
+      .from("credit_ledger")
+      .select("id")
+      .eq("reason", "grant")
+      .eq("grant_period", "signup")
+      .gte("occurred_at", since)
+      .contains("meta", { signup_ip: hashIp(ip) });
+    if (error) return null;
+    return Array.isArray(data) ? data.length : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The balance a gate should decide against, with the allowance ensured first.
+ * Returns the shape entitlementModel.creditGate() reads.
+ */
+export async function creditsContextFor(userId, planId, env = process.env, identity = null) {
+  if (!userId) return { enforced: false, guest: true, available: 0 };
+  await ensureAllowance(userId, planId, env, Date.now(), identity);
+  const status = await available(userId, env);
+  if (status.degraded) return { enforced: false, degraded: true, available: null, reason: status.reason };
+  return { enforced: status.enforced, available: status.available };
+}

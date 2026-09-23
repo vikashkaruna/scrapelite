@@ -31,7 +31,7 @@ export default function OffersBanner({ variant = "compact" }) {
       )}
       {offer.kind === "bonus" && (
         <>
-          <strong>+{offer.amount} bonus extractions</strong> with code <code>{offer.code}</code>
+          <strong>+{offer.amount} bonus credits</strong> with code <code>{offer.code}</code>
         </>
       )}
       {offer.expiresAt && (

@@ -21,6 +21,7 @@ import Icon from "./Icon.jsx";
 import { getEffectivePlans, applyGlobalDiscount } from "../lib/pricingOverrides.js";
 import { resolvePlanPrice } from "../lib/planPricing.js";
 import { formatPrice } from "../lib/currencyService.js";
+import { DISCOVERABILITY_BASE } from "../lib/credits/creditWeights.js";
 
 function fmtNum(n) {
   if (n === Infinity) return "Unlimited";
@@ -48,8 +49,19 @@ function matrixPrice(plan, billingPeriod, currency, rates) {
 }
 
 const FEATURE_ROWS = [
-  { key: "extractions",    group: "Usage",       label: "Monthly extractions",         render: (p) => fmtNum(p.limits?.extractions) },
-  { key: "enrichments",    group: "Usage",       label: "Enrichments per extraction",  render: (p) => fmtNum(p.limits?.enrichments_per_extraction) },
+  // ── ONE POOL, AT THE TOP, BECAUSE IT IS WHAT EVERYTHING COSTS ───────────
+  // 🔴 `extractions` and `audits` used to be two separate monthly budgets
+  // here, which is exactly how a customer could be refused an audit while
+  // holding a month of unused extractions. They are gone as ROWS; the credit
+  // pool replaces both, and the rows below translate it into the units people
+  // actually think in so the number means something.
+  //
+  // ⚠️ `enrichments_per_extraction` is gone too. It capped DEPTH per URL while
+  // the cost is per CALL, and every plan had it at Infinity — a limit nobody
+  // ever set is a limit nobody wanted.
+  { key: "credits",        group: "Usage",       label: "Credits / month",             render: (p) => fmtNum(p.limits?.credits) },
+  { key: "credits_pages",  group: "Usage",       label: "≈ pages extracted",           render: (p) => fmtNum(p.limits?.credits) },
+  { key: "credits_audits", group: "Usage",       label: "≈ Discoverability runs",      render: (p) => fmtNum(Math.floor((p.limits?.credits || 0) / DISCOVERABILITY_BASE)) },
   { key: "batch",          group: "Usage",       label: "Batch mode (URLs per run)",   render: (p) => fmtNum(p.limits?.batch_max_urls) },
   { key: "monitoring",     group: "Usage",       label: "Scheduled monitoring",        render: (p) => fmtNum(p.limits?.scheduled_monitoring) },
   // ── Intelligence workflows ──────────────────────────────────────────────
@@ -62,8 +74,13 @@ const FEATURE_ROWS = [
   // discoverability rows below came to be missing in the first place.
   { key: "templates",      group: "Intelligence workflows", label: "Workflow template library",            render: () => fmtBool(true) },
   { key: "template_fork",  group: "Intelligence workflows", label: "Fork & edit templates",                render: (p) => fmtBool(p.limits?.template_duplicate) },
-  { key: "bulk_lists",     group: "Intelligence workflows", label: "Bulk account list (accounts per list)", render: (p) => fmtNum(p.limits?.batch_max_urls) },
-  { key: "icp",            group: "Intelligence workflows", label: "ICP scoring & review queue",           render: (p) => fmtBool((p.limits?.batch_max_urls || 0) > 0) },
+  // 🔴 `bulk_list_max`, NOT `batch_max_urls`. They were one key until the
+  // 2026-09-23 repricing split them, and Free is now batch 5 / bulk 0 — so
+  // reading the batch limit here would tell a Free visitor they get a 5-account
+  // bulk list and ICP scoring, both of which `bulk.enrich` refuses. The matrix
+  // promising what the server declines is the one thing it must never do.
+  { key: "bulk_lists",     group: "Intelligence workflows", label: "Bulk account list (accounts per list)", render: (p) => fmtNum(p.limits?.bulk_list_max ?? p.limits?.batch_max_urls) },
+  { key: "icp",            group: "Intelligence workflows", label: "ICP scoring & review queue",           render: (p) => fmtBool(((p.limits?.bulk_list_max ?? p.limits?.batch_max_urls) || 0) > 0) },
   { key: "watchlists",     group: "Intelligence workflows", label: "Competitor watchlists",                render: (p) => fmtNum(p.limits?.scheduled_monitoring) },
   { key: "signal_rules",   group: "Intelligence workflows", label: "Signal routing rules",                 render: (p) => fmtBool(p.limits?.integrations) },
   { key: "reports",        group: "Intelligence workflows", label: "Shareable reports",                    render: () => fmtBool(true) },
@@ -75,14 +92,24 @@ const FEATURE_ROWS = [
   // discoverability audits this month → See plans", and the page it sent
   // people to never mentioned discoverability at all — the one number they
   // had gone there to compare.
-  { key: "audits",         group: "Discoverability", label: "Discoverability audits (per month)", render: (p) => fmtNum(p.limits?.audits) },
-  // Benchmarks gate on the audit allowance rather than a flag of their own:
-  // a competitive set is several full audits, so entitlementModel requires an
-  // allowance of at least 25 (`audit.benchmark`). Mirrored here rather than
-  // re-derived, so the table cannot drift from what the server enforces.
-  { key: "benchmarks",     group: "Discoverability", label: "Competitive benchmarks",  render: (p) => fmtBool(p.limits?.audits === Infinity || (p.limits?.audits || 0) >= 25) },
-  { key: "sxo",            group: "Discoverability", label: "Search-to-Outcome Intelligence", render: (p) => fmtBool(p.limits?.audits === Infinity || (p.limits?.audits || 0) >= 25) },
-  { key: "portfolio_os",   group: "Discoverability", label: "Enterprise Discoverability OS",  render: (p) => fmtBool(p.limits?.audits === Infinity || (p.limits?.audits || 0) >= 100) },
+  // ⚠️ THERE IS NO SEPARATE AUDIT ALLOWANCE ANY MORE, so this row says what a
+  // plan's pool BUYS rather than quoting a second budget. A run is 19 credits
+  // (29 at the ten-prompt ceiling) and it draws on the same pool as
+  // everything else — which is the point: nobody is refused an audit while
+  // holding a month of unused extractions.
+  // ⚠️ The COST, not a second count — the Usage group above already
+  // translates each plan's pool into runs, and quoting the same number twice
+  // reads as two separate allowances, which is precisely the impression this
+  // change exists to remove.
+  { key: "audit_cost",     group: "Discoverability", label: "Cost per Discoverability run", render: () => `${DISCOVERABILITY_BASE} credits` },
+  // Benchmarks stay a PLAN capability rather than a pure cost: the free
+  // taster shows what ONE audit looks like, and letting a competitor set
+  // through on balance alone would sell Select's headline feature to anyone
+  // who happened to have the credits. Mirrors entitlementModel's own
+  // threshold so the table cannot drift from what the server enforces.
+  { key: "benchmarks",     group: "Discoverability", label: "Competitive benchmarks",  render: (p) => fmtBool((p.limits?.credits || 0) >= 2500) },
+  { key: "sxo",            group: "Discoverability", label: "Search-to-Outcome Intelligence", render: (p) => fmtBool((p.limits?.credits || 0) >= 2500) },
+  { key: "portfolio_os",   group: "Discoverability", label: "Enterprise Discoverability OS",  render: (p) => fmtBool((p.limits?.credits || 0) >= 6000) },
   { key: "csv",            group: "Exports",     label: "CSV export",                  render: (p) => fmtBool((p.limits?.exports || []).includes("csv")) },
   { key: "pdf",            group: "Exports",     label: "PDF export",                  render: (p) => fmtBool((p.limits?.exports || []).includes("pdf")) },
   { key: "markdown",       group: "Exports",     label: "Markdown export",             render: (p) => fmtBool((p.limits?.exports || []).includes("markdown")) },
