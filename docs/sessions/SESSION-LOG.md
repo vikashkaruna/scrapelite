@@ -18,6 +18,114 @@
 
 ---
 
+## 2026-09-23 (latest) — Repricing: one maintained table, INR set not converted, and a snapshot so it cannot cut a period already paid for
+
+**Branch:** `claude/credits-switch` (continues PR [#216](https://github.com/vikashkaruna/scrapelite/pull/216)).
+**Source:** the owner's pricing sheet, applied verbatim.
+
+### 1. The table is the product now
+
+Prices and limits come from a single `PLAN_TABLE` literal. The plan objects, the
+numeric line on every card, the comparison matrix and the **server's own charge
+table** are all derived from it, so a repricing is one edit.
+
+🔴 **INR IS A PRICE, NOT A CONVERSION.** `resolvePlanPrice` used to fall back to
+`convertPrice(plan.price_usd, rates, "INR")`. A converted price moves when the
+rate moves, so the figure on the card and the figure charged could differ
+between page load and checkout — and the server never converted anything, so the
+two sides were computing a price by different rules. Every plan carries a set
+INR price and the conversion path is gone.
+
+🔴 **THE SERVER'S TABLE WAS A HAND-WRITTEN MIRROR** carrying the comment *"MUST
+MIRROR src/lib/pricingConfig.js"* — a request, not a mechanism, and the one
+table where a divergence charges a customer something other than the number they
+were shown. Derived now.
+
+### 2. A bulk list is not a batch, and it was gated as one
+
+Both read `batch_max_urls`, which is fine while every plan sets them equal and
+wrong for Free — now batch 5 / bulk 0. So Free's 5-URL batch silently granted it
+a 5-row account list: a product that fetches, enriches **and** ICP-scores each
+row at 3 credits apiece. ⚠️ The new `bulk_list_max` falls back to
+`batch_max_urls`, because an operator override written before the split would
+otherwise be stripped of bulk enrichment entirely.
+
+### 3. `0080` — the grandfathering the repricing made necessary
+
+Developer went 500 → 250 batch and bulk. Without a snapshot a subscriber three
+weeks into a paid month would have found their list size halved, with no notice.
+There were no paid accounts that day, which is exactly why it was the right day.
+
+🔴 **THE RULE: while the paid period runs, nothing gets worse and improvements
+still reach you.** Price is the one charged; each limit is the better of bought
+and current. ⚠️ **A merge, not a substitution** — replacing it with
+`{...snap.limits}` fails two tests: a limit key added after the snapshot would
+read `undefined` for every grandfathered account (and a gate reading undefined
+refuses or allows everything, depending on the key), and a genuine increase
+would be withheld from the people still on the old plan.
+
+### 4. 🔴 An admin repricing Go never reached the server
+
+`SERVER_PLAN_IDS` was the hand-written list `["select","pro","business","agency"]`,
+so the "Generate SQL" panel produced config that never mentioned **go** or
+**developer**. The pricing page would show the new price immediately while the
+server went on charging the static one. **A literal array is how that happened**,
+and a test restating the array would not have caught it — the test asserts an
+editor exists for everything that has a price instead.
+
+Credit packs had no override layer and no editor at all. They do now, with
+`credits` editable beside the price, because that field is what `verify-payment`
+writes to the ledger.
+
+### 5. Two things only the browser found
+
+- **The matrix promised Free a bulk list the gate refuses.** Its "Bulk account
+  list" and "ICP scoring" rows still derived from `batch_max_urls`.
+- **The Batch Pack carried `hidden: true`** and so appeared on no screen, while
+  still being priced, purchasable by id and honoured by the gate — a product
+  nobody could find and everybody paid to maintain.
+
+### 6. The copy guard found a file I had already "finished"
+
+Widening it to `pricingConfig`, the FAQ page and the user guide turned up:
+`public/faq/index.html` carrying every pricing claim **twice** (visible answer
+and FAQPage JSON-LD, both stale); a **second, larger pricing table** at line 230
+of `llms-full.txt`; and a "25-extraction trial credit" still on `/use-cases`.
+
+⚠️ It now also asserts INR is **quoted**, not just set. Before this the copy said
+"INR pricing is available" and gave no rupee figures — which is what let them
+drift unnoticed. **A currency you set by hand and never print is a currency
+nobody proofreads.**
+
+### Two numbers worth a second look
+
+- **Agency's overage now equals its committed rate.** $200 / 100,000 = $0.002 a
+  credit, and `AGENCY_OVERAGE` is $2.00 / 1,000 — the same figure. Coherent as a
+  policy ("past fair use you keep paying the plan rate"), but the guard had to be
+  relaxed from `>` to `>=`. Below the committed rate would make overrunning
+  cheaper than the plan and is still refused.
+- **The large credit pack is ₹11,449 against a converted ₹8,722** — a 31% INR
+  premium where the other two packs sit at parity. Implemented as the sheet
+  specifies; flagged because the sheet shows both columns and the difference may
+  or may not be deliberate.
+
+### Verified
+
+pre-push gate **9/9 green** · vitest **453 files / 7,284 passed** · db-verify
+**80 migrations / 896 assertions** · referral 19 · workflows 56 · readiness
+**5 pass / 2 warn / 0 fail** (gallery coverage, which can never clear from
+source). All 11 screenshots regenerated. Browser-verified at both currencies:
+every plan, pack and add-on figure matches the sheet.
+
+### Outstanding
+
+- 🔴 **Apply `0078`–`0080`** — [DB-MIGRATION-RUNBOOK.md §4g](../DB-MIGRATION-RUNBOOK.md).
+  Until `0080` lands, a repricing applies to everyone immediately.
+- 🔴 **Step C** — calibrate §1 against real provider invoices before the first
+  paid signup.
+
+---
+
 ## 2026-09-23 (later) — Credits, steps E+F+G: the pre-flight was refusing runs the server allows
 
 **Branch:** `claude/credits-switch`, cut from `staging` @ `581ffb35` after the
