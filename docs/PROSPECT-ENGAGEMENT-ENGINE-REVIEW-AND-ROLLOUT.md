@@ -2,7 +2,7 @@
 
 > **Updated:** 2026-09-24 · **Branch:** `feat/prospect-engagement-engine` (code @ `fedb0195`) · **Preview:** [deploy-preview-219](https://deploy-preview-219--datiqapp.netlify.app/engagement)
 > **Status:** Phase 1 (safe email MVP) **built, verified and in beta testing on the deploy preview.** Not merged, not in production.
-> **Database:** `0081` + `0082` are **applied to staging Supabase** (tables confirmed present, anon reads refused). **Not applied to production.** ⚠️ **The next migration number on this branch is `0083`.**
+> **Database:** `0081` + `0082` are **applied to staging Supabase** (tables confirmed present, anon reads refused). **Not applied to production.** ⚠️ **The next migration number is `0084`** (`0083` = account Brand Kit, 2026-09-24).
 > **Sending:** no real email has left. The preview runs with `ENGAGEMENT_MOCK_SEND=1`.
 > Supersedes the rollout parts of [PROSPECT-ENGAGEMENT-ENGINE-TEST-AND-CONFIG.md](PROSPECT-ENGAGEMENT-ENGINE-TEST-AND-CONFIG.md).
 
@@ -81,6 +81,31 @@ updated to where it stands.
 | Import: template, and typing a row without a header | **Download template**; a header-less paste is accepted, with each column's meaning read from its content (email, phone, then template order) and shown at the top of the dialog. |
 | Show "DatIQ busy" during slow actions | "DatIQ is working…" card on every server action; action buttons disabled meanwhile. |
 | Messages not in DatIQ style; screen needs a facelift | Error toasts showed a **success tick** — the shared toast gained an error/warn tone. The page, pipeline board, prospects table, drawer and results were rebuilt on design tokens (dark mode included) and a fixed-width layout; ~950 lines of old CSS removed. Also: `.btn` had **no disabled style anywhere in the app**, the Kanban "Draft" button never worked (it passed an object as an id), "Draft AI" became "Draft email", a "CAN-SPAM & TRAI Compliant" badge nothing checks was removed, and every text field had 32px of stray left padding. |
+
+### UX Phases A + B (2026-09-24) — see [ENGAGEMENT-AND-WORKFLOWS-UX-PLAN.md](ENGAGEMENT-AND-WORKFLOWS-UX-PLAN.md)
+
+- **Pipeline:** wraps to the page width; empty stages collapse; "+N more" opens a filtered Prospects tab.
+- **Prospects:** can be **edited** (new `update_prospect`: allow-listed fields, duplicate refused by name,
+  drafts rebuilt keeping hand edits, logged).
+- **Import:**
+  - takes pasted text, **uploaded or dropped files** (CSV/TSV/TXT/**.xlsx** via lazy-loaded `read-excel-file`)
+    and header-less rows;
+  - checks every row first (new read-only `preview_import`: already in campaign, opted out);
+  - imports the healthy rows;
+  - **names every skipped row**, including whom a duplicate matched.
+- **Sign-off:** multi-line (4 lines, escaped in HTML).
+- **Test-mode banner:** plain language; the technical hint only outside production (`ops_hint`).
+- **Brand kit:** "Use my account brand kit" (Business/Agency) fills the form from the account Brand Kit, now
+  stored server-side (**migration `0083`**, runbook §4i).
+- **Elsewhere:**
+  - Workflows: "Overview" → "Workflow hub"; the unconnected rows no longer offer a Delete that sent an empty
+    `ruleId`.
+  - Home: repeated capability grid hidden; "Page structure" chip, "Write a content brief" tile, and persona
+    recommendations on both.
+- **Docs:** the walkthrough ([PROSPECT-ENGAGEMENT-ENGINE-TEST-AND-CONFIG.md](PROSPECT-ENGAGEMENT-ENGINE-TEST-AND-CONFIG.md))
+  is rewritten for the current screens, with M-17…M-26.
+
+⚠️ **The next migration number is `0084`** (Phase C's rule↔source links).
 
 ---
 

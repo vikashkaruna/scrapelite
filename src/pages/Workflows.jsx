@@ -218,6 +218,11 @@ function DeleteWorkflowModal({ pipeline, onClose, onDeleted }) {
   const [error, setError] = useState(null);
 
   const handleDelete = async () => {
+    // Belt and braces: never send a delete for something that has no rule behind it.
+    if (!pipeline.rule_id) {
+      setError("This row isn't a saved workflow — there is nothing to delete. Connect a rule to it instead.");
+      return;
+    }
     setDeleting(true);
     setError(null);
     try {
@@ -236,11 +241,13 @@ function DeleteWorkflowModal({ pipeline, onClose, onDeleted }) {
           <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--danger-soft, #fee2e2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Icon name="alert-triangle" size={18} />
           </div>
-          <h3 style={{ margin: 0, fontSize: "16px" }}>Delete Workflow?</h3>
+          <h3 style={{ margin: 0, fontSize: "16px" }}>Delete this rule?</h3>
         </div>
 
         <p style={{ fontSize: "13px", color: "var(--text-2)", lineHeight: 1.5, margin: "0 0 12px" }}>
-          Are you sure you want to delete <strong>{pipeline.name}</strong>? This will decouple the end-to-end automation pipeline.
+          Delete the rule <strong>{pipeline.name}</strong>? It stops acting on {pipeline.upstream_summary || "its source"}
+          {pipeline.action_type && pipeline.action_type !== "none" ? <> and nothing more is sent to its destination</> : null}.
+          Your lists and watchlists are not affected.
         </p>
 
         <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r, 8px)", padding: "10px 12px", fontSize: "12px", color: "var(--text-2)", marginBottom: 16 }}>
@@ -255,7 +262,7 @@ function DeleteWorkflowModal({ pipeline, onClose, onDeleted }) {
             Cancel
           </button>
           <button type="button" className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting} style={{ background: "var(--danger, #dc2626)", color: "#fff" }}>
-            {deleting ? "Deleting…" : "Delete Workflow"}
+            {deleting ? "Deleting…" : "Delete rule"}
           </button>
         </div>
       </div>
@@ -346,7 +353,7 @@ export default function Workflows() {
     <div className="page container wf-page">
       <WorkflowsErrorBoundary>
         <header className="wf-head">
-        <h1>Workflow</h1>
+        <h1>Workflow hub</h1>
         <p>
           Account lists, competitor watchlists and signal rules are one pipeline:
           who you care about → what to watch about them → what happens when it moves.
@@ -569,6 +576,20 @@ export default function Workflows() {
                             Trigger: <b>{labelForTrigger(p.trigger_source)}</b>
                           </span>
                         </div>
+                        {/* An "Unconnected" row is built on the fly (lists or watchlists exist,
+                            no rule listens). There is no stored workflow behind it — Edit and
+                            Delete used to call the rules API with no id ("ruleId is required.").
+                            It offers the two things that actually help instead. */}
+                        {!p.rule_id ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <Link to={p.fix?.href || "/rules?new=1"} className="btn btn-primary btn-sm">
+                              <Icon name="plus" size={13} /> Connect a rule
+                            </Link>
+                            <Link to={p.trigger_source === "watchlist" ? "/watchlists" : "/lists"} className="btn btn-secondary btn-sm">
+                              {p.trigger_source === "watchlist" ? "Manage watchlists" : "Manage lists"}
+                            </Link>
+                          </div>
+                        ) : (
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <button
                             type="button"
@@ -588,6 +609,7 @@ export default function Workflows() {
                             <Icon name="trash-2" size={13} /> Delete
                           </button>
                         </div>
+                        )}
                       </div>
 
                       {/* End-to-End Steps Flow */}

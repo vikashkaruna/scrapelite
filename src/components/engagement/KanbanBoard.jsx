@@ -6,6 +6,12 @@
 //
 // Channel filters are gone: email is the only live channel, and chips for
 // WhatsApp/Telegram/SMS filtered to nothing while implying those channels work.
+//
+// Layout (owner request 2026-09-24): stages WRAP into as many rows as the page
+// width needs — the whole funnel in one view, never a sideways scrollbar.
+// Empty stages collapse to a slim header (toggle to show them in full), and a
+// busy stage shows its first CARD_LIMIT cards plus "+N more", which opens the
+// Prospects tab filtered to that stage.
 
 import { useMemo, useState } from "react";
 import Icon from "../Icon.jsx";
@@ -38,9 +44,12 @@ export const initials = (p) => {
   return (a + b).toUpperCase();
 };
 
-export default function KanbanBoard({ prospects = [], testSentIds = new Set(), onTransition, onSelectProspect, onGenerateMessage, busy = false }) {
+export const CARD_LIMIT = 6;
+
+export default function KanbanBoard({ prospects = [], testSentIds = new Set(), onTransition, onSelectProspect, onGenerateMessage, onShowStage, busy = false }) {
   const [search, setSearch] = useState("");
   const [moving, setMoving] = useState(null);
+  const [showEmpty, setShowEmpty] = useState(false);
 
   const columns = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -68,20 +77,24 @@ export default function KanbanBoard({ prospects = [], testSentIds = new Set(), o
           <Icon name="search" size={14} />
           <input type="search" placeholder="Search name, company, role or email" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search prospects" />
         </label>
-        <span className="engx-toolbar-note">Stages advance on real sends and delivery events; replies and conversions are yours to mark. Scroll sideways for every stage.</span>
+        <span className="engx-toolbar-note">Stages advance on real sends and delivery events; replies and conversions are yours to mark.</span>
+        <label className="engx-toggle">
+          <input type="checkbox" checked={showEmpty} onChange={(e) => setShowEmpty(e.target.checked)} />
+          Show empty stages
+        </label>
       </div>
 
       <div className="engx-columns" role="list" aria-label="Pipeline">
         {columns.map((col) => (
-          <section key={col.id} className="engx-col" role="listitem" aria-label={`${col.title}: ${col.items.length}`}>
+          <section key={col.id} className={`engx-col${col.items.length === 0 && !showEmpty ? " is-empty" : ""}`} role="listitem" aria-label={`${col.title}: ${col.items.length}`}>
             <header className="engx-col-head">
               <Icon name={col.icon} size={14} />
               <span className="engx-col-title">{col.title}</span>
               <span className="engx-count">{col.items.length}</span>
             </header>
             <div className="engx-col-body">
-              {col.items.length === 0 && <p className="engx-col-empty">None</p>}
-              {col.items.map((p) => {
+              {col.items.length === 0 && showEmpty && <p className="engx-col-empty">None</p>}
+              {col.items.slice(0, CARD_LIMIT).map((p) => {
                 const name = [p.first_name, p.last_name].filter(Boolean).join(" ") || p.email || "Unnamed";
                 const move = nextMove(p.status);
                 return (
@@ -115,6 +128,11 @@ export default function KanbanBoard({ prospects = [], testSentIds = new Set(), o
                   </article>
                 );
               })}
+              {col.items.length > CARD_LIMIT && (
+                <button type="button" className="engx-more" onClick={() => onShowStage?.(col.statuses)}>
+                  + {col.items.length - CARD_LIMIT} more in {col.title.toLowerCase()}
+                </button>
+              )}
             </div>
           </section>
         ))}

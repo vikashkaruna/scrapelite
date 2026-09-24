@@ -19,7 +19,7 @@ const MANUAL = [PROSPECT_STATUSES.NEW, PROSPECT_STATUSES.QUEUED, PROSPECT_STATUS
 
 export default function ProspectTimelineDrawer({
   prospect, activityLogs = [], isOpen, onClose, onTransition, onAddNote, onGenerateMessage,
-  suppressions = [], onOptOut, onLiftSuppression, consentBusy = false, busy = false,
+  suppressions = [], onOptOut, onLiftSuppression, onEdit, consentBusy = false, busy = false,
 }) {
   const [note, setNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
@@ -62,6 +62,11 @@ export default function ProspectTimelineDrawer({
             <h3 id="engx-drawer-title">{name}</h3>
             <p>{[prospect.role, prospect.company].filter(Boolean).join(" · ") || prospect.email}</p>
           </div>
+          {onEdit && (
+            <button type="button" className="engx-icon-btn" onClick={() => onEdit(prospect.id)} disabled={busy} aria-label="Edit prospect" title="Edit details">
+              <Icon name="pencil" size={16} />
+            </button>
+          )}
           <button type="button" className="engx-icon-btn" onClick={onClose} aria-label="Close drawer"><Icon name="x" size={18} /></button>
         </header>
 

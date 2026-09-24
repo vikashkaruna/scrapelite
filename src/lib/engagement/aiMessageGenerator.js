@@ -155,6 +155,21 @@ function clean(value, max = 120) {
   return String(value ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+/** A multi-line field (the sign-off): each line cleaned like clean(), at most
+ *  `maxLines` non-empty lines and `max` characters in total. */
+export function cleanLines(value, { maxLines = 4, max = 200 } = {}) {
+  const lines = String(value ?? "").replace(/\r\n?/g, "\n").split("\n")
+    .map((l) => clean(l, max)).filter(Boolean).slice(0, maxLines);
+  const out = [];
+  let used = 0;
+  for (const l of lines) {
+    if (used + l.length > max) break;
+    out.push(l);
+    used += l.length;
+  }
+  return out;
+}
+
 /** Only http(s) URLs are allowed as the call to action. */
 function safeUrl(value) {
   try {
@@ -192,7 +207,8 @@ function slots(prospect = {}, brandKit = {}) {
     valueProp: clean(brandKit.value_prop, 200),
     ctaUrl: safeUrl(brandKit.cta_url),
     ctaLabel: clean(brandKit.cta_label, 60) || "Learn more",
-    signoff: clean(brandKit.signoff_name, 80),
+    // Multi-line (owner request 2026-09-24): "Priya Sharma" / "Head of Growth, Acme".
+    signoff: cleanLines(brandKit.signoff_name),
   };
 }
 
@@ -200,7 +216,7 @@ function emailDraft(variant, s) {
   const roleLine = s.role ? ` as ${s.role}` : "";
   const valueLine = s.valueProp ? `At ${s.sender}, we offer ${s.valueProp}.` : `I'm getting in touch from ${s.sender}.`;
   const cta = s.ctaUrl ? `${s.ctaLabel}: ${s.ctaUrl}` : "Would a short call next week be useful?";
-  const sign = s.signoff ? `${s.signoff}\n${s.sender}` : `The ${s.sender} team`;
+  const sign = s.signoff.length ? `${s.signoff.join("\n")}\n${s.sender}` : `The ${s.sender} team`;
 
   const subject = variant === "B"
     ? `A question for ${s.company}`
@@ -219,7 +235,7 @@ function emailDraft(variant, s) {
   const ctaHtml = s.ctaUrl
     ? `<p><a href="${e(s.ctaUrl)}">${e(s.ctaLabel)}</a></p>`
     : `<p>Would a short call next week be useful?</p>`;
-  const signHtml = s.signoff ? `${e(s.signoff)}<br/>${e(s.sender)}` : `The ${e(s.sender)} team`;
+  const signHtml = s.signoff.length ? `${s.signoff.map(e).join("<br/>")}<br/>${e(s.sender)}` : `The ${e(s.sender)} team`;
   const bodyHtml = `${openingHtml}<p>${e(valueLine)}</p>${ctaHtml}<p>Best regards,<br/>${signHtml}</p>`
     + `<hr/><p style="font-size:11px;color:#888">If you'd rather not hear from us, <a href="${UNSUBSCRIBE_PLACEHOLDER}">unsubscribe here</a>.</p>`;
 

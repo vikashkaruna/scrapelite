@@ -4,8 +4,9 @@ import { describe, expect, it } from "vitest";
 import { OUTCOME_TILES, getOutcomeTile } from "./outcomeTiles.js";
 
 describe("Q3 — outcomeTiles: data shape", () => {
-  it("exports exactly 6 outcome tiles", () => {
-    expect(OUTCOME_TILES).toHaveLength(6);
+  it("exports exactly 7 outcome tiles (the content brief joined 2026-09-24)", () => {
+    expect(OUTCOME_TILES).toHaveLength(7);
+    expect(OUTCOME_TILES.map((t) => t.key)).toContain("content");
   });
 
   it("every tile has the required fields and a non-empty example URL", () => {

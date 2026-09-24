@@ -39,6 +39,7 @@ const TABLES = [
   // 0081 / 0082 — these hold prospects' names, emails and phone numbers.
   "engagement_campaigns", "engagement_prospects", "engagement_messages",
   "engagement_activity_log", "engagement_sync_configs", "engagement_suppressions",
+  "account_brand_kits",
 ];
 
 const wantProd = process.argv.includes("--prod");

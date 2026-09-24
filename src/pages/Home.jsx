@@ -41,8 +41,19 @@ const INTENTS = [
   { key: "contacts", icon: "users",    label: "Find contacts",  desc: "Leadership, emails & board" },
   { key: "pricing",  icon: "hash",     label: "Scrape pricing", desc: "Tiers, prices & plan features" },
   { key: "map",      icon: "map",      label: "Map site",       desc: "Discover all indexed URLs" },
+  // Headings + links, moved here from the retired "What can DatIQ extract" grid
+  // (owner 2026-09-24). Same extraction as a summary — every result carries the
+  // page's structure — the chip just says so and labels the run.
+  { key: "structure", icon: "list-tree", label: "Page structure", desc: "Headings & every link, in order" },
   { key: "custom",   icon: "code",     label: "Custom…",        desc: "Any field in plain English" },
 ];
+
+const SHOW_FEATURE_GRID = false;
+
+/** Persona recommendations (personaConfig `featuresHighlight` keys) mapped onto
+ *  the chips and Common-jobs tiles, now that the feature grid is hidden. */
+export const HIGHLIGHT_TO_CHIP = { summary: "summary", contacts: "contacts", pricing: "pricing", map: "map", custom: "custom", headings: "structure", links: "structure" };
+export const HIGHLIGHT_TO_TILE = { contacts: "lead", pricing: "pricing", headings: "seo", content: "content" };
 
 // Map feature card keys → intent chip key (null = post-extraction only)
 const CARD_TO_INTENT = {
@@ -239,6 +250,9 @@ export default function Home() {
   const location = useLocation();
 
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
+  const highlights = persona?.featuresHighlight || [];
+  const recommendedChips = new Set(highlights.map((k) => HIGHLIGHT_TO_CHIP[k]).filter(Boolean));
+  const recommendedTiles = new Set(highlights.map((k) => HIGHLIGHT_TO_TILE[k]).filter(Boolean));
   const examples = persona ? persona.examples : ["lumio.io", "stripe.com/pricing", "notion.so/help"];
   const defaultUrl = persona ? `https://${examples[0]}` : "https://lumio.io";
 
@@ -589,19 +603,23 @@ export default function Home() {
           <div className="intent-chips">
             <span className="intent-chips-label">What do you want to extract?</span>
             <div className="intent-chips-row">
-              {INTENTS.map((ic) => (
-                <button
-                  key={ic.key}
-                  type="button"
-                  className={"intent-chip" + (intent === ic.key ? " intent-chip-active" : "")}
-                  onClick={() => handleIntentSelect(ic.key)}
-                  title={ic.desc}
-                  style={intent === ic.key && persona ? { "--chip-accent": persona.color } : {}}
-                >
-                  <Icon name={ic.icon} size={14} />
-                  {ic.label}
-                </button>
-              ))}
+              {INTENTS.map((ic) => {
+                const recommended = recommendedChips.has(ic.key);
+                return (
+                  <button
+                    key={ic.key}
+                    type="button"
+                    className={"intent-chip" + (intent === ic.key ? " intent-chip-active" : "") + (recommended ? " intent-chip-recommended" : "")}
+                    onClick={() => handleIntentSelect(ic.key)}
+                    title={recommended ? `${ic.desc} — recommended for ${persona.label}` : ic.desc}
+                    style={persona && (intent === ic.key || recommended) ? { "--chip-accent": persona.color } : {}}
+                  >
+                    <Icon name={ic.icon} size={14} />
+                    {ic.label}
+                    {recommended && <span className="intent-chip-rec" aria-label="Recommended">★</span>}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -728,7 +746,8 @@ export default function Home() {
         )}
 
         <div className="rise" style={{ animationDelay: ".22s", width: "100%", maxWidth: 880, margin: "18px 0 0" }}>
-          <OutcomeTiles activeKey={activeTileKey} onToggle={handleTileToggle} />
+          <OutcomeTiles activeKey={activeTileKey} onToggle={handleTileToggle}
+            recommendedKeys={recommendedTiles} recommendColor={persona?.color} personaLabel={persona?.label} />
         </div>
 
         <section className="home-module-overview rise" aria-labelledby="modules-title" style={{ animationDelay: ".24s" }}>
@@ -757,6 +776,12 @@ export default function Home() {
             a section to a query; a statement heading forces it to infer the
             match. These are real section labels, not keyword bait: each one
             names what the section below it genuinely answers. */}
+        {/* Hidden (owner 2026-09-24): every card repeated a chip above or a Common
+            jobs tile. Its three unique items moved: headings + links → the
+            "Page structure" chip, content generation → the "Write a content brief"
+            tile; persona recommendations now mark those instead. Kept, not
+            deleted, so it can return. */}
+        {SHOW_FEATURE_GRID && (<>
         <h2 className="home-section-h rise" style={{ animationDelay: ".25s" }}>
           What can DatIQ extract from a page?
         </h2>
@@ -815,6 +840,7 @@ export default function Home() {
             );
           })}
         </ul>
+        </>)}
 
         {/* Q1 (alt) — Interactive Try-an-Example demo.
             Previously this wrapper was nested INSIDE the template-gallery
