@@ -70,6 +70,7 @@ export const deleteCampaign = (campaignId) => post("delete_campaign", { campaign
 // ── Prospects ───────────────────────────────────────────────────────────────
 export const listProspects = (campaignId, filters = {}) =>
   get("list_prospects", { campaign_id: campaignId, status: filters.status, search: filters.search });
+export const updateProspect = (prospectId, updates) => post("update_prospect", { prospect_id: prospectId, updates });
 export const addProspects = (campaignId, prospects = []) =>
   post("add_prospects", { campaign_id: campaignId, prospects });
 export const updateProspectStatus = (campaignId, prospectId, status, note) =>

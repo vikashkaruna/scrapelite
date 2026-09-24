@@ -50,6 +50,11 @@ export function describeActivity(log = {}) {
       return { ...base, icon: "slash", title: `Opted out of ${ch || "a channel"}`, detail: d.reason ? `By ${REASON[d.reason] || d.reason}${d.note ? ` — ${d.note}` : ""}.` : null, tone: "bad" };
     case "channel_opt_out_lifted":
       return { ...base, icon: "check-circle", title: `${ch || "Channel"} opt-out removed`, tone: "good" };
+    case "details_edited": {
+      const LABEL = { first_name: "first name", last_name: "last name", email: "email", phone: "phone", company: "company", role: "role", industry: "industry", country: "country" };
+      const f = Array.isArray(d.fields) ? d.fields.map((k) => LABEL[k] || k) : [];
+      return { ...base, icon: "pencil", title: "Details edited", detail: f.length ? `Changed: ${f.join(", ")}.` : null };
+    }
     case "opted_out_all_channels":
       return { ...base, icon: "slash", title: "Opted out of every channel", tone: "bad" };
     default: {

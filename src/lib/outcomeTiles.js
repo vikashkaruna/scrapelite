@@ -61,6 +61,17 @@ export const OUTCOME_TILES = [
     example: { url: "https://openai.com/careers", intent: "summary" },
     prompt: "List every open job title, department, location, and remote-friendly flag.",
   },
+  {
+    // Moved from the retired "What can DatIQ extract" grid (owner 2026-09-24):
+    // content generation was the one capability no chip or tile offered.
+    key: "content",
+    icon: "wand",
+    title: "Write a content brief",
+    desc: "SEO outline & brief from a page",
+    color: "var(--accent-2, #06b6d4)",
+    example: { url: "https://www.notion.so/product", intent: "summary" },
+    prompt: "Write an SEO content brief for this page's topic: target keyword, search intent, recommended H1 and H2 outline, questions to answer, and a suggested word count.",
+  },
 ];
 
 // Lookup helper for tile by key (used by tests + analytics).

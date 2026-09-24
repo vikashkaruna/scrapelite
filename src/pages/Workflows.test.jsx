@@ -114,7 +114,29 @@ describe("Workflows Page", () => {
     // Click Delete
     const deleteBtn = screen.getByTitle("Delete workflow");
     fireEvent.click(deleteBtn);
-    expect(screen.getByText(/Delete Workflow\?/i)).toBeInTheDocument();
+    expect(screen.getByText(/Delete this rule\?/i)).toBeInTheDocument();
+    expect(screen.getByText(/Your lists and watchlists are not affected/i)).toBeInTheDocument();
     expect(screen.getByText(/Audit Trail Preserved:/i)).toBeInTheDocument();
+  });
+
+  it("an unconnected row offers Connect a rule, never Delete (it has no rule to delete)", async () => {
+    const { getWorkflowGraph } = await import("../lib/workflows/workflowClient.js");
+    const { deleteRule } = await import("../lib/rules/rulesClient.js");
+    getWorkflowGraph.mockImplementation(async () => ({
+      ...mockGraph,
+      pipelines: [{
+        id: "unconnected-lists", name: "Account Lists (Unconnected)", trigger_source: "bulk_enrichment",
+        action_type: "none", action_config: {}, status: "unconnected", health: "disconnected",
+        health_label: "No Rule Listening", upstream_stage: "Account Lists", upstream_summary: "2 account lists",
+        execution_count: 0, last_execution: null, fix: { label: "Connect a rule", href: "/rules?new=1" },
+      }],
+    }));
+    render(<MemoryRouter><Workflows /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText("Account Lists (Unconnected)")).toBeInTheDocument());
+    expect(screen.queryByTitle("Delete workflow")).toBeNull();
+    expect(screen.getByRole("link", { name: /Connect a rule/i }).getAttribute("href")).toBe("/rules?new=1");
+    expect(screen.getByRole("link", { name: /Manage lists/i }).getAttribute("href")).toBe("/lists");
+    expect(deleteRule).not.toHaveBeenCalled();
+    getWorkflowGraph.mockImplementation(async () => mockGraph);
   });
 });

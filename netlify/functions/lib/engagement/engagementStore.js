@@ -24,10 +24,10 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { transitionProspect, PROSPECT_STATUSES, STATUS_METADATA } from "../../../../src/lib/engagement/stateMachine.js";
-import { dedupeProspects } from "../../../../src/lib/engagement/syncConnectors.js";
+import { dedupeProspects, normalizeEmail, normalizePhone } from "../../../../src/lib/engagement/syncConnectors.js";
 import { normalizeAddress } from "../../../../src/lib/engagement/suppressionModel.js";
 import { validateSender } from "./engagementGuards.js";
-import { validateMessageGuardrails, generatePersonalizedVariants } from "../../../../src/lib/engagement/aiMessageGenerator.js";
+import { validateMessageGuardrails, generatePersonalizedVariants, cleanLines } from "../../../../src/lib/engagement/aiMessageGenerator.js";
 
 // ── Database handle ─────────────────────────────────────────────────────────
 
@@ -81,10 +81,13 @@ const plainObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v 
 function cleanBrandKit(v) {
   const o = plainObject(v) || {};
   const out = {};
-  for (const k of ["company_name", "value_prop", "cta_url", "cta_label", "tone", "signoff_name", "logo_url"]) {
+  for (const k of ["company_name", "value_prop", "cta_url", "cta_label", "tone", "logo_url"]) {
     const s = str(o[k], k === "value_prop" ? 300 : 200);
     if (s) out[k] = s;
   }
+  // The sign-off keeps its line breaks (up to 4 lines) — the one multi-line field.
+  const sign = cleanLines(o.signoff_name).join("\n");
+  if (sign) out.signoff_name = sign;
   return out;
 }
 
@@ -280,6 +283,37 @@ function prospectRow(p, { userId, campaignId }) {
   };
 }
 
+/**
+ * Say, for every skipped duplicate, WHAT it matched and WHO it matched — the
+ * import result used to show only a count, so nobody could check which
+ * contacts were skipped. `existing: null` means it repeated another row of the
+ * same import rather than someone already in the campaign.
+ */
+export function describeDuplicates(duplicates = [], existing = []) {
+  const byEmail = new Map();
+  const byPhone = new Map();
+  for (const p of existing) {
+    const e = normalizeEmail(p.email); if (e && !byEmail.has(e)) byEmail.set(e, p);
+    const ph = normalizePhone(p.phone); if (ph && !byPhone.has(ph)) byPhone.set(ph, p);
+  }
+  return duplicates.map((d) => {
+    const e = normalizeEmail(d.email);
+    const ph = normalizePhone(d.phone);
+    const hit = (e && byEmail.get(e)) || (ph && byPhone.get(ph)) || null;
+    const matchedOn = e && (hit ? byEmail.get(e) === hit : true) ? "email" : "phone";
+    return {
+      first_name: d.first_name || null, last_name: d.last_name || null, email: d.email || null, phone: d.phone || null,
+      matched_on: matchedOn,
+      value: matchedOn === "email" ? e : ph,
+      existing: hit ? {
+        id: hit.id,
+        name: [hit.first_name, hit.last_name].filter(Boolean).join(" ") || hit.email || hit.phone,
+        created_at: hit.created_at || null,
+      } : null,
+    };
+  });
+}
+
 export async function addProspects(campaignId, userId, rawProspects = [], env = process.env) {
   const { db, fail } = withDb(userId, env);
   if (fail) return fail;
@@ -304,7 +338,8 @@ export async function addProspects(campaignId, userId, rawProspects = [], env = 
   if (!existing.ok) return existing;
   const { unique, duplicates, stats } = dedupeProspects(reachable, existing.prospects);
 
-  if (unique.length === 0) return { ok: true, prospects: [], duplicates, stats: { ...stats, invalidCount } };
+  const described = describeDuplicates(duplicates, existing.prospects);
+  if (unique.length === 0) return { ok: true, prospects: [], duplicates: described, stats: { ...stats, invalidCount } };
 
   const { data, error } = await db.from("engagement_prospects").insert(unique).select("*");
   if (error) {
@@ -313,7 +348,83 @@ export async function addProspects(campaignId, userId, rawProspects = [], env = 
     }
     return dbFail("addProspects", error);
   }
-  return { ok: true, prospects: data || [], duplicates, stats: { ...stats, invalidCount } };
+  return { ok: true, prospects: data || [], duplicates: described, stats: { ...stats, invalidCount } };
+}
+
+/** Fields a person may correct on a prospect. Stage, score and history are not here on purpose. */
+export const EDITABLE_PROSPECT_FIELDS = ["first_name", "last_name", "email", "phone", "company", "role", "industry", "country"];
+const FIELD_MAX = { first_name: 80, last_name: 80, company: 160, role: 120, industry: 120, country: 80 };
+
+/**
+ * Correct a prospect's details (owner request 2026-09-24).
+ *
+ *   - Only EDITABLE_PROSPECT_FIELDS are read from `updates`; anything else in
+ *     the body (user_id, status, engagement_score…) is ignored.
+ *   - Email and phone are normalised exactly as on import. A value already
+ *     held by ANOTHER prospect in the same campaign is refused, naming them.
+ *   - Consent follows the ADDRESS: an opt-out on the old address stays there,
+ *     and the consent panel simply reads the new address's status.
+ *   - Open drafts are rebuilt with the corrected details (hand edits kept,
+ *     approved-but-unsent back to review) — the brand-kit refresh rules.
+ */
+export async function updateProspect(prospectId, userId, updates = {}, env = process.env) {
+  const { db, fail } = withDb(userId, env);
+  if (fail) return fail;
+  const cur = await getProspect(prospectId, userId, env);
+  if (!cur.ok) return cur;
+  const before = cur.prospect;
+  const u = plainObject(updates) || {};
+
+  const patch = {};
+  for (const k of EDITABLE_PROSPECT_FIELDS) {
+    if (!(k in u)) continue;
+    if (k === "email") {
+      const raw = String(u.email ?? "").trim();
+      const v = raw ? normalizeAddress("email", raw) : null;
+      if (raw && !v) return { ok: false, status: 400, code: "email_invalid", error: `"${raw}" is not a valid email address.` };
+      patch.email = v;
+    } else if (k === "phone") {
+      const raw = String(u.phone ?? "").trim();
+      const v = raw ? normalizeAddress("sms", raw) : null;
+      if (raw && !v) return { ok: false, status: 400, code: "phone_invalid", error: `"${raw}" is not a valid phone number.` };
+      patch.phone = v;
+    } else {
+      patch[k] = str(u[k], FIELD_MAX[k]);
+    }
+  }
+  const next = { ...before, ...patch };
+  if (!next.email && !next.phone) {
+    return { ok: false, status: 400, code: "address_required", error: "A prospect needs an email or a phone number." };
+  }
+  const changed = Object.keys(patch).filter((k) => (patch[k] ?? null) !== (before[k] ?? null));
+  if (changed.length === 0) return { ok: true, prospect: before, changed: [], refresh: null };
+
+  // A clash with someone else in this campaign — refused by name, not by index error.
+  for (const [field, value] of [["email", changed.includes("email") && next.email], ["phone", changed.includes("phone") && next.phone]]) {
+    if (!value) continue;
+    const { data: clash } = await db.from("engagement_prospects").select("id,first_name,last_name,email,phone")
+      .eq("user_id", userId).eq("campaign_id", before.campaign_id).eq(field, value).neq("id", prospectId).limit(1);
+    if (clash?.length) {
+      const who = [clash[0].first_name, clash[0].last_name].filter(Boolean).join(" ") || clash[0].email || clash[0].phone;
+      return { ok: false, status: 409, code: "prospect_duplicate", error: `${value} is already ${who} in this campaign.` };
+    }
+  }
+
+  const { data, error } = await db.from("engagement_prospects").update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", prospectId).eq("user_id", userId).select("*");
+  if (error) {
+    if (error.code === "23505") return { ok: false, status: 409, code: "prospect_duplicate", error: "Another prospect in this campaign already has that email or phone." };
+    return dbFail("updateProspect", error);
+  }
+  await logActivity(db, {
+    user_id: userId, campaign_id: before.campaign_id, prospect_id: prospectId,
+    event_type: "details_edited", details: { fields: changed },
+  });
+  const refresh = await refreshUnsentMessages(before.campaign_id, userId, env, { prospectId });
+  return {
+    ok: true, prospect: data?.[0] || next, changed,
+    refresh: refresh.ok ? { refreshed: refresh.refreshed, backToReview: refresh.backToReview, keptEdited: refresh.keptEdited } : null,
+  };
 }
 
 async function logActivity(db, activity) {
@@ -437,14 +548,16 @@ export async function createMessages(campaignId, userId, rows = [], env = proces
  * Every write is conditional on the status it read, so a message the
  * dispatcher claims mid-refresh is left alone rather than changed under it.
  */
-export async function refreshUnsentMessages(campaignId, userId, env = process.env) {
+export async function refreshUnsentMessages(campaignId, userId, env = process.env, { prospectId = null } = {}) {
   const { db, fail } = withDb(userId, env);
   if (fail) return fail;
   const camp = await getCampaign(campaignId, userId, env);
   if (!camp.ok) return camp;
 
-  const { data: msgs, error } = await db.from("engagement_messages").select("*")
+  let mq = db.from("engagement_messages").select("*")
     .eq("user_id", userId).eq("campaign_id", campaignId).in("status", ["pending_approval", "queued"]);
+  if (prospectId) mq = mq.eq("prospect_id", prospectId);
+  const { data: msgs, error } = await mq;
   if (error) return dbFail("refreshUnsentMessages", error);
   const summary = { refreshed: 0, backToReview: 0, keptEdited: 0 };
   if (!msgs?.length) return { ok: true, ...summary };

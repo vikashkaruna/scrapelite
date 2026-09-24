@@ -14,7 +14,8 @@
 import { useMemo, useState } from "react";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
-import { analyzeProspectCsv, importOutcome, FIELD_LABELS, TEMPLATE_CSV } from "../../lib/engagement/prospectImport.js";
+import { analyzeProspectCsv, importOutcome, skippedRows, skippedCsv, FIELD_LABELS, TEMPLATE_CSV } from "../../lib/engagement/prospectImport.js";
+import { fmtDate } from "../../lib/utils.js";
 import { downloadText } from "./ProspectsTable.jsx";
 
 const SAMPLE = "first_name,last_name,email,company,role,phone\nAlice,Smith,alice@acme.com,Acme Corp,VP Engineering,+15551234567\nBob,Jones,bob@apex.io,\"Apex, Inc.\",CEO,";
@@ -44,7 +45,7 @@ export default function ImportProspectsModal({ campaignName, onImport, onClose }
     setError("");
     try {
       const res = await onImport(analysis.rows);
-      setResult({ outcome: importOutcome(analysis, res), analysis });
+      setResult({ outcome: importOutcome(analysis, res), analysis, skipped: skippedRows(analysis, res) });
     } catch (err) {
       setError(`Nothing was imported. ${err.message || "The import failed."}`);
     } finally {
@@ -65,8 +66,14 @@ export default function ImportProspectsModal({ campaignName, onImport, onClose }
         {result ? (
           <div className="eng-modal-form">
             <ImportResult outcome={result.outcome} />
-            <IssueList issues={result.analysis.issues} truncated={result.analysis.issuesTruncated} />
+            <SkippedList skipped={result.skipped} />
             <div className="eng-modal-actions">
+              {(result.skipped.inCampaign.length + result.skipped.repeated.length + result.skipped.rejected.length) > 0 && (
+                <Button type="button" variant="secondary" icon="download"
+                  onClick={() => downloadText("datiq-skipped-rows.csv", skippedCsv(result.skipped))}>
+                  Download skipped rows
+                </Button>
+              )}
               <Button type="button" variant="ghost" onClick={reset}>Import more</Button>
               <Button type="button" variant="primary" icon="check" onClick={onClose}>Done</Button>
             </div>
@@ -160,6 +167,52 @@ function ImportCheck({ analysis }) {
   );
 }
 
+/** Headline in words: "Imported 18 of 25 — 5 were already in this campaign, 2 repeated in your paste". */
+export function importHeadline(o) {
+  const skippedBits = [
+    o.alreadyInCampaign && `${o.alreadyInCampaign} ${o.alreadyInCampaign === 1 ? "was" : "were"} already in this campaign`,
+    o.repeatedInPaste && `${o.repeatedInPaste} repeated in your paste`,
+    (o.rejectedBeforeSending + o.rejectedByServer) && `${o.rejectedBeforeSending + o.rejectedByServer} had problems`,
+  ].filter(Boolean);
+  const head = o.added === 0 ? "No new prospects were added" : `Imported ${o.added} of ${o.totalRows}`;
+  return skippedBits.length ? `${head} — ${skippedBits.join(", ")}.` : `${head}.`;
+}
+
+function SkippedList({ skipped }) {
+  const { inCampaign, repeated, rejected } = skipped;
+  if (!inCampaign.length && !repeated.length && !rejected.length) return null;
+  const at = (l) => (l ? `Line ${l}` : "");
+  return (
+    <div className="engx-skipped">
+      {inCampaign.length > 0 && (
+        <section>
+          <h4>Already in this campaign ({inCampaign.length})</h4>
+          <ul>
+            {inCampaign.map((r, i) => (
+              <li key={`c${i}`}>
+                <span className="eng-import-line">{at(r.line)}</span> {r.name || r.email || r.phone}
+                <span className="engx-muted"> — same {r.matchedOn} as <strong>{r.existing?.name}</strong>{r.existing?.created_at ? `, added ${fmtDate(r.existing.created_at)}` : ""}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {repeated.length > 0 && (
+        <section>
+          <h4>Repeated in this import ({repeated.length})</h4>
+          <ul>{repeated.map((r, i) => <li key={`r${i}`}><span className="eng-import-line">{at(r.line)}</span> {r.name || r.email || r.phone} <span className="engx-muted">— same {r.matchedOn} as an earlier row</span></li>)}</ul>
+        </section>
+      )}
+      {rejected.length > 0 && (
+        <section>
+          <h4>Not imported — needs fixing ({rejected.length})</h4>
+          <ul>{rejected.map((r, i) => <li key={`x${i}`}><span className="eng-import-line">{at(r.line)}</span> {r.reason}</li>)}</ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
 function ImportResult({ outcome }) {
   const nothing = outcome.added === 0;
   const rows = [
@@ -172,9 +225,7 @@ function ImportResult({ outcome }) {
     <div className={`eng-import-result ${nothing ? "is-empty" : ""}`} role="status">
       <p className="eng-import-result-head">
         <Icon name={nothing ? "alert-triangle" : "check-circle"} size={16} />
-        {nothing
-          ? "No new prospects were added."
-          : `Imported ${outcome.added} of ${outcome.totalRows} row${outcome.totalRows === 1 ? "" : "s"}.`}
+        {importHeadline(outcome)}
       </p>
       <dl className="eng-import-stats">
         {rows.map((r) => (

@@ -27,6 +27,7 @@ import SendPanel from "../components/engagement/SendPanel.jsx";
 import CampaignModal from "../components/engagement/CampaignModal.jsx";
 import ImportProspectsModal from "../components/engagement/ImportProspectsModal.jsx";
 import EngagementBusy from "../components/engagement/EngagementBusy.jsx";
+import EditProspectModal from "../components/engagement/EditProspectModal.jsx";
 import * as api from "../lib/engagement/engagementClient.js";
 import { STATUS_METADATA } from "../lib/engagement/stateMachine.js";
 import { campaignOptionLabel } from "../lib/engagement/campaignLabels.js";
@@ -77,6 +78,8 @@ export default function Engagement() {
 
   const [campaignModal, setCampaignModal] = useState(null); // null | "create" | "edit"
   const [showImportModal, setShowImportModal] = useState(false);
+  const [tableStage, setTableStage] = useState("all"); // set by the board's "+N more"
+  const [editingProspectId, setEditingProspectId] = useState(null);
 
   // ── feedback ───────────────────────────────────────────────────────────────
   const [busyLabel, setBusyLabel] = useState(null);
@@ -210,6 +213,21 @@ export default function Engagement() {
     } catch (e) {
       fail(e, "Could not change the stage");
     }
+  });
+
+  // Throws on failure so the dialog can show the reason (e.g. a duplicate email, named).
+  const handleSaveProspect = (updates) => run("Saving prospect…", async () => {
+    const id = editingProspectId;
+    const res = await api.updateProspect(id, updates);
+    const r = res.refresh || {};
+    const bits = ["Prospect saved"];
+    if (r.refreshed) bits.push(`${plural(r.refreshed, "draft")} updated`);
+    if (r.backToReview) bits.push(`${plural(r.backToReview, "approved message")} back in review`);
+    if (r.keptEdited) bits.push(`${plural(r.keptEdited, "hand-edited draft")} left as written`);
+    ok(bits.join(" · "));
+    setEditingProspectId(null);
+    await loadCampaignData(selectedCampaignId);
+    if (activeProspectId === id) await loadProspectDetail(id);
   });
 
   /** Resolves true when the note was saved, so the drawer clears only then. */
@@ -410,8 +428,11 @@ export default function Engagement() {
         <div className="engx-banner is-warn" role="note">
           <Icon name="flask" size={15} />
           <div>
-            <strong>Test mode — no email leaves this environment.</strong>
-            <span> Sends are simulated and labelled “Test send”. To deliver for real, turn off <code>ENGAGEMENT_MOCK_SEND</code> and use a sender on a domain verified in Resend.</span>
+            <strong>Test mode — messages are not delivered from this environment.</strong>
+            <span> Sends are simulated and marked “Test send”.</span>
+            {access.ops_hint && (
+              <span className="engx-ops-hint"> Operators: turn off <code>ENGAGEMENT_MOCK_SEND</code> and use a sender on a verified domain to deliver for real.</span>
+            )}
           </div>
         </div>
       )}
@@ -456,7 +477,7 @@ export default function Engagement() {
           <div className="engx-tabs" role="tablist" aria-label="Engagement views">
             {TABS.map((t) => (
               <button key={t.id} type="button" role="tab" id={`engx-tab-${t.id}`} aria-selected={activeTab === t.id} aria-controls="engx-tabpanel"
-                className={`engx-tab ${activeTab === t.id ? "is-active" : ""}`} onClick={() => setActiveTab(t.id)}>
+                className={`engx-tab ${activeTab === t.id ? "is-active" : ""}`} onClick={() => { if (t.id === "prospects") setTableStage("all"); setActiveTab(t.id); }}>
                 <Icon name={t.icon} size={15} />
                 <span>{t.label}</span>
                 {t.id === "board" && <span className="engx-count">{prospects.length}</span>}
@@ -469,7 +490,8 @@ export default function Engagement() {
           <div className="engx-tabpanel" id="engx-tabpanel" role="tabpanel" aria-labelledby={`engx-tab-${activeTab}`}>
             {activeTab === "board" && (
               <KanbanBoard prospects={prospects} testSentIds={testSentIds} busy={busy}
-                onTransition={handleTransitionProspect} onSelectProspect={handleSelectProspect} onGenerateMessage={handleGenerateMessage} />
+                onTransition={handleTransitionProspect} onSelectProspect={handleSelectProspect} onGenerateMessage={handleGenerateMessage}
+                onShowStage={(statuses) => { setTableStage(statuses.join(",")); setActiveTab("prospects"); }} />
             )}
             {activeTab === "approval" && (
               <>
@@ -480,7 +502,7 @@ export default function Engagement() {
               </>
             )}
             {activeTab === "prospects" && (
-              <ProspectsTable prospects={prospects} campaignName={activeCampaign?.name || "campaign"} testSentIds={testSentIds} busy={busy}
+              <ProspectsTable key={tableStage} initialStage={tableStage} prospects={prospects} onEditProspect={setEditingProspectId} campaignName={activeCampaign?.name || "campaign"} testSentIds={testSentIds} busy={busy}
                 onSelectProspect={handleSelectProspect} onGenerateMessage={handleGenerateMessage} />
             )}
             {activeTab === "analytics" && <AnalyticsPanel analytics={analytics} campaignTitle={activeCampaign?.name || "campaign"} />}
@@ -503,6 +525,7 @@ export default function Engagement() {
         suppressions={suppressions}
         onOptOut={handleOptOut}
         onLiftSuppression={handleLiftSuppression}
+        onEdit={setEditingProspectId}
         consentBusy={consentBusy}
         busy={busy}
       />
@@ -517,6 +540,10 @@ export default function Engagement() {
           onDelete={campaignModal === "edit" ? handleDeleteCampaign : undefined}
           onClose={() => setCampaignModal(null)}
         />
+      )}
+
+      {editingProspectId && prospectsById.get(editingProspectId) && (
+        <EditProspectModal prospect={prospectsById.get(editingProspectId)} onSave={handleSaveProspect} onClose={() => setEditingProspectId(null)} />
       )}
 
       {showImportModal && selectedCampaignId && (

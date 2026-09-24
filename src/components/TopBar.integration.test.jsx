@@ -383,7 +383,7 @@ describe("Workflows menu section moved from Explore to below Schedules & Monitor
 
     const items = Array.from(desktopMenu.querySelectorAll(".nav-dropdown-item")).map((b) => b.textContent.trim());
     const schedulesIdx = items.findIndex((t) => /schedules.*monitors/i.test(t));
-    const overviewIdx = items.findIndex((t) => /^overview$/i.test(t));
+    const overviewIdx = items.findIndex((t) => /^workflow hub$/i.test(t));
     const listsIdx = items.findIndex((t) => /^account lists$/i.test(t));
     const watchlistsIdx = items.findIndex((t) => /^watchlists$/i.test(t));
     const rulesIdx = items.findIndex((t) => /^signal rules$/i.test(t));
@@ -395,7 +395,7 @@ describe("Workflows menu section moved from Explore to below Schedules & Monitor
     expect(rulesIdx).toBeGreaterThan(watchlistsIdx);
   });
 
-  it("clicking Overview in the user dropdown navigates to /workflows", async () => {
+  it("clicking Workflow hub in the user dropdown navigates to /workflows", async () => {
     setAuthUser();
     render(
       <Providers>
@@ -409,7 +409,7 @@ describe("Workflows menu section moved from Explore to below Schedules & Monitor
     act(() => fireEvent.click(screen.getByTitle("Your account")));
     const desktopMenu = document.querySelector(".user-dropdown-menu");
     const overviewBtn = Array.from(desktopMenu.querySelectorAll("button")).find(
-      (b) => /^overview$/i.test(b.textContent.trim()),
+      (b) => /^workflow hub$/i.test(b.textContent.trim()),
     );
     act(() => fireEvent.click(overviewBtn));
     expect(screen.getByTestId("location").textContent).toBe("/workflows");
@@ -430,10 +430,23 @@ describe("Workflows menu section moved from Explore to below Schedules & Monitor
     expect(groupLabel.textContent.trim()).toBe("Workflows");
 
     const subitems = Array.from(userSection.querySelectorAll(".mobile-nav-subitem")).map((b) => b.textContent.trim());
-    expect(subitems).toContain("Overview");
-    expect(subitems).toContain("Account Lists");
-    expect(subitems).toContain("Watchlists");
-    expect(subitems).toContain("Signal Rules");
+    expect(subitems).toEqual(["Workflow hub", "Engagement", "Account Lists", "Watchlists", "Signal Rules"]);
+    // The soft line sits between Engagement and the building blocks.
+    const group = userSection.querySelector(".mobile-nav-group");
+    const kids = Array.from(group.children).map((el) => (el.classList.contains("mobile-nav-divider") ? "—" : el.textContent.trim()));
+    expect(kids.slice(1)).toEqual(["Workflow hub", "Engagement", "—", "Account Lists", "Watchlists", "Signal Rules"]);
+  });
+
+  it("the desktop Workflows group has a divider after Engagement", async () => {
+    setAuthUser();
+    render(<Providers><TopBar /></Providers>);
+    await act(async () => { await Promise.resolve(); });
+    act(() => fireEvent.click(screen.getByTitle("Your account")));
+    const group = Array.from(document.querySelectorAll(".user-dropdown-menu .nav-dropdown-group"))
+      .find((g) => g.textContent.includes("Workflow hub"));
+    const kids = Array.from(group.children).map((el) =>
+      (el.classList.contains("nav-dropdown-divider") ? "—" : el.textContent.trim()));
+    expect(kids).toEqual(["—", "Workflows", "Workflow hub", "Engagement", "—", "Account Lists", "Watchlists", "Signal Rules"]);
   });
 });
 

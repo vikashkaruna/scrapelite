@@ -202,13 +202,15 @@ function UserDropdown({ user, persona, onWorkspace, onAccount, onSchedules, onWo
               <button className="nav-dropdown-item" role="menuitem"
                 onClick={() => { setOpen(false); onWorkflows?.(); }}>
                 <span className="nav-dd-icon"><Icon name="share-2" size={14} /></span>
-                Overview
+                Workflow hub
               </button>
               <button className="nav-dropdown-item" role="menuitem"
                 onClick={() => { setOpen(false); onEngagement?.(); }}>
                 <span className="nav-dd-icon"><Icon name="send" size={14} /></span>
                 Engagement
               </button>
+              {/* A soft line: what follows are the building blocks the hub wires together. */}
+              <div className="nav-dropdown-divider is-soft" role="separator" />
               <button className="nav-dropdown-item" role="menuitem"
                 onClick={() => { setOpen(false); onLists?.(); }}>
                 <span className="nav-dd-icon"><Icon name="users" size={14} /></span>
@@ -376,12 +378,13 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
                   <div className="mobile-nav-group-label">Workflows</div>
                   <button className="mobile-nav-subitem" onClick={() => go("/workflows")}>
                     <Icon name="share-2" size={14} />
-                    Overview
+                    Workflow hub
                   </button>
                   <button className="mobile-nav-subitem" onClick={() => go("/engagement")}>
                     <Icon name="send" size={14} />
                     Engagement
                   </button>
+                  <div className="mobile-nav-divider is-soft" role="separator" />
                   <button className="mobile-nav-subitem" onClick={() => go("/lists")}>
                     <Icon name="users" size={14} />
                     Account Lists

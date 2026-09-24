@@ -199,6 +199,7 @@ export function analyzeProspectCsv(text) {
   }
 
   const rows = [];
+  const lines = []; // lines[i] = the pasted line rows[i] came from
   const issues = [];
   let rejected = 0;
   let repeated = 0;
@@ -249,6 +250,7 @@ export function analyzeProspectCsv(text) {
     if (phone) out.phone = phone; else delete out.phone;
     if (Object.keys(custom).length) out.custom_attributes = custom;
     rows.push(out);
+    lines.push(rec.line);
   }
 
   return {
@@ -259,10 +261,47 @@ export function analyzeProspectCsv(text) {
     columns,
     customColumns,
     rows,
+    lines,
     issues: issues.slice(0, MAX_ISSUES_LISTED),
     issuesTruncated: Math.max(0, issues.length - MAX_ISSUES_LISTED),
     counts: { dataRows: dataRecords.length, ready: rows.length, rejected, repeated },
   };
+}
+
+const normEmail = (v) => (v ? String(v).trim().toLowerCase() : "");
+const normPhone = (v) => (v ? String(v).replace(/[^\d+]/g, "") : "");
+
+/**
+ * Every row that was NOT imported, with its line and reason — duplicates named
+ * against the prospect they matched. The import result used to give counts only.
+ * @returns {{ inCampaign: object[], repeated: object[], rejected: object[] }}
+ */
+export function skippedRows(analysis = {}, response = {}) {
+  const rows = analysis.rows || [];
+  const lines = analysis.lines || [];
+  const lineFor = (d) => {
+    const i = rows.findIndex((r) => (d.email && normEmail(r.email) === normEmail(d.email))
+      || (!d.email && d.phone && normPhone(r.phone) === normPhone(d.phone)));
+    return i >= 0 ? lines[i] ?? null : null;
+  };
+  const name = (r) => [r.first_name, r.last_name].filter(Boolean).join(" ") || r.email || r.phone || "";
+  const inCampaign = [];
+  const repeated = [];
+  for (const d of response.duplicates || []) {
+    const row = { line: lineFor(d), name: name(d), email: d.email || "", phone: d.phone || "", matchedOn: d.matched_on || "email", existing: d.existing || null };
+    (d.existing ? inCampaign : repeated).push(row);
+  }
+  const rejected = (analysis.issues || []).map((i) => ({ line: i.line, reason: i.reason }));
+  return { inCampaign, repeated, rejected };
+}
+
+export function skippedCsv(skipped) {
+  const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const out = [["line", "name", "email", "phone", "reason"].join(",")];
+  for (const r of skipped.inCampaign) out.push([r.line, r.name, r.email, r.phone, `Already in this campaign as ${r.existing?.name || "an existing prospect"} (same ${r.matchedOn})`].map(cell).join(","));
+  for (const r of skipped.repeated) out.push([r.line, r.name, r.email, r.phone, `Repeated in this import (same ${r.matchedOn})`].map(cell).join(","));
+  for (const r of skipped.rejected) out.push([r.line, "", "", "", r.reason].map(cell).join(","));
+  return out.join("\n") + "\n";
 }
 
 /**

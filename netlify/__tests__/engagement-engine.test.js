@@ -644,3 +644,94 @@ describe("notes and opt-out reasons reach the activity log", () => {
     expect(log.every((l) => l.event_type && l.timestamp && !Number.isNaN(Date.parse(l.timestamp)))).toBe(true);
   });
 });
+
+// ── Phase A: duplicates named, prospect edit, multi-line sign-off, ops hint ──
+describe("import names each duplicate and what it matched", () => {
+  it("says who a duplicate already is in the campaign", async () => {
+    const c = await campaignWithSender(A);
+    await addProspect(A, c.id, { first_name: "Ana", last_name: "Lopez", email: "ana@buyer.test" });
+    const r = await post(A, "add_prospects", { campaign_id: c.id, prospects: [
+      { first_name: "Annie", email: "ANA@buyer.test" }, { first_name: "New", email: "new@buyer.test" },
+    ] });
+    expect(r.body.prospects).toHaveLength(1);
+    expect(r.body.duplicates).toEqual([expect.objectContaining({
+      first_name: "Annie", matched_on: "email", value: "ana@buyer.test",
+      existing: expect.objectContaining({ name: "Ana Lopez" }),
+    })]);
+  });
+});
+
+describe("update_prospect", () => {
+  it("edits only the allowed fields, logs it, and cannot touch stage, score or owner", async () => {
+    const c = await campaignWithSender(A);
+    const p = await addProspect(A, c.id);
+    const r = await post(A, "update_prospect", { prospect_id: p.id, updates: {
+      company: "Buyer Inc", role: "CTO", status: "converted", engagement_score: 99, user_id: B,
+    } });
+    expect(r.status).toBe(200);
+    expect(r.body.changed.sort()).toEqual(["company", "role"]);
+    const row = await prospectRow(p.id);
+    expect(row).toMatchObject({ company: "Buyer Inc", role: "CTO", status: "new", engagement_score: 0, user_id: A });
+    const log = (await get(A, "list_activity", { prospect_id: p.id })).body.activity;
+    expect(log.find((l) => l.event_type === "details_edited")).toMatchObject({ details: { fields: expect.arrayContaining(["company", "role"]) } });
+  });
+
+  it("refuses an email another prospect in the campaign has — by name", async () => {
+    const c = await campaignWithSender(A);
+    await addProspect(A, c.id, { first_name: "Ana", last_name: "Lopez", email: "ana@buyer.test" });
+    const p2 = await addProspect(A, c.id, { first_name: "Bo", email: "bo@buyer.test" });
+    const r = await post(A, "update_prospect", { prospect_id: p2.id, updates: { email: "Ana@Buyer.test" } });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("ana@buyer.test is already Ana Lopez in this campaign.");
+  });
+
+  it("refuses a bad email, and a prospect with no address left", async () => {
+    const c = await campaignWithSender(A);
+    const p = await addProspect(A, c.id);
+    expect((await post(A, "update_prospect", { prospect_id: p.id, updates: { email: "nope" } })).body.code).toBe("email_invalid");
+    expect((await post(A, "update_prospect", { prospect_id: p.id, updates: { email: "" } })).body.code).toBe("address_required");
+  });
+
+  it("another tenant's prospect is a 404", async () => {
+    const c = await campaignWithSender(A);
+    const p = await addProspect(A, c.id);
+    expect((await post(B, "update_prospect", { prospect_id: p.id, updates: { company: "X" } })).status).toBe(404);
+  });
+
+  it("rebuilds that prospect's open draft with the corrected details, keeping hand edits", async () => {
+    const c = await campaignWithSender(A);
+    const [p1, p2] = await Promise.all([addProspect(A, c.id, { email: "a1@buyer.test", company: "OldCo" }), addProspect(A, c.id, { email: "a2@buyer.test", company: "OldCo" })]);
+    const g = await post(A, "generate_messages", { campaign_id: c.id, prospect_ids: [p1.id, p2.id] });
+    const m1 = g.body.messages.find((m) => m.prospect_id === p1.id);
+    const m2 = g.body.messages.find((m) => m.prospect_id === p2.id);
+    await post(A, "approve_message", { message_id: m2.id, edits: { body: "Hand written. {{unsubscribe_url}}" } });
+    const r1 = await post(A, "update_prospect", { prospect_id: p1.id, updates: { company: "NewCo" } });
+    expect(r1.body.refresh).toEqual({ refreshed: 1, backToReview: 0, keptEdited: 0 });
+    expect((await msgRow(m1.id)).body).toMatch(/NewCo/);
+    const r2 = await post(A, "update_prospect", { prospect_id: p2.id, updates: { company: "NewCo" } });
+    expect(r2.body.refresh.keptEdited).toBe(1);
+    expect((await msgRow(m2.id)).body).toBe("Hand written. {{unsubscribe_url}}");
+  });
+});
+
+describe("multi-line sign-off and the ops hint", () => {
+  it("keeps up to four sign-off lines and renders them, escaped", async () => {
+    const c = await campaignWithSender(A, { brand_kit: { company_name: "Acme", signoff_name: "Priya <b>Sharma</b>\r\nHead of Growth\n\n\nAcme\nfour\nfive" } });
+    expect(c.brand_kit.signoff_name).toBe("Priya <b>Sharma</b>\nHead of Growth\nAcme\nfour");
+    const p = await addProspect(A, c.id);
+    const g = await post(A, "generate_messages", { campaign_id: c.id, prospect_ids: [p.id] });
+    const m = await msgRow(g.body.messages[0].id);
+    expect(m.body).toMatch(/Best regards,\nPriya <b>Sharma<\/b>\nHead of Growth\nAcme\nfour\nAcme/);
+    expect(m.body_html).toContain("Priya &lt;b&gt;Sharma&lt;/b&gt;<br/>Head of Growth<br/>Acme<br/>four<br/>Acme");
+  });
+
+  it("names internal settings only outside production", async () => {
+    process.env.ENGAGEMENT_MOCK_SEND = "1";
+    expect((await get(A, "access")).body.ops_hint).toBe(true);
+    process.env.CONTEXT = "production";
+    const prod = (await get(A, "access")).body;
+    expect([prod.mock_sending, prod.ops_hint]).toEqual([false, false]);
+    delete process.env.CONTEXT;
+    delete process.env.ENGAGEMENT_MOCK_SEND;
+  });
+});

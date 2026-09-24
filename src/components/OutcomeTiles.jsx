@@ -10,7 +10,7 @@
 import Icon from "./Icon.jsx";
 import { OUTCOME_TILES } from "../lib/outcomeTiles.js";
 
-export default function OutcomeTiles({ activeKey = null, onToggle, disabled = false }) {
+export default function OutcomeTiles({ activeKey = null, onToggle, disabled = false, recommendedKeys = new Set(), recommendColor, personaLabel }) {
   return (
     <section className="outcome-tiles rise" aria-label="Common jobs to be done">
       <div className="outcome-tiles-head">
@@ -22,21 +22,23 @@ export default function OutcomeTiles({ activeKey = null, onToggle, disabled = fa
       <div className="outcome-tiles-row" role="list" aria-label="Common jobs to be done">
         {OUTCOME_TILES.map((tile) => {
           const isActive = activeKey === tile.key;
+          const recommended = recommendedKeys.has(tile.key);
           return (
             <div key={tile.key} className="outcome-tile-item" role="listitem">
               <button
                 type="button"
-                className={"outcome-tile" + (isActive ? " outcome-tile-active" : "")}
+                className={"outcome-tile" + (isActive ? " outcome-tile-active" : "") + (recommended ? " outcome-tile-recommended" : "")}
                 onClick={() => onToggle?.(isActive ? null : tile)}
                 disabled={disabled}
                 aria-pressed={isActive}
-                style={{ "--tile-accent": tile.color }}
-                title={isActive ? `Click to clear: ${tile.title}` : `Click to use: ${tile.title}`}
+                style={{ "--tile-accent": recommended && recommendColor ? recommendColor : tile.color }}
+                title={isActive ? `Click to clear: ${tile.title}` : `Click to use: ${tile.title}${recommended && personaLabel ? ` — recommended for ${personaLabel}` : ""}`}
               >
                 <span className="outcome-tile-icon" aria-hidden="true">
                   <Icon name={isActive ? "check" : tile.icon} size={16} />
                 </span>
                 <span className="outcome-tile-title">{tile.title}</span>
+                {recommended && <span className="outcome-tile-rec">Recommended</span>}
                 <span className="outcome-tile-desc">{tile.desc}</span>
               </button>
             </div>

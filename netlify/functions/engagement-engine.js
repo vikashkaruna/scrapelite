@@ -10,7 +10,7 @@
 //   get_analytics                  (campaign_id)
 // POST { action, … }
 //   create_campaign | update_campaign | delete_campaign
-//   add_prospects | update_prospect_status | delete_prospect
+//   add_prospects | update_prospect | update_prospect_status | delete_prospect
 //   generate_messages              (campaign_id, prospect_ids?, channel?)
 //   approve_message | reject_message | retry_message
 //   send_messages                  (campaign_id, message_ids?)
@@ -82,6 +82,9 @@ export const handler = async (event) => {
         live_channels: LIVE_CHANNELS,
         sender_domains: access.ok ? allowedSenderDomains() : [],
         mock_sending: access.ok ? mockSendingEnabled() : false,
+        // The technical "how to turn test mode off" line is for operators on
+        // test environments only; production copy never names settings or providers.
+        ops_hint: access.ok && mockSendingEnabled() && process.env.CONTEXT !== "production",
       });
     }
     if (!access.ok) return json(access.status, { ok: false, code: access.code, error: access.error });
@@ -203,6 +206,10 @@ async function handlePost(event, userId) {
       }
       return json(200, { ok: true });
     }
+
+    case "update_prospect":
+      if (!prospectId) return json(400, { ok: false, code: "prospect_required", error: "Missing prospect_id." });
+      return reply(await store.updateProspect(prospectId, userId, body.updates || {}));
 
     case "delete_prospect":
       if (!prospectId) return json(400, { ok: false, code: "prospect_required", error: "Missing prospect_id." });

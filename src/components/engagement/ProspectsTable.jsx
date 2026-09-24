@@ -31,13 +31,15 @@ export function downloadText(filename, text, type = "text/csv;charset=utf-8") {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function ProspectsTable({ prospects = [], campaignName = "campaign", testSentIds = new Set(), onSelectProspect, onGenerateMessage, busy = false }) {
+export default function ProspectsTable({ prospects = [], campaignName = "campaign", testSentIds = new Set(), onSelectProspect, onGenerateMessage, onEditProspect, initialStage = "all", busy = false }) {
   const [search, setSearch] = useState("");
-  const [stage, setStage] = useState("all");
+  // A stage may name several statuses ("opened,clicked"), from the board's "+N more".
+  const [stage, setStage] = useState(initialStage);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return prospects.filter((p) => (stage === "all" || p.status === stage)
+    const stages = stage === "all" ? null : stage.split(",");
+    return prospects.filter((p) => (!stages || stages.includes(p.status))
       && (!q || [p.first_name, p.last_name, p.company, p.role, p.email].some((v) => v && v.toLowerCase().includes(q))));
   }, [prospects, search, stage]);
 
@@ -53,6 +55,7 @@ export default function ProspectsTable({ prospects = [], campaignName = "campaig
         <div className="engx-toolbar-right">
           <select className="engx-select" value={stage} onChange={(e) => setStage(e.target.value)} aria-label="Filter by stage">
             <option value="all">All stages</option>
+            {stage.includes(",") && <option value={stage}>{stage.split(",").map((s) => STATUS_METADATA[s]?.label || s).join(" / ")}</option>}
             {Object.values(PROSPECT_STATUSES).map((s) => <option key={s} value={s}>{STATUS_METADATA[s]?.label || s}</option>)}
           </select>
           <Button type="button" variant="secondary" size="sm" icon="download" onClick={exportCsv} disabled={rows.length === 0}>Export CSV</Button>
@@ -89,6 +92,12 @@ export default function ProspectsTable({ prospects = [], campaignName = "campaig
                   <td className="is-num">{p.engagement_score ?? 0}</td>
                   <td className="engx-muted">{p.last_contacted_at ? timeAgo(p.last_contacted_at) : "Never"}</td>
                   <td className="is-actions">
+                    {onEditProspect && (
+                      <Button type="button" variant="ghost" size="sm" icon="pencil" disabled={busy} aria-label={`Edit ${name}`}
+                        onClick={(e) => { e.stopPropagation(); onEditProspect(p.id); }}>
+                        Edit
+                      </Button>
+                    )}
                     {[PROSPECT_STATUSES.NEW, PROSPECT_STATUSES.FOLLOWUP_DUE].includes(p.status) && (
                       <Button type="button" variant="ghost" size="sm" icon="sparkles" disabled={busy}
                         onClick={(e) => { e.stopPropagation(); onGenerateMessage?.(p.id, "email"); }}>

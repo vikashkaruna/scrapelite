@@ -137,8 +137,9 @@ export default function BrandKitEditor({
               </div>
             </div>
             <div className="eng-form-group">
-              <label className="eng-field-label" htmlFor="eng-signoff">Sign-off name</label>
-              <input id="eng-signoff" type="text" className="eng-input-field" maxLength={80}
+              <label className="eng-field-label" htmlFor="eng-signoff">Sign-off (up to 4 lines)</label>
+              <textarea id="eng-signoff" className="eng-textarea-field" rows={3} maxLength={200}
+                placeholder={"e.g. Priya Sharma\nHead of Growth, Acme"}
                 value={brandKit.signoff_name} onChange={(e) => setBrandKit({ ...brandKit, signoff_name: e.target.value })} />
             </div>
             <p className="eng-field-hint">
