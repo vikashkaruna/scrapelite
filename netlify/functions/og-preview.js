@@ -6,6 +6,7 @@
 // Response: { url, hostname, favicon, title, description }
 
 import { isPublicHttpUrlAsync, fetchPublicUrl } from "./lib/publicUrl.js";
+import { decodeHtmlEntities } from "./lib/htmlEntities.js";
 
 const FETCH_TIMEOUT_MS = 5000;
 const HEAD_BYTES = 15000;
@@ -35,7 +36,7 @@ function parseOg(html) {
     ];
     for (const p of patterns) {
       const m = html.match(p);
-      if (m) return m[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").trim();
+      if (m) return decodeHtmlEntities(m[1]).trim();
     }
     return null;
   };
@@ -46,7 +47,7 @@ function parseOg(html) {
     ];
     for (const p of patterns) {
       const m = html.match(p);
-      if (m) return m[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").trim();
+      if (m) return decodeHtmlEntities(m[1]).trim();
     }
     return null;
   };

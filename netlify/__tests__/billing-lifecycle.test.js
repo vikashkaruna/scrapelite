@@ -1,6 +1,9 @@
 // billing-lifecycle.test.js — the daily sweep.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Exact host match — a substring check would also accept "api.example.com.evil.test".
+const hostIs = (url, host) => { try { return new URL(String(url)).hostname === host; } catch { return false; } };
+
 let fetchMock;
 const DAY = 24 * 60 * 60 * 1000;
 const daysAgo = (n) => new Date(Date.now() - n * DAY).toISOString();
@@ -43,13 +46,13 @@ function wire({ rows = [paidPro()], claimed = true } = {}) {
     if (u.includes("/entitlements?") && (!opts.method || opts.method === "GET")) return ok(rows);
     if (u.includes("/billing_notice_log")) return ok(claimed ? [{ id: 1 }] : []);
     if (u.includes("/auth/v1/admin/users")) return ok({ users: [{ id: "u1", email: "u1@example.com" }] });
-    if (u.includes("api.resend.com")) return ok({ id: "email_1" });
+    if (hostIs(u, "api.resend.com")) return ok({ id: "email_1" });
     return ok(null);
   });
 }
 
 const calls = (pred) => fetchMock.mock.calls.filter(([u, o]) => pred(String(u), o || {}));
-const resendCalls = () => calls((u) => u.includes("api.resend.com"));
+const resendCalls = () => calls((u) => hostIs(u, "api.resend.com"));
 const patches = (frag) => calls((u, o) => o.method === "PATCH" && u.includes(frag));
 
 async function run() {
@@ -132,7 +135,7 @@ describe("notices", () => {
     wire();
     await run();
     const claimIdx = fetchMock.mock.calls.findIndex(([u]) => String(u).includes("billing_notice_log"));
-    const sendIdx = fetchMock.mock.calls.findIndex(([u]) => String(u).includes("api.resend.com"));
+    const sendIdx = fetchMock.mock.calls.findIndex(([u]) => hostIs(String(u), "api.resend.com"));
     expect(claimIdx).toBeGreaterThan(-1);
     expect(sendIdx).toBeGreaterThan(claimIdx);
   });

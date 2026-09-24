@@ -10,6 +10,9 @@
 
 import { createHmac } from "node:crypto";
 
+// Exact host match — a substring check would also accept "api.example.com.evil.test".
+const hostIs = (url, host) => { try { return new URL(String(url)).hostname === host; } catch { return false; } };
+
 // ── dummy server env (keys are read live by keyFor/keyPresence) ────────────────
 process.env.GEMINI_API_KEY = "test-gemini";
 process.env.AI_API_KEY     = "test-anthropic";
@@ -35,17 +38,17 @@ globalThis.fetch = async (url, opts = {}) => {
   let body = {};
   try { body = opts.body ? JSON.parse(opts.body) : {}; } catch {}
 
-  if (u.includes("generativelanguage.googleapis.com")) {
+  if (hostIs(u, "generativelanguage.googleapis.com")) {
     calls.push({ host: "gemini", url: u, opts, body });
     if (MODE.fail.has("gemini")) return jsonRes(500, { error: { message: "gemini boom" } });
     return jsonRes(200, { candidates: [{ content: { parts: [{ text: "GEMINI_OK" }] } }] });
   }
-  if (u.includes("api.anthropic.com")) {
+  if (hostIs(u, "api.anthropic.com")) {
     calls.push({ host: "anthropic", url: u, opts, body });
     if (MODE.fail.has("anthropic")) return jsonRes(500, { error: { message: "anthropic boom" } });
     return jsonRes(200, { content: [{ type: "text", text: "ANTHROPIC_OK" }] });
   }
-  if (u.includes("api.openai.com")) {
+  if (hostIs(u, "api.openai.com")) {
     calls.push({ host: "openai", url: u, opts, body });
     if (MODE.fail.has("openai")) return jsonRes(500, { error: { message: "openai boom" } });
     return jsonRes(200, { choices: [{ message: { content: "OPENAI_OK" } }] });

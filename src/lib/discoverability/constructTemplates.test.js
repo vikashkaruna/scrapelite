@@ -8,7 +8,8 @@ import {
 } from "./constructTemplates.js";
 import { ISSUES, ISSUE_CODES } from "./issueCatalog.js";
 
-const jsonFrom = (body) => JSON.parse(body.replace(/<\/?script[^>]*>/g, "").trim());
+// Read what is INSIDE the script element rather than stripping its tags.
+const jsonFrom = (body) => JSON.parse((body.match(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/i)?.[1] ?? body).trim());
 
 describe("catalogue ↔ builder wiring", () => {
   it("every asset an issue promises can actually be built", () => {

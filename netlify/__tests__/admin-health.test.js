@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ALL_SERVER_ENV_KEYS, clearServerEnv } from "./helpers/serverEnv.js";
 import { createHmac } from "crypto";
 
+// Exact host match — a substring check would also accept "api.example.com.evil.test".
+const hostIs = (url, host) => { try { return new URL(String(url)).hostname === host; } catch { return false; } };
+
 let fetchMock;
 let handler;
 
@@ -143,7 +146,7 @@ describe("admin-health GET (AH-02)", () => {
     process.env.RESEND_API_KEY = "re_bad";
     fetchMock.mockImplementation(async (url, opts = {}) => {
       const u = String(url);
-      if (u.includes("api.resend.com")) return new Response("", { status: 401 });
+      if (hostIs(u, "api.resend.com")) return new Response("", { status: 401 });
       if (u.includes("app_config") && opts.method === "HEAD") return new Response(null, { status: 200 });
       if (u.includes("app_config")) return json([]);
       if (u.includes("/auth/v1/health")) return json({ name: "GoTrue" });

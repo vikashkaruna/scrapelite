@@ -12,6 +12,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Exact host match — a substring check would also accept "api.example.com.evil.test".
+const hostIs = (url, host) => { try { return new URL(String(url)).hostname === host; } catch { return false; } };
+
 let fetchMock;
 let dbRows;
 let recorded;
@@ -241,8 +244,8 @@ describe("outbound destinations are re-validated AT DISPATCH", () => {
     const { dispatchSignal } = await load({ rules: [hs] });
     await dispatchSignal(changeEvent);
     const called = fetchMock.mock.calls.map((c) => String(c[0]));
-    expect(called.some((u) => u.includes("attacker.example.com"))).toBe(false);
-    expect(called.some((u) => u.includes("api.hubapi.com"))).toBe(true);
+    expect(called.some((u) => hostIs(u, "attacker.example.com"))).toBe(false);
+    expect(called.some((u) => hostIs(u, "api.hubapi.com"))).toBe(true);
   });
 });
 
