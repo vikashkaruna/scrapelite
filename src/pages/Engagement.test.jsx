@@ -28,6 +28,7 @@ const api = vi.hoisted(() => ({
   updateCampaign: vi.fn(),
   addProspects: vi.fn(),
   updateProspect: vi.fn(),
+  previewImport: vi.fn(),
   createCampaign: vi.fn(),
   deleteCampaign: vi.fn(),
   approveMessage: vi.fn(),
@@ -39,6 +40,9 @@ const api = vi.hoisted(() => ({
   addProspectNote: vi.fn(),
 }));
 vi.mock("../lib/engagement/engagementClient.js", () => api);
+
+const kitApi = vi.hoisted(() => ({ getAccountBrandKit: vi.fn(), saveAccountBrandKit: vi.fn(), deleteAccountBrandKit: vi.fn() }));
+vi.mock("../lib/accountBrandKitClient.js", async (orig) => ({ ...(await orig()), ...kitApi }));
 
 import Engagement from "./Engagement.jsx";
 
@@ -59,6 +63,7 @@ function setup({ access = { enabled: true, sender_domains: ["outreach.example.co
   api.listSuppressions.mockResolvedValue({ suppressions: [] });
   api.optOut.mockResolvedValue({ ok: true, allChannels: true });
   api.sendApproved.mockResolvedValue({ ok: true, sent: 1, skipped: 0, failed: 0, deferred: 0, remaining: 0 });
+  api.previewImport.mockResolvedValue({ ok: true, inCampaign: [], optedOut: [] });
   return render(<MemoryRouter><Engagement /></MemoryRouter>);
 }
 
@@ -294,7 +299,7 @@ describe("Engagement — importing prospects", () => {
     fireEvent.change(box, { target: { value: "Alice,Smith,alice@acme.com,Acme,VP,+15551234567" } });
     expect(screen.getByText(/No header row — columns read as/)).toBeTruthy();
     expect(screen.getByText("3. Email")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Import 1 prospect" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Import 1 ready row" }));
     await waitFor(() => expect(api.addProspects).toHaveBeenCalledWith("c1", [
       { first_name: "Alice", last_name: "Smith", email: "alice@acme.com", company: "Acme", role: "VP", phone: "+15551234567", source: "csv" },
     ]));
@@ -313,9 +318,9 @@ describe("Engagement — importing prospects", () => {
         existing: { id: "p1", name: "Ana Lopez", created_at: "2026-09-12T10:00:00Z" } }] });
     const box = await openImport();
     fireEvent.change(box, { target: { value: "first_name,email\nAna,ana@buyer.test\nBo,bo@new.test\nCy,not-an-email" } });
-    expect(screen.getByText(/2/, { selector: "strong" })).toBeTruthy();
+    expect(screen.getByText("2 ready")).toBeTruthy();
     expect(screen.getByText(/"not-an-email" is not a valid email/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Import 2 prospects" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Import 2 ready rows (skip 1)" }));
     await waitFor(() => expect(api.addProspects).toHaveBeenCalledWith("c1", [
       { first_name: "Ana", email: "ana@buyer.test", source: "csv" },
       { first_name: "Bo", email: "bo@new.test", source: "csv" },
@@ -338,7 +343,7 @@ describe("Engagement — importing prospects", () => {
     api.addProspects.mockRejectedValue(new Error("Import at most 1000 prospects at a time."));
     const box = await openImport();
     fireEvent.change(box, { target: { value: "email\nana@x.test" } });
-    fireEvent.click(screen.getByRole("button", { name: "Import 1 prospect" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Import 1 ready row" }));
     expect(await screen.findByText(/Nothing was imported\. Import at most 1000/)).toBeTruthy();
   });
 });
@@ -372,5 +377,84 @@ describe("Engagement — ops hint and editing a prospect", () => {
     fireEvent.change(within(dialog).getByLabelText("Email"), { target: { value: "bo@buyer.test" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
     expect(await within(dialog).findByRole("alert")).toHaveProperty("textContent", "bo@buyer.test is already Bo Ng in this campaign.");
+  });
+});
+
+describe("Engagement — smart import (Phase B)", () => {
+  const openImport = async () => {
+    await screen.findByRole("heading", { name: "Prospect Engagement" });
+    fireEvent.click(screen.getByRole("button", { name: /^Import$/ }));
+    return screen.getByLabelText("CSV to import");
+  };
+
+  it("checks against the campaign first and imports only the rows that are new", async () => {
+    setup();
+    api.previewImport.mockResolvedValue({ ok: true,
+      inCampaign: [{ index: 0, matched_on: "email", existing: { id: "p1", name: "Ana Lopez", created_at: "2026-09-12T10:00:00Z" } }],
+      optedOut: [{ index: 1, channel: "email", reason: "unsubscribe" }] });
+    api.addProspects.mockResolvedValue({ ok: true, prospects: [{ id: "n1" }, { id: "n2" }], stats: { dupCount: 0, invalidCount: 0 }, duplicates: [] });
+    const box = await openImport();
+    fireEvent.change(box, { target: { value: "email\nana@buyer.test\nolu@x.test\nnew@x.test" } });
+    await waitFor(() => expect(api.previewImport).toHaveBeenCalledWith("c1", [
+      { email: "ana@buyer.test", source: "csv" }, { email: "olu@x.test", source: "csv" }, { email: "new@x.test", source: "csv" },
+    ]));
+    expect(await screen.findByText("1 already in campaign")).toBeTruthy();
+    expect(screen.getByText("1 opted out of email")).toBeTruthy();
+    expect(screen.getByText(/Same email as Ana Lopez, added Sep 12, 2026/)).toBeTruthy();
+    expect(screen.getByText(/Will be imported but not emailed — unsubscribed/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Show problems only"));
+    expect(screen.queryByText("new@x.test")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Import 2 ready rows (skip 1)" }));
+    await waitFor(() => expect(api.addProspects).toHaveBeenCalledWith("c1", [
+      { email: "olu@x.test", source: "csv" }, { email: "new@x.test", source: "csv" },
+    ]));
+    expect(await screen.findByText("Imported 2 of 3 — 1 was already in this campaign.")).toBeTruthy();
+    expect(screen.getByText("Already in this campaign (1)")).toBeTruthy();
+  });
+
+  it("reads an uploaded CSV file into the same check", async () => {
+    setup();
+    await openImport();
+    const input = screen.getByLabelText("Upload a CSV or Excel file");
+    const csv = new File(["first_name,email\nAna,ana@x.test\n"], "contacts.csv", { type: "text/csv" });
+    fireEvent.change(input, { target: { files: [csv] } });
+    expect(await screen.findByText("contacts.csv")).toBeTruthy();
+    expect(await screen.findByText("1 ready")).toBeTruthy();
+  });
+
+  it("explains an unreadable file format instead of importing nothing", async () => {
+    setup();
+    await openImport();
+    fireEvent.change(screen.getByLabelText("Upload a CSV or Excel file"), { target: { files: [new File(["x"], "old.xls")] } });
+    expect(await screen.findByText(/older Excel file \(\.xls\)/)).toBeTruthy();
+  });
+});
+
+describe("Engagement — account brand kit (Phase B)", () => {
+  const openSettings = async () => {
+    await screen.findByRole("heading", { name: "Prospect Engagement" });
+    fireEvent.click(screen.getByRole("tab", { name: /Brand kit & sender/i }));
+  };
+
+  it("fills the brand kit and reply-to from the account kit, without saving", async () => {
+    setup();
+    kitApi.getAccountBrandKit.mockResolvedValue({ ok: true, allowed: true,
+      kit: { companyName: "Acme", tagline: "faster reports", website: "https://acme.test", contactEmail: "hi@acme.test", footerText: "Priya\nHead of Growth" } });
+    await openSettings();
+    fireEvent.click(screen.getByRole("button", { name: "Use my account brand kit" }));
+    expect(await screen.findByText(/Filled from your account brand kit \(including reply-to\)/)).toBeTruthy();
+    expect(screen.getByLabelText("Company / product name").value).toBe("Acme");
+    expect(screen.getByLabelText("Link URL").value).toBe("https://acme.test");
+    expect(screen.getByLabelText(/Sign-off/).value).toBe("Priya\nHead of Growth");
+    expect(screen.getByLabelText(/Reply-to/).value).toBe("hi@acme.test");
+    expect(api.updateCampaign).not.toHaveBeenCalled();
+  });
+
+  it("says which plans include it", async () => {
+    setup();
+    kitApi.getAccountBrandKit.mockResolvedValue({ ok: true, allowed: false, kit: null });
+    await openSettings();
+    fireEvent.click(screen.getByRole("button", { name: "Use my account brand kit" }));
+    expect(await screen.findByText(/available on the Business and Agency plans/)).toBeTruthy();
   });
 });

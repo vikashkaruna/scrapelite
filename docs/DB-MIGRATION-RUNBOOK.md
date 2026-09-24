@@ -670,6 +670,34 @@ npm run verify:rls -- --prod  # production
 It now probes the six engagement tables too, and reports a table that does not
 exist yet as **not checked** rather than as a pass.
 
+## 4i. `0083` — account Brand Kit, server copy
+
+One additive table, `account_brand_kits` (one row per account, the Brand Kit's
+**text** fields as JSON; the logo stays in the browser). Service-role-only RLS,
+nothing granted to anon/authenticated. Deleting the account deletes the row, and
+`billing-purge` lists it.
+
+| If it is missing | Effect |
+|---|---|
+| `/api/account-brand-kit` answers `store_error` | The Account page still saves the Brand Kit **in the browser** (exports keep working) and says it could not be saved to the account; Engagement's "Use my account brand kit" falls back to this browser's copy. Nothing breaks. |
+
+### Apply
+
+Apply **only this file** with the subset one-liner in §4 (`migrate:prod`'s
+`--include=` adds files rather than restricting to them — do not use it to apply one file).
+
+### Verify
+
+```sql
+select c.relname, c.relrowsecurity,
+       (select count(*) from pg_policies p where p.tablename = c.relname) policies
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relname = 'account_brand_kits';
+-- Expect 1 row, relrowsecurity = t, policies = 1.
+```
+
+Then `npm run verify:rls` (staging) / `-- --prod` — it now probes `account_brand_kits` too.
+
 ## 5. Database functions — no separate step
 
 There is nothing to run beyond the migrations. All **9 functions and 2 triggers**

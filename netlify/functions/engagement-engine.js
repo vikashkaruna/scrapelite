@@ -10,7 +10,7 @@
 //   get_analytics                  (campaign_id)
 // POST { action, … }
 //   create_campaign | update_campaign | delete_campaign
-//   add_prospects | update_prospect | update_prospect_status | delete_prospect
+//   add_prospects | preview_import | update_prospect | update_prospect_status | delete_prospect
 //   generate_messages              (campaign_id, prospect_ids?, channel?)
 //   approve_message | reject_message | retry_message
 //   send_messages                  (campaign_id, message_ids?)
@@ -206,6 +206,10 @@ async function handlePost(event, userId) {
       }
       return json(200, { ok: true });
     }
+
+    case "preview_import":
+      if (!campaignId) return json(400, { ok: false, code: "campaign_required", error: "Missing campaign_id." });
+      return reply(await store.previewImport(campaignId, userId, Array.isArray(body.prospects) ? body.prospects : []));
 
     case "update_prospect":
       if (!prospectId) return json(400, { ok: false, code: "prospect_required", error: "Missing prospect_id." });

@@ -314,6 +314,41 @@ export function describeDuplicates(duplicates = [], existing = []) {
   });
 }
 
+/**
+ * What an import WOULD do, without writing anything: which rows are already in
+ * this campaign (and as whom), and which addresses are opted out of email on
+ * this account. Powers the import dialog's preview, so it matches the import.
+ * Rows are identified by their index in the request.
+ */
+export async function previewImport(campaignId, userId, rawProspects = [], env = process.env) {
+  const { fail } = withDb(userId, env);
+  if (fail) return fail;
+  const camp = await getCampaign(campaignId, userId, env);
+  if (!camp.ok) return camp;
+  if (!Array.isArray(rawProspects) || rawProspects.length > MAX_PROSPECTS_PER_IMPORT) {
+    return { ok: false, status: 413, code: "import_too_large", error: `Check at most ${MAX_PROSPECTS_PER_IMPORT} prospects at a time.` };
+  }
+  const existing = await listProspects(campaignId, userId, {}, env);
+  if (!existing.ok) return existing;
+  const rows = rawProspects.map((p) => plainObject(p) || {});
+  const described = describeDuplicates(rows, existing.prospects);
+  const inCampaign = described
+    .map((d, index) => (d.existing ? { index, matched_on: d.matched_on, existing: d.existing } : null))
+    .filter(Boolean);
+
+  const emails = [...new Set(rows.map((r) => normalizeAddress("email", r.email)).filter(Boolean))];
+  const sup = await listSuppressions(userId, { channel: "email", addresses: emails }, env);
+  if (!sup.ok) return sup;
+  const byAddress = new Map(sup.suppressions.map((x) => [x.address, x.reason]));
+  const optedOut = rows
+    .map((r, index) => {
+      const a = normalizeAddress("email", r.email);
+      return a && byAddress.has(a) ? { index, channel: "email", reason: byAddress.get(a) } : null;
+    })
+    .filter(Boolean);
+  return { ok: true, inCampaign, optedOut };
+}
+
 export async function addProspects(campaignId, userId, rawProspects = [], env = process.env) {
   const { db, fail } = withDb(userId, env);
   if (fail) return fail;

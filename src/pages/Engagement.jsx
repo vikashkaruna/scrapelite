@@ -11,7 +11,7 @@
 //     send". It used to be one line on the Approval tab, so a simulated send
 //     read as a delivered one and was reported as "not received".
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -32,6 +32,8 @@ import * as api from "../lib/engagement/engagementClient.js";
 import { STATUS_METADATA } from "../lib/engagement/stateMachine.js";
 import { campaignOptionLabel } from "../lib/engagement/campaignLabels.js";
 import { fmtDate } from "../lib/utils.js";
+import { getAccountBrandKit, mapAccountKitToEngagement } from "../lib/accountBrandKitClient.js";
+import { readBrandKit } from "../lib/whiteLabelTemplate.js";
 
 /** Why generate_messages skipped a prospect, in words. */
 const SKIP_COPY = {
@@ -344,6 +346,13 @@ export default function Engagement() {
     ok(`Deleted “${gone?.name || "campaign"}”`);
   });
 
+  // Read-only check for the import preview (already in campaign / opted out).
+  // Stable identity so the dialog does not re-check on every page render.
+  const handlePreviewImport = useCallback(
+    (rows) => api.previewImport(selectedCampaignId, rows),
+    [selectedCampaignId],
+  );
+
   // Returns the server's answer for the dialog's result panel; throws on failure.
   const handleImportRows = (rows) => run(`Importing ${plural(rows.length, "contact")}…`, async () => {
     const res = await api.addProspects(selectedCampaignId, rows);
@@ -365,6 +374,17 @@ export default function Engagement() {
       fail(e, "Could not save the brand kit");
     }
   });
+
+  /** Account Brand Kit → form values. Server copy first, this browser's copy as a fallback. */
+  const loadAccountKit = async () => {
+    const r = await getAccountBrandKit().catch(() => null);
+    if (r && !r.allowed) {
+      throw new Error("Reusing your account brand kit is available on the Business and Agency plans.");
+    }
+    const kit = r?.kit || readBrandKit();
+    if (!kit) throw new Error("You don't have an account brand kit yet — set one up under Account → Brand kit.");
+    return mapAccountKitToEngagement(kit);
+  };
 
   const handleSaveSender = (sender) => run("Saving sender…", async () => {
     try {
@@ -507,7 +527,7 @@ export default function Engagement() {
             )}
             {activeTab === "analytics" && <AnalyticsPanel analytics={analytics} campaignTitle={activeCampaign?.name || "campaign"} />}
             {activeTab === "settings" && (
-              <BrandKitEditor campaign={activeCampaign} senderDomains={access?.sender_domains || []}
+              <BrandKitEditor campaign={activeCampaign} senderDomains={access?.sender_domains || []} onLoadAccountKit={loadAccountKit}
                 onSaveBrandKit={handleSaveBrandKit} onSaveSender={handleSaveSender} />
             )}
           </div>
@@ -547,7 +567,7 @@ export default function Engagement() {
       )}
 
       {showImportModal && selectedCampaignId && (
-        <ImportProspectsModal campaignName={activeCampaign?.name} onImport={handleImportRows} onClose={() => setShowImportModal(false)} />
+        <ImportProspectsModal campaignName={activeCampaign?.name} onImport={handleImportRows} onPreview={handlePreviewImport} onClose={() => setShowImportModal(false)} />
       )}
 
       <EngagementBusy label={busyLabel || (loading && !campaignsLoaded ? "Loading your campaigns…" : null)} />

@@ -21,6 +21,7 @@
 // suppress.
 
 import { useEffect, useRef, useState } from "react";
+import { getAccountBrandKit, saveAccountBrandKit, deleteAccountBrandKit } from "../lib/accountBrandKitClient.js";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import {
@@ -80,6 +81,22 @@ function BrandKitEditor() {
 
   useEffect(() => { setInfo(""); setError(""); }, [form, logo]);
 
+  // A device with no local kit picks up the account's server copy (text only;
+  // the logo lives in the browser it was uploaded from). Best-effort: signed
+  // out, no plan or offline simply leaves the form as it was.
+  useEffect(() => {
+    if (readBrandKit()) return undefined;
+    let alive = true;
+    getAccountBrandKit()
+      .then((r) => {
+        if (!alive || !r?.kit || readBrandKit()) return;
+        const res = writeBrandKit(r.kit);
+        if (res.ok) { setSaved(res.value); setForm({ ...BLANK_KIT, ...res.value }); setInfo("Loaded your brand kit from your account."); }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   async function handleLogoFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -107,11 +124,18 @@ function BrandKitEditor() {
     if (!res.ok) { setError(res.reason || "Could not save your brand kit."); return; }
     setSaved(res.value);
     setInfo("Brand kit saved — applies to your next export.");
+    // Keep the account's server copy in step (text fields only), so the kit
+    // follows the account and Engagement can reuse it. Failure here does not
+    // undo the local save — exports keep working either way.
+    saveAccountBrandKit(res.value)
+      .then(() => setInfo("Brand kit saved to your account — applies to your next export."))
+      .catch(() => setInfo("Brand kit saved on this device. It could not be saved to your account right now."));
   }
 
   function handleReset() {
     if (!window.confirm("Remove your brand kit? Exports will use the default DatIQ look.")) return;
     clearBrandKit();
+    deleteAccountBrandKit().catch(() => {});
     setSaved(null);
     setForm({ ...BLANK_KIT });
     setLogo(null);

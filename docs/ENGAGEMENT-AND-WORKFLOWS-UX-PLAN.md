@@ -1,7 +1,7 @@
 # Engagement & Workflows — UX improvement plan (for approval)
 
-> **Date:** 2026-09-24 · **Based on:** `staging` @ `949bc452` (after PR #221) · **Status:** PLAN ONLY — nothing
-> below is built. Each item says what was found in the code, what is proposed, what needs your decision,
+> **Date:** 2026-09-24 · **Based on:** `staging` @ `949bc452` (after PR #221) · **Status:** ✅ **Phases A and B built**
+> (branch `feat/engagement-ux-phase-ab`); Phase C awaits approval. Each item says what was found in the code, what is proposed, what needs your decision,
 > and how it will be tested.
 
 **Legend:** 🟢 small (hours) · 🟡 medium (≈1 day) · 🔴 large (multi-day, schema change)
@@ -12,16 +12,16 @@
 
 | # | Item | Size | Phase |
 |---|---|---|---|
-| 1 | Pipeline board wraps to the page width — no horizontal scroll | 🟢 | A |
-| 3 | Menu: divider inside the Workflows group (Engagement keeps its name) | 🟢 | A |
-| 4 | Brand kit sign-off multi-line · test-mode banner non-technical | 🟢 | A |
-| 6a | Workflows: stop the "ruleId is required." delete error | 🟢 | A |
-| 9 | Home: hide the duplicate section; move its unique items; persona highlights | 🟢 | A |
-| 10 | Import result names each duplicate and what it matched | 🟢 | A |
-| 11 | Edit a prospect from the Prospects table (and the drawer) | 🟡 | A |
-| 12 | Engagement docs brought up to date with everything shipped | 🟢 | A |
-| 2 | Smart import: paste or upload CSV / Excel, row-by-row health, import healthy rows | 🟡 | B |
-| 5 | Reuse the account Brand Kit in Engagement (Business / Agency) | 🟡 | B |
+| 1 | ✅ Pipeline board wraps to the page width — no horizontal scroll | 🟢 | A |
+| 3 | ✅ Menu: divider inside the Workflows group (Engagement keeps its name) | 🟢 | A |
+| 4 | ✅ Brand kit sign-off multi-line · test-mode banner non-technical | 🟢 | A |
+| 6a | ✅ Workflows: stop the "ruleId is required." delete error | 🟢 | A |
+| 9 | ✅ Home: hide the duplicate section; move its unique items; persona highlights | 🟢 | A |
+| 10 | ✅ Import result names each duplicate and what it matched | 🟢 | A |
+| 11 | ✅ Edit a prospect from the Prospects table (and the drawer) | 🟡 | A |
+| 12 | ✅ Engagement docs brought up to date with everything shipped | 🟢 | A |
+| 2 | ✅ Smart import: paste or upload CSV / Excel, row-by-row health, import healthy rows | 🟡 | B |
+| 5 | ✅ Reuse the account Brand Kit in Engagement (Business / Agency) | 🟡 | B |
 | 6b | Real links between lists / watchlists and rules; safe delete and unlink | 🔴 | C |
 | 7 | Lists, Watchlists, Rules: busy indicator + UX rebuild | 🔴 | C |
 | 8 | Workflows hub: proper name, wiring and layout | 🟡 | C |

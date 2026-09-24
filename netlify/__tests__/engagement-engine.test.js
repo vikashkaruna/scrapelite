@@ -735,3 +735,28 @@ describe("multi-line sign-off and the ops hint", () => {
     delete process.env.ENGAGEMENT_MOCK_SEND;
   });
 });
+
+describe("preview_import — what an import would do, writing nothing", () => {
+  it("names rows already in the campaign and addresses opted out of email", async () => {
+    const c = await campaignWithSender(A);
+    await addProspect(A, c.id, { first_name: "Ana", last_name: "Lopez", email: "ana@buyer.test" });
+    const out = await addProspect(A, c.id, { first_name: "Olu", email: "olu@buyer.test" });
+    await post(A, "opt_out", { prospect_id: out.id, channels: ["email"] });
+    const before = (await db.one("select count(*)::int as n from public.engagement_prospects where campaign_id = $1", [c.id])).n;
+    const r = await post(A, "preview_import", { campaign_id: c.id, prospects: [
+      { email: "new@buyer.test" }, { email: "ANA@buyer.test" }, { email: "olu@buyer.test" },
+    ] });
+    expect(r.status).toBe(200);
+    expect(r.body.inCampaign).toEqual([
+      expect.objectContaining({ index: 1, existing: expect.objectContaining({ name: "Ana Lopez" }) }),
+      expect.objectContaining({ index: 2 }),
+    ]);
+    expect(r.body.optedOut).toEqual([{ index: 2, channel: "email", reason: "manual" }]);
+    expect((await db.one("select count(*)::int as n from public.engagement_prospects where campaign_id = $1", [c.id])).n).toBe(before);
+  });
+
+  it("another tenant's campaign is a 404", async () => {
+    const c = await campaignWithSender(A);
+    expect((await post(B, "preview_import", { campaign_id: c.id, prospects: [{ email: "x@y.test" }] })).status).toBe(404);
+  });
+});

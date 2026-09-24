@@ -196,8 +196,9 @@ grant usage on schema public to anon, authenticated;
 // engagement_touch_updated_at, +4 updated_at triggers). Taking these to 123 / 60 / 33.
 // 0082 (+1 table engagement_suppressions, +1 function
 // engagement_activity_log_immutable, +1 trigger). Taking these to 124 / 61 / 34.
+// 0083 (+1 table account_brand_kits). Taking these to 125 / 61 / 34.
 const EXPECT = {
-  tables: 124,
+  tables: 125,
   functions: 61,
   triggers: 34,
   tablesWithoutRls: 0,
@@ -2525,6 +2526,18 @@ group("pql — 'no data' and 'unqualified' must not be the same row");
   check("credit_ledger accepts reason 'outreach' / unit 'message'", true);
 }
 
+// ── 0083: account Brand Kit, server copy ─────────────────────────────────
+{
+  group("account brand kits — one row per account, an object, gone with the account");
+  const U7 = "88888888-8888-8888-8888-888888888807";
+  await db.query(`insert into auth.users (id, email) values ($1, 'kit@x.test') on conflict do nothing`, [U7]);
+  await db.query(`insert into public.account_brand_kits (user_id, kit) values ($1, '{"companyName":"Acme"}')`, [U7]);
+  check("a second row for the same account is refused", Boolean(await throws(`insert into public.account_brand_kits (user_id, kit) values ($1, '{}')`, [U7])));
+  check("a kit that is not a JSON object is refused", Boolean(await throws(`update public.account_brand_kits set kit = '[1,2]' where user_id = $1`, [U7])));
+  await db.query(`delete from auth.users where id = $1`, [U7]);
+  eq("deleting the account deletes its brand kit", (await one(`select count(*)::int as n from public.account_brand_kits where user_id = $1`, [U7])).n, 0);
+}
+
 // ── 0044: workflow RLS lockdown (Phases 4-6 & Engagement) ───────────────────
 // 0041-0043 shipped `grant all ... to anon` plus a policy whose
 // `or auth.uid() is null` branch is TRUE for exactly the anonymous role, making
@@ -2542,6 +2555,7 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     "signal_rules", "rule_executions",
     "engagement_campaigns", "engagement_prospects", "engagement_messages",
     "engagement_activity_log", "engagement_sync_configs", "engagement_suppressions",
+    "account_brand_kits",
   ];
 
   for (const t of LOCKED) {

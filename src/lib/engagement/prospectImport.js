@@ -144,7 +144,7 @@ export function parseCsv(text, delimiter = ",") {
 
 function fatal(error, extra = {}) {
   return {
-    ok: false, error, delimiter: ",", headerless: false, columns: [], customColumns: [], rows: [], issues: [],
+    ok: false, error, delimiter: ",", headerless: false, columns: [], customColumns: [], rows: [], lines: [], records: [], issues: [],
     counts: { dataRows: 0, ready: 0, rejected: 0, repeated: 0 }, ...extra,
   };
 }
@@ -200,6 +200,9 @@ export function analyzeProspectCsv(text) {
 
   const rows = [];
   const lines = []; // lines[i] = the pasted line rows[i] came from
+  // One entry per data row, in order — what the preview table shows.
+  // status: "ready" (rowIndex into `rows`) | "rejected" | "repeated"
+  const rowStatus = [];
   const issues = [];
   let rejected = 0;
   let repeated = 0;
@@ -207,9 +210,15 @@ export function analyzeProspectCsv(text) {
   const seenPhone = new Map();
 
   for (const rec of dataRecords) {
-    const reject = (reason) => { rejected += 1; issues.push({ line: rec.line, reason }); };
+    let shown = { name: "", email: "", phone: "" };
+    const reject = (reason) => {
+      rejected += 1;
+      issues.push({ line: rec.line, reason });
+      rowStatus.push({ line: rec.line, status: "rejected", reason, ...shown });
+    };
     const values = rec.values;
     if (values.length > columns.length) {
+      shown = { name: values.slice(0, 3).join(" ").trim(), email: "", phone: "" };
       reject(`${values.length} values but the header has ${columns.length} columns. A value containing "${delimiter === "\t" ? "tab" : delimiter}" must be wrapped in double quotes.`);
       continue;
     }
@@ -229,6 +238,7 @@ export function analyzeProspectCsv(text) {
       if (last_name) p.last_name = last_name;
     }
     delete p.full_name;
+    shown = { name: [p.first_name, p.last_name].filter(Boolean).join(" "), email: p.email || "", phone: p.phone || "" };
 
     const email = p.email ? normalizeAddress("email", p.email) : null;
     const phone = p.phone ? normalizeAddress("sms", p.phone) : null;
@@ -239,7 +249,9 @@ export function analyzeProspectCsv(text) {
     const firstSeen = (email && seenEmail.get(email)) || (phone && seenPhone.get(phone));
     if (firstSeen) {
       repeated += 1;
-      issues.push({ line: rec.line, reason: `Same ${email && seenEmail.get(email) ? "email" : "phone"} as line ${firstSeen} — skipped.` });
+      const reason = `Same ${email && seenEmail.get(email) ? "email" : "phone"} as line ${firstSeen} — skipped.`;
+      issues.push({ line: rec.line, reason });
+      rowStatus.push({ line: rec.line, status: "repeated", reason, ...shown });
       continue;
     }
     if (email) seenEmail.set(email, rec.line);
@@ -249,6 +261,7 @@ export function analyzeProspectCsv(text) {
     if (email) out.email = email; else delete out.email;
     if (phone) out.phone = phone; else delete out.phone;
     if (Object.keys(custom).length) out.custom_attributes = custom;
+    rowStatus.push({ line: rec.line, status: "ready", rowIndex: rows.length, ...shown, email: email || "", phone: phone || "" });
     rows.push(out);
     lines.push(rec.line);
   }
@@ -262,6 +275,7 @@ export function analyzeProspectCsv(text) {
     customColumns,
     rows,
     lines,
+    records: rowStatus,
     issues: issues.slice(0, MAX_ISSUES_LISTED),
     issuesTruncated: Math.max(0, issues.length - MAX_ISSUES_LISTED),
     counts: { dataRows: dataRecords.length, ready: rows.length, rejected, repeated },

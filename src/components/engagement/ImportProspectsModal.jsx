@@ -1,51 +1,138 @@
-// src/components/engagement/ImportProspectsModal.jsx — paste CSV, see what will
-// happen, import, see what DID happen.
+// src/components/engagement/ImportProspectsModal.jsx — bring contacts in, see
+// exactly what will happen to every row, import the healthy ones.
 //
-// Three states, and the dialog never closes on its own:
-//   1. editing  — a live check under the box: columns recognised, rows ready,
-//                 rows with problems (by line number). Import is disabled until
-//                 at least one row is importable, and the reason is shown.
-//   2. importing
-//   3. result   — added / already in this campaign / rejected / repeated, from
-//                 the browser's check AND the server's answer.
-// The old dialog closed after a toast either way, so "Imported 0" and a failure
-// both looked like the window simply going away.
+// Input, all in one drop zone (owner request 2026-09-24):
+//   - paste text: CSV, semicolon or tab separated — including cells copied
+//     straight from Excel or Google Sheets (they arrive tab-separated);
+//   - paste or drop a FILE, or "Upload file": CSV / TSV / TXT / Excel .xlsx.
+// Every source ends as CSV text and runs through analyzeProspectCsv(), so a
+// file and a paste are judged by the same rules.
+//
+// Before anything is sent: a per-row preview (ready / already in this campaign
+// / opted out of email / needs fixing / repeated), counts, "problems only",
+// and a download of the problem rows. The campaign-side checks come from the
+// read-only `preview_import` action, so the preview matches the import.
+// Import proceeds with the healthy rows as long as there is at least one.
+//
+// After: the result panel names every skipped row and why.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "../Icon.jsx";
 import Button from "../Button.jsx";
-import { analyzeProspectCsv, importOutcome, skippedRows, skippedCsv, FIELD_LABELS, TEMPLATE_CSV } from "../../lib/engagement/prospectImport.js";
-import { fmtDate } from "../../lib/utils.js";
+import {
+  analyzeProspectCsv, importOutcome, skippedRows, skippedCsv, FIELD_LABELS, TEMPLATE_CSV,
+} from "../../lib/engagement/prospectImport.js";
+import { readProspectFile, ACCEPT } from "../../lib/engagement/prospectFiles.js";
 import { downloadText } from "./ProspectsTable.jsx";
+import { fmtDate } from "../../lib/utils.js";
 
-const SAMPLE = "first_name,last_name,email,company,role,phone\nAlice,Smith,alice@acme.com,Acme Corp,VP Engineering,+15551234567\nBob,Jones,bob@apex.io,\"Apex, Inc.\",CEO,";
+const PREVIEW_ROWS = 200;
+const STATUS = {
+  ready: { label: "Ready", cls: "is-ok" },
+  in_campaign: { label: "Already in campaign", cls: "is-skip" },
+  opted_out: { label: "Ready · opted out of email", cls: "is-warn" },
+  repeated: { label: "Repeated", cls: "is-skip" },
+  rejected: { label: "Needs fixing", cls: "is-bad" },
+};
+const SUPPRESSION_WORDS = { unsubscribe: "unsubscribed", stop_keyword: "replied STOP", bounce: "email bounced", complaint: "reported spam", manual: "opted out by your team" };
 
-function IssueList({ issues, truncated }) {
-  if (!issues.length) return null;
-  return (
-    <ul className="eng-import-issues">
-      {issues.map((i, idx) => <li key={`${i.line}-${idx}`}><span className="eng-import-line">Line {i.line}</span> {i.reason}</li>)}
-      {truncated > 0 && <li className="eng-import-more">…and {truncated} more.</li>}
-    </ul>
-  );
-}
-
-export default function ImportProspectsModal({ campaignName, onImport, onClose }) {
+export default function ImportProspectsModal({ campaignName, onImport, onPreview, onClose }) {
   const [text, setText] = useState("");
+  const [file, setFile] = useState(null);      // { fileName, sheets?, sheet }
+  const [fileError, setFileError] = useState("");
+  const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState(null); // { outcome, analysis }
+  const [result, setResult] = useState(null);  // { outcome, skipped }
+  const [problemsOnly, setProblemsOnly] = useState(false);
+  const [preview, setPreview] = useState(null); // { inCampaign, optedOut } for the current rows
+  const fileInput = useRef(null);
 
   const analysis = useMemo(() => (text.trim() ? analyzeProspectCsv(text) : null), [text]);
 
+  // Campaign-side check (already in the campaign, opted-out addresses),
+  // debounced; an answer for an older paste is dropped.
+  useEffect(() => {
+    setPreview(null);
+    if (!onPreview || !analysis?.ok) return undefined;
+    let alive = true;
+    const t = setTimeout(() => {
+      onPreview(analysis.rows).then((r) => { if (alive) setPreview(r); }).catch(() => {});
+    }, 450);
+    return () => { alive = false; clearTimeout(t); };
+  }, [analysis, onPreview]);
+
+  const view = useMemo(() => {
+    if (!analysis) return null;
+    const inCampaign = new Map((preview?.inCampaign || []).map((x) => [x.index, x]));
+    const optedOut = new Map((preview?.optedOut || []).map((x) => [x.index, x]));
+    const rows = (analysis.records || []).map((r) => {
+      if (r.status !== "ready") return { ...r };
+      if (inCampaign.has(r.rowIndex)) {
+        const m = inCampaign.get(r.rowIndex);
+        return {
+          ...r, status: "in_campaign", existing: m.existing, matchedOn: m.matched_on,
+          reason: `Same ${m.matched_on} as ${m.existing?.name}${m.existing?.created_at ? `, added ${fmtDate(m.existing.created_at)}` : ""}.`,
+        };
+      }
+      if (optedOut.has(r.rowIndex)) {
+        return { ...r, status: "opted_out", reason: `Will be imported but not emailed — ${SUPPRESSION_WORDS[optedOut.get(r.rowIndex).reason] || "opted out"}.` };
+      }
+      return r;
+    });
+    const count = (s) => rows.filter((r) => r.status === s).length;
+    return {
+      rows,
+      importIdx: new Set(rows.filter((r) => r.status === "ready" || r.status === "opted_out").map((r) => r.rowIndex)),
+      counts: { ready: count("ready"), optedOut: count("opted_out"), inCampaign: count("in_campaign"), repeated: count("repeated"), rejected: count("rejected") },
+    };
+  }, [analysis, preview]);
+
+  const importCount = view?.importIdx.size || 0;
+  const skipCount = view ? view.rows.length - importCount : 0;
+
+  // ── input ────────────────────────────────────────────────────────────────
+  const loadFile = async (f) => {
+    setFileError(""); setError("");
+    const r = await readProspectFile(f);
+    if (!r.ok) { setFileError(r.error); return; }
+    setFile({ fileName: r.fileName, sheets: r.sheets || null, sheet: r.sheets?.[0]?.name || null });
+    setText(r.text);
+  };
+  const onDrop = (e) => {
+    e.preventDefault(); setDragging(false);
+    const f = e.dataTransfer?.files?.[0];
+    if (f) loadFile(f);
+  };
+  const onPaste = (e) => {
+    const f = e.clipboardData?.files?.[0];
+    if (f) { e.preventDefault(); loadFile(f); }
+  };
+  const pickSheet = (name) => {
+    const s = file?.sheets?.find((x) => x.name === name);
+    if (s) { setFile({ ...file, sheet: name }); setText(s.text); }
+  };
+  const clearAll = () => { setText(""); setFile(null); setFileError(""); setError(""); };
+
+  // ── import ───────────────────────────────────────────────────────────────
   const submit = async (e) => {
     e.preventDefault();
-    if (!analysis?.ok) return;
+    if (!analysis?.ok || importCount === 0) return;
     setBusy(true);
     setError("");
+    const keep = (_, i) => view.importIdx.has(i);
+    const sent = { ...analysis, rows: analysis.rows.filter(keep), lines: analysis.lines.filter(keep) };
     try {
-      const res = await onImport(analysis.rows);
-      setResult({ outcome: importOutcome(analysis, res), analysis, skipped: skippedRows(analysis, res) });
+      const res = await onImport(sent.rows);
+      const skipped = skippedRows(sent, res);
+      // Rows the preview already held back as "in this campaign" are reported too.
+      for (const r of view.rows.filter((x) => x.status === "in_campaign")) {
+        skipped.inCampaign.push({ line: r.line, name: r.name, email: r.email, phone: r.phone, matchedOn: r.matchedOn || "email", existing: r.existing || null });
+      }
+      skipped.inCampaign.sort((a, b) => (a.line || 0) - (b.line || 0));
+      const outcome = importOutcome(analysis, res);
+      outcome.alreadyInCampaign = skipped.inCampaign.length;
+      setResult({ outcome, skipped });
     } catch (err) {
       setError(`Nothing was imported. ${err.message || "The import failed."}`);
     } finally {
@@ -53,14 +140,23 @@ export default function ImportProspectsModal({ campaignName, onImport, onClose }
     }
   };
 
-  const reset = () => { setResult(null); setText(""); setError(""); };
+  const problemsCsv = () => {
+    const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const out = [["line", "name", "email", "phone", "status", "reason"].join(",")];
+    for (const r of view.rows.filter((x) => x.status !== "ready")) {
+      out.push([r.line, r.name, r.email, r.phone, STATUS[r.status].label, r.reason || ""].map(cell).join(","));
+    }
+    return out.join("\n") + "\n";
+  };
+
+  const shownRows = view ? (problemsOnly ? view.rows.filter((r) => r.status !== "ready") : view.rows) : [];
 
   return (
     <div className="eng-modal-backdrop" onClick={busy ? undefined : onClose}>
       <div className="eng-modal-card eng-import-card" role="dialog" aria-modal="true" aria-labelledby="eng-import-title" onClick={(e) => e.stopPropagation()}>
         <div className="eng-modal-header">
           <h3 className="eng-modal-title" id="eng-import-title">Import prospects{campaignName ? ` into “${campaignName}”` : ""}</h3>
-          <button className="eng-modal-close" onClick={onClose} disabled={busy} aria-label="Close"><Icon name="x" size={16} /></button>
+          <button type="button" className="eng-modal-close" onClick={onClose} disabled={busy} aria-label="Close"><Icon name="x" size={16} /></button>
         </div>
 
         {result ? (
@@ -74,7 +170,7 @@ export default function ImportProspectsModal({ campaignName, onImport, onClose }
                   Download skipped rows
                 </Button>
               )}
-              <Button type="button" variant="ghost" onClick={reset}>Import more</Button>
+              <Button type="button" variant="ghost" onClick={() => { setResult(null); clearAll(); }}>Import more</Button>
               <Button type="button" variant="primary" icon="check" onClick={onClose}>Done</Button>
             </div>
           </div>
@@ -82,14 +178,34 @@ export default function ImportProspectsModal({ campaignName, onImport, onClose }
           <form onSubmit={submit} className="eng-modal-form">
             <div className="engx-import-intro">
               <p className="eng-modal-intro">
-                Paste CSV — with a header row, or just contact rows (the columns are then read from what they contain).
-                Each contact needs an email or a phone. Wrap a value that contains a comma in double quotes.
+                Paste rows, or upload a CSV or Excel file. A header row is optional — without one, columns are read from
+                what they contain. Each contact needs an email or a phone.
               </p>
-              <Button type="button" variant="secondary" size="sm" icon="download"
-                onClick={() => downloadText("datiq-prospects-template.csv", TEMPLATE_CSV)}>
-                Download template
-              </Button>
+              <div className="engx-import-buttons">
+                <Button type="button" variant="primary" size="sm" icon="upload" onClick={() => fileInput.current?.click()}>Upload file</Button>
+                <Button type="button" variant="secondary" size="sm" icon="download"
+                  onClick={() => downloadText("datiq-prospects-template.csv", TEMPLATE_CSV)}>
+                  Download template
+                </Button>
+                <input ref={fileInput} type="file" accept={ACCEPT} hidden aria-label="Upload a CSV or Excel file"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) loadFile(f); e.target.value = ""; }} />
+              </div>
             </div>
+
+            {fileError && <p className="eng-field-hint is-error" role="alert"><Icon name="alert-circle" size={12} /> {fileError}</p>}
+            {file && (
+              <div className="engx-file-chip">
+                <Icon name="file-text" size={14} />
+                <strong>{file.fileName}</strong>
+                {file.sheets?.length > 1 && (
+                  <select className="engx-select" value={file.sheet} onChange={(e) => pickSheet(e.target.value)} aria-label="Sheet">
+                    {file.sheets.map((s) => <option key={s.name} value={s.name}>{s.name} ({s.rows} rows)</option>)}
+                  </select>
+                )}
+                <button type="button" className="engx-link" onClick={clearAll}>Clear</button>
+              </div>
+            )}
+
             {analysis?.headerless && analysis.columns.length > 0 && (
               <div className="engx-import-inferred" role="status">
                 <Icon name="info" size={14} />
@@ -97,72 +213,92 @@ export default function ImportProspectsModal({ campaignName, onImport, onClose }
                   <strong>No header row — columns read as:</strong>
                   <div className="eng-import-cols">
                     {analysis.columns.map((c, i) => (
-                      <span key={i} className={`eng-import-col ${c.field ? "is-known" : "is-custom"}`}>
-                        {i + 1}. {c.field ? FIELD_LABELS[c.field] : "custom"}
-                      </span>
+                      <span key={i} className={`eng-import-col ${c.field ? "is-known" : "is-custom"}`}>{i + 1}. {c.field ? FIELD_LABELS[c.field] : "custom"}</span>
                     ))}
                   </div>
                   <span className="engx-muted">If that's wrong, add a header line (or use the template).</span>
                 </div>
               </div>
             )}
-            <div className="eng-form-group">
+
+            <div
+              className={`engx-dropzone ${dragging ? "is-dragging" : ""}`}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+            >
               <textarea
                 className="eng-textarea-field eng-import-textarea"
-                rows={8}
-                placeholder={SAMPLE}
+                rows={file ? 4 : 7}
+                placeholder={"Paste rows here — or drop a CSV / Excel file.\n\nfirst_name,last_name,email,company,role,phone\nAlice,Smith,alice@acme.com,Acme Corp,VP Engineering,+15551234567"}
                 value={text}
-                onChange={(e) => { setText(e.target.value); setError(""); }}
+                onChange={(e) => { setText(e.target.value); setError(""); if (file) setFile(null); }}
+                onPaste={onPaste}
                 aria-label="CSV to import"
-                aria-describedby="eng-import-check"
               />
+              {dragging && <div className="engx-dropzone-hint" aria-hidden="true"><Icon name="upload" size={18} /> Drop to read the file</div>}
             </div>
 
-            <div id="eng-import-check" aria-live="polite">
-              {analysis && <ImportCheck analysis={analysis} />}
+            <div aria-live="polite">
+              {analysis && !analysis.ok && analysis.error && (
+                <p className="eng-field-hint is-error" role="alert"><Icon name="alert-circle" size={12} /> {analysis.error}</p>
+              )}
+              {view && view.rows.length > 0 && (
+                <div className="engx-import-check">
+                  <div className="engx-import-summary">
+                    <span className="engx-pill is-ok">{view.counts.ready + view.counts.optedOut} ready</span>
+                    {view.counts.inCampaign > 0 && <span className="engx-pill is-skip">{view.counts.inCampaign} already in campaign</span>}
+                    {view.counts.optedOut > 0 && <span className="engx-pill is-warn">{view.counts.optedOut} opted out of email</span>}
+                    {view.counts.repeated > 0 && <span className="engx-pill is-skip">{view.counts.repeated} repeated</span>}
+                    {view.counts.rejected > 0 && <span className="engx-pill is-bad">{view.counts.rejected} need fixing</span>}
+                    {!preview && onPreview && analysis.ok && <span className="engx-muted">Checking against this campaign…</span>}
+                    <span className="engx-spacer" />
+                    <label className="engx-toggle">
+                      <input type="checkbox" checked={problemsOnly} onChange={(e) => setProblemsOnly(e.target.checked)} /> Show problems only
+                    </label>
+                    {view.rows.some((r) => r.status !== "ready") && (
+                      <button type="button" className="engx-link" onClick={() => downloadText("datiq-problem-rows.csv", problemsCsv())}>Download problem rows</button>
+                    )}
+                  </div>
+                  <div className="engx-preview-wrap">
+                    <table className="engx-table is-compact">
+                      <thead><tr><th>Line</th><th>Name</th><th>Email / phone</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {shownRows.slice(0, PREVIEW_ROWS).map((r) => (
+                          <tr key={r.line}>
+                            <td className="is-num">{r.line}</td>
+                            <td>{r.name || "—"}</td>
+                            <td className="engx-muted">{r.email || r.phone || "—"}</td>
+                            <td>
+                              <span className={`engx-pill ${STATUS[r.status].cls}`}>{STATUS[r.status].label}</span>
+                              {r.reason && r.status !== "ready" && <div className="engx-muted">{r.reason}</div>}
+                            </td>
+                          </tr>
+                        ))}
+                        {shownRows.length === 0 && <tr><td colSpan={4} className="engx-table-empty">No problems — every row is ready.</td></tr>}
+                      </tbody>
+                    </table>
+                    {shownRows.length > PREVIEW_ROWS && <p className="engx-fineprint">Showing the first {PREVIEW_ROWS} of {shownRows.length} rows.</p>}
+                  </div>
+                </div>
+              )}
             </div>
             {error && <p className="eng-field-hint is-error" role="alert">{error}</p>}
 
             <div className="eng-modal-actions">
               <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-              <Button variant="primary" type="submit" icon="upload" disabled={busy || !analysis?.ok}>
-                {busy ? "Importing…" : analysis?.ok ? `Import ${analysis.counts.ready} prospect${analysis.counts.ready === 1 ? "" : "s"}` : "Import prospects"}
+              <Button type="submit" variant="primary" icon="upload" disabled={busy || !analysis?.ok || importCount === 0}>
+                {busy ? "Importing…" : importCount
+                  ? `Import ${importCount} ready row${importCount === 1 ? "" : "s"}${skipCount ? ` (skip ${skipCount})` : ""}`
+                  : "Import prospects"}
               </Button>
             </div>
+            {analysis?.ok && importCount === 0 && view?.counts.inCampaign > 0 && (
+              <p className="eng-field-hint">Every ready row is already in this campaign — nothing new to import.</p>
+            )}
           </form>
         )}
       </div>
-    </div>
-  );
-}
-
-function ImportCheck({ analysis }) {
-  const { counts, columns } = analysis;
-  const recognised = columns.filter((c) => c.field);
-  return (
-    <div className={`eng-import-check ${analysis.ok ? "" : "is-blocked"}`}>
-      {recognised.length > 0 && !analysis.headerless && (
-        <div className="eng-import-cols">
-          {columns.map((c, i) => (
-            <span key={`${c.header}-${i}`} className={`eng-import-col ${c.field ? "is-known" : "is-custom"}`} title={c.field ? `Read as ${FIELD_LABELS[c.field]}` : "Kept as a custom field"}>
-              {c.header || "(blank)"}{c.field ? "" : " · custom"}
-            </span>
-          ))}
-        </div>
-      )}
-      {analysis.error ? (
-        <p className="eng-field-hint is-error" role="alert"><Icon name="alert-circle" size={12} /> {analysis.error}</p>
-      ) : (
-        <p className="eng-import-summary">
-          <strong>{counts.ready}</strong> of {counts.dataRows} row{counts.dataRows === 1 ? "" : "s"} ready
-          {counts.rejected > 0 && <> · <span className="is-bad">{counts.rejected} with problems</span></>}
-          {counts.repeated > 0 && <> · {counts.repeated} repeated in this paste</>}
-        </p>
-      )}
-      <IssueList issues={analysis.issues} truncated={analysis.issuesTruncated} />
-      {analysis.ok && counts.rejected > 0 && (
-        <p className="eng-field-hint">Rows with problems will be skipped. Fix them above to include them.</p>
-      )}
     </div>
   );
 }

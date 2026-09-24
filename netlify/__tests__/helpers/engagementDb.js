@@ -22,7 +22,7 @@ create table if not exists public.credit_ledger (
 
 export async function createEngagementDb() {
   const pg = new PGlite();
-  await applyMigrations(pg, { only: ["0081", "0082"], preamble: PREAMBLE });
+  await applyMigrations(pg, { only: ["0081", "0082", "0083"], preamble: PREAMBLE });
   const sb = supabaseOverPglite(pg);
 
   let n = 0;

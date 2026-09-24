@@ -12563,3 +12563,30 @@ html.dark .closed-loop-next-card.is-audit-complete {
 .engx-skipped ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 12.5px; overflow-wrap: anywhere; }
 
 .engx-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 12px; }
+
+.engx-account-kit { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 12px; }
+
+/* Import dialog — upload, drop zone, per-row preview */
+.eng-import-card { max-width: 760px; }
+.engx-import-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.engx-file-chip {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2);
+}
+.engx-link { font: inherit; font-size: 12.5px; font-weight: 650; color: var(--accent-on-dark); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.engx-dropzone { position: relative; border-radius: var(--r-md); }
+.engx-dropzone.is-dragging .eng-import-textarea { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.engx-dropzone-hint {
+  position: absolute; inset: 0; display: grid; place-items: center; gap: 6px; pointer-events: none;
+  background: color-mix(in srgb, var(--surface) 80%, transparent); border-radius: var(--r-md);
+  font-weight: 700; color: var(--accent-on-dark);
+}
+.engx-import-summary { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.engx-spacer { flex: 1; }
+.engx-pill { display: inline-block; font-size: 11.5px; font-weight: 650; padding: 2px 9px; border-radius: var(--r-pill); white-space: nowrap; }
+.engx-pill.is-ok { background: var(--success-soft); color: var(--success); }
+.engx-pill.is-warn { background: var(--warn-soft); color: var(--warning); }
+.engx-pill.is-bad { background: var(--danger-soft); color: var(--danger); }
+.engx-pill.is-skip { background: var(--surface-2); color: var(--text-2); }
+.engx-preview-wrap { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
+.engx-preview-wrap .engx-table th { position: sticky; top: 0; }

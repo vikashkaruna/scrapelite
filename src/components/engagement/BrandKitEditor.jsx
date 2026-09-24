@@ -34,10 +34,36 @@ export default function BrandKitEditor({
   senderDomains = [],
   onSaveBrandKit,
   onSaveSender,
+  onLoadAccountKit, // () => Promise<{ brandKit, sender }> — throws with a readable message
   isSaving = false,
 }) {
   const [brandKit, setBrandKit] = useState(() => emptyKit(campaign?.brand_kit));
   const [sender, setSender] = useState(() => emptySender(campaign?.sender));
+  const [accountKitNote, setAccountKitNote] = useState(null); // { tone: "ok"|"error", text }
+  const [loadingKit, setLoadingKit] = useState(false);
+
+  // Fills the forms from the account Brand Kit — it does NOT save, so the
+  // result can be reviewed first (owner decision 2026-09-24).
+  const applyAccountKit = async () => {
+    setLoadingKit(true);
+    setAccountKitNote(null);
+    try {
+      const m = await onLoadAccountKit();
+      const filledBrand = Object.keys(m.brandKit || {});
+      const filledSender = Object.keys(m.sender || {});
+      if (!filledBrand.length && !filledSender.length) {
+        setAccountKitNote({ tone: "error", text: "Your account brand kit is empty — fill it in under Account → Brand kit." });
+        return;
+      }
+      setBrandKit((k) => ({ ...k, ...m.brandKit }));
+      if (filledSender.length) setSender((sv) => ({ ...sv, ...m.sender }));
+      setAccountKitNote({ tone: "ok", text: `Filled from your account brand kit${filledSender.length ? " (including reply-to)" : ""}. Review, then save.` });
+    } catch (e) {
+      setAccountKitNote({ tone: "error", text: e.message || "Could not load your account brand kit." });
+    } finally {
+      setLoadingKit(false);
+    }
+  };
 
   // Re-seed when the selected campaign changes.
   useEffect(() => {
@@ -107,6 +133,16 @@ export default function BrandKitEditor({
               <p className="eng-card-desc">Filled into every draft. Leave a field empty and the draft leaves it out rather than inventing it.</p>
             </div>
           </div>
+          {onLoadAccountKit && (
+            <div className="engx-account-kit">
+              <Button type="button" variant="secondary" size="sm" icon="download" disabled={loadingKit} onClick={applyAccountKit}>
+                {loadingKit ? "Loading…" : "Use my account brand kit"}
+              </Button>
+              {accountKitNote && (
+                <span className={`eng-field-hint ${accountKitNote.tone === "error" ? "is-error" : ""}`} role="status">{accountKitNote.text}</span>
+              )}
+            </div>
+          )}
 
           <form
             className="eng-settings-form"
