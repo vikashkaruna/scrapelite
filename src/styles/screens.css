@@ -10483,6 +10483,11 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
   border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer;
 }
+.tpl-filter-label { align-self: center; margin-right: 4px; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.tpl-chip svg { vertical-align: -2px; }
+.tpl-card-opens { color: var(--accent); }
+.tpl-backlink { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 10px; font-size: .84rem; font-weight: 700; color: var(--accent); text-decoration: none; }
+.tpl-backlink:hover { text-decoration: underline; }
 .tpl-chip:hover { border-color: var(--accent); color: var(--text); }
 .tpl-chip.on {
   background: var(--accent); border-color: var(--accent);

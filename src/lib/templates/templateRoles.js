@@ -23,7 +23,49 @@ export const TEMPLATE_ROLES = Object.freeze({
   market_landscape_map: ["founder-vc", "competitive-intel"],
   agency_client_teardown: ["agency"],
   continuous_account_signal: ["revops", "sales"],
+  // Template hub (2026-09-24)
+  competitor_change_monitor: ["competitive-intel", "pmm", "founder-vc"],
+  price_change_slack_alert: ["competitive-intel", "pmm", "revops"],
+  account_research_outreach: ["sales", "revops"],
+  event_followup_campaign: ["sales", "brand-growth"],
+  weekly_visibility_monitor: ["seo", "brand-growth", "agency"],
+  local_directory_check: ["agency", "seo", "brand-growth"],
+  business_truth_setup: ["brand-growth", "seo", "agency"],
+  icp_list_to_crm: ["revops", "sales"],
+  competitor_content_brief: ["seo", "pmm"],
 });
+
+/**
+ * The module each template belongs to, for the hub's Module filter. A key of
+ * ROLE_MODULES (roleModules.js); code, not a stored column, for the same
+ * reason as the roles above.
+ */
+export const TEMPLATE_MODULES = Object.freeze({
+  account_brief: "enrich",
+  competitor_pricing_tracker: "compete",
+  discoverability_audit: "discover",
+  due_diligence_brief: "enrich",
+  customer_proof_extractor: "enrich",
+  ai_visibility_brief: "discover",
+  bulk_icp_enrichment: "workflows",
+  recruiter_talent_sourcing: "enrich",
+  market_landscape_map: "extract",
+  agency_client_teardown: "discover",
+  continuous_account_signal: "workflows",
+  competitor_change_monitor: "compete",
+  price_change_slack_alert: "workflows",
+  account_research_outreach: "engage",
+  event_followup_campaign: "engage",
+  weekly_visibility_monitor: "discover",
+  local_directory_check: "discover",
+  business_truth_setup: "discover",
+  icp_list_to_crm: "connect",
+  competitor_content_brief: "extract",
+});
+
+export function moduleForTemplate(t) {
+  return (t && TEMPLATE_MODULES[t.template_key]) || null;
+}
 
 /** Role ids for a template row: the map first, else its stored persona. */
 export function rolesForTemplate(t) {

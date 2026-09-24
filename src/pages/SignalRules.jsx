@@ -4,7 +4,8 @@
 // and workflow runs to Slack, Email, Webhooks, and HubSpot.
 
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate, Link, useLocation } from "react-router";
+import TemplateBacklink from "../components/TemplateBacklink.jsx";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -35,6 +36,24 @@ export default function SignalRules() {
   const [conditionVal, setConditionVal] = useState("critical");
 
   // Edit Modal State
+  // Prefill from the template hub (Price-change Alert to Slack): open the
+  // create form filled in. Nothing is saved until the user presses Create.
+  const location = useLocation();
+  useEffect(() => {
+    const draft = location.state?.newRule;
+    if (!draft) return;
+    if (draft.name) setName(draft.name);
+    if (draft.triggerSource) setTriggerSource(draft.triggerSource);
+    if (draft.actionType) setActionType(draft.actionType);
+    if (draft.actionDest) setActionDest(draft.actionDest);
+    if (draft.condition) {
+      setConditionField(draft.condition.field);
+      setConditionOp(draft.condition.op);
+      setConditionVal(draft.condition.value);
+    }
+    setShowCreateModal(true);
+  }, [location.state]);
+
   const [editingRule, setEditingRule] = useState(null);
   const [editName, setEditName] = useState("");
   const [editTriggerSource, setEditTriggerSource] = useState(TRIGGER_SOURCES.WATCHLIST);
@@ -289,6 +308,7 @@ export default function SignalRules() {
 
   return (
     <div className="container" style={{ padding: "40px 20px" }}>
+      <TemplateBacklink />
       <header className="page-header" style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>

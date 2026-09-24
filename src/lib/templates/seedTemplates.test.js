@@ -2,10 +2,16 @@ import { describe, it, expect } from "vitest";
 import { SEED_TEMPLATES, PUBLISHED_SEEDS, seedByKey } from "./seedTemplates.js";
 import { validateTemplate, estimateCredits, validateInput, capabilityFor } from "./templateModel.js";
 import { PERSONAS, ALL_PERSONA_IDS } from "../personaConfig.js";
+import { HANDOFF } from "./templateHandoffs.js";
+
+// Template-hub entries that only OPEN a module (templateHandoffs.js): nothing
+// runs or is charged here. The audit and bulk enrichment also hand off but
+// predate the hub and keep their own rules below.
+const opensModule = (t) => Boolean(HANDOFF[t.template_key]) && t.prompt_bundle?.delegate === "module";
 
 describe("seed templates", () => {
-  it("ships eleven — launch templates plus recruiter, market research, agency, and workflow intelligence", () => {
-    expect(SEED_TEMPLATES).toHaveLength(11);
+  it("ships twenty — the eleven plus the nine template-hub entries (2026-09-24)", () => {
+    expect(SEED_TEMPLATES).toHaveLength(20);
   });
 
   it("every seed is a valid template definition", () => {
@@ -30,14 +36,17 @@ describe("seed templates", () => {
   });
 
   it("all seed templates are published including bulk_icp_enrichment", () => {
-    expect(PUBLISHED_SEEDS).toHaveLength(11);
+    expect(PUBLISHED_SEEDS).toHaveLength(20);
     expect(seedByKey("bulk_icp_enrichment").status).toBe("published");
   });
 
   it("every published seed produces a non-zero, itemised estimate — except the audit", () => {
     for (const t of PUBLISHED_SEEDS) {
       const e = estimateCredits(t, {});
-      if (t.template_key === "discoverability_audit") {
+      if (opensModule(t)) {
+        // A hand-off spends nothing here; the module charges for its own work.
+        expect(e.credits, t.template_key).toBe(0);
+      } else if (t.template_key === "discoverability_audit") {
         // Audits debit their own monthly budget; charging credits too would
         // bill the same work twice.
         expect(e.credits).toBe(0);
@@ -50,7 +59,9 @@ describe("seed templates", () => {
   });
 
   it("every published seed has at least one required input, so the form cannot be submitted empty", () => {
-    for (const t of PUBLISHED_SEEDS) {
+    // A hub entry with no required input only opens a module (prefilled where
+    // it can be), so there is nothing that must be typed first.
+    for (const t of PUBLISHED_SEEDS.filter((x) => !(opensModule(x) && !x.input_schema.fields.some((f) => f.required)))) {
       const required = t.input_schema.fields.filter((f) => f.required);
       expect(required.length, t.template_key).toBeGreaterThan(0);
       expect(validateInput(t, {}).ok, t.template_key).toBe(false);
@@ -66,6 +77,8 @@ describe("seed templates", () => {
       url: "https://stripe.com/pricing",
       domains: "stripe.com\nadyen.com",
       competitors: "adyen.com\ncheckout.com",
+      campaign: "Q4 fintech accounts",
+      event: "SaaStr Annual 2026",
     };
     for (const t of PUBLISHED_SEEDS) {
       const r = validateInput(t, sample);

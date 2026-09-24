@@ -21,10 +21,11 @@ const STATUSES = [
   { id: "archived", label: "Archived" },
 ];
 
-export default function CampaignModal({ mode = "create", campaign = null, campaigns = [], prospectCount = 0, onSave, onDelete, onClose }) {
+export default function CampaignModal({ mode = "create", campaign = null, draft = null, campaigns = [], prospectCount = 0, onSave, onDelete, onClose }) {
   const editing = mode === "edit" && campaign;
-  const [name, setName] = useState(editing ? campaign.name || "" : "");
-  const [description, setDescription] = useState(editing ? campaign.description || "" : "");
+  // `draft` prefills a NEW campaign (from the template hub); it saves nothing.
+  const [name, setName] = useState(editing ? campaign.name || "" : draft?.name || "");
+  const [description, setDescription] = useState(editing ? campaign.description || "" : draft?.description || "");
   const [status, setStatus] = useState(editing ? campaign.status || "active" : "active");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

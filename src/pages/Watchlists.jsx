@@ -5,7 +5,8 @@
 // objective facts from AI strategic interpretations, with user feedback.
 
 import { useState, useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
+import TemplateBacklink from "../components/TemplateBacklink.jsx";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -66,6 +67,19 @@ export default function Watchlists() {
       showToast(e.message);
     }
   };
+
+  // Prefill from the template hub (Competitor Change Monitor): open the create
+  // form with the competitors and cadence filled in. Nothing is created until
+  // the user presses Create.
+  const location = useLocation();
+  useEffect(() => {
+    const draft = location.state?.newWatchlist;
+    if (!draft) return;
+    setName(draft.name || "");
+    setCadence(draft.cadence || "daily");
+    setDomainsInput(Array.isArray(draft.domains) ? draft.domains.join("\n") : String(draft.domains || ""));
+    setShowCreateModal(true);
+  }, [location.state]);
 
   useEffect(() => {
     loadWatchlists();
@@ -245,6 +259,7 @@ export default function Watchlists() {
 
   return (
     <div className="container" style={{ padding: "40px 20px" }}>
+      <TemplateBacklink />
       <header className="page-header" style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>

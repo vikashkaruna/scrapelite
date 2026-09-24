@@ -53,3 +53,28 @@ describe("Templates — role filter", () => {
     expect(screen.getByRole("tab", { name: "All roles" })).toHaveAttribute("aria-selected", "true");
   });
 });
+
+describe("Templates — the hub (Phase C §18)", () => {
+  it("shows all 20 templates, each saying whether it runs here or opens a module", async () => {
+    await renderAt("/templates");
+    expect(document.querySelectorAll(".tpl-card")).toHaveLength(20);
+    const opens = [...document.querySelectorAll(".tpl-card-opens")].map((n) => n.textContent);
+    expect(opens.length).toBe(10); // the audit, bulk enrichment and the 8 hub hand-offs
+    expect(opens.join(" ")).toMatch(/Opens in Engagement \(beta\)/);
+  });
+
+  it("filters by module, and combines with the role filter", async () => {
+    await renderAt("/templates?module=engage");
+    expect(cardTitles().sort()).toEqual(["Account Research → Outreach Campaign", "Event / Webinar Follow-up"]);
+    await act(async () => { screen.getByRole("tab", { name: "Sales" }).click(); });
+    expect(cardTitles().sort()).toEqual(["Account Research → Outreach Campaign", "Event / Webinar Follow-up"]);
+    await act(async () => { screen.getByRole("tab", { name: "SEO & Content" }).click(); });
+    expect(cardTitles()).toEqual([]);
+  });
+
+  it("an old ?filter=workflows link lands on the Workflows module", async () => {
+    await renderAt("/templates?filter=workflows");
+    expect(screen.getByRole("tab", { name: /Workflows/ })).toHaveAttribute("aria-selected", "true");
+    expect(cardTitles()).toContain("Bulk ICP Account Enrichment");
+  });
+});

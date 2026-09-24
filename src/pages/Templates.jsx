@@ -21,7 +21,9 @@ import { useAuth } from "../components/AuthProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useSeo } from "../hooks/useSeo.js";
 import { PERSONAS, PERSONA_BY_ID, resolvePersonaId } from "../lib/personaConfig.js";
-import { rolesForTemplate, primaryRole } from "../lib/templates/templateRoles.js";
+import { rolesForTemplate, primaryRole, moduleForTemplate } from "../lib/templates/templateRoles.js";
+import { HANDOFF } from "../lib/templates/templateHandoffs.js";
+import { ROLE_MODULES } from "../lib/roleModules.js";
 import { validateInput, estimateCredits } from "../lib/templates/templateModel.js";
 import { checkAllowance } from "../lib/credits/creditModel.js";
 import { describeEstimate } from "../lib/credits/creditModel.js";
@@ -72,19 +74,27 @@ function TemplateGalleryView({ onPick }) {
   const queryFilter = params.get("filter");
   const [templates, setTemplates] = useState(() => readTemplatesCache()?.templates || null);
   const [error, setError] = useState(null);
-  // A retired id in a link or a stored role (market-research) resolves to its
-  // current role; the legacy recruiter role is not offered, so it reads as "all".
-  const offered = (id) => id === "workflows" || PERSONAS.some((p) => p.id === id);
-  const initialFilter = (() => {
-    const id = resolvePersonaId(queryFilter || personaId);
-    return id && offered(id) ? id : "all";
-  })();
-  const [filter, setFilter] = useState(initialFilter);
+  // Two filters: ROLE (who it is for) and MODULE (what it runs in). A retired
+  // role id in a link (market-research) resolves to its current role; the
+  // legacy recruiter role is not offered, so it reads as "all". The old
+  // ?filter=workflows pseudo-role maps to the Workflows module.
+  const offeredRole = (id) => PERSONAS.some((p) => p.id === id);
+  const readParams = () => {
+    const f = params.get("filter");
+    const m = params.get("module");
+    if (f === "workflows") return { role: "all", module: "workflows" };
+    const role = resolvePersonaId(f || (m ? null : personaId));
+    return { role: role && offeredRole(role) ? role : "all", module: m && ROLE_MODULES[m] ? m : "all" };
+  };
+  const [filter, setFilter] = useState(() => readParams().role);
+  const [moduleFilter, setModuleFilter] = useState(() => readParams().module);
 
   useEffect(() => {
-    const f = resolvePersonaId(params.get("filter"));
-    if (f) setFilter(offered(f) ? f : "all");
-  }, [params]);
+    if (!params.get("filter") && !params.get("module")) return;
+    const next = readParams();
+    setFilter(next.role);
+    setModuleFilter(next.module);
+  }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let alive = true;
@@ -102,21 +112,20 @@ function TemplateGalleryView({ onPick }) {
 
   const shown = useMemo(() => {
     if (!templates) return [];
-    if (filter === "workflows") {
-      return templates.filter((t) => t.persona === "workflows" || t.tags?.includes("workflows") || t.template_key === "continuous_account_signal" || t.template_key === "bulk_icp_enrichment");
-    }
-    return filter === "all" ? templates : templates.filter((t) => rolesForTemplate(t).includes(filter));
-  }, [templates, filter]);
+    return templates.filter((t) =>
+      (filter === "all" || rolesForTemplate(t).includes(filter)) &&
+      (moduleFilter === "all" || moduleForTemplate(t) === moduleFilter));
+  }, [templates, filter, moduleFilter]);
 
-  // Every current role with at least one template, in the roles' own order.
+  // Every current role / module with at least one template, in their own order.
   const personasWithTemplates = useMemo(() => {
     const present = new Set((templates || []).flatMap(rolesForTemplate));
-    const list = PERSONAS.filter((p) => present.has(p.id)).map((p) => ({ id: p.id, label: p.shortLabel || p.label }));
-    if (present.has("workflows") || queryFilter === "workflows" || !list.some((x) => x.id === "workflows")) {
-      list.push({ id: "workflows", label: "Workflows" });
-    }
-    return list;
-  }, [templates, queryFilter]);
+    return PERSONAS.filter((p) => present.has(p.id)).map((p) => ({ id: p.id, label: p.shortLabel || p.label }));
+  }, [templates]);
+  const modulesWithTemplates = useMemo(() => {
+    const present = new Set((templates || []).map(moduleForTemplate).filter(Boolean));
+    return Object.values(ROLE_MODULES).filter((m) => present.has(m.key));
+  }, [templates]);
 
   return (
     <div className="page container tpl-page">
@@ -156,20 +165,38 @@ function TemplateGalleryView({ onPick }) {
       </div>
 
       {templates && templates.length > 0 && (
-        <div className="tpl-filters" role="tablist" aria-label="Filter templates by role">
-          <button
-            role="tab" aria-selected={filter === "all"}
-            className={`tpl-chip${filter === "all" ? " on" : ""}`}
-            onClick={() => setFilter("all")}
-          >All roles</button>
-          {personasWithTemplates.map((p) => (
+        <>
+          <div className="tpl-filters" role="tablist" aria-label="Filter templates by role">
+            <span className="tpl-filter-label">Role</span>
             <button
-              key={p.id} role="tab" aria-selected={filter === p.id}
-              className={`tpl-chip${filter === p.id ? " on" : ""}`}
-              onClick={() => setFilter(p.id)}
-            >{p.label}</button>
-          ))}
-        </div>
+              role="tab" aria-selected={filter === "all"}
+              className={`tpl-chip${filter === "all" ? " on" : ""}`}
+              onClick={() => setFilter("all")}
+            >All roles</button>
+            {personasWithTemplates.map((p) => (
+              <button
+                key={p.id} role="tab" aria-selected={filter === p.id}
+                className={`tpl-chip${filter === p.id ? " on" : ""}`}
+                onClick={() => setFilter(p.id)}
+              >{p.label}</button>
+            ))}
+          </div>
+          <div className="tpl-filters" role="tablist" aria-label="Filter templates by module">
+            <span className="tpl-filter-label">Module</span>
+            <button
+              role="tab" aria-selected={moduleFilter === "all"}
+              className={`tpl-chip${moduleFilter === "all" ? " on" : ""}`}
+              onClick={() => setModuleFilter("all")}
+            >All modules</button>
+            {modulesWithTemplates.map((m) => (
+              <button
+                key={m.key} role="tab" aria-selected={moduleFilter === m.key}
+                className={`tpl-chip${moduleFilter === m.key ? " on" : ""}`}
+                onClick={() => setModuleFilter(m.key)}
+              ><Icon name={m.icon} size={12} /> {m.label}</button>
+            ))}
+          </div>
+        </>
       )}
 
       {error && <div className="card tpl-error">Couldn't load templates: {error}</div>}
@@ -183,22 +210,27 @@ function TemplateGalleryView({ onPick }) {
               {primaryRole(t) && <span className="tpl-persona">{personaLabel(primaryRole(t))}</span>}
             </div>
             <p className="tpl-card-desc">{t.summary}</p>
-            <span className="tpl-card-cta">
-              Run this <Icon name="arrow-up" size={14} />
-            </span>
+            {HANDOFF[t.template_key] ? (
+              <span className="tpl-card-cta tpl-card-opens">
+                Opens in {HANDOFF[t.template_key].module}{HANDOFF[t.template_key].beta ? " (beta)" : ""} <Icon name="arrow-right" size={14} />
+              </span>
+            ) : (
+              <span className="tpl-card-cta">
+                Runs here <Icon name="arrow-up" size={14} />
+              </span>
+            )}
           </button>
         ))}
       </div>
 
       {templates && shown.length === 0 && (
-        <div className="card tpl-empty">No templates for that role yet.</div>
+        <div className="card tpl-empty">No templates for that role and module yet.</div>
       )}
     </div>
   );
 }
 
 function personaLabel(id) {
-  if (id === "workflows") return "Workflows & Automation";
   const p = PERSONA_BY_ID[id];
   return p?.shortLabel || p?.label || id;
 }
@@ -217,20 +249,9 @@ function personaLabel(id) {
 // enforces for the Home composer's hand-off: "auto-running would spend an
 // audit credit on defaults they never saw, which is the kind of surprise a
 // quota makes expensive."
-const HANDOFF = {
-  discoverability_audit: {
-    to: "/discoverability",
-    label: "Open in Discoverability",
-    why: "This audit runs in the Discoverability module, which has the full four-pillar engine, history and re-audit comparison.",
-    state: (input) => ({ auditUrl: input.domain ? `https://${input.domain}` : input.url }),
-  },
-  bulk_icp_enrichment: {
-    to: "/lists",
-    label: "Open in Bulk Account Lists",
-    why: "Bulk enrichment runs in the Account Lists module, which provides deduplication, CSV/domain paste import, durable chunked execution, and ICP scoring.",
-    state: (input) => ({ initialDomains: input.domains, icpProfile: input.icp_profile }),
-  },
-};
+//
+// The map itself lives in lib/templates/templateHandoffs.js, where the contract
+// test can check it against the seed catalogue.
 
 function TemplateRunner({ templateKey, runId = null, onBack }) {
   const showToast = useToast();

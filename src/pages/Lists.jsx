@@ -5,6 +5,7 @@
 // review low-confidence extractions, and export qualified account tables.
 
 import { useState, useEffect, useMemo } from "react";
+import TemplateBacklink from "../components/TemplateBacklink.jsx";
 import { useLocation, useNavigate, Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import DomainListInput from "../components/DomainListInput.jsx";
@@ -66,7 +67,8 @@ export default function Lists() {
   // Check if routed from template handoff or query parameters (?new=1 or ?list=<id>)
   useEffect(() => {
     if (location.state?.initialDomains) {
-      setRawDomains(location.state.initialDomains);
+      const d = location.state.initialDomains;
+      setRawDomains(Array.isArray(d) ? d.join("\n") : String(d));
       setShowCreateModal(true);
     }
     const params = new URLSearchParams(location.search);
@@ -372,6 +374,7 @@ export default function Lists() {
 
   return (
     <div className="container" style={{ padding: "40px 20px" }}>
+      <TemplateBacklink />
       <header className="page-header" style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
