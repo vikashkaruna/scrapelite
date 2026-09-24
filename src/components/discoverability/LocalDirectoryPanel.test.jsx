@@ -191,13 +191,17 @@ describe("LocalDirectoryPanel — ignoring sources that do not apply", () => {
     mockApi({ checks: [{ id: "chk-1" }], full: storedCheck });
     render(<LocalDirectoryPanel />);
     expect(await screen.findByText("Google Business Profile")).toBeInTheDocument();
+    // Wait for the stored check itself, not just a source name: the registry can
+    // render "Google Business Profile" before the listings load, and filtering
+    // then runs over an empty set (flaked in CI under load).
+    await screen.findAllByText("Justdial");
 
     // Filter by Mismatches
     const mismatchTab = screen.getByRole("button", { name: /Mismatches/ });
     fireEvent.click(mismatchTab);
 
     // Justdial has match_score: 55, mismatched: ["phone"] -> mismatch
-    expect(screen.getAllByText("Justdial").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Justdial")).length).toBeGreaterThan(0);
     // GBP has match_score: 100, mismatched: [] -> match, so filtered out
     expect(screen.queryByText("Google Business Profile")).toBeNull();
 
