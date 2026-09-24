@@ -54,12 +54,13 @@ test("home shows a truthful six-module catalog", async ({ page }) => {
   await page.goto("/");
   const modules = page.locator(".home-module-card");
   await expect(modules).toHaveCount(6);
-  await expect(modules.filter({ hasText: "DatIQ Discover" })).toContainText("Beta");
+  await expect(modules.filter({ hasText: "DatIQ Discover" })).toContainText("Available");
   await expect(modules.filter({ hasText: "DatIQ Discover" }).getByRole("button", { name: /Run a visibility audit/i })).toBeVisible();
 
-  const upcoming = modules.filter({ hasText: "DatIQ Engage" });
-  await expect(upcoming).toContainText("Upcoming");
-  await expect(upcoming.getByRole("button")).toHaveCount(0);
+  const engage = modules.filter({ hasText: "DatIQ Engage" });
+  await expect(engage).toContainText("Beta");
+  await expect(engage.getByRole("button", { name: /Open Engagement/i })).toBeVisible();
+  await expect(modules.filter({ hasText: "DatIQ Compete" }).getByRole("button", { name: /Open Workflow hub/i })).toBeVisible();
 });
 
 test("the secondary hero CTA focuses the extraction composer", async ({ page }) => {

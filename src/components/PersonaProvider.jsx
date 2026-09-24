@@ -18,6 +18,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthProvider.jsx";
 import { updateUserMetadata } from "../lib/authService.js";
+import { resolvePersonaId } from "../lib/personaConfig.js";
 
 const PERSONA_KEY = "datiq.persona";
 const ONBOARDED_KEY = "datiq.onboarded";
@@ -41,7 +42,9 @@ function write(key, value) {
 
 export function PersonaProvider({ children }) {
   const { user } = useAuth();
-  const [personaId, setPersonaId] = useState(() => read(PERSONA_KEY));
+  // A retired id (e.g. market-research, merged into founder-vc) is resolved on
+  // read, so every consumer sees the current role and none needs its own alias.
+  const [personaId, setPersonaId] = useState(() => resolvePersonaId(read(PERSONA_KEY)));
   const [onboarded, setOnboarded] = useState(() => read(ONBOARDED_KEY) === "1");
   const [userName, setUserName] = useState(() => read(NAME_KEY, ""));
   // Tracks which signed-in user id this provider has already reconciled
@@ -59,8 +62,9 @@ export function PersonaProvider({ children }) {
     if (meta.persona_id) {
       // Server has a choice — it wins, so a second device picks up the same
       // persona instead of re-asking.
-      setPersonaId(meta.persona_id);
-      write(PERSONA_KEY, meta.persona_id);
+      const resolved = resolvePersonaId(meta.persona_id);
+      setPersonaId(resolved);
+      write(PERSONA_KEY, resolved);
       setOnboarded(Boolean(meta.onboarded));
       write(ONBOARDED_KEY, meta.onboarded ? "1" : null);
       if (meta.user_name) {

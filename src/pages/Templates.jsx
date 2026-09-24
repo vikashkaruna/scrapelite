@@ -20,7 +20,8 @@ import { useToast } from "../components/Toast.jsx";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { useSeo } from "../hooks/useSeo.js";
-import { PERSONAS } from "../lib/personaConfig.js";
+import { PERSONAS, PERSONA_BY_ID, resolvePersonaId } from "../lib/personaConfig.js";
+import { rolesForTemplate, primaryRole } from "../lib/templates/templateRoles.js";
 import { validateInput, estimateCredits } from "../lib/templates/templateModel.js";
 import { checkAllowance } from "../lib/credits/creditModel.js";
 import { describeEstimate } from "../lib/credits/creditModel.js";
@@ -71,11 +72,18 @@ function TemplateGalleryView({ onPick }) {
   const queryFilter = params.get("filter");
   const [templates, setTemplates] = useState(() => readTemplatesCache()?.templates || null);
   const [error, setError] = useState(null);
-  const [filter, setFilter] = useState(queryFilter || personaId || "all");
+  // A retired id in a link or a stored role (market-research) resolves to its
+  // current role; the legacy recruiter role is not offered, so it reads as "all".
+  const offered = (id) => id === "workflows" || PERSONAS.some((p) => p.id === id);
+  const initialFilter = (() => {
+    const id = resolvePersonaId(queryFilter || personaId);
+    return id && offered(id) ? id : "all";
+  })();
+  const [filter, setFilter] = useState(initialFilter);
 
   useEffect(() => {
-    const f = params.get("filter");
-    if (f) setFilter(f);
+    const f = resolvePersonaId(params.get("filter"));
+    if (f) setFilter(offered(f) ? f : "all");
   }, [params]);
 
   useEffect(() => {
@@ -97,12 +105,13 @@ function TemplateGalleryView({ onPick }) {
     if (filter === "workflows") {
       return templates.filter((t) => t.persona === "workflows" || t.tags?.includes("workflows") || t.template_key === "continuous_account_signal" || t.template_key === "bulk_icp_enrichment");
     }
-    return filter === "all" ? templates : templates.filter((t) => t.persona === filter);
+    return filter === "all" ? templates : templates.filter((t) => rolesForTemplate(t).includes(filter));
   }, [templates, filter]);
 
+  // Every current role with at least one template, in the roles' own order.
   const personasWithTemplates = useMemo(() => {
-    const present = new Set((templates || []).map((t) => t.persona));
-    const list = PERSONAS.filter((p) => present.has(p.id)).map((p) => ({ id: p.id, label: p.label || p.name || p.id }));
+    const present = new Set((templates || []).flatMap(rolesForTemplate));
+    const list = PERSONAS.filter((p) => present.has(p.id)).map((p) => ({ id: p.id, label: p.shortLabel || p.label }));
     if (present.has("workflows") || queryFilter === "workflows" || !list.some((x) => x.id === "workflows")) {
       list.push({ id: "workflows", label: "Workflows" });
     }
@@ -171,7 +180,7 @@ function TemplateGalleryView({ onPick }) {
           <button key={t.template_key} className="tpl-card" onClick={() => onPick(t.template_key)}>
             <div className="tpl-card-head">
               <h2>{t.title}</h2>
-              {t.persona && <span className="tpl-persona">{personaLabel(t.persona)}</span>}
+              {primaryRole(t) && <span className="tpl-persona">{personaLabel(primaryRole(t))}</span>}
             </div>
             <p className="tpl-card-desc">{t.summary}</p>
             <span className="tpl-card-cta">
@@ -190,8 +199,8 @@ function TemplateGalleryView({ onPick }) {
 
 function personaLabel(id) {
   if (id === "workflows") return "Workflows & Automation";
-  const p = PERSONAS.find((x) => x.id === id);
-  return p?.label || p?.name || id;
+  const p = PERSONA_BY_ID[id];
+  return p?.shortLabel || p?.label || id;
 }
 
 // ── runner ──────────────────────────────────────────────────────────────────

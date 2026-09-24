@@ -3,7 +3,7 @@ import {
   RECIPES, RECIPE_READINESS, RECIPE_PROVIDERS, recipesForPersona, isRunnable,
 } from "./recipeCatalog.js";
 import { PUSH_PROVIDERS } from "../integrationsClient.js";
-import { PERSONAS } from "../personaConfig.js";
+import { PERSONAS, LEGACY_PERSONAS } from "../personaConfig.js";
 import { SEED_TEMPLATES } from "../templates/seedTemplates.js";
 
 describe("the catalogue cannot promise what the product cannot do", () => {
@@ -19,7 +19,8 @@ describe("the catalogue cannot promise what the product cannot do", () => {
   });
 
   it("every recipe targets real personas", () => {
-    const real = new Set(PERSONAS.map((p) => p.id));
+    // Current roles plus the hidden legacy one (recruiter), which still resolves.
+    const real = new Set([...PERSONAS, ...LEGACY_PERSONAS].map((p) => p.id));
     for (const r of RECIPES) for (const p of r.personas) {
       expect(real, `${r.key} → persona ${p}`).toContain(p);
     }

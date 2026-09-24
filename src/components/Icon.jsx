@@ -70,6 +70,8 @@ import {
   Shield,
   PlayCircle,
   TrendingUp,
+  Megaphone,
+  SlidersHorizontal,
   Info,
   // V5 additions
   CreditCard,
@@ -241,6 +243,8 @@ const MAP = {
   shield: Shield,
   "play-circle": PlayCircle,
   "trending-up": TrendingUp,
+  megaphone: Megaphone,
+  sliders: SlidersHorizontal,
   info: Info,
   "chevron-up": ChevronUp,
   // V5

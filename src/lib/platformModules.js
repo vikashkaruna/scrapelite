@@ -37,7 +37,7 @@ export const PLATFORM_MODULES = Object.freeze([
     icon: "scan-search",
     headline: "Be found where decisions start.",
     description: "Measure visibility across search, answer engines and AI. Act on evidence-backed priorities and track progress.",
-    status: MODULE_STATUS.BETA,
+    status: MODULE_STATUS.AVAILABLE,
     cta: "Run a visibility audit",
     to: "/discoverability",
   },
@@ -48,8 +48,8 @@ export const PLATFORM_MODULES = Object.freeze([
     headline: "Never miss a competitor move.",
     description: "Monitor pricing, positioning and page changes with evidence and an alert trail.",
     status: MODULE_STATUS.BETA,
-    cta: "Explore watchlists",
-    to: "/watchlists",
+    cta: "Open Workflow hub",
+    to: "/workflows",
   },
   {
     key: "connect",
@@ -66,8 +66,10 @@ export const PLATFORM_MODULES = Object.freeze([
     name: "DatIQ Engage",
     icon: "users",
     headline: "Turn research into next steps.",
-    description: "Organise prospect intelligence and outreach workflows.",
-    status: MODULE_STATUS.UPCOMING,
+    description: "Run outreach campaigns from your research: reviewed drafts, per-channel consent and results.",
+    status: MODULE_STATUS.BETA,
+    cta: "Open Engagement",
+    to: "/engagement",
   },
 ]);
 

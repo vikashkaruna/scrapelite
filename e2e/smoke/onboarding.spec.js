@@ -12,9 +12,11 @@ test("/onboarding renders the persona step inside the Shell (TopBar present)", a
   await page.goto("/onboarding");
   // TopBar with brand mark is rendered.
   await expect(page.getByText("DatIQ").first()).toBeVisible();
-  // The persona picker step is the default — H1 "What best describes your work?"
-  await expect(page.getByRole("heading", { name: /What best describes your work/i })).toBeVisible();
-  // 7 persona cards are visible.
-  const personaCards = page.locator(".ob-card");
-  await expect(personaCards).toHaveCount(7);
+  // The role picker step is the default.
+  await expect(page.getByRole("heading", { name: /What do you want DatIQ to do for you/i })).toBeVisible();
+  // 8 role cards; picking one opens its detail panel.
+  const roles = page.locator(".ob-role");
+  await expect(roles).toHaveCount(8);
+  await roles.first().click();
+  await expect(page.locator("#ob-role-detail")).toContainText("What you can do");
 });

@@ -48,7 +48,7 @@ export const RECIPES = Object.freeze([
     when: "You run the Sales-ready Account Brief template",
     then: "The company and its contacts are pushed to HubSpot with source URLs",
     provider: "hubspot",
-    personas: ["sales"],
+    personas: ["sales", "revops"],
     readiness: RECIPE_READINESS.LIVE,
     template: "account_brief",
     cta: { label: "Run the Account Brief", to: "/templates?key=account_brief" },
@@ -60,7 +60,7 @@ export const RECIPES = Object.freeze([
     when: "A monitored competitor changes a pricing field",
     then: "A summary of what changed is posted to your Slack channel",
     provider: "slack",
-    personas: ["competitive-intel"],
+    personas: ["competitive-intel", "pmm"],
     // PRD §5, row 1. Needs the rules layer to fire on a FIELD change rather
     // than on a page diff — the PRD is explicit that alerting on every DOM
     // change trains users to ignore the feature within a week.
@@ -74,7 +74,7 @@ export const RECIPES = Object.freeze([
     when: "You run the SEO / GEO / AEO Audit template",
     then: "A Notion page is created with the scores and the prioritised fix queue",
     provider: "notion",
-    personas: ["seo"],
+    personas: ["seo", "brand-growth", "agency"],
     readiness: RECIPE_READINESS.LIVE,
     template: "discoverability_audit",
     cta: { label: "Run the audit", to: "/templates?key=discoverability_audit" },
@@ -99,7 +99,7 @@ export const RECIPES = Object.freeze([
     when: "You run the Pre-Meeting Due Diligence Brief",
     then: "The brief is written to Notion with its sources and timestamp",
     provider: "notion",
-    personas: ["founder-vc", "market-research"],
+    personas: ["founder-vc"],
     readiness: RECIPE_READINESS.LIVE,
     template: "due_diligence_brief",
     cta: { label: "Run the brief", to: "/templates?key=due_diligence_brief" },
@@ -111,7 +111,7 @@ export const RECIPES = Object.freeze([
     when: "An enriched account scores 80 or above on your ICP rules",
     then: "A HubSpot company is created or updated and an owner is assigned",
     provider: "hubspot",
-    personas: ["sales"],
+    personas: ["sales", "revops"],
     // PRD §5, row 2. Needs both bulk enrichment (Phase 4) and the rules layer.
     readiness: RECIPE_READINESS.RULES,
     phase: "Bulk enrichment + signal routing",

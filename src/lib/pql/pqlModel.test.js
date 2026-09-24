@@ -114,6 +114,7 @@ describe("activation follows the PRD's own definitions", () => {
   // later cites it back as though the PRD said it.
   it("marks the non-PRD recruiter definition as such", () => {
     expect(ACTIVATION_DEFINITIONS.recruiter.fromPrd).toBe(false);
+    expect(ACTIVATION_DEFINITIONS["brand-growth"].fromPrd).toBe(false);
     for (const k of ["sales-sdr", "revops", "product-pmm", "seo-content", "vc-analyst", "agency"]) {
       expect(ACTIVATION_DEFINITIONS[k].fromPrd).not.toBe(false);
     }
