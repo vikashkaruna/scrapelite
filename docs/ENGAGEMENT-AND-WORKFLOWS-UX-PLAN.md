@@ -1,7 +1,7 @@
 # Engagement & Workflows — UX improvement plan (for approval)
 
 > **Date:** 2026-09-24 · **Based on:** `staging` @ `949bc452` (after PR #221) · **Status:** ✅ **Phases A and B built**
-> (branch `feat/engagement-ux-phase-ab`); Phase C awaits approval. Each item says what was found in the code, what is proposed, what needs your decision,
+> (branch `feat/engagement-ux-phase-ab`, PR #222); **Phase C (items 6b, 7, 8, 16, 17, 18) awaits approval.** Each item says what was found in the code, what is proposed, what needs your decision,
 > and how it will be tested.
 
 **Legend:** 🟢 small (hours) · 🟡 medium (≈1 day) · 🔴 large (multi-day, schema change)
@@ -25,9 +25,12 @@
 | 6b | Real links between lists / watchlists and rules; safe delete and unlink | 🔴 | C |
 | 7 | Lists, Watchlists, Rules: busy indicator + UX rebuild | 🔴 | C |
 | 8 | Workflows hub: proper name, wiring and layout | 🟡 | C |
+| 16 | Home "Common jobs": 12 tiles (was 7), adding Discover / Compete / Engage / Connect / Templates jobs | 🟢 | C |
+| 17 | Home "From signal to next step": DatIQ Engage → Engagement, DatIQ Compete → Workflow hub | 🟢 | C |
+| 18 | `/templates` becomes the template hub: 9 new templates that run or open the right module | 🟡 | C |
 
 **Phase A** (now including 10–12) is safe to ship on its own in one PR. **Phase B** adds one small dependency. **Phase C** needs
-migration **`0083`** and changes how rules match events, so it gets its own PR and staging pass.
+migration **`0084`** (`0083` went to the account Brand Kit in Phase B) and changes how rules match events, so it gets its own PR and staging pass.
 
 **Decisions I need from you** are collected in §13.
 
@@ -104,7 +107,7 @@ WORKFLOWS
 ```
 Same order and divider in the mobile menu. The /engagement page heading is unchanged.
 
-**Deferred (owner):** a "DatIQ Engage" link from the home screen to /engagement — a later item, not in this plan.
+**Deferred (owner), now planned:** the home-screen "DatIQ Engage" link to /engagement is item §17 (Phase C).
 
 **Tests:** TopBar tests assert order, divider and targets (desktop + mobile).
 
@@ -174,7 +177,7 @@ so "this rule is for these two watchlists" cannot be expressed, and deleting a w
 List events already carry `list_id`; **watchlist events don't carry the watchlist ID** yet.
 
 **Proposal**
-- **Migration `0083`:** `signal_rule_sources (rule_id, source_type 'list'|'watchlist', source_id)`, unique per
+- **Migration `0084`:** `signal_rule_sources (rule_id, source_type 'list'|'watchlist', source_id)`, unique per
   triple, cascading with the rule, RLS service-only (the `0044` pattern).
 - **Scope per rule:** "All watchlists" (today's behaviour, and what existing rules keep) **or** "These watchlists: …".
 - **Matching:** the rule dispatcher honours the scope; the watchlist monitor adds `watchlist_id` to its event.
@@ -356,19 +359,151 @@ but no edit.
 
 ---
 
+## 16. Home "Common jobs" — 12 tiles that fill whole rows 🟢
+
+**Now:** 7 tiles in a grid that is 6 columns on desktop, 3 on tablet and 2 on phone. The seventh tile
+("Write a content brief", added in Phase A) sits alone on a second row at every width.
+
+**Proposal:** **12 tiles**. Twelve divides evenly at every width: 2 rows of 6 on desktop, 4 rows of 3 on
+tablet, 6 rows of 2 on phone. (A 9-tile set fits tablet but leaves a half row of 3 on desktop.)
+The 7 existing tiles stay. 5 new tiles reach the modules beyond a single extraction:
+
+| New tile | Module | What a click does |
+|---|---|---|
+| **AI visibility check** | Discover | Opens `/discoverability` with the URL in the box prefilled (never auto-runs, because an audit uses quota) |
+| **Watch a competitor** | Compete | Opens `/watchlists` with a new watchlist prefilled from the URL in the box |
+| **Account brief** | Templates | Opens `/templates?key=account_brief` with the domain prefilled |
+| **Start an outreach campaign** | Engage | Opens `/engagement` → New campaign (beta accounts only, see below) |
+| **Send results to your CRM** | Connect | Opens `/integrations` (HubSpot, Notion, Airtable, Slack, Google Sheets) |
+
+- **Two kinds of tile, told apart on screen.** Today every tile fills the composer, where you still press
+  Extract. The new ones open another screen, so they get a small "Opens Discover →" line and an arrow
+  icon, so a click never lands somewhere unexpected.
+- **Engagement is private beta.** For accounts not in it, that tile is replaced by **"Weekly pricing
+  watch"** (a Schedules preset), so the count stays 12 (D16b). The Home page reads the existing
+  engagement access call; if that call fails, the replacement tile is shown.
+- **Persona "Recommended" tags** extend to the new tiles: SEO → AI visibility check; Sales → Account brief
+  and Start an outreach campaign; Competitive intel → Watch a competitor.
+- **Data:** `outcomeTiles.js` gains an optional `to` / `handoff` field beside `example` / `prompt`. It stays
+  one list, so tests and analytics keep a single source.
+- **Also updated:** the e2e specs (`claims-verification`, `home`) that pin 7 tiles, and the tile-count test.
+
+**Tests:** 12 tiles with no empty cells at 375, 768 and 1280px (checked in the screenshot harness); each
+new tile goes to the right route with the right prefilled state; Engagement is swapped for "Weekly pricing
+watch" when access is denied or the access call fails; the Discover tile never starts an audit.
+
+---
+
+## 17. Home "From signal to next step" — Engage and Compete lead somewhere 🟢
+
+**Now** (`src/lib/platformModules.js`):
+- **DatIQ Engage** is marked *Upcoming* and has no link, which is now wrong: Engagement is in beta.
+- **DatIQ Compete** links to `/watchlists`, which is one piece of the pipeline, not the whole of it.
+
+**Proposal**
+
+| Card | Status | Button | Goes to |
+|---|---|---|---|
+| DatIQ Engage | Upcoming → **Beta** | "Open Engagement" | `/engagement` |
+| DatIQ Compete | Beta (unchanged) | "Open Workflow hub" | `/workflows` |
+
+- A visitor outside the beta reaches Engagement's existing "private beta" page, which explains the beta
+  instead of showing a 404 (D17). A signed-out visitor is asked to sign in, as on every private page.
+- The Engage description changes from "organise … outreach workflows" to what ships: campaigns, reviewed
+  drafts, per-channel consent, results.
+- `/engagement` and `/workflows` are both private routes, and a link from Home does not change their
+  noindex state.
+- This closes the home-screen "DatIQ Engage" link deferred in §3.
+
+**Tests:** `Home.test.jsx` checks both cards' status, button text and route. `hasModuleCta` now returns true
+for Engage. The existing test that every card with a button leads somewhere real keeps passing.
+
+---
+
+## 18. `/templates` becomes the template hub 🟡
+
+**Now:** 11 published templates, grouped by role. Two of them already open another module instead of
+running on the page, through the `HANDOFF` map in `Templates.jsx`:
+- *SEO / GEO / AEO Audit* opens Discoverability;
+- *Bulk ICP Enrichment* opens Account lists.
+
+There are no templates for watchlists, signal rules, Engagement, schedules or integrations, and the page
+cannot be filtered by module.
+
+**Proposal: 9 new templates**, all built on the existing `HANDOFF` pattern or the existing runner. None
+needs a new engine.
+
+| # | Template | Role | Module | Kind |
+|---|---|---|---|---|
+| T1 | **Competitor Change Monitor** — watch pricing and positioning pages; alert on change | Competitive intel | Compete → `/watchlists` | Opens module, prefilled (domains, cadence) |
+| T2 | **Price-change Alert to Slack** — a signal rule on watchlist price changes | Competitive intel, RevOps | Compete → `/rules` | Opens module, prefilled (trigger, action) |
+| T3 | **Account Research → Outreach Campaign** — enrich a list, then draft reviewed emails | Sales | Engage → `/engagement` | Opens module (beta), prefilled (campaign name, import) |
+| T4 | **Event / Webinar Follow-up** — import attendees, one reviewed draft each | Sales, Marketing | Engage → `/engagement` | Opens module (beta) |
+| T5 | **Weekly AI Visibility Monitor** — a scheduled discoverability audit with alerts | SEO | Discover → `/schedules` (audit monitor) | Opens module, prefilled |
+| T6 | **Local & Directory Consistency Check** — NAP across directories | SEO, Agency | Discover → `/discoverability` (local) | Opens module |
+| T7 | **Business Truth Setup** — confirm legal name, domain and facts before audits | SEO, Agency | Discover → `/discoverability` (truth record) | Opens module |
+| T8 | **ICP List → CRM** — enrich an account list and push it to HubSpot / Airtable / Sheets | Sales, RevOps | Connect → `/lists` then Push | Opens module, prefilled |
+| T9 | **Competitor Content Brief** — read a competitor page, write a brief that beats it | Marketing, SEO | Runs here | Existing runner, `summarize` + brief prompt |
+
+That makes 20 templates (11 + 9). The seed file's rule "don't build 30 templates before seeing adoption"
+still applies. Eight of the nine are entry points into shipped modules, not new extraction recipes, so they
+add reach without new engines to maintain. Adoption per template is already tracked (`template_runs`,
+analytics); read it before a further round (D18a).
+
+**Page changes that make it a hub**
+- **Two filter rows:** *Role* (as today) and **Module** (All · Extract · Discover · Compete · Engage ·
+  Connect). The special-case "workflows" filter at `Templates.jsx:97` is replaced by a real `module` field
+  on each template.
+- **Each card shows its kind:** "Runs here · N credits" or **"Opens in Watchlists →"**. A card that opens a
+  module prefills that module's form; it never starts work, spends credits or saves anything on the user's
+  behalf.
+- **Plan and beta gates are shown on the card, not discovered after the click:** Engage templates for
+  accounts outside the beta, watchlists and rules on plans without `scheduled_monitoring` / `integrations`.
+  A locked card says what unlocks it (D18b).
+- **"Back to template" link:** a module opened from a template keeps a link back, so the hub works as a
+  starting point you return to.
+- The Workflow hub (§8) shows the templates that fit its empty-state gaps ("No watchlist yet → Competitor
+  Change Monitor"), so both pages point at each other.
+
+**Mechanics**
+- New templates go in `seedTemplates.js`. `ensureSeeded` inserts any **new** key on the next catalogue read,
+  so there is **no migration**. ⚠️ It does not republish an **existing** key, so any change to the 11
+  current templates needs a version bump, not an edit in place.
+- Each new module's page reads its prefill from router state, as `/discoverability` and `/lists` do.
+  Watchlists, Rules, Schedules and Engagement need that small addition.
+- ⚠️ **A published template that opens a module must have a `HANDOFF` entry.** Otherwise it falls through
+  to the page runner, which would run an extraction the template never described (the runner-404 hazard the
+  seed file warns about). `templateContract.test.js` gains that parity check, which also covers a `HANDOFF`
+  entry whose template no longer exists.
+
+**Tests:**
+- the contract parity check above;
+- per template, the module opened and the exact prefilled state;
+- the module filter, and the role and module filters combined;
+- locked cards for a plan without the capability and for a non-beta account;
+- the Workflow hub's empty state links to the right template;
+- screenshots at 375 / 768 / 1280px.
+
+---
+
 ## 13. Decisions needed
 
 | # | Question | My recommendation |
 |---|---|---|
 | D3 | Menu: Workflow hub, Engagement (name unchanged), divider, then Account lists / Watchlists / Signal rules | ✅ Decided by owner; home-screen "DatIQ Engage" link deferred |
 | D5 | Account Brand Kit: button only (this browser), or also store it server-side (`0083`)? | Server-side (option B) |
-| D6 | Existing rules keep "All watchlists / All lists" scope after `0083`? | Yes — no behaviour change for them |
+| D6 | Existing rules keep "All watchlists / All lists" scope after `0084`? | Yes — no behaviour change for them |
 | D6b | A scoped rule that loses its last source: pause it, or delete it? | Pause, with the reason shown |
 | D8a | Rename "Overview" → **"Workflow hub"**? | Yes |
 | D8b | Add rule action "Add to an Engagement campaign"? | Later, as its own item (needs consent design) |
 | D2 | Excel support via `read-excel-file` (lazy-loaded, ~2.4 MB unpacked, MIT)? | Yes |
 | D1 | Collapse empty pipeline stages by default? | Yes, with a toggle |
 | D11 | Editing a prospect's email/phone regenerates its open drafts (hand edits kept)? | Yes |
+| D16a | Home "Common jobs" tile count | **12** — it divides evenly at every width (6 / 3 / 2 columns). 9 would leave a half row on desktop |
+| D16b | The Engagement tile for accounts not in the beta | Swap it for a non-beta tile, so the count stays 12 |
+| D17 | Engagement card on Home: status "Beta" and link to `/engagement` (private-beta page for everyone else)? | Yes |
+| D18a | How many new templates in this round? | 9 (catalogue 11 → 20); watch usage before adding more |
+| D18b | Templates that only open another screen: same catalogue, marked "Opens in …"? | Yes, with a module filter beside the role filter |
 | D12 | Publish an "Engagement (beta)" section in the public help now, or keep it internal until GA? | Internal until GA |
 
 ---
@@ -377,8 +512,9 @@ but no edit.
 
 - **Phase A** (items 1, 3, 4, 6a, 9, 10, 11, 12): one PR to `staging`.
 - **Phase B** (items 2, 5): one PR.
-- **Phase C** (6b, 7, 8): one PR with migration `0083`, applied to staging Supabase before testing (runbook
-  section added).
+- **Phase C** (6b, 7, 8, 16, 17, 18): one PR with migration `0084` (6b only), applied to staging Supabase
+  before testing (runbook section added). Items 16–18 need no migration: new templates are seeded per key on
+  first read. If you want them sooner, 16–18 can ship as their own small PR ahead of 6b/7/8.
 - **Every phase:** full pre-push gate; before/after screenshots (light/dark, desktop/mobile) attached for your
   review; **squash-merge** only.
 
