@@ -167,6 +167,17 @@ export const ACTIVATION_DEFINITIONS = Object.freeze({
     requires: ["sourced_hiring_signals", "sourced_across_3_companies", "exported_or_routed_shortlist"],
     fromPrd: false,
   },
+  // ⚠️ NOT FROM THE PRD either. The Brand, Growth & CRO role (owner,
+  // 2026-09-24) has no row in the PRD's table. Built from conditions this
+  // build already observes: an audit is the produced artefact, and keeping it
+  // monitored is the evidence it became a recurring practice rather than a
+  // one-off look.
+  "brand-growth": {
+    label: "Runs a visibility audit and keeps the brand monitored",
+    why: "They have turned a one-off check into brand governance",
+    requires: ["ran_audit", "saved_or_monitored"],
+    fromPrd: false,
+  },
 });
 
 /**
@@ -189,6 +200,11 @@ export const PERSONA_TO_ACTIVATION = Object.freeze({
   "founder-vc":        "vc-analyst",
   "agency":            "agency",
   "recruiter":         "recruiter",  // own definition — see ACTIVATION_DEFINITIONS
+  // The 2026-09-24 roles. Two land on PRD groups that already existed and had
+  // no persona pointing at them; brand-growth has its own (non-PRD) definition.
+  "revops":            "revops",
+  "pmm":               "product-pmm",
+  "brand-growth":      "brand-growth",
 });
 
 /** Fallback for an unknown/unset persona. Never throws on a bad id. */

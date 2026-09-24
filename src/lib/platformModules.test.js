@@ -22,13 +22,20 @@ describe("platformModules", () => {
     }
   });
 
-  it("keeps Discover as Beta until the parallel release integrates", () => {
+  it("shows Discover as Available (owner, 2026-09-24)", () => {
     const discover = PLATFORM_MODULES.find((module) => module.key === "discover");
     expect(discover).toMatchObject({
       name: "DatIQ Discover",
-      status: MODULE_STATUS.BETA,
+      status: MODULE_STATUS.AVAILABLE,
       cta: "Run a visibility audit",
     });
-    expect(moduleStatusLabel(discover.status)).toBe("Beta");
+    expect(moduleStatusLabel(discover.status)).toBe("Available");
+  });
+
+  it("links Engage (beta) to Engagement and Compete to the Workflow hub", () => {
+    const byKey = Object.fromEntries(PLATFORM_MODULES.map((m) => [m.key, m]));
+    expect(byKey.engage).toMatchObject({ status: MODULE_STATUS.BETA, cta: "Open Engagement", to: "/engagement" });
+    expect(byKey.compete).toMatchObject({ status: MODULE_STATUS.BETA, cta: "Open Workflow hub", to: "/workflows" });
+    expect(moduleStatusLabel(byKey.engage.status)).toBe("Beta");
   });
 });

@@ -2,7 +2,7 @@
 import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
-import { PERSONA_BY_ID } from "../lib/personaConfig.js";
+import { PERSONAS } from "../lib/personaConfig.js";
 import { useSeo } from "../hooks/useSeo.js";
 import { seoFor } from "../lib/pageSeo.js";
 
@@ -65,7 +65,7 @@ export default function About() {
   useSeo(seoFor("/about"));
 
   const navigate = useNavigate();
-  const personas = Object.values(PERSONA_BY_ID);
+  const personas = PERSONAS;
 
   return (
     <div className="page">

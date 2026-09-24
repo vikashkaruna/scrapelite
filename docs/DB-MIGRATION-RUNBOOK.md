@@ -698,6 +698,30 @@ select c.relname, c.relrowsecurity,
 
 Then `npm run verify:rls` (staging) / `-- --prod` — it now probes `account_brand_kits` too.
 
+## 4j. `0084` — role ids on curated gallery reports
+
+Widens `public_reports_persona_check` to the eight roles (2026-09-24): `sales`,
+`revops`, `competitive-intel`, `pmm`, `seo`, `brand-growth`, `founder-vc`,
+`agency`. The two retired ids — `market-research` (now Founder, VC & Market
+Research) and `recruiter` (hidden legacy role) — stay allowed so existing rows
+keep satisfying the constraint. No table, function or policy changes.
+
+| If it is missing | Effect |
+|---|---|
+| The old CHECK is still in place | Curating a gallery report under RevOps, Product Marketing or Brand & Growth in Admin → Gallery fails. Everything else works. |
+
+### Apply
+
+Apply **only this file** with the subset one-liner in §4. It is re-runnable
+(`drop constraint if exists` then `add`).
+
+### Verify
+
+```sql
+select pg_get_constraintdef(oid) from pg_constraint where conname = 'public_reports_persona_check';
+-- Expect the list to include 'revops', 'pmm', 'brand-growth', 'market-research' and 'recruiter'.
+```
+
 ## 5. Database functions — no separate step
 
 There is nothing to run beyond the migrations. All **9 functions and 2 triggers**

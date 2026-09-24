@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import { getGallery, getGalleryLocal, getCuratedGallery, buildPublicUrl } from "../lib/shareService.js";
-import { PERSONAS, PERSONA_BY_ID } from "../lib/personaConfig.js";
+import { PERSONAS, PERSONA_BY_ID, resolvePersonaId } from "../lib/personaConfig.js";
 import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
 function timeAgo(iso) {
@@ -66,12 +66,14 @@ export default function Gallery() {
   // Only offer a chip for a persona that actually has a curated entry — an
   // empty chip would read as "we have examples for you" and then show none.
   const availablePersonas = useMemo(() => {
-    const present = new Set(curated.map((c) => c.persona).filter(Boolean));
+    // A report curated under a retired id (market-research) shows under the
+    // role that id now resolves to.
+    const present = new Set(curated.map((c) => resolvePersonaId(c.persona)).filter(Boolean));
     return PERSONAS.filter((p) => present.has(p.id));
   }, [curated]);
 
   const visibleCurated = activePersona
-    ? curated.filter((c) => c.persona === activePersona)
+    ? curated.filter((c) => resolvePersonaId(c.persona) === activePersona)
     : curated;
 
   return (
