@@ -51,8 +51,10 @@ function hashContent(str) {
 // Strip tags + collapse whitespace → a stable visible-text fingerprint source.
 function visibleText(html) {
   return String(html || "")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    // Closing tags may carry whitespace or attributes ("</script >"), which a
+    // literal "</script>" misses (CodeQL js/bad-tag-filter).
+    .replace(/<script\b[\s\S]*?<\/script[^>]*>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style[^>]*>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim()

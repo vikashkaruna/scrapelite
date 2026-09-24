@@ -132,6 +132,14 @@ export function GuestTrialProvider({ children }) {
       SENSITIVE_KEYS.forEach((k) => {
         try { localStorage.removeItem(k); } catch { /* skip */ }
       });
+      // The pre-review engagement client kept prospect names, emails and phone
+      // numbers under `datiq_engagement_*`. It no longer writes them; this
+      // removes what earlier builds left behind on a shared machine.
+      try {
+        Object.keys(localStorage)
+          .filter((k) => k.startsWith("datiq_engagement_"))
+          .forEach((k) => localStorage.removeItem(k));
+      } catch { /* storage unavailable */ }
 
       // Restore trial counts from localStorage (the trial key is preserved).
       const restored      = getGuestCount();

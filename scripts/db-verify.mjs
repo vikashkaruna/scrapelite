@@ -121,6 +121,10 @@ grant usage on schema public to anon, authenticated;
 //   +1 function (watchlists_touch_updated_at) +1 trigger.
 // 0043_signal_rules.sql        +2 tables (signal_rules, rule_executions)
 //   +1 function (signal_rules_touch_updated_at) +1 trigger.
+// 0081_prospect_engagement_engine.sql +5 tables (engagement_campaigns,
+//   engagement_prospects, engagement_messages, engagement_activity_log,
+//   engagement_sync_configs) +1 function (engagement_touch_updated_at)
+//   +4 triggers.
 // 0051_recommendation_assignment.sql +1 function (assign_recommendation), no
 //   new table: the assignee is two columns on audit_recommendations.
 // 0052_citation_states.sql     columns only — the seven states sit on
@@ -188,10 +192,15 @@ grant usage on schema public to anon, authenticated;
 // credit_grant_monthly —
 // no new tables; expires_at and grant_period are columns on credit_ledger).
 // Taking these to 118 / 59 / 29.
+// 0081 (Prospect Engagement Engine: +5 tables, +1 function
+// engagement_touch_updated_at, +4 updated_at triggers). Taking these to 123 / 60 / 33.
+// 0082 (+1 table engagement_suppressions, +1 function
+// engagement_activity_log_immutable, +1 trigger). Taking these to 124 / 61 / 34.
+// 0083 (+1 table account_brand_kits). Taking these to 125 / 61 / 34.
 const EXPECT = {
-  tables: 118,
-  functions: 59,   // +4 in 0078: credit_available, credit_status, credit_grant, credit_grant_monthly
-  triggers: 29,
+  tables: 125,
+  functions: 61,
+  triggers: 34,
   tablesWithoutRls: 0,
 };
 
@@ -2382,7 +2391,154 @@ group("pql — 'no data' and 'unqualified' must not be the same row");
   eq("deleting signal rule cascades to executions", remExec.c, 0);
 }
 
-// ── 0044: workflow RLS lockdown (Phases 4-6) ────────────────────────────────
+// ── 0081: prospect engagement engine ──────────────────────────────────
+{
+  group("engagement engine — campaigns, prospects, messages, audit log & sync");
+  const U4 = "88888888-8888-8888-8888-888888888801";
+  await db.query(`insert into auth.users (id, email) values ($1, 'outreach@datiq.test') on conflict do nothing`, [U4]);
+
+  // Create campaign
+  const cmp = await one(
+    `insert into public.engagement_campaigns (
+       user_id, name, description, channel_priority, brand_kit
+     ) values (
+       $1, 'Q4 Enterprise AI Outreach', 'Targeting VP of Engineering',
+       '["email", "whatsapp", "sms"]'::jsonb,
+       '{"company": "DatIQ", "cta_url": "https://datiq.app"}'::jsonb
+     ) returning id`,
+    [U4]
+  );
+  check("engagement campaign created", Boolean(cmp?.id));
+
+  // Add prospect
+  const prs = await one(
+    `insert into public.engagement_prospects (
+       user_id, campaign_id, first_name, last_name, email, company, role, status
+     ) values (
+       $1, $2, 'Jane', 'Doe', 'jane@acme.test', 'Acme Corp', 'VP Engineering', 'new'
+     ) returning id`,
+    [U4, cmp.id]
+  );
+  check("engagement prospect registered", Boolean(prs?.id));
+
+  // Create AI message draft
+  const msg = await one(
+    `insert into public.engagement_messages (
+       user_id, campaign_id, prospect_id, channel, variant, subject, body, status, approval_status
+     ) values (
+       $1, $2, $3, 'email', 'A', 'Transforming your competitive monitoring at Acme',
+       'Hi Jane, saw Acme is expanding its data platform...', 'draft', 'pending'
+     ) returning id`,
+    [U4, cmp.id, prs.id]
+  );
+  check("engagement message draft created", Boolean(msg?.id));
+
+  // Activity log
+  const act = await one(
+    `insert into public.engagement_activity_log (
+       user_id, campaign_id, prospect_id, message_id, event_type, from_status, to_status, details
+     ) values (
+       $1, $2, $3, $4, 'prospect_created', null, 'new', '{"source": "manual"}'::jsonb
+     ) returning id`,
+    [U4, cmp.id, prs.id, msg.id]
+  );
+  check("engagement activity log appended", Boolean(act?.id));
+
+  // Sync config
+  const sync = await one(
+    `insert into public.engagement_sync_configs (
+       user_id, campaign_id, provider, config
+     ) values (
+       $1, $2, 'google_sheets', '{"spreadsheet_id": "sheet_123", "tab": "Prospects"}'::jsonb
+     ) returning id`,
+    [U4, cmp.id]
+  );
+  check("engagement sync config saved", Boolean(sync?.id));
+
+  // Cascade delete campaign removes prospects, messages, activity logs, sync configs
+  await db.query(`delete from public.engagement_campaigns where id=$1`, [cmp.id]);
+  const remPrs = await one(`select count(*)::int c from public.engagement_prospects where id=$1`, [prs.id]);
+  eq("deleting campaign cascades to prospects", remPrs.c, 0);
+  const remMsg = await one(`select count(*)::int c from public.engagement_messages where id=$1`, [msg.id]);
+  eq("...and cascades to messages", remMsg.c, 0);
+  const remAct = await one(`select count(*)::int c from public.engagement_activity_log where id=$1`, [act.id]);
+  eq("...and cascades to activity log", remAct.c, 0);
+  const remSync = await one(`select count(*)::int c from public.engagement_sync_configs where id=$1`, [sync.id]);
+  eq("...and cascades to sync configs", remSync.c, 0);
+}
+
+// ── 0082: engagement send safety ──────────────────────────────────────
+// The review (docs/PROSPECT-ENGAGEMENT-ENGINE-REVIEW-AND-ROLLOUT.md) found a
+// dispatcher that re-sent on every call, opt-outs stored as a campaign-row
+// status, and an "immutable" audit log nothing protected. These pin the
+// database half of each fix.
+{
+  group("engagement send safety — suppressions, send claims, append-only log");
+  const U5 = "88888888-8888-8888-8888-888888888802";
+  const U6 = "88888888-8888-8888-8888-888888888803";
+  await db.query(`insert into auth.users (id, email) values ($1, 'a@send.test'), ($2, 'b@send.test') on conflict do nothing`, [U5, U6]);
+  const c5 = await one(`insert into public.engagement_campaigns (user_id, name) values ($1, 'S') returning id, sender`, [U5]);
+  eq("a campaign carries a sender, empty by default", c5.sender, {});
+
+  // One suppression per (tenant, channel, address) — per channel, per tenant.
+  await db.query(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'email', 'x@y.test', 'unsubscribe')`, [U5]);
+  check("the same tenant cannot suppress the same address twice on a channel", Boolean(await throws(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'email', 'x@y.test', 'manual')`, [U5])));
+  await db.query(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'sms', 'x@y.test', 'manual')`, [U5]);
+  check("...but the same address on another channel is a separate row", true);
+  await db.query(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'email', 'x@y.test', 'manual')`, [U6]);
+  check("...and another tenant's list is independent", true);
+  check("an unknown suppression reason is refused", Boolean(await throws(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'email', 'z@y.test', 'because')`, [U5])));
+  check("an empty address is refused", Boolean(await throws(`insert into public.engagement_suppressions (user_id, channel, address, reason) values ($1, 'email', '  ', 'manual')`, [U5])));
+
+  // Prospect uniqueness per campaign, case-insensitive.
+  await db.query(`insert into public.engagement_prospects (user_id, campaign_id, email) values ($1, $2, 'ana@x.test')`, [U5, c5.id]);
+  check("a campaign cannot hold the same email twice (case-insensitive)", Boolean(await throws(`insert into public.engagement_prospects (user_id, campaign_id, email) values ($1, $2, 'ANA@x.test')`, [U5, c5.id])));
+  const p5 = await one(`select id from public.engagement_prospects where campaign_id = $1`, [c5.id]);
+
+  // Send-claim statuses and provider-id uniqueness.
+  const m5 = await one(
+    `insert into public.engagement_messages (user_id, campaign_id, prospect_id, channel, body, status, approval_status)
+     values ($1, $2, $3, 'email', 'hi', 'queued', 'approved') returning id, attempts`, [U5, c5.id, p5.id]);
+  eq("a new message has made no attempts", m5.attempts, 0);
+  const claimed = await q(`update public.engagement_messages set status = 'sending', claimed_at = now()
+     where id = $1 and status = 'queued' returning id`, [m5.id]);
+  eq("the first claim takes the message", claimed.length, 1);
+  const again = await q(`update public.engagement_messages set status = 'sending', claimed_at = now()
+     where id = $1 and status = 'queued' returning id`, [m5.id]);
+  eq("a second claim finds nothing to take", again.length, 0);
+  await db.query(`update public.engagement_messages set status = 'sent', provider = 'resend', external_message_id = 're_1' where id = $1`, [m5.id]);
+  check("two messages cannot share one provider message id", Boolean(await throws(`insert into public.engagement_messages (user_id, campaign_id, prospect_id, channel, body, provider, external_message_id)
+       values ($1, $2, $3, 'email', 'x', 'resend', 're_1')`, [U5, c5.id, p5.id])));
+  await db.query(`update public.engagement_messages set status = 'skipped' where id = $1`, [m5.id]);
+  check("'skipped' is a legal message status", true);
+
+  // Append-only activity log — but a campaign delete still cascades.
+  const a5 = await one(`insert into public.engagement_activity_log (user_id, campaign_id, prospect_id, event_type)
+     values ($1, $2, $3, 'note') returning id`, [U5, c5.id, p5.id]);
+  check("the activity log refuses UPDATE", Boolean(await throws(`update public.engagement_activity_log set event_type = 'edited' where id = $1`, [a5.id])));
+  await db.query(`delete from public.engagement_campaigns where id = $1`, [c5.id]);
+  const gone = await one(`select count(*)::int c from public.engagement_activity_log where id = $1`, [a5.id]);
+  eq("...while deleting the campaign still cascades", gone.c, 0);
+
+  // The ledger can record a sent message.
+  const U7 = U5;
+  await db.query(`insert into public.credit_ledger (user_id, reason, credits, unit, quantity) values ($1, 'outreach', 1, 'message', 1)`, [U7]);
+  check("credit_ledger accepts reason 'outreach' / unit 'message'", true);
+}
+
+// ── 0083: account Brand Kit, server copy ─────────────────────────────────
+{
+  group("account brand kits — one row per account, an object, gone with the account");
+  const U7 = "88888888-8888-8888-8888-888888888807";
+  await db.query(`insert into auth.users (id, email) values ($1, 'kit@x.test') on conflict do nothing`, [U7]);
+  await db.query(`insert into public.account_brand_kits (user_id, kit) values ($1, '{"companyName":"Acme"}')`, [U7]);
+  check("a second row for the same account is refused", Boolean(await throws(`insert into public.account_brand_kits (user_id, kit) values ($1, '{}')`, [U7])));
+  check("a kit that is not a JSON object is refused", Boolean(await throws(`update public.account_brand_kits set kit = '[1,2]' where user_id = $1`, [U7])));
+  await db.query(`delete from auth.users where id = $1`, [U7]);
+  eq("deleting the account deletes its brand kit", (await one(`select count(*)::int as n from public.account_brand_kits where user_id = $1`, [U7])).n, 0);
+}
+
+// ── 0044: workflow RLS lockdown (Phases 4-6 & Engagement) ───────────────────
 // 0041-0043 shipped `grant all ... to anon` plus a policy whose
 // `or auth.uid() is null` branch is TRUE for exactly the anonymous role, making
 // all fifteen tables world-readable and world-writable with the publishable
@@ -2397,6 +2553,9 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     "watchlists", "watchlist_targets", "monitored_pages", "entity_snapshots",
     "field_changes", "change_feedback",
     "signal_rules", "rule_executions",
+    "engagement_campaigns", "engagement_prospects", "engagement_messages",
+    "engagement_activity_log", "engagement_sync_configs", "engagement_suppressions",
+    "account_brand_kits",
   ];
 
   for (const t of LOCKED) {

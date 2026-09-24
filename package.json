@@ -52,6 +52,7 @@
     "import:cloudrun": "node scripts/import-workflows-cloudrun.mjs",
     "test:workflow": "node scripts/test-workflow-pipeline.mjs",
     "verify:rls": "node scripts/verify-workflow-rls.mjs",
+    "verify:engagement-p0": "node scripts/verify-engagement-p0.mjs",
     "verify:discoverability": "node scripts/verify-discoverability-e2e.mjs",
     "verify:workflows": "node scripts/verify-workflows-e2e.mjs"
   },
@@ -63,6 +64,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router": "^8.3.0",
+    "read-excel-file": "^9.3.10",
     "stripe": "^17.7.0"
   },
   "devDependencies": {

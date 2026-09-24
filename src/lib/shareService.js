@@ -13,6 +13,7 @@ import { supabase, isSupabaseEnabled } from "./supabaseClient.js";
 import { getSessionId } from "./usageRepo.js";
 import { incrementPublicExtractions, decrementPublicExtractions } from "./publicQuota.js";
 import { getAuthToken } from "./apiClient.js";
+import { randomString } from "./secureRandom.js";
 
 const TABLE = "public_reports";
 const LS_INDEX = "datiq.publicGallery";
@@ -36,14 +37,12 @@ function readShared() { return lsRead(LS_SHARED); }
 function writeShared(arr) { lsWrite(LS_SHARED, arr); }
 
 // ── Slug generation ───────────────────────────────────────────────────────────
-// Math.random is good enough here — slugs only need to be unique per user.
-// (No PII; no auth claim; safe to be predictable.)
+// The slug IS the access control for an unlisted report: anyone holding it can
+// read the page. It must therefore be unguessable, not merely unique — a
+// Math.random slug is predictable from a few observed ones, which would let
+// someone walk other people's reports (CodeQL js/insecure-randomness).
 export function generateSlug() {
-  let s = "";
-  for (let i = 0; i < SLUG_LEN; i++) {
-    s += SLUG_ALPHABET[Math.floor(Math.random() * SLUG_ALPHABET.length)];
-  }
-  return s;
+  return randomString(SLUG_LEN, SLUG_ALPHABET);
 }
 
 export function isValidSlug(slug) {

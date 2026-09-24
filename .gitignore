@@ -38,6 +38,7 @@ netlify.backup.toml
 
 # Local Netlify folder
 .netlify
+.netlify-bundle-test/
 
 # E2E test screenshots — generated on demand, not committed
 e2e-screenshots/*.png
@@ -80,3 +81,7 @@ ds-bundle/
 # `.claude/` itself stays tracked: skills, commands and launch.json live there
 # and are part of the project. Only the scratch worktrees are excluded.
 .claude/worktrees/
+
+# Source BRD/PRD documents — kept locally, never committed (this repo is public)
+/DatIQ *.md
+/DatIQ *.pdf

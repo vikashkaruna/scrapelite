@@ -9,6 +9,10 @@ import OffersBanner from "./OffersBanner.jsx";
 import { getHeadlineOffer } from "../lib/offersService.js";
 
 export const GUEST_TRIAL_AUTO_DISMISS_MS = 6_000;
+// A limit warning has more to read, so it stays twice as long — then goes.
+// Hiding it gives nothing away: every extraction path still calls
+// requireGuestCredit(), and the next attempt raises the sign-up dialog.
+export const GUEST_LIMIT_AUTO_DISMISS_MS = 12_000;
 
 export default function GuestTrialBanner() {
   const { user } = useAuth();
@@ -49,11 +53,12 @@ export default function GuestTrialBanner() {
   }, [dismissedFingerprint, trialFingerprint]);
 
   useEffect(() => {
-    // A progress update is useful briefly, then should get out of the way.
-    // On Home this dismisses the attached offer too, matching the explicit
-    // close affordance. Hard-limit warnings remain until the user acts.
-    if (!showTrialMessage || atAnyLimit) return undefined;
-    const timer = window.setTimeout(dismissTrialPanel, GUEST_TRIAL_AUTO_DISMISS_MS);
+    // Status is useful briefly, then should get out of the way. On Home this
+    // dismisses the attached offer too, matching the explicit close button.
+    // A limit warning gets longer to read but still leaves (owner decision
+    // 2026-09-24); it comes back only when the usage state changes.
+    if (!showTrialMessage) return undefined;
+    const timer = window.setTimeout(dismissTrialPanel, atAnyLimit ? GUEST_LIMIT_AUTO_DISMISS_MS : GUEST_TRIAL_AUTO_DISMISS_MS);
     return () => window.clearTimeout(timer);
   }, [atAnyLimit, showTrialMessage, trialFingerprint]);
 

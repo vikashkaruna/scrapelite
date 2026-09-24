@@ -86,12 +86,12 @@ function renderHome() {
 }
 
 describe("Stage 1 — Home: Q3 outcome tiles", () => {
-  it("renders the 6 outcome tiles above the hero", () => {
+  it("renders the 7 outcome tiles above the hero", () => {
     renderHome();
     expect(screen.getByRole("list", { name: /Common jobs to be done/i })).toBeInTheDocument();
     // Restrict to outcome tiles (use the .outcome-tile class)
     const tiles = document.querySelectorAll(".outcome-tile");
-    expect(tiles.length).toBe(6);
+    expect(tiles.length).toBe(7);
     // Spot-check a couple of titles within outcome tiles
     const titles = Array.from(tiles).map((t) => t.textContent);
     expect(titles.some((t) => /Build a lead list/i.test(t))).toBe(true);

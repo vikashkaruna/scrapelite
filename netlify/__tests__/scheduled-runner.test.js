@@ -4,6 +4,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Exact host match — a substring check would also accept "api.example.com.evil.test".
+const hostIs = (url, host) => { try { return new URL(String(url)).hostname === host; } catch { return false; } };
+
 // ── Mock the scrape chain so we can control what each target returns ──────────
 const { runScrapeChainMock } = vi.hoisted(() => ({ runScrapeChainMock: vi.fn() }));
 vi.mock("../functions/lib/scrapeProviders.js", () => ({
@@ -179,7 +182,7 @@ describe("scheduled-runner — change detection", () => {
     expect(r.body).toMatch(/changed 0/);
     // Only the PATCH fetch should have been called (no Resend, no webhook)
     const calledUrls = fetchMock.mock.calls.map(c => String(c[0]));
-    expect(calledUrls.some(u => u.startsWith("https://api.resend.com"))).toBe(false);
+    expect(calledUrls.some(u => hostIs(u, "api.resend.com"))).toBe(false);
   });
 
   it("content change vs lastHash → status=changed, enqueues schedule.changed event (replaces direct webhook + Resend)", async () => {

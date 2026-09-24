@@ -27,14 +27,19 @@ import { dirname, join } from "node:path";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-// Every table 0041-0043 created. A table missing from this list is a table
-// nobody is checking, so keep it in step with the migrations.
+// Every table 0041-0043 created, plus the Prospect Engagement Engine's
+// (0081, 0082). A table missing from this list is a table nobody is checking,
+// so keep it in step with the migrations.
 const TABLES = [
   "lists", "canonical_entities", "list_records", "icp_score_rules",
   "enrichment_jobs", "enrichment_job_items", "review_queue",
   "watchlists", "watchlist_targets", "monitored_pages", "entity_snapshots",
   "field_changes", "change_feedback",
   "signal_rules", "rule_executions",
+  // 0081 / 0082 — these hold prospects' names, emails and phone numbers.
+  "engagement_campaigns", "engagement_prospects", "engagement_messages",
+  "engagement_activity_log", "engagement_sync_configs", "engagement_suppressions",
+  "account_brand_kits",
 ];
 
 const wantProd = process.argv.includes("--prod");
@@ -67,6 +72,7 @@ console.log("Anonymous PostgREST read with the public anon key. 401/404 = locked
 
 let exposed = 0;
 let unreachable = 0;
+let absent = 0;
 
 for (const t of TABLES) {
   let res = null;
@@ -90,6 +96,16 @@ for (const t of TABLES) {
   if (!fromPostgrest) {
     unreachable += 1;
     console.log(`  ?  ${t.padEnd(22)} INCONCLUSIVE — ${reason}`);
+    continue;
+  }
+
+  // A table that does not exist is not a table that refuses reads. Before a
+  // migration is applied PostgREST answers 404 (PGRST205), and counting that as
+  // a pass would report "all N tables refuse anonymous reads" for tables that
+  // are not there to check.
+  if (res.status === 404 && /PGRST205|schema cache|does not exist/i.test(res.text)) {
+    absent += 1;
+    console.log(`  –  ${t.padEnd(22)} not present on this project (migration not applied) — not checked`);
     continue;
   }
 
@@ -124,5 +140,9 @@ if (exposed > 0) {
   process.exit(1);
 }
 
-console.log(`[verify-workflow-rls] All ${TABLES.length} tables refuse anonymous reads. 0044 is applied.`);
+const checked = TABLES.length - absent;
+console.log(`[verify-workflow-rls] All ${checked} present tables refuse anonymous reads. 0044 is applied.`);
+if (absent > 0) {
+  console.log(`[verify-workflow-rls] ${absent} table(s) are not on this project yet and were NOT checked — re-run after applying their migration.`);
+}
 process.exit(0);

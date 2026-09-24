@@ -1044,6 +1044,20 @@ export default function Dashboard() {
                   <button className="dash-sel-action-btn" onClick={() => selectedItems.length > 0 && setEmailOpen(true)}>
                     <Icon name="mail" size={14} /> Email
                   </button>
+                  <button
+                    className="dash-sel-action-btn"
+                    onClick={() => {
+                      const prospectsToEngage = selectedItems.map((it) => ({
+                        company: it.page_title || "",
+                        domain: hostOf(it.url),
+                        source_url: it.url,
+                      }));
+                      navigate("/engagement", { state: { importProspects: prospectsToEngage } });
+                    }}
+                    title="Send selected targets to Prospect Engagement Engine"
+                  >
+                    <Icon name="send" size={14} /> Engage
+                  </button>
                   <button className="dash-sel-action-btn" onClick={clearSelection} title="Clear selection">
                     <Icon name="x" size={13} />
                   </button>

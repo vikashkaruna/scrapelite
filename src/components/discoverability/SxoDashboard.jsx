@@ -20,6 +20,7 @@ import { computeMasterScore } from "../../lib/discoverability/sxoScoring.js";
 import { FUNNEL_STAGES, calculateJourneyFunnel } from "../../lib/discoverability/journeyModel.js";
 import { PORTFOLIO_ROLLUP_AXES } from "../../lib/discoverability/portfolioModel.js";
 import { PERSONA_PACKS, filterPersonaQueue } from "../../lib/discoverability/personaPacks.js";
+import { randomUuid } from "../../lib/secureRandom.js";
 
 const OVERLAP_DISCLOSURE =
   "Master score weights include: SEO 0.25, AEO 0.20, GEO 0.20, SXO 0.35. Technical accessibility signals (including Core Web Vitals and mobile parity) are evaluated across both technical SEO foundation and SXO experience friction layers as specified in §11.3.";
@@ -76,7 +77,7 @@ function measured(value, suffix = "") {
 }
 
 function newImportKey(provider, auditId) {
-  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const random = randomUuid();
   return `${provider}-${auditId || "portfolio"}-${random}`;
 }
 

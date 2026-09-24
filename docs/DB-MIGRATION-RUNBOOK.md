@@ -619,6 +619,85 @@ cannot itself fail open.
 
 ---
 
+## 4h. `0081` + `0082` — Prospect Engagement Engine (beta)
+
+Apply together, in order: `0082` alters tables `0081` creates. Both are
+additive; nothing existing changes shape except `credit_ledger`'s two CHECK
+constraints, which are **widened** (reason `outreach`, unit `message`).
+
+| # | What it adds | If it is missing |
+|---|---|---|
+| `0081` | `engagement_campaigns`, `_prospects`, `_messages`, `_activity_log`, `_sync_configs`; `engagement_touch_updated_at()` + 4 triggers; service-role-only RLS | `/engagement` answers `store_error` on every action. Nothing else is affected. |
+| `0082` | `engagement_suppressions` (per-channel opt-outs), message send-claim columns + `sending`/`skipped` statuses, unique provider message id, prospect uniqueness per campaign, append-only activity log, `engagement_campaigns.sender`, ledger reason `outreach` | 🔴 **Do not enable the module without it.** The dispatcher claims `queued → sending`, which 0081's CHECK refuses, and there is nowhere to record an opt-out. |
+
+⚠️ **Order relative to the code:** apply the migrations **before** setting
+`ENGAGEMENT_ENABLED=1`. With the flag off, the module refuses every request
+and the cron no-ops, so a deploy ahead of the apply is harmless.
+
+### Apply
+
+```bash
+PROD_SUPABASE_DB_URL=... npm run migrate:prod -- --include=0081,0082
+```
+
+### Verify
+
+```sql
+-- Six tables, RLS on, one service-role policy each.
+select c.relname, c.relrowsecurity,
+       (select count(*) from pg_policies p where p.tablename = c.relname) policies
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relname like 'engagement\_%' order by 1;
+-- Expect 6 rows, relrowsecurity = t, policies = 1.
+
+-- The send-claim statuses exist.
+select pg_get_constraintdef(oid) from pg_constraint
+ where conname = 'engagement_messages_status_check';
+-- Expect 'sending' and 'skipped' in the list.
+
+-- The ledger accepts an outreach charge.
+select pg_get_constraintdef(oid) from pg_constraint where conname = 'credit_ledger_reason_chk';
+-- Expect 'outreach' in the list.
+```
+
+Then from any machine that can reach the project:
+
+```bash
+npm run verify:rls            # staging
+npm run verify:rls -- --prod  # production
+```
+
+It now probes the six engagement tables too, and reports a table that does not
+exist yet as **not checked** rather than as a pass.
+
+## 4i. `0083` — account Brand Kit, server copy
+
+One additive table, `account_brand_kits` (one row per account, the Brand Kit's
+**text** fields as JSON; the logo stays in the browser). Service-role-only RLS,
+nothing granted to anon/authenticated. Deleting the account deletes the row, and
+`billing-purge` lists it.
+
+| If it is missing | Effect |
+|---|---|
+| `/api/account-brand-kit` answers `store_error` | The Account page still saves the Brand Kit **in the browser** (exports keep working) and says it could not be saved to the account; Engagement's "Use my account brand kit" falls back to this browser's copy. Nothing breaks. |
+
+### Apply
+
+Apply **only this file** with the subset one-liner in §4 (`migrate:prod`'s
+`--include=` adds files rather than restricting to them — do not use it to apply one file).
+
+### Verify
+
+```sql
+select c.relname, c.relrowsecurity,
+       (select count(*) from pg_policies p where p.tablename = c.relname) policies
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relname = 'account_brand_kits';
+-- Expect 1 row, relrowsecurity = t, policies = 1.
+```
+
+Then `npm run verify:rls` (staging) / `-- --prod` — it now probes `account_brand_kits` too.
+
 ## 5. Database functions — no separate step
 
 There is nothing to run beyond the migrations. All **9 functions and 2 triggers**

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseUrlsFromCsv, runBatch } from "./batchService.js";
 
+// Exact host match — a substring check would also accept "api.example.com.evil.test".
+const hostIs = (url, host) => { try { return new URL(String(url)).hostname === host; } catch { return false; } };
+
 /**
  * U-26..29 — batchService is the multi-URL extraction engine. Tests
  * stub `extractStructure` + `summarize` + `categorizeLinks` to keep the
@@ -77,7 +80,7 @@ describe("runBatch (U-28)", () => {
   it("5 URLs, 1 fails → 4 success + 1 error, each with _status", async () => {
     const { extractStructure } = await import("./firecrawlService.js");
     extractStructure.mockImplementation(async (url) => {
-      if (url.endsWith("bad.com")) {
+      if (hostIs(url, "bad.com")) {
         throw new Error("Simulated network failure");
       }
       return {

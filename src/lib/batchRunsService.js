@@ -121,6 +121,7 @@ const INTENT_LABELS = {
   // "Extraction" and became indistinguishable in the run history.
   map:      "Map site",
   custom:   "Custom extraction",
+  structure: "Page structure",
 };
 
 /**

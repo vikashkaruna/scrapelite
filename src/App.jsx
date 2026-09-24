@@ -74,6 +74,7 @@ import Lists from "./pages/Lists.jsx";
 import Watchlists from "./pages/Watchlists.jsx";
 import SignalRules from "./pages/SignalRules.jsx";
 import Workflows from "./pages/Workflows.jsx";
+import Engagement from "./pages/Engagement.jsx";
 import WorkflowRunPreview from "./pages/WorkflowRunPreview.jsx";
 import Report from "./pages/Report.jsx";
 import Schedules from "./pages/Schedules.jsx";
@@ -266,6 +267,7 @@ function Shell() {
           <Route path="/watchlists"                    element={<Watchlists />} />
           <Route path="/rules"                         element={<SignalRules />} />
           <Route path="/workflows"                     element={<Workflows />} />
+          <Route path="/engagement"                    element={<Engagement />} />
           <Route path="/workflows/runs/:runId"         element={<WorkflowRunPreview />} />
           {/* PRD 2 — a shared report. NOT under a private prefix: this page
               exists to be opened by someone without a DatIQ account, which is

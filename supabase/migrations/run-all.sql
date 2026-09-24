@@ -94,6 +94,9 @@
 --   0078  0078_credit_grants_and_balance.sql
 --   0079  0079_referral_rewards_as_credits.sql
 --   0080  0080_plan_snapshot.sql — what a subscriber bought, held until their period ends.
+--   0081  0081_prospect_engagement_engine.sql
+--   0082  0082_engagement_send_safety.sql
+--   0083  0083_account_brand_kits.sql — the account Brand Kit, stored server-side.
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -10889,6 +10892,393 @@ create index if not exists entitlements_snapshot_idx
 -- owner and writable only through the service key. A user able to write their
 -- own plan_snapshot could grant themselves any limit they liked — which is the
 -- same reason the table has had no write policy since 0012.
+
+
+-- ============================================================
+-- 0081_prospect_engagement_engine.sql
+-- ============================================================
+-- 0081_prospect_engagement_engine.sql
+--
+-- Prospect Engagement Engine: Modular, n8n-orchestrated multi-channel outreach engine.
+-- Adds 5 tables:
+--   1. engagement_campaigns: outreach campaign definitions, brand kits, and settings
+--   2. engagement_prospects: prospect records with state machine status and engagement scoring
+--   3. engagement_messages: AI-generated copy variants (A/B), approval states, and delivery status
+--   4. engagement_activity_log: immutable chronological audit log of all transitions & events
+--   5. engagement_sync_configs: Google Sheets and Airtable two-way sync configurations
+--
+-- Security: Strict RLS with service-role-only access conforming to migration 0044 standards.
+
+-- ── 1. engagement_campaigns ─────────────────────────────────────────────────
+create table if not exists public.engagement_campaigns (
+  id                uuid primary key default gen_random_uuid(),
+  user_id           uuid not null references auth.users(id) on delete cascade,
+  workspace_id      uuid references public.workspaces(id) on delete cascade,
+  name              text not null,
+  description       text,
+  status            text not null default 'active' check (status in ('active', 'paused', 'completed', 'archived')),
+  channel_priority  jsonb not null default '["email", "whatsapp", "sms"]'::jsonb,
+  brand_kit         jsonb not null default '{}'::jsonb,
+  settings          jsonb not null default '{"followup_delay_days": 4, "max_followups": 2, "require_approval": true}'::jsonb,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+
+create index if not exists engagement_campaigns_user_idx on public.engagement_campaigns (user_id, created_at desc);
+
+-- ── 2. engagement_prospects ─────────────────────────────────────────────────
+create table if not exists public.engagement_prospects (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  campaign_id         uuid not null references public.engagement_campaigns(id) on delete cascade,
+  first_name          text,
+  last_name           text,
+  email               text,
+  phone               text,
+  company             text,
+  role                text,
+  industry            text,
+  country             text,
+  status              text not null default 'new' check (
+    status in ('new', 'queued', 'sent', 'delivered', 'opened', 'clicked', 'replied', 'followup_due', 'converted', 'unresponsive', 'opted_out')
+  ),
+  channel_preference  text not null default 'auto' check (channel_preference in ('email', 'whatsapp', 'telegram', 'sms', 'auto')),
+  source              text not null default 'manual' check (source in ('manual', 'datiq_extraction', 'datiq_list', 'google_sheets', 'airtable', 'csv')),
+  source_id           text,
+  custom_attributes   jsonb not null default '{}'::jsonb,
+  engagement_score    integer not null default 0,
+  last_contacted_at   timestamptz,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+create index if not exists engagement_prospects_campaign_idx on public.engagement_prospects (campaign_id, status);
+create index if not exists engagement_prospects_user_idx on public.engagement_prospects (user_id, created_at desc);
+create index if not exists engagement_prospects_email_idx on public.engagement_prospects (campaign_id, email) where email is not null;
+create index if not exists engagement_prospects_phone_idx on public.engagement_prospects (campaign_id, phone) where phone is not null;
+
+-- ── 3. engagement_messages ──────────────────────────────────────────────────
+create table if not exists public.engagement_messages (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  campaign_id         uuid not null references public.engagement_campaigns(id) on delete cascade,
+  prospect_id         uuid not null references public.engagement_prospects(id) on delete cascade,
+  channel             text not null check (channel in ('email', 'whatsapp', 'telegram', 'sms')),
+  variant             text not null default 'A' check (variant in ('A', 'B', 'C')),
+  subject             text,
+  body                text not null,
+  body_html           text,
+  status              text not null default 'draft' check (
+    status in ('draft', 'pending_approval', 'approved', 'rejected', 'queued', 'sent', 'delivered', 'failed', 'opened', 'clicked', 'replied')
+  ),
+  approval_status     text not null default 'pending' check (approval_status in ('pending', 'approved', 'rejected')),
+  rejection_reason    text,
+  guardrail_checks    jsonb not null default '{"passed": true, "violations": []}'::jsonb,
+  external_message_id text,
+  sent_at             timestamptz,
+  delivered_at        timestamptz,
+  opened_at           timestamptz,
+  clicked_at          timestamptz,
+  replied_at          timestamptz,
+  metadata            jsonb not null default '{}'::jsonb,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+create index if not exists engagement_messages_prospect_idx on public.engagement_messages (prospect_id, created_at desc);
+create index if not exists engagement_messages_campaign_idx on public.engagement_messages (campaign_id, status);
+
+-- ── 4. engagement_activity_log ──────────────────────────────────────────────
+create table if not exists public.engagement_activity_log (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  campaign_id         uuid not null references public.engagement_campaigns(id) on delete cascade,
+  prospect_id         uuid not null references public.engagement_prospects(id) on delete cascade,
+  message_id          uuid references public.engagement_messages(id) on delete set null,
+  event_type          text not null,
+  channel             text,
+  from_status         text,
+  to_status           text,
+  details             jsonb not null default '{}'::jsonb,
+  timestamp           timestamptz not null default now()
+);
+
+create index if not exists engagement_activity_prospect_idx on public.engagement_activity_log (prospect_id, timestamp desc);
+create index if not exists engagement_activity_campaign_idx on public.engagement_activity_log (campaign_id, timestamp desc);
+
+-- ── 5. engagement_sync_configs ──────────────────────────────────────────────
+create table if not exists public.engagement_sync_configs (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  campaign_id         uuid not null references public.engagement_campaigns(id) on delete cascade,
+  provider            text not null check (provider in ('google_sheets', 'airtable')),
+  config              jsonb not null default '{}'::jsonb,
+  last_synced_at      timestamptz,
+  sync_status         text not null default 'idle' check (sync_status in ('idle', 'syncing', 'success', 'error')),
+  sync_error          text,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+create index if not exists engagement_sync_campaign_idx on public.engagement_sync_configs (campaign_id, provider);
+
+-- ── Helper trigger functions for updated_at ─────────────────────────────────
+create or replace function public.engagement_touch_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists engagement_campaigns_touch_updated_at on public.engagement_campaigns;
+create trigger engagement_campaigns_touch_updated_at
+  before update on public.engagement_campaigns
+  for each row execute function public.engagement_touch_updated_at();
+
+drop trigger if exists engagement_prospects_touch_updated_at on public.engagement_prospects;
+create trigger engagement_prospects_touch_updated_at
+  before update on public.engagement_prospects
+  for each row execute function public.engagement_touch_updated_at();
+
+drop trigger if exists engagement_messages_touch_updated_at on public.engagement_messages;
+create trigger engagement_messages_touch_updated_at
+  before update on public.engagement_messages
+  for each row execute function public.engagement_touch_updated_at();
+
+drop trigger if exists engagement_sync_configs_touch_updated_at on public.engagement_sync_configs;
+create trigger engagement_sync_configs_touch_updated_at
+  before update on public.engagement_sync_configs
+  for each row execute function public.engagement_touch_updated_at();
+
+-- ── RLS & Security ──────────────────────────────────────────────────────────
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'engagement_campaigns',
+    'engagement_prospects',
+    'engagement_messages',
+    'engagement_activity_log',
+    'engagement_sync_configs'
+  ]
+  loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('revoke all on public.%I from anon', t);
+    execute format('revoke all on public.%I from authenticated', t);
+    execute format('grant all on public.%I to service_role', t);
+
+    if not exists (
+      select 1 from pg_policies
+       where schemaname = 'public' and tablename = t
+         and policyname = 'service full access'
+    ) then
+      execute format(
+        'create policy "service full access" on public.%I '
+        'for all to service_role using (true) with check (true)', t);
+    end if;
+  end loop;
+end $$;
+
+
+-- ============================================================
+-- 0082_engagement_send_safety.sql
+-- ============================================================
+-- 0082_engagement_send_safety.sql
+--
+-- Makes the Prospect Engagement Engine (0081) safe to send a real message.
+-- Review: docs/PROSPECT-ENGAGEMENT-ENGINE-REVIEW-AND-ROLLOUT.md (F-1 … F-8).
+--
+-- ── WHAT THIS ADDS, AND THE DEFECT EACH PIECE CLOSES ────────────────────────
+--
+--   1. engagement_suppressions — the opt-out record (F-3).
+--      0081 stored an opt-out as a STATUS on one prospect row, so the same
+--      person in a second campaign was still contactable, and a status can be
+--      overwritten by the next transition. Consent is a fact about a PERSON on
+--      a CHANNEL, not about a row in a campaign: one row per
+--      (tenant, channel, normalised address), checked inside the send claim.
+--      ⚠️ PER CHANNEL, deliberately (owner decision 2026-09-23). "Stop emailing
+--      me" is not "stop texting me". A multi-channel opt-out is several rows,
+--      written together by the unsubscribe page or the dashboard.
+--
+--   2. Send-claim columns on engagement_messages — F-1.
+--      0081's dispatcher selected every approved message and sent it without
+--      recording the send, so a second dispatch sent everything again. A send
+--      is now claimed with a conditional UPDATE (status 'queued' → 'sending')
+--      whose row count decides who sends — the 0063 pattern, never a
+--      read-then-write. `external_message_id` is unique per provider so an
+--      inbound webhook correlates to exactly one message (F-6).
+--
+--   3. Prospect uniqueness per campaign — dedupe was read-then-write and raced.
+--
+--   4. engagement_activity_log is append-only — 0081's header called it
+--      "immutable" and nothing enforced it. UPDATE is refused; DELETE is not,
+--      because deleting a campaign must still cascade.
+--
+--   5. engagement_campaigns.sender — who a campaign sends as (F-8). Validated
+--      server-side against an operator allow-list of sending domains.
+--
+--   6. credit_ledger gains reason 'outreach' / unit 'message' so a sent
+--      message can be charged (F-10). A kind that maps to a reason this CHECK
+--      refuses writes nothing and bills nobody — creditWeights.test.js pins it.
+--
+-- Re-runnable: every statement is idempotent.
+
+-- ── 1. engagement_suppressions ──────────────────────────────────────────────
+create table if not exists public.engagement_suppressions (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null references auth.users(id) on delete cascade,
+  channel      text not null check (channel in ('email', 'whatsapp', 'sms', 'telegram')),
+  -- Normalised by suppressionModel.normalizeAddress(): lower-cased email,
+  -- digits-and-leading-plus phone. Never the raw value, or "A@x.com" and
+  -- "a@x.com" would be two people.
+  address      text not null check (length(btrim(address)) > 0),
+  reason       text not null check (reason in (
+    'unsubscribe',   -- recipient used the unsubscribe page / one-click header
+    'stop_keyword',  -- recipient replied STOP (SMS / WhatsApp)
+    'bounce',        -- hard bounce: the address does not exist
+    'complaint',     -- recipient marked it as spam
+    'manual'         -- the tenant opted the contact out from the dashboard
+  )),
+  source       text not null default 'dashboard',
+  prospect_id  uuid references public.engagement_prospects(id) on delete set null,
+  note         text,
+  created_at   timestamptz not null default now(),
+  -- Column list, not an expression: a PostgREST upsert arbiter must name
+  -- columns (the 0058 → 0059 lesson).
+  constraint engagement_suppressions_unique unique (user_id, channel, address)
+);
+
+create index if not exists engagement_suppressions_lookup_idx
+  on public.engagement_suppressions (user_id, channel, address);
+
+-- ── 2. Send claim + provider correlation on messages ────────────────────────
+alter table public.engagement_messages
+  add column if not exists claimed_at   timestamptz,
+  add column if not exists provider     text,
+  add column if not exists failure_code text,
+  add column if not exists attempts     integer not null default 0;
+
+-- 'sending' is the claim; 'skipped' is a message that will never be sent
+-- (suppressed, channel not enabled, no address) — distinct from 'failed',
+-- which is a provider refusing a real attempt.
+alter table public.engagement_messages
+  drop constraint if exists engagement_messages_status_check;
+alter table public.engagement_messages
+  add constraint engagement_messages_status_check check (status in (
+    'draft', 'pending_approval', 'approved', 'rejected', 'queued', 'sending',
+    'sent', 'delivered', 'failed', 'skipped', 'opened', 'clicked', 'replied'
+  ));
+
+create unique index if not exists engagement_messages_provider_id_uidx
+  on public.engagement_messages (provider, external_message_id)
+  where external_message_id is not null;
+
+create index if not exists engagement_messages_queue_idx
+  on public.engagement_messages (status, created_at)
+  where status in ('queued', 'sending');
+
+-- ── 3. One prospect per address per campaign ────────────────────────────────
+-- Stored values are already normalised by the store; lower() is belt and braces
+-- for rows written before this migration.
+create unique index if not exists engagement_prospects_campaign_email_uidx
+  on public.engagement_prospects (campaign_id, lower(email))
+  where email is not null;
+create unique index if not exists engagement_prospects_campaign_phone_uidx
+  on public.engagement_prospects (campaign_id, phone)
+  where phone is not null;
+
+-- ── 4. The activity log is append-only ──────────────────────────────────────
+create or replace function public.engagement_activity_log_immutable()
+returns trigger language plpgsql as $$
+begin
+  raise exception 'engagement_activity_log is append-only'
+    using errcode = 'check_violation';
+end;
+$$;
+revoke all on function public.engagement_activity_log_immutable() from public, anon, authenticated;
+
+drop trigger if exists engagement_activity_log_no_update on public.engagement_activity_log;
+create trigger engagement_activity_log_no_update
+  before update on public.engagement_activity_log
+  for each row execute function public.engagement_activity_log_immutable();
+
+-- ── 5. Who a campaign sends as ──────────────────────────────────────────────
+alter table public.engagement_campaigns
+  add column if not exists sender jsonb not null default '{}'::jsonb;
+
+-- ── 6. The ledger can record a sent message ─────────────────────────────────
+alter table public.credit_ledger drop constraint if exists credit_ledger_reason_chk;
+alter table public.credit_ledger add constraint credit_ledger_reason_chk check (reason in (
+  'page_fetch', 'ai_call', 'enrichment', 'audit', 'monitor_check',
+  'template_run', 'refund', 'grant', 'adjustment', 'outreach'
+));
+alter table public.credit_ledger drop constraint if exists credit_ledger_unit_chk;
+alter table public.credit_ledger add constraint credit_ledger_unit_chk check (unit is null or unit in (
+  'page', 'ai_call', 'enrichment', 'audit', 'monitor_check', 'run', 'message'
+));
+
+-- ── RLS: service role only, like every 0044-era table ───────────────────────
+alter table public.engagement_suppressions enable row level security;
+revoke all on public.engagement_suppressions from anon;
+revoke all on public.engagement_suppressions from authenticated;
+grant all on public.engagement_suppressions to service_role;
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+     where schemaname = 'public' and tablename = 'engagement_suppressions'
+       and policyname = 'service full access'
+  ) then
+    create policy "service full access" on public.engagement_suppressions
+      for all to service_role using (true) with check (true);
+  end if;
+end $$;
+
+
+-- ============================================================
+-- 0083_account_brand_kits.sql
+-- ============================================================
+-- 0083_account_brand_kits.sql — the account Brand Kit, stored server-side.
+--
+-- Until now the account Brand Kit (Account → Brand kit: company name, tagline,
+-- footer, website, contact email, accent colour) lived only in one browser's
+-- localStorage, so the server could not see it and it did not follow the user
+-- to another device. Engagement's "Use my account brand kit" (owner request
+-- 2026-09-24) needs it on the server.
+--
+--   - One row per account; `kit` holds ONLY the validated text fields
+--     (brandKitValidation.js). The logo stays in the browser — a 200KB data URL
+--     does not belong in a row that is read on every Engagement settings load.
+--   - Writes are gated to plans with white_label_pdf (Business, Agency) by the
+--     function, not here: plan limits live in pricingConfig.js, not the database.
+--   - RLS on, nothing granted to anon/authenticated — the 0044 pattern. The
+--     browser reaches it only through /api/account-brand-kit (service key).
+--
+-- Re-runnable: every statement is idempotent.
+
+create table if not exists public.account_brand_kits (
+  user_id     uuid primary key references auth.users(id) on delete cascade,
+  kit         jsonb not null default '{}'::jsonb check (jsonb_typeof(kit) = 'object'),
+  updated_at  timestamptz not null default now()
+);
+
+alter table public.account_brand_kits enable row level security;
+revoke all on public.account_brand_kits from anon;
+revoke all on public.account_brand_kits from authenticated;
+grant all on public.account_brand_kits to service_role;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+     where schemaname = 'public' and tablename = 'account_brand_kits'
+       and policyname = 'service full access'
+  ) then
+    create policy "service full access" on public.account_brand_kits
+      for all to service_role using (true) with check (true);
+  end if;
+end $$;
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

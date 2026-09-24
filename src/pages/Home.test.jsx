@@ -144,11 +144,27 @@ describe("F-01 — Home composer", () => {
     }
   });
 
-  it("renders 8 feature cards (clickable)", async () => {
+  it("hides the repeated capability grid and keeps its unique items as a chip and a tile", async () => {
     const { container } = render(<Tree />);
     await act(async () => { await Promise.resolve(); });
-    const cards = container.querySelectorAll(".feature-cell");
-    expect(cards.length).toBe(8);
+    expect(container.querySelectorAll(".feature-cell")).toHaveLength(0);
+    expect(screen.queryByText("What can DatIQ extract from a page?")).toBeNull();
+    expect(screen.getByRole("button", { name: /Page structure/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Write a content brief/ })).toBeInTheDocument();
+  });
+
+  it("marks the persona's recommendations on chips and Common-jobs tiles", async () => {
+    localStorage.setItem("datiq.persona", "seo"); // featuresHighlight: headings, links, map
+    try {
+      const { container } = render(<Tree />);
+      await act(async () => { await Promise.resolve(); });
+      const recChips = [...container.querySelectorAll(".intent-chip-recommended")].map((b) => b.textContent.replace("★", "").trim());
+      expect(recChips.sort()).toEqual(["Map site", "Page structure"]);
+      const recTiles = [...container.querySelectorAll(".outcome-tile-recommended .outcome-tile-title")].map((t) => t.textContent);
+      expect(recTiles).toEqual(["SEO audit"]);
+    } finally {
+      localStorage.removeItem("datiq.persona");
+    }
   });
 
   it("renders the connected-intelligence hero and the truthful six-module catalog", async () => {
