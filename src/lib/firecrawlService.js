@@ -69,11 +69,17 @@ function parseHtml(html, baseUrl) {
   const links = [];
   for (const a of doc.querySelectorAll("a[href]")) {
     let href = a.getAttribute("href") || "";
+    // Script-bearing schemes are skipped whatever their case or leading
+    // whitespace ("JavaScript:", " data:") — these links are rendered later,
+    // and a checked-in-lowercase-only list let "JavaScript:" through.
+    const scheme = href.trim().toLowerCase();
     if (
       !href ||
-      href.startsWith("#") ||
-      href.startsWith("javascript:") ||
-      href.startsWith("mailto:")
+      scheme.startsWith("#") ||
+      scheme.startsWith("javascript:") ||
+      scheme.startsWith("data:") ||
+      scheme.startsWith("vbscript:") ||
+      scheme.startsWith("mailto:")
     ) {
       continue;
     }

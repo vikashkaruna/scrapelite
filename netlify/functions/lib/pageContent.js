@@ -18,6 +18,8 @@
 // preserves mailto:/tel: targets — which is the single highest-yield signal
 // for the contacts capability and was previously thrown away entirely.
 
+import { decodeHtmlEntities } from "./htmlEntities.js";
+
 const BOILERPLATE_TAGS = ["script", "style", "noscript", "svg", "template", "iframe", "canvas"];
 
 // Containers whose content is almost never the answer. Removed only when the
@@ -31,12 +33,14 @@ const ENTITIES = {
   "&rsquo;": "’", "&lsquo;": "‘", "&ldquo;": "“", "&rdquo;": "”",
   "&bull;": "•", "&middot;": "·", "&times;": "×", "&trade;": "™", "&copy;": "©", "&reg;": "®",
 };
+// The same map keyed by bare name, as decodeHtmlEntities expects.
+const NAMED = Object.fromEntries(
+  Object.entries(ENTITIES).filter(([k]) => !k.startsWith("&#")).map(([k, v]) => [k.slice(1, -1), v]),
+);
 
 export function decodeEntities(s) {
-  return String(s || "")
-    .replace(/&#(\d+);/g, (_, d) => { try { return String.fromCodePoint(Number(d)); } catch { return " "; } })
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => { try { return String.fromCodePoint(parseInt(h, 16)); } catch { return " "; } })
-    .replace(/&[a-z]+;|&#39;/gi, (m) => ENTITIES[m.toLowerCase()] ?? ENTITIES[m] ?? " ");
+  // One pass, so "&#38;lt;" stays the text "&lt;" instead of becoming "<".
+  return decodeHtmlEntities(s || "", { named: NAMED, unknown: () => " " });
 }
 
 function stripTags(html) {

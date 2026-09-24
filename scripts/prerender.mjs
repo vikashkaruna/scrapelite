@@ -107,6 +107,19 @@ export function serveDist(distDir, { forced = forcedShellPaths() } = {}) {
 
 /** Strip the volatile bits so a re-run with no real change produces no diff. */
 export function normalizeHtml(html) {
+  // Repeat until nothing changes: removing one element can bring two halves of
+  // another together (CodeQL js/incomplete-multi-character-sanitization), and a
+  // single pass would then leave a <script> or <iframe> behind.
+  let out = String(html);
+  for (let i = 0; i < 10; i++) {
+    const next = normalizeOnce(out);
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
+function normalizeOnce(html) {
   return String(html)
     // React dev/prod both leave these; they are not content.
     .replace(/\s+data-reactroot=""/g, "")

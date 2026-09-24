@@ -130,7 +130,7 @@ describe("page ownership — static-owned pages", () => {
     // becomes a second document for that URL and the test must stop excusing it.
     for (const s of STATIC_OWNED.filter((x) => x.redirectOnly)) {
       const name = appJsx.match(
-        new RegExp(`path="${s.path.replace(/\//g, "\\/")}"\\s+element=\\{<(\\w+)`),
+        new RegExp(`path="${s.path.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}"\\s+element=\\{<(\\w+)`),
       )?.[1];
       expect(name, `no element for ${s.path}`).toBeTruthy();
       const body = appJsx.slice(appJsx.indexOf(`function ${name}(`));

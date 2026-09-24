@@ -94,7 +94,9 @@ function webhookHint(url) {
   if (!url || typeof url !== "string") return null;
   try {
     const u = new URL(url);
-    if (!u.hostname.includes("slack.com")) return null;
+    // Exact host or a true subdomain — "slack.com.attacker.test" also contains "slack.com".
+    const host = u.hostname.toLowerCase();
+    if (host !== "slack.com" && !host.endsWith(".slack.com")) return null;
     // Format: "hooks.slack.com · services/T0…/B0…/…xQ7z"
     const pathParts = u.pathname.split("/").filter(Boolean);
     if (pathParts.length === 0) return u.hostname;
