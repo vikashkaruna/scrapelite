@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { SEED_TEMPLATES, PUBLISHED_SEEDS, seedByKey } from "./seedTemplates.js";
 import { validateTemplate, estimateCredits, validateInput, capabilityFor } from "./templateModel.js";
-import { PERSONAS } from "../personaConfig.js";
+import { PERSONAS, ALL_PERSONA_IDS } from "../personaConfig.js";
 
 describe("seed templates", () => {
   it("ships eleven — launch templates plus recruiter, market research, agency, and workflow intelligence", () => {
@@ -20,8 +20,10 @@ describe("seed templates", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
+  // Stored ids may be a current role or a retired one that still resolves
+  // (market-research, recruiter) — see personaConfig.js.
   it("every persona referenced is a real persona", () => {
-    const ids = new Set(PERSONAS.map((p) => p.id));
+    const ids = new Set(ALL_PERSONA_IDS);
     for (const t of SEED_TEMPLATES) {
       expect(ids.has(t.persona), `${t.template_key} -> ${t.persona}`).toBe(true);
     }

@@ -1,6 +1,7 @@
 // aiService.test.js — QW#6 unit tests for the new content formats (Compare, Explain).
 // Mocks callAI to return null (forces the mockContent fallback path), so we can
 // verify the fallback content for each new format renders sensible markdown.
+import { PERSONA_BY_ID } from "./personaConfig.js";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Force the fixture path. `hasFirecrawl: false` is what puts the whole
@@ -104,11 +105,11 @@ describe("buildSummaryPrompt — persona/intent framing", () => {
 
   it("frames the audience by persona label when personaId is given", () => {
     const salesPrompt = _buildSummaryPrompt(PAGE, { personaId: "sales" });
-    expect(salesPrompt).toContain("You are summarizing a web page for a Sales / SDR / BDR professional");
+    expect(salesPrompt).toContain(`You are summarizing a web page for a ${PERSONA_BY_ID.sales.label} professional`);
     expect(salesPrompt).not.toContain("non-technical researcher");
 
     const seoPrompt = _buildSummaryPrompt(PAGE, { personaId: "seo" });
-    expect(seoPrompt).toContain("You are summarizing a web page for a SEO / Content Marketer professional");
+    expect(seoPrompt).toContain(`You are summarizing a web page for a ${PERSONA_BY_ID.seo.label} professional`);
   });
 
   it("falls back to the generic audience for an unknown personaId", () => {
