@@ -421,6 +421,20 @@ watch" when access is denied or the access call fails; the Discover tile never s
 - **The Engage card shows the "BETA" status badge** (the badge style the Discover, Compete and Connect cards
   already use) and its button goes to **`/engagement`** (owner, 2026-09-24).
 
+- **DatIQ Discover moves from Beta to Available** (owner, 2026-09-24). This is a one-line change to
+  `platformModules.js`. Two tests currently expect Beta and change with it:
+  - `platformModules.test.js:32`;
+  - `Home.test.jsx:190`, which finds the Discover card through `data-module-status="beta"`.
+
+  The pages that describe Discover publicly are checked for any "beta" wording in §22.
+
+After these changes the module badges read:
+
+| Card | Badge |
+|---|---|
+| Extract, Enrich, Discover | Available |
+| Compete, Connect, Engage | Beta |
+
 **17b. The "DatIQ intelligence" hero card gets an Engage tile (owner, 2026-09-24).**
 
 **Now:** the preview card beside the hero (`DashboardReveal` in `Home.jsx`) has 3 tiles:
@@ -716,6 +730,7 @@ build if a `V\d+\.\d+` string appears in public page text again.
 | D17 | Engagement card on Home: status "Beta" and link to `/engagement` (private-beta page for everyone else)? | Yes |
 | D17b | Hero "DatIQ intelligence" card: add Engage as the 4th tile (Discover, Connect, Compete, Engage), 4 across | Locked (owner) |
 | D17c | Hero Compete tile goes to the Workflow hub (was `/lists`), matching the Compete card | Yes |
+| D17d | DatIQ Discover on Home: Beta → **Available** | Locked (owner) |
 | D18a | How many new templates in this round? | 9 (catalogue 11 → 20); watch usage before adding more |
 | D18b | Templates that only open another screen: same catalogue, marked "Opens in …"? | Yes, with a module filter beside the role filter |
 | D12 | Publish an "Engagement (beta)" section in the public help now, or keep it internal until GA? | Internal until GA (a public "private beta — request access" mention is allowed, see §22) |
