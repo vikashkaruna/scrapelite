@@ -131,11 +131,11 @@ test("CLAIM: Single-URL extraction surfaces the Preview page", async ({ page }) 
   await expect(page).toHaveURL(/\/preview/);
 });
 
-test("CLAIM: Home page shows the 6 outcome tiles above the hero", async ({ page }) => {
+test("CLAIM: Home page shows the 7 outcome tiles above the hero", async ({ page }) => {
   await page.goto("/");
-  // Q3 — outcome tiles row
+  // Q3 — outcome tiles row (7 since "Write a content brief" joined, 2026-09-24)
   const tiles = page.locator(".outcome-tile");
-  await expect(tiles).toHaveCount(6);
+  await expect(tiles).toHaveCount(7);
 });
 
 test("CLAIM: Home page offers a template gallery, collapsed by default", async ({ page }) => {

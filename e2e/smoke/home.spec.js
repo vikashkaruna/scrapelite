@@ -43,10 +43,11 @@ test("home shows the 5 intent chips (summary, contacts, pricing, map, custom)", 
   }
 });
 
-test("home renders 8 feature cards (clickable)", async ({ page }) => {
+test("home hides the repeated capability grid; its unique items are a chip and a tile", async ({ page }) => {
   await page.goto("/");
-  const cards = page.locator(".feature-cell");
-  await expect(cards).toHaveCount(8);
+  await expect(page.locator(".feature-cell")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Page structure/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Write a content brief/ })).toBeVisible();
 });
 
 test("home shows a truthful six-module catalog", async ({ page }) => {
