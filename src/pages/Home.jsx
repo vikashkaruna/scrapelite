@@ -27,7 +27,9 @@ import { useSeo } from "../hooks/useSeo.js";
 import { classifyInput, normalizeUrl, extractUrls } from "../lib/utils.js";
 import { CONTACTS_PROMPT, QUICK_ACTIONS } from "../lib/extractionPresets.js";
 import { CONTENT_FORMATS } from "../lib/aiService.js";
-import { OUTCOME_TILES } from "../lib/outcomeTiles.js";
+import { OUTCOME_TILES, homeTiles } from "../lib/outcomeTiles.js";
+import { useAuth } from "../components/AuthProvider.jsx";
+import { getAccess as getEngagementAccess } from "../lib/engagement/engagementClient.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
 import { PLATFORM_MODULES, hasModuleCta, moduleStatusLabel } from "../lib/platformModules.js";
 
@@ -54,6 +56,17 @@ const SHOW_FEATURE_GRID = false;
  *  the chips and Common-jobs tiles, now that the feature grid is hidden. */
 export const HIGHLIGHT_TO_CHIP = { summary: "summary", contacts: "contacts", pricing: "pricing", map: "map", custom: "custom", headings: "structure", links: "structure" };
 export const HIGHLIGHT_TO_TILE = { contacts: "lead", pricing: "pricing", headings: "seo", content: "content" };
+// The module tiles each role is pointed at, on top of its feature highlights.
+export const ROLE_TO_TILES = {
+  sales: ["account-brief", "outreach"],
+  revops: ["account-brief", "send-to-crm"],
+  "competitive-intel": ["watch-competitor"],
+  pmm: ["ai-visibility", "watch-competitor"],
+  seo: ["ai-visibility"],
+  "brand-growth": ["ai-visibility"],
+  "founder-vc": ["account-brief"],
+  agency: ["ai-visibility", "send-to-crm"],
+};
 
 // Map feature card keys → intent chip key (null = post-extraction only)
 const CARD_TO_INTENT = {
@@ -128,8 +141,12 @@ function DashboardReveal() {
         <Link className="hdr-signal-tile" to="/integrations" aria-label="Open Integrations">
           <Icon name="share" size={14} /><span>Connect</span>
         </Link>
-        <Link className="hdr-signal-tile" to="/lists" aria-label="Open Account Lists">
+        <Link className="hdr-signal-tile" to="/workflows" aria-label="Open the Workflow hub">
           <Icon name="eye" size={14} /><span>Compete</span>
+        </Link>
+        <Link className="hdr-signal-tile" to="/engagement" aria-label="Open Engagement (beta)">
+          <Icon name="users" size={14} /><span>Engage</span>
+          <span className="hdr-signal-beta">Beta</span>
         </Link>
       </div>
       <div className="hdr-evidence-row">
@@ -252,7 +269,25 @@ export default function Home() {
   const persona = personaId ? PERSONA_BY_ID[personaId] : null;
   const highlights = persona?.featuresHighlight || [];
   const recommendedChips = new Set(highlights.map((k) => HIGHLIGHT_TO_CHIP[k]).filter(Boolean));
-  const recommendedTiles = new Set(highlights.map((k) => HIGHLIGHT_TO_TILE[k]).filter(Boolean));
+  const recommendedTiles = new Set([
+    ...highlights.map((k) => HIGHLIGHT_TO_TILE[k]).filter(Boolean),
+    ...(ROLE_TO_TILES[personaId] || []),
+  ]);
+
+  // Engagement is a private beta: only an account the server says is in it
+  // gets the outreach tile. Signed out, not in the beta, or an unreadable
+  // answer all get the pricing-watch tile instead, keeping the row at 12.
+  const { user } = useAuth() || {};
+  const [engageAccess, setEngageAccess] = useState(false);
+  useEffect(() => {
+    if (!user) { setEngageAccess(false); return undefined; }
+    let alive = true;
+    getEngagementAccess()
+      .then((a) => { if (alive) setEngageAccess(Boolean(a?.enabled)); })
+      .catch(() => { if (alive) setEngageAccess(false); });
+    return () => { alive = false; };
+  }, [user]);
+  const tiles = useMemo(() => homeTiles({ engageAccess }), [engageAccess]);
   const examples = persona ? persona.examples : ["lumio.io", "stripe.com/pricing", "notion.so/help"];
   const defaultUrl = persona ? `https://${examples[0]}` : "https://lumio.io";
 
@@ -437,6 +472,15 @@ export default function Home() {
     () => Object.fromEntries(OUTCOME_TILES.map((t) => [t.key, t])),
     [],
   );
+  // An OPEN tile goes to its module, prefilled from the composer's URL when the
+  // composer holds exactly one. It starts nothing: every module there still
+  // needs the user to press its own button.
+  const handleTileOpen = useCallback((tile) => {
+    const single = classifyInput(url || "");
+    const current = single.kind === "single" ? normalizeUrl(single.urls[0]) : null;
+    navigate(tile.open.to, { state: tile.open.state ? tile.open.state(current) : undefined });
+  }, [url, navigate]);
+
   const handleTileToggle = useCallback((tile) => {
     // tile === null → the active tile was clicked again → clear selection
     if (!tile) {
@@ -600,7 +644,7 @@ export default function Home() {
           )}
 
 {/* ── Intent chips ─────────────────────────────────────────── */}
-          <div className="intent-chips">
+          <div className="intent-chips intent-chips-wide">
             <span className="intent-chips-label">What do you want to extract?</span>
             <div className="intent-chips-row">
               {INTENTS.map((ic) => {
@@ -746,7 +790,7 @@ export default function Home() {
         )}
 
         <div className="rise" style={{ animationDelay: ".22s", width: "100%", maxWidth: 880, margin: "18px 0 0" }}>
-          <OutcomeTiles activeKey={activeTileKey} onToggle={handleTileToggle}
+          <OutcomeTiles tiles={tiles} activeKey={activeTileKey} onToggle={handleTileToggle} onOpen={handleTileOpen}
             recommendedKeys={recommendedTiles} recommendColor={persona?.color} personaLabel={persona?.label} />
         </div>
 

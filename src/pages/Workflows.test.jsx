@@ -48,6 +48,7 @@ vi.mock("../lib/workflows/workflowClient.js", () => ({
 vi.mock("../lib/rules/rulesClient.js", () => ({
   updateRule: vi.fn(async () => ({ ok: true })),
   deleteRule: vi.fn(async () => ({ ok: true })),
+  unlinkSource: vi.fn(async () => ({ ok: true })),
 }));
 
 describe("Workflows Page", () => {
@@ -137,6 +138,50 @@ describe("Workflows Page", () => {
     expect(screen.getByRole("link", { name: /Connect a rule/i }).getAttribute("href")).toBe("/rules?new=1");
     expect(screen.getByRole("link", { name: /Manage lists/i }).getAttribute("href")).toBe("/lists");
     expect(deleteRule).not.toHaveBeenCalled();
+    getWorkflowGraph.mockImplementation(async () => mockGraph);
+  });
+
+  it("lists sources no rule hears in a 'Not connected yet' strip", async () => {
+    const { getWorkflowGraph } = await import("../lib/workflows/workflowClient.js");
+    getWorkflowGraph.mockImplementation(async () => ({
+      ...mockGraph,
+      unconnected: [{
+        trigger_source: "watchlist", label: "Watchlists",
+        sources: [{ id: "wl-9", name: "Adjacent", href: "/watchlists?id=wl-9" }],
+        fix: { label: "Connect a rule", href: "/rules?new=1" },
+      }],
+    }));
+    render(<MemoryRouter><Workflows /></MemoryRouter>);
+    const strip = await screen.findByRole("region", { name: "Not connected yet" });
+    expect(strip).toHaveTextContent("Adjacent");
+    expect(strip.querySelector('a[href="/rules?new=1"]')).not.toBeNull();
+    getWorkflowGraph.mockImplementation(async () => mockGraph);
+  });
+
+  it("a pipeline can be paused, and a scoped pipeline's source unlinked, from the hub", async () => {
+    const { getWorkflowGraph } = await import("../lib/workflows/workflowClient.js");
+    const { updateRule, unlinkSource } = await import("../lib/rules/rulesClient.js");
+    getWorkflowGraph.mockImplementation(async () => ({
+      ...mockGraph,
+      pipelines: [{
+        ...mockGraph.pipelines[0], status: "active", source_scope: "selected",
+        upstream_items: [{ id: "wl-1", type: "watchlist", name: "Tier 1 Competitors", href: "/watchlists?id=wl-1" }],
+      }],
+    }));
+    render(<MemoryRouter><Workflows /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: /Pause/ }));
+    await waitFor(() => expect(updateRule).toHaveBeenCalledWith("rule-1", { status: "paused" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink Tier 1 Competitors from Competitor Alert Pipeline" }));
+    await waitFor(() => expect(unlinkSource).toHaveBeenCalledWith("rule-1", "watchlist", "wl-1"));
+    getWorkflowGraph.mockImplementation(async () => mockGraph);
+  });
+
+  it("an empty building block points at a template, not a blank form", async () => {
+    const { getWorkflowGraph } = await import("../lib/workflows/workflowClient.js");
+    getWorkflowGraph.mockImplementation(async () => ({ ...mockGraph, nodes: [], pipelines: [] }));
+    render(<MemoryRouter><Workflows /></MemoryRouter>);
+    const link = await screen.findByRole("link", { name: /Competitor change monitor/ });
+    expect(link.getAttribute("href")).toBe("/templates?key=competitor_change_monitor");
     getWorkflowGraph.mockImplementation(async () => mockGraph);
   });
 });

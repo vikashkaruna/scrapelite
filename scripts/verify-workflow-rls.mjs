@@ -40,6 +40,8 @@ const TABLES = [
   "engagement_campaigns", "engagement_prospects", "engagement_messages",
   "engagement_activity_log", "engagement_sync_configs", "engagement_suppressions",
   "account_brand_kits",
+  // 0085 — which rules listen to which lists / watchlists.
+  "signal_rule_sources",
 ];
 
 const wantProd = process.argv.includes("--prod");

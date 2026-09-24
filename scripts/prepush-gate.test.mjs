@@ -15,7 +15,7 @@
 
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -67,6 +67,20 @@ describe("pre-push: the e2e smoke gate", () => {
       expect(prerenderLine, `prerender watches ${dir}`).toContain(dir);
       expect(e2eLine, `e2e watches ${dir}`).toContain(dir);
     }
+  });
+
+  it("does not count test files as prerender sources — but still counts sources", () => {
+    // A *.test.jsx beside a component is never rendered; `npm run prerender`
+    // writes nothing for it, so the gate could only be passed with a skip flag.
+    // Run the gate's OWN line so this cannot pass against a copy of it.
+    const line = sh.split("\n").find((l) => l.includes("PRERENDER_SRC=")).trim();
+    const run = (files) => execFileSync("bash", ["-c", `${line}\nprintf '%s' "$PRERENDER_SRC"`], {
+      env: { ...process.env, CHANGED_FILES: files.join("\n") }, encoding: "utf8",
+    });
+    expect(run(["src/components/discoverability/LocalDirectoryPanel.test.jsx"])).toBe("");
+    expect(run(["src/lib/__tests__/x.js", "src/pages/Home.test.js"])).toBe("");
+    expect(run(["src/components/Footer.jsx", "src/components/Footer.test.jsx"])).toBe("src/components/Footer.jsx");
+    expect(run(["src/lib/testing.js"])).toBe("src/lib/testing.js");
   });
 
   it("still reads CHANGED_FILES, the same signal the prerender gate uses", () => {

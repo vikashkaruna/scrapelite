@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import TemplateBacklink from "../components/TemplateBacklink.jsx";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -79,6 +80,7 @@ export default function Engagement() {
   const [consentBusy, setConsentBusy] = useState(false);
 
   const [campaignModal, setCampaignModal] = useState(null); // null | "create" | "edit"
+  const [campaignDraft, setCampaignDraft] = useState(null); // prefill from the template hub
   const [showImportModal, setShowImportModal] = useState(false);
   const [tableStage, setTableStage] = useState("all"); // set by the board's "+N more"
   const [editingProspectId, setEditingProspectId] = useState(null);
@@ -137,6 +139,15 @@ export default function Engagement() {
     if (selectedCampaignId) loadCampaignData(selectedCampaignId);
     else { setProspects([]); setMessages([]); setAnalytics({}); }
   }, [selectedCampaignId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A campaign started from the template hub: open New campaign, prefilled,
+  // once we know this account is in the beta. Nothing is created until Save.
+  useEffect(() => {
+    const draft = location.state?.newCampaign;
+    if (!draft || !access?.enabled) return;
+    setCampaignDraft(draft);
+    setCampaignModal("create");
+  }, [location.state, access?.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Contacts handed over from Preview / Dashboard ("Engage prospects").
   useEffect(() => {
@@ -334,6 +345,7 @@ export default function Engagement() {
       ok(`Created “${res.campaign.name}”`);
     }
     setCampaignModal(null);
+    setCampaignDraft(null);
   });
 
   const handleDeleteCampaign = () => run("Deleting campaign…", async () => {
@@ -343,6 +355,7 @@ export default function Engagement() {
     setCampaigns(rest);
     setSelectedCampaignId(rest[0]?.id || null);
     setCampaignModal(null);
+    setCampaignDraft(null);
     ok(`Deleted “${gone?.name || "campaign"}”`);
   });
 
@@ -427,6 +440,7 @@ export default function Engagement() {
 
   return (
     <div className="engx-page">
+      <TemplateBacklink />
       <header className="engx-head">
         <div className="engx-head-title">
           <span className="engx-head-mark" aria-hidden="true"><Icon name="send" size={18} /></span>
@@ -554,11 +568,12 @@ export default function Engagement() {
         <CampaignModal
           mode={campaignModal}
           campaign={campaignModal === "edit" ? activeCampaign : null}
+          draft={campaignModal === "create" ? campaignDraft : null}
           campaigns={campaigns}
           prospectCount={prospects.length}
           onSave={handleSaveCampaign}
           onDelete={campaignModal === "edit" ? handleDeleteCampaign : undefined}
-          onClose={() => setCampaignModal(null)}
+          onClose={() => { setCampaignModal(null); setCampaignDraft(null); }}
         />
       )}
 

@@ -59,9 +59,10 @@ export function getTargetCount(w) {
  * @param {object} data
  * @param {Array} data.lists       — [{ id, name, total_records, completed_records }]
  * @param {Array} data.watchlists  — [{ id, name, cadence, targets:[], change_count }]
- * @param {Array} data.rules       — [{ id, name, status, trigger_source, action_type, execution_count }]
+ * @param {Array} data.rules       — [{ id, name, status, trigger_source, action_type, execution_count,
+ *                                     source_scope?, sources?: [{type,id,name}], paused_reason? }]
  * @param {Array} data.executions  — [{ id, rule_id, status, error, latency_ms, executed_at }]
- * @returns {{ nodes, edges, issues, counts, pipelines, recent_executions }}
+ * @returns {{ nodes, edges, issues, counts, pipelines, unconnected, recent_executions }}
  */
 export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [], executions = [] } = {}) {
   const issues = [];
@@ -237,7 +238,15 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [], ex
     const isBulk = r.trigger_source === "bulk_enrichment";
 
     const upstreamStage = isWatchlist ? "Competitor Watchlists" : isBulk ? "Account Lists" : "Template Runs";
-    const upstreamSummary = isWatchlist
+    // 0085: a rule limited to chosen sources hears only those, so its card
+    // names them rather than every list or watchlist of its kind.
+    const scoped = (isWatchlist || isBulk) && r.source_scope === "selected";
+    const chosen = scoped ? (r.sources || []) : null;
+    const upstreamSummary = scoped
+      ? (chosen.length === 0
+        ? `No ${isWatchlist ? "watchlist" : "list"} chosen — this rule hears nothing`
+        : `Only ${chosen.length} chosen ${isWatchlist ? "watchlist" : "list"}${chosen.length === 1 ? "" : "s"}`)
+      : isWatchlist
       ? `${watchlists.length} watchlist${watchlists.length === 1 ? "" : "s"} (${watchlists.reduce((acc, w) => acc + getTargetCount(w), 0)} tracked)`
       : isBulk
       ? `${lists.length} list${lists.length === 1 ? "" : "s"} (${lists.reduce((acc, l) => acc + (l.completed_records || 0), 0)} enriched)`
@@ -250,7 +259,10 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [], ex
     let healthLabel = "Active & Live";
     if (r.status === "paused") {
       healthStatus = "paused";
-      healthLabel = "Paused";
+      healthLabel = r.paused_reason === "no_sources" ? "Paused — no sources left" : "Paused";
+    } else if (scoped && chosen.length === 0) {
+      healthStatus = "disconnected";
+      healthLabel = "No sources chosen";
     } else if (!isConnected) {
       healthStatus = "disconnected";
       healthLabel = "Missing Upstream";
@@ -261,7 +273,10 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [], ex
 
     const lastExec = executions.find((e) => e.rule_id === r.id) || null;
 
-    const upstreamItems = isWatchlist
+    const href = (type, id) => type === "watchlist" ? `/watchlists?id=${encodeURIComponent(id)}` : `/lists?list=${encodeURIComponent(id)}`;
+    const upstreamItems = scoped
+      ? chosen.map((c) => ({ id: c.id, type: c.type, name: c.name || "Untitled", href: href(c.type, c.id) }))
+      : isWatchlist
       ? watchlists.map((w) => ({ id: w.id, name: w.name, meta: `${getTargetCount(w)} tracked`, href: `/watchlists?id=${encodeURIComponent(w.id)}` }))
       : isBulk
       ? lists.map((l) => ({ id: l.id, name: l.name, meta: `${l.completed_records || 0}/${l.total_records || 0} enriched`, href: `/lists?list=${encodeURIComponent(l.id)}` }))
@@ -274,6 +289,9 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [], ex
       action_type: r.action_type,
       action_config: r.action_config || {},
       status: r.status,
+      paused_reason: r.paused_reason || null,
+      source_scope: scoped ? "selected" : "all",
+      sources: chosen || [],
       health: healthStatus,
       health_label: healthLabel,
       upstream_stage: upstreamStage,
@@ -287,41 +305,28 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [], ex
     });
   }
 
-  // Also include unattached upstreams if any exist without listeners
-  const hasWatchlistRule = rules.some((r) => r.trigger_source === "watchlist" && r.status === "active");
-  if (watchlists.length > 0 && !hasWatchlistRule) {
-    pipelines.push({
-      id: "unconnected-watchlists",
-      name: "Competitor Watchlists (Unconnected)",
+  // Sources no ACTIVE rule hears. These used to be synthetic "pipelines" with
+  // no rule behind them (Edit/Delete then called the rules API with no id);
+  // they are a separate "Not connected yet" strip now. Worked out per source,
+  // because since 0085 a rule may hear only some lists or watchlists.
+  const heard = (trigger, id) => rules.some((r) => r.trigger_source === trigger && r.status === "active"
+    && (r.source_scope !== "selected" || (r.sources || []).some((s) => s.id === id)));
+  const unconnected = [];
+  const unheardWatchlists = watchlists.filter((w) => !heard("watchlist", w.id));
+  if (unheardWatchlists.length) {
+    unconnected.push({
       trigger_source: "watchlist",
-      action_type: "none",
-      action_config: {},
-      status: "unconnected",
-      health: "disconnected",
-      health_label: "No Rule Listening",
-      upstream_stage: "Competitor Watchlists",
-      upstream_summary: `${watchlists.length} watchlist${watchlists.length === 1 ? "" : "s"} tracking competitors`,
-      execution_count: 0,
-      last_execution: null,
+      label: "Watchlists",
+      sources: unheardWatchlists.map((w) => ({ id: w.id, name: w.name, href: `/watchlists?id=${encodeURIComponent(w.id)}` })),
       fix: { label: "Connect a rule", href: "/rules?new=1" },
     });
   }
-
-  const hasBulkRule = rules.some((r) => r.trigger_source === "bulk_enrichment" && r.status === "active");
-  if (lists.length > 0 && !hasBulkRule) {
-    pipelines.push({
-      id: "unconnected-lists",
-      name: "Account Lists (Unconnected)",
+  const unheardLists = lists.filter((l) => !heard("bulk_enrichment", l.id));
+  if (unheardLists.length) {
+    unconnected.push({
       trigger_source: "bulk_enrichment",
-      action_type: "none",
-      action_config: {},
-      status: "unconnected",
-      health: "disconnected",
-      health_label: "No Rule Listening",
-      upstream_stage: "Account Lists",
-      upstream_summary: `${lists.length} account list${lists.length === 1 ? "" : "s"}`,
-      execution_count: 0,
-      last_execution: null,
+      label: "Account lists",
+      sources: unheardLists.map((l) => ({ id: l.id, name: l.name, href: `/lists?list=${encodeURIComponent(l.id)}` })),
       fix: { label: "Connect a rule", href: "/rules?new=1" },
     });
   }
@@ -331,6 +336,7 @@ export function buildWorkflowGraph({ lists = [], watchlists = [], rules = [], ex
     edges,
     issues: issues.sort((a, b) => rank(a.severity) - rank(b.severity)),
     pipelines,
+    unconnected,
     recent_executions: executions,
     counts: {
       lists: lists.length,

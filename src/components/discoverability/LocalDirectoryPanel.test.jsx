@@ -191,13 +191,19 @@ describe("LocalDirectoryPanel — ignoring sources that do not apply", () => {
     mockApi({ checks: [{ id: "chk-1" }], full: storedCheck });
     render(<LocalDirectoryPanel />);
     expect(await screen.findByText("Google Business Profile")).toBeInTheDocument();
+    // Wait for the stored check itself. The registry renders a card for EVERY
+    // source (GBP and Justdial alike) as "unchecked" before getLocalCheck
+    // resolves, so waiting on a source name proves nothing; under CI load the
+    // Mismatches filter then ran over unchecked cards and emptied the list.
+    // LD-02 exists only in the stored check.
+    await screen.findByText("LD-02");
 
     // Filter by Mismatches
     const mismatchTab = screen.getByRole("button", { name: /Mismatches/ });
     fireEvent.click(mismatchTab);
 
     // Justdial has match_score: 55, mismatched: ["phone"] -> mismatch
-    expect(screen.getAllByText("Justdial").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Justdial")).length).toBeGreaterThan(0);
     // GBP has match_score: 100, mismatched: [] -> match, so filtered out
     expect(screen.queryByText("Google Business Profile")).toBeNull();
 

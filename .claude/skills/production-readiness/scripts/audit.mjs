@@ -285,24 +285,22 @@ function checkScreenshots() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Check 5 — Version coherence (WARN)
+// Check 5 — No product version numbers on public surfaces (WARN)
 // ─────────────────────────────────────────────────────────────────────────────
+// Decision D22a (docs/ENGAGEMENT-AND-WORKFLOWS-UX-PLAN.md §22): release numbers
+// are no longer shown to visitors — they read as a mystery and went stale the
+// day after a release. This used to check the OPPOSITE (that the changelog's
+// VERSION appeared in the docs). `/api/v1` is an API path, not a product
+// version, and does not match. scripts/no-version-strings.test.mjs enforces the
+// same rule across every public page; this is the release-time reminder.
 function checkVersion() {
-  let version = null;
-  try {
-    const m = read(CONFIG.changelogSource).match(/const\s+VERSION\s*=\s*["'`]([^"'`]+)/);
-    version = m && m[1];
-  } catch { /* ignore */ }
-  if (!version) {
-    record("Version coherence", "WARN", "Could not read VERSION from the changelog.");
-    return;
-  }
-  const needle = version.toLowerCase();
-  const inDocs = CONFIG.helpMarkdown.some((p) => existsSync(abs(p)) && read(p).toLowerCase().includes(needle));
-  record("Version coherence", inDocs ? "PASS" : "WARN",
-    inDocs
-      ? `Changelog VERSION ${version} is referenced in the public docs.`
-      : `Changelog VERSION ${version} is not referenced in the public docs/help — confirm the release version is consistent everywhere.`);
+  const pattern = /(?<![\w.])V\d+\.\d+/;
+  const files = [CONFIG.changelogSource, ...CONFIG.helpMarkdown].filter((p) => existsSync(abs(p)));
+  const hits = files.filter((p) => pattern.test(read(p)));
+  record("No public version numbers", hits.length ? "WARN" : "PASS",
+    hits.length
+      ? `A product version string appears in: ${hits.join(", ")} — remove it (D22a).`
+      : "No product version number appears in the changelog or the public docs (D22a).");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

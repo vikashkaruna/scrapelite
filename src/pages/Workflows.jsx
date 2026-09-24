@@ -16,13 +16,17 @@ import { SEVERITY, STAGES, nextStep, labelForTrigger } from "../lib/workflows/wo
 import InlineFix from "../components/workflows/InlineFix.jsx";
 import TracePanel from "../components/workflows/TracePanel.jsx";
 import { getWorkflowGraph } from "../lib/workflows/workflowClient.js";
-import { updateRule, deleteRule } from "../lib/rules/rulesClient.js";
+import { updateRule, deleteRule, unlinkSource } from "../lib/rules/rulesClient.js";
+import BusyIndicator from "../components/BusyIndicator.jsx";
+import { useBusy } from "../hooks/useBusy.js";
 import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
 
+// `starter` is the template that fills an empty building block — the hub's
+// empty states point at a template rather than a blank form (plan §18).
 const STAGE_META = {
-  lists: { title: "Account lists", icon: "list", blurb: "Who you care about", href: "/lists" },
-  watchlists: { title: "Competitor watchlists", icon: "eye", blurb: "What to watch", href: "/watchlists" },
-  rules: { title: "Signal rules", icon: "zap", blurb: "What happens next", href: "/rules" },
+  lists: { title: "Account lists", icon: "list", blurb: "Who you care about", href: "/lists", starter: { key: "icp_list_to_crm", label: "Start from “ICP list to CRM”" } },
+  watchlists: { title: "Competitor watchlists", icon: "eye", blurb: "What to watch", href: "/watchlists", starter: { key: "competitor_change_monitor", label: "Start from “Competitor change monitor”" } },
+  rules: { title: "Signal rules", icon: "zap", blurb: "What happens next", href: "/rules", starter: { key: "price_change_slack_alert", label: "Start from “Price-change alert to Slack”" } },
 };
 
 const SEV_META = {
@@ -39,8 +43,8 @@ class WorkflowsErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="wf-stage" style={{ margin: "24px 0", borderLeft: "3px solid var(--danger, #ef4444)", padding: "16px 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--danger, #ef4444)", marginBottom: 8 }}>
+        <div className="wf-stage" style={{ margin: "24px 0", borderLeft: "3px solid var(--danger)", padding: "16px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--danger)", marginBottom: 8 }}>
             <Icon name="alert-circle" size={18} />
             <strong style={{ fontSize: "14px" }}>Workflow view could not be rendered</strong>
           </div>
@@ -237,8 +241,8 @@ function DeleteWorkflowModal({ pipeline, onClose, onDeleted }) {
   return (
     <div className="modal-backdrop" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r, 14px)", maxWidth: 460, width: "100%", padding: 24, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.2)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--danger, #dc2626)", marginBottom: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--danger-soft, #fee2e2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--danger)", marginBottom: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--danger-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Icon name="alert-triangle" size={18} />
           </div>
           <h3 style={{ margin: 0, fontSize: "16px" }}>Delete this rule?</h3>
@@ -251,7 +255,7 @@ function DeleteWorkflowModal({ pipeline, onClose, onDeleted }) {
         </p>
 
         <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r, 8px)", padding: "10px 12px", fontSize: "12px", color: "var(--text-2)", marginBottom: 16 }}>
-          <Icon name="shield-check" size={14} style={{ color: "var(--success, #10b981)", verticalAlign: "-2px", marginRight: 6 }} />
+          <Icon name="shield-check" size={14} style={{ color: "var(--success)", verticalAlign: "-2px", marginRight: 6 }} />
           <strong>Audit Trail Preserved:</strong> All past execution logs, run traces, and historical deliveries remain archived in your audit records.
         </div>
 
@@ -261,7 +265,7 @@ function DeleteWorkflowModal({ pipeline, onClose, onDeleted }) {
           <button type="button" className="btn btn-secondary btn-sm" onClick={onClose} disabled={deleting}>
             Cancel
           </button>
-          <button type="button" className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting} style={{ background: "var(--danger, #dc2626)", color: "#fff" }}>
+          <button type="button" className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting} style={{ background: "var(--danger)", color: "#fff" }}>
             {deleting ? "Deleting…" : "Delete rule"}
           </button>
         </div>
@@ -315,7 +319,19 @@ export default function Workflows() {
 
   const [editingPipeline, setEditingPipeline] = useState(null);
   const [deletingPipeline, setDeletingPipeline] = useState(null);
+  const { busy, label: busyLabel, run } = useBusy();
+  const [actionError, setActionError] = useState(null);
 
+  const reload = () => setReloadKey((k) => k + 1);
+  const act = (text, fn) => run(text, async () => {
+    setActionError(null);
+    try { await fn(); reload(); } catch (e) { setActionError(e.message); }
+  });
+  // Resuming a rule that lost its last source is refused by the server with
+  // "link at least one source first" — shown as-is, because it says what to do.
+  const togglePause = (p) => act(p.status === "paused" ? "Resuming rule…" : "Pausing rule…",
+    () => updateRule(p.rule_id, { status: p.status === "paused" ? "active" : "paused" }));
+  const unlink = (p, src) => act(`Unlinking ${src.name}…`, () => unlinkSource(p.rule_id, src.type, src.id));
   useEffect(() => {
     if (authLoading) return;
     if (!user) { setLoading(false); return; }
@@ -352,6 +368,7 @@ export default function Workflows() {
   return (
     <div className="page container wf-page">
       <WorkflowsErrorBoundary>
+        <BusyIndicator label={busyLabel} />
         <header className="wf-head">
         <h1>Workflow hub</h1>
         <p>
@@ -363,21 +380,15 @@ export default function Workflows() {
 
       {loading && <p className="wf-muted">Assembling your workflow…</p>}
       {error && <p className="wf-error"><Icon name="alert-circle" size={14} /> {error}</p>}
+      {actionError && <p className="wf-error" role="alert"><Icon name="alert-circle" size={14} /> {actionError}</p>}
 
       {graph && (
         <>
-          {/* ── START HERE ────────────────────────────────────────────────
-              ONE step, not a checklist. A user landing on an empty pipeline
-              with five equally-weighted suggestions does none of them; the
-              order in nextStep() is the order the pipeline runs, because a
-              rule with nothing upstream is not progress, it is the unreachable
-              rule this screen exists to warn about. */}
-          <GuidePanel step={nextStep(graph)} />
 
           {/* ── WHAT IS BROKEN ────────────────────────────────────────────── */}
           <section className="wf-issues" id="wf-issues">
             <h2>
-              What needs your attention
+              Needs your attention
               {graph.counts.blocking > 0 && <span className="wf-badge wf-sev-blocking">{graph.counts.blocking} blocking</span>}
               {graph.counts.warning > 0 && <span className="wf-badge wf-sev-warning">{graph.counts.warning}</span>}
             </h2>
@@ -415,8 +426,17 @@ export default function Workflows() {
             )}
           </section>
 
+          {/* ── START HERE ────────────────────────────────────────────────
+              ONE step, not a checklist. A user landing on an empty pipeline
+              with five equally-weighted suggestions does none of them; the
+              order in nextStep() is the order the pipeline runs, because a
+              rule with nothing upstream is not progress, it is the unreachable
+              rule this screen exists to warn about. */}
+          <GuidePanel step={nextStep(graph)} />
+
           {/* ── THE PIPELINE ──────────────────────────────────────────────── */}
-          <section className="wf-stages">
+          <h2 className="wf-section-h">Building blocks</h2>
+          <section className="wf-stages" aria-label="Building blocks">
             {STAGES.map((stage, idx) => {
               const meta = STAGE_META[stage];
               const nodes = graph.nodes.filter((n) => n.stage === stage);
@@ -425,13 +445,15 @@ export default function Workflows() {
                   <div className="wf-stage-head">
                     <Icon name={meta.icon} size={15} />
                     <div>
-                      <h3>{meta.title}</h3>
+                      <h3>{meta.title} <span className="wf-count">{nodes.length}</span></h3>
                       <span className="wf-stage-blurb">{meta.blurb}</span>
                     </div>
                   </div>
 
                   {nodes.length === 0 ? (
-                    <p className="wf-stage-empty">Nothing here yet.</p>
+                    <p className="wf-stage-empty">
+                      Nothing here yet. <Link to={`/templates?key=${meta.starter.key}`}>{meta.starter.label}</Link>
+                    </p>
                   ) : (
                     <ul className="wf-node-list">
                       {nodes.map((n) => (
@@ -457,9 +479,20 @@ export default function Workflows() {
             })}
           </section>
 
+          {/* Engagement sits beside the three pipeline stages: it is where a
+              qualified account or a competitor change can become outreach. */}
+          <div className="wf-engage-block">
+            <Icon name="send" size={15} />
+            <div>
+              <strong>Engagement <span className="hdr-signal-beta">Beta</span></strong>
+              <span className="wf-stage-blurb">Turn a qualified account into consented outreach.</span>
+            </div>
+            <Link to="/engagement" className="wf-stage-link">Open Engagement <Icon name="arrow-right" size={12} /></Link>
+          </div>
+
           {/* ── WORKFLOW TEMPLATES LIBRARY LINK ─────────────────────────────── */}
           <div style={{
-            background: "var(--surface-2, #f9fafb)",
+            background: "var(--surface-2)",
             border: "1px solid var(--border)",
             borderRadius: "var(--r, 14px)",
             padding: "16px 20px",
@@ -476,8 +509,8 @@ export default function Workflows() {
                 width: 38,
                 height: 38,
                 borderRadius: "var(--r, 10px)",
-                background: "var(--accent-soft, #eef2ff)",
-                color: "var(--accent, #4f46e5)",
+                background: "var(--accent-soft)",
+                color: "var(--accent)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -502,13 +535,13 @@ export default function Workflows() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
               <div>
                 <h2 style={{ fontSize: "1.1rem", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                  <Icon name="git-merge" size={16} /> Saved Workflows &amp; Pipelines
+                  <Icon name="git-merge" size={16} /> Your pipelines
                   <span className="wf-badge" style={{ background: "var(--surface-2)", color: "var(--text-1)", border: "1px solid var(--border)" }}>
                     {graph.pipelines?.length || 0}
                   </span>
                 </h2>
                 <p style={{ margin: "4px 0 0", fontSize: "13px", color: "var(--text-2)" }}>
-                  End-to-end automated pipelines connecting sources, rules, and actions.
+                  Each is one rule: the sources it hears → its filter → where it sends.
                 </p>
               </div>
               <Link to="/rules?new=1" className="btn btn-secondary btn-sm">
@@ -518,9 +551,10 @@ export default function Workflows() {
 
             {(!graph.pipelines || graph.pipelines.length === 0) ? (
               <div className="wf-stage" style={{ textAlign: "center", padding: "28px 16px" }}>
-                <Icon name="git-branch" size={24} style={{ color: "var(--text-muted, #9ca3af)", margin: "0 auto 8px" }} />
+                <Icon name="git-branch" size={24} style={{ color: "var(--text-muted)", margin: "0 auto 8px" }} />
                 <p style={{ margin: 0, fontSize: "13px", color: "var(--text-2)" }}>
-                  No automated pipelines configured yet. Create a signal rule to connect your lists or watchlists to actions.
+                  No pipelines yet. A pipeline starts with a signal rule.{" "}
+                  <Link to="/templates?key=price_change_slack_alert">Start from a template</Link> or <Link to="/rules?new=1">create a rule</Link>.
                 </p>
               </div>
             ) : (
@@ -537,7 +571,7 @@ export default function Workflows() {
                     ? "wf-badge wf-sev-blocking"
                     : "wf-badge wf-sev-warning";
                   const badgeStyle = isHealthy
-                    ? { background: "var(--success-soft, #d1fae5)", color: "var(--success, #059669)" }
+                    ? { background: "var(--success-soft)", color: "var(--success)" }
                     : {};
 
                   return (
@@ -549,12 +583,12 @@ export default function Workflows() {
                         border: "1px solid var(--border)",
                         borderLeft: `4px solid ${
                           isHealthy
-                            ? "var(--success, #10b981)"
+                            ? "var(--success)"
                             : isPaused
-                            ? "var(--border, #9ca3af)"
+                            ? "var(--border)"
                             : isDisconnected
-                            ? "var(--danger, #ef4444)"
-                            : "var(--warning, #f59e0b)"
+                            ? "var(--danger)"
+                            : "var(--warning)"
                         }`,
                         borderRadius: "var(--r, 14px)",
                         padding: "16px 20px",
@@ -594,6 +628,16 @@ export default function Workflows() {
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
+                            disabled={busy}
+                            onClick={() => togglePause(p)}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px", fontSize: "12px" }}
+                          >
+                            <Icon name={p.status === "paused" ? "play" : "pause"} size={13} /> {p.status === "paused" ? "Resume" : "Pause"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy}
                             onClick={() => setEditingPipeline(p)}
                             style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px", fontSize: "12px" }}
                           >
@@ -603,7 +647,7 @@ export default function Workflows() {
                             type="button"
                             className="btn btn-secondary btn-sm"
                             onClick={() => setDeletingPipeline(p)}
-                            style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px", fontSize: "12px", color: "var(--danger, #dc2626)" }}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px", fontSize: "12px", color: "var(--danger)" }}
                             title="Delete workflow"
                           >
                             <Icon name="trash-2" size={13} /> Delete
@@ -615,7 +659,7 @@ export default function Workflows() {
                       {/* End-to-End Steps Flow */}
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12, alignItems: "stretch" }}>
                         {/* Step 1: Upstream Source */}
-                        <div style={{ background: "var(--surface-2, #f9fafb)", border: "1px solid var(--border)", borderRadius: "var(--r, 10px)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r, 10px)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "12px", color: "var(--text-2)", fontWeight: 600 }}>
                             <Icon name={p.trigger_source === "watchlist" ? "eye" : "list"} size={14} style={{ color: "var(--accent)" }} />
                             Step 1: Source ({p.upstream_stage})
@@ -625,7 +669,13 @@ export default function Workflows() {
                           </div>
                           {p.upstream_items && p.upstream_items.length > 0 && (
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
-                              {p.upstream_items.slice(0, 3).map((item) => (
+                              {p.source_scope === "selected" && p.upstream_items.map((item) => (
+                                <span key={item.id} className="wf-chip">
+                                  <Link to={item.href} style={{ color: "inherit", textDecoration: "none" }}>{item.name}</Link>
+                                  <button type="button" className="wf-chip-x" disabled={busy} aria-label={`Unlink ${item.name} from ${p.name}`} onClick={() => unlink(p, item)}>×</button>
+                                </span>
+                              ))}
+                              {p.source_scope !== "selected" && p.upstream_items.slice(0, 3).map((item) => (
                                 <Link
                                   key={item.id}
                                   to={item.href}
@@ -647,7 +697,7 @@ export default function Workflows() {
                                   <span>{item.name}</span>
                                 </Link>
                               ))}
-                              {p.upstream_items.length > 3 && (
+                              {p.source_scope !== "selected" && p.upstream_items.length > 3 && (
                                 <span style={{ fontSize: "11px", color: "var(--text-3)", alignSelf: "center" }}>
                                   +{p.upstream_items.length - 3} more
                                 </span>
@@ -657,7 +707,7 @@ export default function Workflows() {
                         </div>
 
                         {/* Step 2: Trigger & Filter */}
-                        <div style={{ background: "var(--surface-2, #f9fafb)", border: "1px solid var(--border)", borderRadius: "var(--r, 10px)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r, 10px)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "12px", color: "var(--text-2)", fontWeight: 600 }}>
                             <Icon name="filter" size={14} style={{ color: "var(--accent)" }} />
                             Step 2: Signal Filter
@@ -684,7 +734,7 @@ export default function Workflows() {
                         </div>
 
                         {/* Step 3: Destination Action */}
-                        <div style={{ background: "var(--surface-2, #f9fafb)", border: "1px solid var(--border)", borderRadius: "var(--r, 10px)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r, 10px)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "12px", color: "var(--text-2)", fontWeight: 600 }}>
                             <Icon name="zap" size={14} style={{ color: "var(--accent)" }} />
                             Step 3: Action Delivery
@@ -700,7 +750,7 @@ export default function Workflows() {
                           <div style={{ fontSize: "11px", color: "var(--text-2)", marginTop: "auto", paddingTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <span>{p.execution_count} execution{p.execution_count === 1 ? "" : "s"}</span>
                             {p.last_execution && (
-                              <span style={{ color: p.last_execution.status === "success" || p.last_execution.status === "delivered" ? "var(--success, #059669)" : "var(--danger, #dc2626)", fontWeight: 500 }}>
+                              <span style={{ color: p.last_execution.status === "success" || p.last_execution.status === "delivered" ? "var(--success)" : "var(--danger)", fontWeight: 500 }}>
                                 ● {p.last_execution.status} ({p.last_execution.latency_ms || 0}ms)
                               </span>
                             )}
@@ -714,11 +764,28 @@ export default function Workflows() {
             )}
           </section>
 
+          {/* ── NOT CONNECTED YET ─────────────────────────────────────────── */}
+          {graph.unconnected?.length > 0 && (
+            <section className="wf-unconnected" aria-label="Not connected yet">
+              <h2 className="wf-section-h">Not connected yet</h2>
+              <p className="wf-stage-blurb">No active rule hears these, so a change here goes nowhere.</p>
+              {graph.unconnected.map((u) => (
+                <div key={u.trigger_source} className="wf-unconnected-row">
+                  <span className="wf-unconnected-label">{u.label}</span>
+                  <span className="wf-unconnected-items">
+                    {u.sources.map((src) => <Link key={src.id} to={src.href} className="wf-chip">{src.name}</Link>)}
+                  </span>
+                  <Link to={u.fix.href} className="btn btn-primary btn-sm"><Icon name="plus" size={13} /> Connect a rule</Link>
+                </div>
+              ))}
+            </section>
+          )}
+
           {/* ── RECENT EXECUTIONS ─────────────────────────────────────────── */}
           {graph.recent_executions && graph.recent_executions.length > 0 && (
             <section className="wf-executions" style={{ marginTop: 28 }}>
               <h2 style={{ fontSize: "1.1rem", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 8 }}>
-                <Icon name="activity" size={16} /> Recent Signal Executions
+                <Icon name="activity" size={16} /> Recent runs
               </h2>
               <div style={{ overflowX: "auto" }}>
                 <table className="dash-table" style={{ width: "100%", fontSize: "12px" }}>
@@ -751,7 +818,7 @@ export default function Workflows() {
                               }`}
                               style={
                                 ex.status === "success" || ex.status === "delivered"
-                                  ? { background: "var(--success-soft, #d1fae5)", color: "var(--success, #059669)" }
+                                  ? { background: "var(--success-soft)", color: "var(--success)" }
                                   : {}
                               }
                             >
@@ -761,7 +828,7 @@ export default function Workflows() {
                           <td style={{ fontVariantNumeric: "tabular-nums" }}>
                             {ex.latency_ms ? `${ex.latency_ms}ms` : "—"}
                           </td>
-                          <td style={{ color: ex.error ? "var(--danger, #dc2626)" : "var(--text-2)", maxWidth: "300px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <td style={{ color: ex.error ? "var(--danger)" : "var(--text-2)", maxWidth: "300px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {ex.error || "Dispatched successfully"}
                           </td>
                         </tr>
@@ -779,8 +846,8 @@ export default function Workflows() {
           <TracePanel rules={graph.nodes.filter((n) => n.stage === "rules")} />
 
           <p className="wf-foot">
-            Rules listen for a <em>kind</em> of event, not a specific list or watchlist — so a rule
-            watching for competitor changes fires for all of them.
+            A rule hears every list or watchlist of its kind unless you choose specific ones. A rule
+            limited to chosen sources is paused if its last one is removed — never widened to all.
           </p>
         </>
       )}

@@ -1,7 +1,8 @@
 # Engagement & Workflows — UX improvement plan (for approval)
 
-> **Date:** 2026-09-24 · **Based on:** `staging` @ `949bc452` (after PR #221) · **Status:** ✅ **Phases A and B built**
-> (branch `feat/engagement-ux-phase-ab`, PR #222); **Phase C (6b, 7, 8, 16–18) and Phase D (19–22) are planned, with decisions locked; nothing is built until the owner says build.** Each item says what was found in the code, what is proposed, what needs your decision,
+> **Date:** 2026-09-24 · **Based on:** `staging` @ `949bc452` (after PR #221) · **Status:** ✅ **All phases built.**
+> A and B (PR #222), D1 (PR #227) and C (PR #231) are merged to `staging`; **D2 (item 22) is built on
+> `feat/phase-d2-public-pages`, PR to `staging`** (2026-09-25). Each item says what was found in the code, what is proposed, what needs your decision,
 > and how it will be tested.
 
 **Legend:** 🟢 small (hours) · 🟡 medium (≈1 day) · 🔴 large (multi-day, schema change)
@@ -22,19 +23,30 @@
 | 12 | ✅ Engagement docs brought up to date with everything shipped | 🟢 | A |
 | 2 | ✅ Smart import: paste or upload CSV / Excel, row-by-row health, import healthy rows | 🟡 | B |
 | 5 | ✅ Reuse the account Brand Kit in Engagement (Business / Agency) | 🟡 | B |
-| 6b | Real links between lists / watchlists and rules; safe delete and unlink | 🔴 | C |
-| 7 | Lists, Watchlists, Rules: busy indicator + UX rebuild | 🔴 | C |
-| 8 | Workflows hub: proper name, wiring and layout | 🟡 | C |
-| 16 | Home "Common jobs": 12 tiles (was 7), adding Discover / Compete / Engage / Connect / Templates jobs | 🟢 | C |
-| 17 | Home "From signal to next step": DatIQ Engage (BETA) → Engagement, DatIQ Compete → Workflow hub; hero card gains an Engage tile (Discover · Connect · Compete · Engage) | 🟢 | C |
-| 18 | `/templates` becomes the template hub: 9 new templates that run or open the right module | 🟡 | C |
+| 6b | ✅ Real links between lists / watchlists and rules; safe delete and unlink | 🔴 | C |
+| 7 | ✅ Lists, Watchlists, Rules: busy indicator + UX rebuild | 🔴 | C |
+| 8 | ✅ Workflows hub: proper name, wiring and layout | 🟡 | C |
+| 16 | ✅ Home "Common jobs": 12 tiles (was 7), adding Discover / Compete / Engage / Connect / Templates jobs | 🟢 | C |
+| 17 | ✅ Home "From signal to next step": DatIQ Engage (BETA) → Engagement, DatIQ Compete → Workflow hub; hero card gains an Engage tile (Discover · Connect · Compete · Engage) | 🟢 | C |
+| 18 | ✅ `/templates` becomes the template hub: 9 new templates that run or open the right module | 🟡 | C |
 | 19 | ✅ Eight roles replace the seven personas (existing ids kept where a role carries forward) | 🟡 | D1 |
 | 20 | ✅ Onboarding face-lift: what each role can do, modules, outcome, first step | 🟡 | D1 |
 | 21 | ✅ New roles applied everywhere personas are used (Templates filter, Home, Gallery, packs…) | 🟡 | D1 |
-| 22 | Public pages refreshed (compare, use-cases, blog, changelog, help, FAQ); version numbers removed | 🟡 | D |
+| 22 | ✅ Public pages refreshed (compare, use-cases, blog, changelog, help, FAQ); version numbers removed | 🟡 | D |
 
 **Phase A** (now including 10–12) is safe to ship on its own in one PR. **Phase B** adds one small dependency. **Phase C** needs
-migration **`0085`** (`0083` went to the account Brand Kit in Phase B and `0084` to the role ids in D1) and changes how rules match events, so it gets its own PR and staging pass.
+migration **`0085`** (`0083` went to the account Brand Kit in Phase B and `0084` to the role ids in D1) and changes how rules match events, so it gets its own PR and staging pass. **Phase C shipped 2026-09-24** — apply `0085` per [DB-MIGRATION-RUNBOOK §4k](DB-MIGRATION-RUNBOOK.md) before relying on scoped rules; the next migration number is **`0086`**.
+**Phase D2 shipped 2026-09-25** (item 22; no migration). What differed from the plan, and why:
+- **No file import on Account lists was documented**, because none exists — lists take pasted domains or names.
+  File import (CSV/TSV/TXT/Excel) is Engagement prospects only, and the copy says so.
+- **The account menu still says "Switch persona"** (pinned by `TopBar.integration.test.jsx`, decision Q8), so the
+  new copy uses that label rather than "Switch role".
+- **The Workflow hub help section has no screenshot**: `/workflows` needs a signed-in session and none is created
+  from an agent. The template hub has one (`12-templates.png`).
+- **The `/vs/*` static pages still quoted retired prices** ($4.80, $44.40, $106.80, "10 extractions") — corrected,
+  and `publicClaimsCopy.test.js` now refuses them.
+- Help renumbering: template hub → 14, Workflow hub → 15, Choosing your role → 18; ten pages moved, each 301'd,
+  and every older redirect repointed so no chain is two hops.
 
 **Decisions** are collected in §13 — **all locked by the owner on 2026-09-24.** Nothing in Phase C or D is built until the owner says build.
 
@@ -181,8 +193,10 @@ so "this rule is for these two watchlists" cannot be expressed, and deleting a w
 List events already carry `list_id`; **watchlist events don't carry the watchlist ID** yet.
 
 **Proposal**
-- **Migration `0085`:** `signal_rule_sources (rule_id, source_type 'list'|'watchlist', source_id)`, unique per
-  triple, cascading with the rule, RLS service-only (the `0044` pattern).
+- **Migration `0085`:** `signal_rule_sources (rule_id, list_id | watchlist_id)` — built as **two real foreign
+  keys, exactly one set** rather than a `(source_type, source_id)` pair Postgres could not check; unique per
+  link, cascading with the rule and the source, RLS service-only (the `0044` pattern). As built: a rule that
+  listens to all never writes the new column, so ordinary rules keep saving before `0085` is applied.
 - **Scope per rule:** "All watchlists" (today's behaviour, and what existing rules keep) **or** "These watchlists: …".
 - **Matching:** the rule dispatcher honours the scope; the watchlist monitor adds `watchlist_id` to its event.
   ⚠️ **A rule never widens silently:** if its last linked source is deleted or unlinked, it **pauses** with

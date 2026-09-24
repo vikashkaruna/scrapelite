@@ -5,6 +5,7 @@
 //   • Pause / resume, run-now (single), delete, and edit for every schedule
 //   • Expandable detail showing all parameters + lifecycle (last run, next run, alive-until)
 import { useState, useEffect, useCallback } from "react";
+import TemplateBacklink from "../components/TemplateBacklink.jsx";
 import { useNavigate, useLocation } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -335,6 +336,7 @@ export default function Schedules() {
   return (
     <div className="page fade">
       <div className="container" style={{ paddingTop: 40, paddingBottom: 72, maxWidth: 920 }}>
+        <TemplateBacklink />
         <div className="sch-hero">
           <div className="eyebrow"><Icon name="repeat" size={13} /> Scheduler</div>
           <div className="sch-hero-row">

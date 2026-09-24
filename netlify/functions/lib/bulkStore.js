@@ -4,6 +4,7 @@
 // enrichment_jobs, and review_queue.
 
 import { createClient } from "@supabase/supabase-js";
+import { rulesUsingSource, unlinkAllFromSource, inUseConflict } from "./ruleSources.js";
 import { enrichDomain, fieldsNeedingReview } from "./bulkEnrich.js";
 import { meterContext, flush as flushMeter, affords } from "./creditMeter.js";
 import { dispatchSignal } from "./signalDispatch.js";
@@ -878,7 +879,7 @@ export async function updateList(userId, listId, { name, description }, env = pr
   return { ok: true, list: data };
 }
 
-export async function deleteList(userId, listId, env = process.env) {
+export async function deleteList(userId, listId, env = process.env, { unlink = false } = {}) {
   if (ownerless(userId)) return NO_OWNER;
   const db = serviceDb(env);
 
@@ -893,10 +894,27 @@ export async function deleteList(userId, listId, env = process.env) {
     return { ok: true };
   }
 
+  // Ownership FIRST. The records delete below is keyed on list_id alone, so
+  // without this check any signed-in caller holding another tenant's list id
+  // could wipe that list's records. 404, never 403 — no confirming ids exist.
+  if (!(await assertListOwner(listId, userId, env))) {
+    return { ok: false, reason: "List not found", status: 404 };
+  }
+
+  // A list a rule listens to is not deleted silently (0085): the caller
+  // either unlinks first or asks for "unlink and delete". Unlinking a rule's
+  // last source pauses it — it never widens to every list.
+  const usedBy = await rulesUsingSource(db, userId, "list", listId);
+  if (usedBy.length && !unlink) return inUseConflict("list", usedBy);
+  if (usedBy.length) {
+    const cleared = await unlinkAllFromSource(db, userId, "list", listId);
+    if (!cleared.ok) return { ok: false, reason: "Could not unlink the rules using this list." };
+  }
+
   await db.from("list_records").delete().eq("list_id", listId);
   const { error } = await db.from("lists").delete().eq("id", listId).eq("user_id", userId);
   if (error) return { ok: false, reason: error.message };
-  return { ok: true };
+  return { ok: true, unlinked: usedBy.map((r) => ({ id: r.id, name: r.name })) };
 }
 
 export async function updateRecord(userId, recordId, updates = {}, env = process.env) {

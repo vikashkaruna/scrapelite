@@ -11,6 +11,12 @@ vi.mock("../components/AuthProvider.jsx", () => ({
   }),
 }));
 
+// "Used by rules" reads the rules API; keep it quiet here.
+vi.mock("../lib/rules/rulesClient.js", () => ({
+  rulesForSource: vi.fn().mockResolvedValue([]),
+  unlinkSource: vi.fn(),
+}));
+
 vi.mock("../components/Toast.jsx", () => ({
   useToast: () => vi.fn(),
 }));
@@ -121,7 +127,36 @@ describe("Watchlists Page", () => {
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
-      expect(watchlistApi.deleteWatchlist).toHaveBeenCalledWith("wl_1");
+      // Unlink is always explicit: a plain delete never silently unlinks rules.
+      expect(watchlistApi.deleteWatchlist).toHaveBeenCalledWith("wl_1", { unlink: false });
+    });
+  });
+
+  // 0085: a watchlist that rules still listen to is refused with 409 in_use.
+  // The page must say which rules, and offer "Unlink and delete" — never a
+  // bare error toast, and never an unlink the user did not ask for.
+  it("explains a delete refused because rules use the watchlist, then unlinks on request", async () => {
+    const inUse = Object.assign(new Error("in use"), { status: 409, code: "in_use", rules: [{ id: "r1", name: "Price alert" }] });
+    watchlistApi.deleteWatchlist.mockRejectedValueOnce(inUse).mockResolvedValueOnce({ ok: true });
+
+    render(
+      <MemoryRouter>
+        <Watchlists />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.getByText("Core Competitors")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTitle("Delete watchlist"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Watchlist" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Rules still use this watchlist");
+    expect(dialog).toHaveTextContent("Price alert");
+    expect(watchlistApi.deleteWatchlist).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unlink and delete" }));
+    await waitFor(() => {
+      expect(watchlistApi.deleteWatchlist).toHaveBeenLastCalledWith("wl_1", { unlink: true });
     });
   });
 });

@@ -86,12 +86,17 @@ function renderHome() {
 }
 
 describe("Stage 1 — Home: Q3 outcome tiles", () => {
-  it("renders the 7 outcome tiles above the hero", () => {
+  it("renders the 12 Common-jobs tiles (7 fill + 5 open) above the hero", () => {
     renderHome();
     expect(screen.getByRole("list", { name: /Common jobs to be done/i })).toBeInTheDocument();
     // Restrict to outcome tiles (use the .outcome-tile class)
     const tiles = document.querySelectorAll(".outcome-tile");
-    expect(tiles.length).toBe(7);
+    expect(tiles.length).toBe(12);
+    // A signed-out visitor is not in the Engagement beta, so gets the pricing watch.
+    expect(document.querySelectorAll(".outcome-tile-open")).toHaveLength(5);
+    const titlesAll = Array.from(tiles).map((t) => t.textContent);
+    expect(titlesAll.some((t) => /Weekly pricing watch/.test(t))).toBe(true);
+    expect(titlesAll.some((t) => /Start an outreach campaign/.test(t))).toBe(false);
     // Spot-check a couple of titles within outcome tiles
     const titles = Array.from(tiles).map((t) => t.textContent);
     expect(titles.some((t) => /Build a lead list/i.test(t))).toBe(true);

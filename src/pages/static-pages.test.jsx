@@ -5,7 +5,7 @@
 //   - F-11: About renders founder block, no "powered by DatIQ" copy bug
 //   - F-13: Privacy renders DPDP section + datiq.app URLs
 //   - F-14: Terms renders Arbitration Act + Bengaluru
-//   - F-15: UseCases hub renders 4 cards + subpage renders
+//   - F-15: UseCases hub renders one section per role + subpages render
 //   - F-16: /vs/browse-ai + /vs/clay H1s render
 //   - F-17: Integrations renders 12 cards
 
@@ -148,24 +148,39 @@ describe("F-14 — Terms page", () => {
 });
 
 describe("F-15 — UseCases hub", () => {
-  it("renders all 9 use-case cards, covering every persona", async () => {
+  // Plan §22: the hub is grouped by the eight roles. Derived from PERSONAS,
+  // so a new role fails here until the hub has a section for it.
+  it("has one section per offered role, each linking to a real use-case page", async () => {
+    const { PERSONAS } = await import("../lib/personaConfig.js");
+    const { ROLE_SECTIONS } = await import("./UseCases.jsx");
+    const { REACT_OWNED } = await import("../../scripts/site-routes.mjs");
+    const routes = new Set(REACT_OWNED.map((r) => r.path));
+    expect(Object.keys(ROLE_SECTIONS).sort()).toEqual(PERSONAS.map((p) => p.id).sort());
+    for (const sec of Object.values(ROLE_SECTIONS)) {
+      expect(sec.pages.length).toBeGreaterThan(0);
+      for (const slug of sec.pages) expect(routes.has(`/use-cases/${slug}`)).toBe(true);
+    }
+
     const { container } = render(<Tree path="/use-cases"><UseCases /></Tree>);
     await act(async () => { await Promise.resolve(); });
-    const cards = container.querySelectorAll(".uc-hub-card");
-    expect(cards.length).toBe(9);
-    // Scope the text assertions to the hub-grid container.
-    const grid = container.querySelector(".uc-hub-grid");
-    expect(grid).not.toBeNull();
-    const gridText = grid.textContent;
-    // The four original cards, plus the five added for the intelligence-workflow
-    // release. Named individually rather than counted alone, so dropping one and
-    // adding another somewhere else cannot keep this test green.
-    for (const name of [
-      /Lead generation/i, /Competitor research/i, /SEO audit/i, /Market research/i,
-      /Account intelligence/i, /Competitive monitoring/i, /AI visibility/i,
-      /Recruiting research/i, /Investor diligence/i,
-    ]) {
-      expect(gridText).toMatch(name);
+    expect(container.querySelectorAll(".uc-hub-card").length).toBe(PERSONAS.length);
+    for (const p of PERSONAS) {
+      expect(screen.getByRole("heading", { level: 2, name: p.label })).toBeInTheDocument();
+    }
+    // The three pages added for roles that had none, and recruiting kept.
+    const text = container.textContent;
+    for (const name of [/RevOps/, /Product Marketing/, /Brand & CRO/, /Recruiting research/i, /Investor diligence/i]) {
+      expect(text).toMatch(name);
+    }
+  });
+
+  it("each new role page renders an H1", async () => {
+    for (const mod of ["./UseCaseRevOps.jsx", "./UseCaseProductMarketing.jsx", "./UseCaseBrandCro.jsx"]) {
+      const Page = (await import(mod)).default;
+      const { unmount } = render(<Tree path="/use-cases/x"><Page /></Tree>);
+      await act(async () => { await Promise.resolve(); });
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
+      unmount();
     }
   });
 

@@ -218,6 +218,14 @@ try {
     await shot("10-account-billing.png");
   });
 
+  // ── Template hub (public; needs the functions server for the catalogue) ────
+  await safe("12-templates.png", async () => {
+    await go("/templates?filter=all");
+    await page.locator(".template-card, .tpl-card").first().waitFor({ timeout: 8000 }).catch(() => {});
+    await sleep(900);
+    await shot("12-templates.png");
+  });
+
   console.log("All screenshots saved to docs/assets/screenshots/");
 } catch (e) {
   console.error("Capture error:", e.message);

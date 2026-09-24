@@ -28,7 +28,9 @@ test("DatIQ Intelligence preview tiles link to their product surfaces", async ({
   const preview = page.locator(".home-dashboard-reveal");
   await expect(preview.getByRole("link", { name: "Open Discoverability" })).toHaveAttribute("href", "/discoverability");
   await expect(preview.getByRole("link", { name: "Open Integrations" })).toHaveAttribute("href", "/integrations");
-  await expect(preview.getByRole("link", { name: "Open Account Lists" })).toHaveAttribute("href", "/lists");
+  // D17b/c: Compete opens the Workflow hub (was /lists); Engage is a fourth tile.
+  await expect(preview.getByRole("link", { name: "Open the Workflow hub" })).toHaveAttribute("href", "/workflows");
+  await expect(preview.getByRole("link", { name: "Open Engagement (beta)" })).toHaveAttribute("href", "/engagement");
 });
 
 test("home composer (URL textarea) is visible", async ({ page }) => {
@@ -119,4 +121,18 @@ test("TopBar has no Batch nav item — Extract is the only entry point", async (
   // item must not come back, or there are two doors to one thing again.
   const nav = page.locator(".topbar-desktop-actions .nav-link");
   await expect(nav.filter({ hasText: /^\s*Batch\s*$/i })).toHaveCount(0);
+});
+
+// The chips used to sit in the composer's 760px column, so "Custom…" wrapped to
+// a second row with room to spare on both sides. They span the page content now.
+test("'What do you want to extract?' chips fit one row on a desktop page", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const chips = page.locator(".intent-chips-row .intent-chip");
+  await expect(chips.first()).toBeVisible();
+  const tops = await chips.evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(tops.length).toBeGreaterThanOrEqual(6);
+  expect(new Set(tops).size).toBe(1);
+  // ...and never wider than the page.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);
 });

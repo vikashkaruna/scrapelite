@@ -69,10 +69,10 @@ beforeEach(() => {
 });
 
 describe("Q3 (single-select) — Home outcome tiles", () => {
-  it("renders 7 outcome tiles with the 'Common jobs' label (NOT 'What do you want to extract?')", async () => {
+  it("renders 12 outcome tiles with the 'Common jobs' label (NOT 'What do you want to extract?')", async () => {
     renderHome();
     await waitFor(() => {
-      expect(document.querySelectorAll(".outcome-tile").length).toBe(7);
+      expect(document.querySelectorAll(".outcome-tile").length).toBe(12);
     });
     // The tiles use the dedicated label, not the duplicate intent-chips label.
     expect(document.querySelector(".outcome-tiles-label")?.textContent).toMatch(/Common jobs/i);

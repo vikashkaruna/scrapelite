@@ -161,7 +161,8 @@ describe("F-01 — Home composer", () => {
       const recChips = [...container.querySelectorAll(".intent-chip-recommended")].map((b) => b.textContent.replace("★", "").trim());
       expect(recChips.sort()).toEqual(["Map site", "Page structure"]);
       const recTiles = [...container.querySelectorAll(".outcome-tile-recommended .outcome-tile-title")].map((t) => t.textContent);
-      expect(recTiles).toEqual(["SEO audit"]);
+      // SEO's feature highlight (headings → SEO audit) plus its module tile.
+      expect(recTiles).toEqual(["SEO audit", "AI visibility check"]);
     } finally {
       localStorage.removeItem("datiq.persona");
     }
@@ -198,6 +199,15 @@ describe("F-01 — Home composer", () => {
       .find((module) => module.textContent?.includes("DatIQ Discover"));
     expect(discover).toBeTruthy();
     expect(discover).toHaveTextContent("Run a visibility audit");
+  });
+
+  it("the hero card links Discover, Connect, Compete and Engage (beta), in that order", async () => {
+    const { container } = render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    const tiles = [...container.querySelectorAll(".hdr-signal-tile")];
+    expect(tiles.map((t) => t.querySelector("span").textContent)).toEqual(["Discover", "Connect", "Compete", "Engage"]);
+    expect(tiles.map((t) => t.getAttribute("href"))).toEqual(["/discoverability", "/integrations", "/workflows", "/engagement"]);
+    expect(tiles[3]).toHaveTextContent("Beta");
   });
 
   it("opens the custom extraction prompt from a Preview handoff", async () => {

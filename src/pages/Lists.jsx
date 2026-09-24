@@ -5,6 +5,7 @@
 // review low-confidence extractions, and export qualified account tables.
 
 import { useState, useEffect, useMemo } from "react";
+import TemplateBacklink from "../components/TemplateBacklink.jsx";
 import { useLocation, useNavigate, Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import DomainListInput from "../components/DomainListInput.jsx";
@@ -16,12 +17,21 @@ import { dedupeEntries } from "../lib/bulk/identityModel.js";
 import { evaluateIcp, DEFAULT_THRESHOLD, sampleProfile, deadCriteria, ENRICHABLE_FIELD_NAMES } from "../lib/bulk/icpModel.js";
 import * as bulkApi from "../lib/bulk/bulkClient.js";
 import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
+import UsedByRules, { InUseMessage } from "../components/UsedByRules.jsx";
+import ConfirmDialog from "../components/ConfirmDialog.jsx";
+import BusyIndicator from "../components/BusyIndicator.jsx";
+import { useBusy } from "../hooks/useBusy.js";
 
 export default function Lists() {
   const location = useLocation();
   const navigate = useNavigate();
   const showToast = useToast();
   const { user, authLoading } = useAuth();
+  const { busy, label: busyLabel, run } = useBusy();
+  // A delete refused because rules still listen to the list (409 in_use).
+  const [inUse, setInUse] = useState(null);
+  // The account a user asked to remove, awaiting confirmation.
+  const [removingRecord, setRemovingRecord] = useState(null);
 
   const [activeTab, setActiveTab] = useState("lists"); // "lists" | "rules" | "review"
   const [selectedListId, setSelectedListId] = useState(null);
@@ -66,7 +76,8 @@ export default function Lists() {
   // Check if routed from template handoff or query parameters (?new=1 or ?list=<id>)
   useEffect(() => {
     if (location.state?.initialDomains) {
-      setRawDomains(location.state.initialDomains);
+      const d = location.state.initialDomains;
+      setRawDomains(Array.isArray(d) ? d.join("\n") : String(d));
       setShowCreateModal(true);
     }
     const params = new URLSearchParams(location.search);
@@ -275,22 +286,42 @@ export default function Lists() {
     setDeletingList(l);
   };
 
-  const handleConfirmDeleteList = async () => {
-    if (!deletingList) return;
-    const listId = deletingList.id;
-    try {
-      await bulkApi.deleteList(listId);
-      showToast("List deleted. Historical audit trails preserved.");
-      setDeletingList(null);
-      if (selectedListId === listId) {
-        setSelectedListId(null);
-        setCurrentList(null);
+  const removeList = async (list, { unlink = false } = {}) => {
+    await bulkApi.deleteList(list.id, { unlink });
+    showToast("List deleted. Historical audit trails preserved.");
+    if (selectedListId === list.id) {
+      setSelectedListId(null);
+      setCurrentList(null);
+    }
+    loadLists(true);
+  };
+
+  const handleConfirmDeleteList = () => {
+    if (!deletingList) return undefined;
+    const list = deletingList;
+    return run("Deleting list…", async () => {
+      try {
+        await removeList(list);
+        setDeletingList(null);
+      } catch (err) {
+        if (err.code === "in_use") {
+          setDeletingList(null);
+          setInUse({ list, rules: err.rules || [] });
+        } else {
+          showToast(err.message || "Failed to delete list");
+        }
       }
-      loadLists(true);
+    });
+  };
+
+  const unlinkAndDelete = () => run("Unlinking and deleting…", async () => {
+    try {
+      await removeList(inUse.list, { unlink: true });
+      setInUse(null);
     } catch (err) {
       showToast(err.message || "Failed to delete list");
     }
-  };
+  });
 
   const openCurateModal = (r) => {
     setCuratingRecord(r);
@@ -330,17 +361,20 @@ export default function Lists() {
     }
   };
 
-  const handleDeleteRecord = async (recordId) => {
-    if (!window.confirm("Remove this account from the list?")) return;
+  // Asks first, in the DatIQ dialog rather than the browser's confirm().
+  const handleDeleteRecord = (recordId) => setRemovingRecord(recordId);
+
+  const confirmRemoveRecord = () => run("Removing account…", async () => {
     try {
-      await bulkApi.deleteAccountRecord(recordId);
+      await bulkApi.deleteAccountRecord(removingRecord);
       showToast("Account removed from list.");
+      setRemovingRecord(null);
       if (selectedListId) loadCurrentList(selectedListId);
       loadLists(true);
     } catch (err) {
       showToast(err.message || "Failed to remove account");
     }
-  };
+  });
 
   const handleTestSample = () => {
     if (!rules) return;
@@ -372,6 +406,8 @@ export default function Lists() {
 
   return (
     <div className="container" style={{ padding: "40px 20px" }}>
+      <TemplateBacklink />
+      <BusyIndicator label={busyLabel} />
       <header className="page-header" style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
@@ -432,13 +468,22 @@ export default function Lists() {
                   <Button
                     variant="primary"
                     onClick={handleRunEnrichment}
-                    disabled={runningJob}
+                    disabled={runningJob || busy}
                   >
                     <Icon name="play" size={14} />
                     {runningJob ? `Enriching (${jobProgress?.processed || 0}/${currentList.total_records})…` : "Run Enrichment"}
                   </Button>
                 </div>
               </div>
+
+              <UsedByRules
+                key={currentList.id}
+                sourceType="list"
+                sourceId={currentList.id}
+                busy={busy}
+                run={run}
+                onChanged={(rule) => showToast(`Unlinked from "${rule.name}".`)}
+              />
 
               {/* ── WHAT JOBS EXIST, AND WHERE THEY ARE ──────────────────────
                   The Run Enrichment button used to be the only thing on this
@@ -507,8 +552,8 @@ export default function Lists() {
                               <span
                                 className="wrh-pill"
                                 style={{
-                                  background: score >= 60 ? "rgba(5,150,105,0.15)" : "rgba(217,119,6,0.15)",
-                                  color: score >= 60 ? "#059669" : "#b45309",
+                                  background: score >= 60 ? "var(--success-soft)" : "color-mix(in srgb, var(--warning) 15%, transparent)",
+                                  color: score >= 60 ? "var(--success)" : "var(--warning)",
                                 }}
                               >
                                 {score}% Fit
@@ -535,7 +580,7 @@ export default function Lists() {
                               <button
                                 className="btn btn-ghost btn-sm"
                                 onClick={() => handleDeleteRecord(r.id)}
-                                style={{ padding: "3px 6px", color: "var(--danger, #dc2626)" }}
+                                style={{ padding: "3px 6px", color: "var(--danger)" }}
                                 title="Remove account"
                               >
                                 <Icon name="trash-2" size={13} />
@@ -610,7 +655,7 @@ export default function Lists() {
                               variant="ghost"
                               size="sm"
                               onClick={(e) => openDeleteListModal(e, l)}
-                              style={{ padding: "4px 8px", color: "var(--danger, #dc2626)" }}
+                              style={{ padding: "4px 8px", color: "var(--danger)" }}
                               title="Delete list"
                             >
                               <Icon name="trash-2" size={13} />
@@ -621,8 +666,8 @@ export default function Lists() {
                         {/* Active background enrichment indicator */}
                         {hasActiveJob && (
                           <div style={{
-                            background: "var(--accent-soft, #eef2ff)",
-                            border: "1px solid var(--accent, #4f46e5)",
+                            background: "var(--accent-soft)",
+                            border: "1px solid var(--accent)",
                             borderRadius: "var(--r, 8px)",
                             padding: "6px 12px",
                             fontSize: "12px",
@@ -703,8 +748,8 @@ export default function Lists() {
                 {deadCriteria(rules.criteria).length > 0 && (
                   <p style={{
                     marginBottom: 12, padding: "10px 12px", borderRadius: 6,
-                    background: "var(--warning-soft, #fef3c7)",
-                    color: "var(--text, #92400e)", fontSize: "0.85rem",
+                    background: "color-mix(in srgb, var(--warning) 14%, transparent)",
+                    color: "var(--text)", fontSize: "0.85rem",
                   }}>
                     <strong>These criteria can never be measured.</strong>{" "}
                     {deadCriteria(rules.criteria).map((d) => d.field).join(", ")}{" "}
@@ -723,7 +768,7 @@ export default function Lists() {
                 </p>
                 <ul>
                   {samplePreview.reasons.map((r, i) => (
-                    <li key={i} style={{ color: r.passed ? "#059669" : "#b45309" }}>
+                    <li key={i} style={{ color: r.passed ? "var(--success)" : "var(--warning)" }}>
                       {r.reason}
                     </li>
                   ))}
@@ -836,7 +881,7 @@ export default function Lists() {
                   />
                   <div style={{ fontSize: "0.8rem", color: "var(--text-2)", marginTop: 4 }}>
                     {dedupedPreview.count > 0 ? (
-                      <span style={{ color: "var(--ok, #059669)" }}>
+                      <span style={{ color: "var(--success)" }}>
                         ✓ {dedupedPreview.count} unique domain{dedupedPreview.count === 1 ? "" : "s"} ready
                       </span>
                     ) : (
@@ -909,8 +954,8 @@ export default function Lists() {
       {deletingList && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div className="card" style={{ width: "100%", maxWidth: 460, padding: 24, background: "var(--surface)", borderRadius: "var(--r, 14px)", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--danger, #dc2626)", marginBottom: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--danger-soft, #fee2e2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--danger)", marginBottom: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--danger-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Icon name="alert-triangle" size={18} />
               </div>
               <h3 style={{ margin: 0, fontSize: "1.15rem" }}>Delete Account List?</h3>
@@ -919,12 +964,12 @@ export default function Lists() {
               Are you sure you want to delete <strong>{deletingList.name}</strong>? This will remove the list and its account records.
             </p>
             <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r, 8px)", padding: "10px 12px", fontSize: "0.82rem", color: "var(--text-2)", marginBottom: 16 }}>
-              <Icon name="shield-check" size={14} style={{ color: "var(--success, #10b981)", verticalAlign: "-2px", marginRight: 6 }} />
+              <Icon name="shield-check" size={14} style={{ color: "var(--success)", verticalAlign: "-2px", marginRight: 6 }} />
               <strong>Audit Trail Preserved:</strong> Historical enrichment jobs and compliance run records remain archived.
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <Button variant="ghost" onClick={() => setDeletingList(null)}>Cancel</Button>
-              <Button variant="danger" onClick={handleConfirmDeleteList} style={{ background: "var(--danger, #dc2626)", color: "#fff" }}>Delete List</Button>
+              <Button variant="danger" onClick={handleConfirmDeleteList} loading={busy}>Delete List</Button>
             </div>
           </div>
         </div>
@@ -976,6 +1021,29 @@ export default function Lists() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!inUse}
+        title="Rules still use this list"
+        busy={busy}
+        onClose={() => setInUse(null)}
+        actions={[
+          { label: "Unlink and delete", variant: "danger", primary: true, onClick: unlinkAndDelete },
+          { label: "Open the rules", onClick: () => navigate("/rules") },
+        ]}
+      >
+        <InUseMessage noun="list" rules={inUse?.rules || []} />
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={!!removingRecord}
+        title="Remove this account?"
+        busy={busy}
+        onClose={() => setRemovingRecord(null)}
+        actions={[{ label: "Remove account", variant: "danger", primary: true, onClick: confirmRemoveRecord }]}
+      >
+        <p style={{ margin: 0 }}>It is taken off this list. Its enrichment history stays in your audit trail.</p>
+      </ConfirmDialog>
     </div>
   );
 }
