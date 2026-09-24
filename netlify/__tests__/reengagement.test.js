@@ -196,7 +196,7 @@ describe("abandonedTrialHtml (F49)", () => {
   });
   it("escapes the user name", () => {
     const html = abandonedTrialHtml({ userName: "<script>", lastRun: "2026-06-01" });
-    expect(html).not.toMatch(/<script>/);
+    expect(html).not.toMatch(/<script\b/i);
     expect(html).toMatch(/&lt;script&gt;/);
   });
 });

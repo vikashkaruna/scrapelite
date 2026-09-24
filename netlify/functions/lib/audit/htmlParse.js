@@ -18,6 +18,8 @@
 //    because losing the whole audit to one bad tag would hide the 19 signals
 //    that parsed fine.
 
+import { decodeHtmlEntities } from "../htmlEntities.js";
+
 /** Hard ceiling on the HTML we will parse. Larger pages are truncated. */
 export const MAX_HTML_BYTES = 2_000_000;
 
@@ -35,20 +37,8 @@ export function capHtml(html) {
 
 /** Decode the entity subset that actually appears in headings and answers. */
 export function decodeEntities(text = "") {
-  return String(text)
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0?39;|&apos;|&#x27;/gi, "'")
-    .replace(/&mdash;/gi, "—")
-    .replace(/&ndash;/gi, "–")
-    .replace(/&hellip;/gi, "…")
-    .replace(/&#(\d+);/g, (_, n) => {
-      const code = Number(n);
-      return code > 0 && code < 0x110000 ? String.fromCodePoint(code) : "";
-    });
+  // One pass — chained replaces double-decoded "&amp;lt;" into "<".
+  return decodeHtmlEntities(text);
 }
 
 /** Strip tags from a fragment and normalise whitespace. */

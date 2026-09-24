@@ -63,6 +63,7 @@ import { consumeGuestCredit } from "./lib/guestUsage.js";
 import { meterContext, flush as flushMeter } from "./lib/creditMeter.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
+import { decodeHtmlEntities } from "./lib/htmlEntities.js";
 
 function respond(statusCode, body, extraHeaders = {}) {
   return {
@@ -389,9 +390,7 @@ function parseJsonLoose(text) {
 // ── Related-page gathering ──────────────────────────────────────────────────
 
 function decodeAnchorEntities(s) {
-  return String(s || "")
-    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
+  return decodeHtmlEntities(s || "");
 }
 
 /**

@@ -13,6 +13,9 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
+// Exact host match — a substring check would also accept "api.example.com.evil.test".
+const hostIs = (url, host) => { try { return new URL(String(url)).hostname === host; } catch { return false; } };
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = readFileSync(join(ROOT, "public/analytics.js"), "utf8");
 const INDEX = readFileSync(join(ROOT, "index.html"), "utf8");
@@ -76,7 +79,7 @@ function run({ hostname = "datiq.app", pathname = "/", runtime, stored, isSpa = 
     dataLayer: sandbox.dataLayer || [],
     gtagSrc: scripts.map((s) => s._src).filter(Boolean),
     api: sandbox.__datiqConsent,
-    loaded: scripts.some((s) => (s._src || "").includes("googletagmanager.com")),
+    loaded: scripts.some((s) => hostIs((s._src || ""), "www.googletagmanager.com")),
     posthogLoaded: scripts.some((s) => {
       try {
         const host = new URL(s._src || "").hostname;
@@ -188,7 +191,7 @@ describe("analytics.js — Consent Mode v2", () => {
     expect(r.loaded).toBe(false);
     r.sandbox.localStorage.setItem("datiq.consent", JSON.stringify({ analytics: "granted" }));
     r.api.set("granted");
-    expect(r.injected.some((node) => (node._src || "").includes("googletagmanager.com"))).toBe(true);
+    expect(r.injected.some((node) => hostIs((node._src || ""), "www.googletagmanager.com"))).toBe(true);
     expect(r.api.active()).toBe(true);
   });
 

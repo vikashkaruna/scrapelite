@@ -8,7 +8,13 @@ import {
 } from "./constructTemplates.js";
 import { ISSUES, ISSUE_CODES } from "./issueCatalog.js";
 
-const jsonFrom = (body) => JSON.parse(body.replace(/<\/?script[^>]*>/g, "").trim());
+// Read what is INSIDE the <script> element (from the end of its opening tag to
+// the start of its closing tag) — no tag-matching regex to get wrong.
+const jsonFrom = (body) => {
+  const t = body.trim();
+  if (!t.startsWith("<")) return JSON.parse(t);
+  return JSON.parse(t.slice(t.indexOf(">") + 1, t.lastIndexOf("<")).trim());
+};
 
 describe("catalogue ↔ builder wiring", () => {
   it("every asset an issue promises can actually be built", () => {

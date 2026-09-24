@@ -5,6 +5,8 @@
 // count      = total single-URL extractions (drives soft-prompt + single hard limit)
 // batchCount = total batch runs (drives batch hard limit)
 
+import { randomUuid } from "./secureRandom.js";
+
 const TRIAL_KEY = "datiq.guestTrial";
 const SESSION_KEY = "datiq.sid";
 
@@ -18,7 +20,7 @@ function getOrCreateSid() {
   try {
     let sid = sessionStorage.getItem(SESSION_KEY);
     if (!sid) {
-      sid = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      sid = randomUuid();
       sessionStorage.setItem(SESSION_KEY, sid);
     }
     return sid;
