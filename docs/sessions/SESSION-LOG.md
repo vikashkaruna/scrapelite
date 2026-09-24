@@ -37,6 +37,10 @@
 
 **Not done / worth knowing:** no Workflow hub screenshot (needs a real sign-in); account lists have no file import, so none is documented; the menu still says "Switch persona".
 
+**Incident handled mid-session (priority):** production build for #229 (`main` @ `2d0e75ee`) failed at function upload on AWS Lambda's 4KB env cap. The trigger was `ENGAGEMENT_ALLOWLIST` edited in production at 17:12Z. With the owner's go-ahead, 16 unused build-time vars had their Functions scope removed via the Netlify API (values verified unchanged; 76 → 60 Functions-scoped). A proof production build of `2d0e75ee` then reached **ready** with 75 functions on nodejs24.x (not published: production is locked). **Still for the owner:** untick Functions on `SUPABASE_ACCESS_TOKEN`, `VITE_STRIPE_PUBLISHABLE_KEY` and `VITE_WEBHOOK_URL` (secrets; the API can't rescope them without their values), then unlock production and re-run the #229 Phase-Gate "Deploy to Production" job. The Staging Gate for #231 failed because Netlify never built `6a8b9aa7` for staging; merging #232 triggers that build.
+
+PR: [#232](https://github.com/vikashkaruna/scrapelite/pull/232).
+
 **Next:** owner merges the D2 PR to `staging`; apply `0085` on staging if not yet done (runbook §4k); then staging → `main` when ready.
 
 ## 2026-09-23 (latest) — Prospect Engagement Engine: review, then Phase 1 (safe email MVP)
