@@ -26,7 +26,7 @@
 | 7 | Lists, Watchlists, Rules: busy indicator + UX rebuild | 🔴 | C |
 | 8 | Workflows hub: proper name, wiring and layout | 🟡 | C |
 | 16 | Home "Common jobs": 12 tiles (was 7), adding Discover / Compete / Engage / Connect / Templates jobs | 🟢 | C |
-| 17 | Home "From signal to next step": DatIQ Engage → Engagement, DatIQ Compete → Workflow hub | 🟢 | C |
+| 17 | Home "From signal to next step": DatIQ Engage (BETA) → Engagement, DatIQ Compete → Workflow hub; hero card gains an Engage tile (Discover · Connect · Compete · Engage) | 🟢 | C |
 | 18 | `/templates` becomes the template hub: 9 new templates that run or open the right module | 🟡 | C |
 | 19 | Eight roles replace the seven personas (existing ids kept where a role carries forward) | 🟡 | D (build first) |
 | 20 | Onboarding face-lift: what each role can do, modules, outcome, first step | 🟡 | D |
@@ -418,6 +418,38 @@ watch" when access is denied or the access call fails; the Discover tile never s
 - `/engagement` and `/workflows` are both private routes, and a link from Home does not change their
   noindex state.
 - This closes the home-screen "DatIQ Engage" link deferred in §3.
+- **The Engage card shows the "BETA" status badge** (the badge style the Discover, Compete and Connect cards
+  already use) and its button goes to **`/engagement`** (owner, 2026-09-24).
+
+**17b. The "DatIQ intelligence" hero card gets an Engage tile (owner, 2026-09-24).**
+
+**Now:** the preview card beside the hero (`DashboardReveal` in `Home.jsx`) has 3 tiles:
+- Discover → `/discoverability`;
+- Connect → `/integrations`;
+- Compete → `/lists`.
+
+**Proposal:** 4 tiles, in this order.
+
+| Tile | Icon | Goes to |
+|---|---|---|
+| Discover | scan-search | `/discoverability` (unchanged) |
+| Connect | share | `/integrations` (unchanged) |
+| Compete | eye | **`/workflows`** (Workflow hub), not `/lists` — so it matches the Compete card below (D17c) |
+| **Engage** | users | **`/engagement`**, with a small "Beta" marker |
+
+- **Layout:** the card is at most 430px wide, and `.hdr-signal-grid` is 3 columns today, so a 4th tile would
+  sit alone on a second row. It becomes **4 across** in one row; the labels are short enough at the current
+  size. Below 400px it becomes a **2 × 2** grid. No other style changes.
+- **Access:** as with the Engage card, a visitor outside the beta lands on Engagement's "private beta" page,
+  and a signed-out visitor is asked to sign in.
+- **Accessibility:** each tile keeps its `aria-label` ("Open Engagement (beta)"), and the tiles stay in the
+  same tab order.
+
+**Tests:**
+- 4 tiles in the order Discover, Connect, Compete, Engage, each with its route;
+- Engage carries the Beta marker;
+- no empty grid cell at 375, 768 and 1280px;
+- the Home e2e smoke spec is updated.
 
 **Tests:** `Home.test.jsx` checks both cards' status, button text and route. `hasModuleCta` now returns true
 for Engage. The existing test that every card with a button leads somewhere real keeps passing.
@@ -682,6 +714,8 @@ build if a `V\d+\.\d+` string appears in public page text again.
 | D16a | Home "Common jobs" tile count | **12** — it divides evenly at every width (6 / 3 / 2 columns). 9 would leave a half row on desktop |
 | D16b | The Engagement tile for accounts not in the beta | Swap it for a non-beta tile, so the count stays 12 |
 | D17 | Engagement card on Home: status "Beta" and link to `/engagement` (private-beta page for everyone else)? | Yes |
+| D17b | Hero "DatIQ intelligence" card: add Engage as the 4th tile (Discover, Connect, Compete, Engage), 4 across | Locked (owner) |
+| D17c | Hero Compete tile goes to the Workflow hub (was `/lists`), matching the Compete card | Yes |
 | D18a | How many new templates in this round? | 9 (catalogue 11 → 20); watch usage before adding more |
 | D18b | Templates that only open another screen: same catalogue, marked "Opens in …"? | Yes, with a module filter beside the role filter |
 | D12 | Publish an "Engagement (beta)" section in the public help now, or keep it internal until GA? | Internal until GA (a public "private beta — request access" mention is allowed, see §22) |
