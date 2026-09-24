@@ -178,7 +178,10 @@ export async function createRule(userId, { name, trigger_source, conditions = []
       action_type,
       action_config,
       status: "active",
-      source_scope: scope.scope,
+      // 'all' is the column's default, so it is only written when it differs.
+      // A rule that listens to every source then saves on a database that has
+      // not had 0085 applied yet, exactly as it did before.
+      ...(scope.scope === "selected" ? { source_scope: "selected" } : {}),
     })
     .select()
     .single();
@@ -246,7 +249,9 @@ export async function updateRule(userId, ruleId, updates = {}, env = process.env
     }
     const scope = await validateScope(db, userId, trigger, scopeName, requested || []);
     if (!scope.ok) return scope;
-    payload.source_scope = scope.scope;
+    // Written only when it changes — same reason as in createRule.
+    if (scope.scope !== (current.source_scope || "all")) payload.source_scope = scope.scope;
+    else delete payload.source_scope;
     newSources = scope.sources;
   }
 
@@ -259,7 +264,7 @@ export async function updateRule(userId, ruleId, updates = {}, env = process.env
     if (scopeName === "selected" && count === 0) {
       return { ok: false, status: 409, code: "no_sources", reason: "Link at least one source before resuming this rule, or let it listen to all of them." };
     }
-    payload.paused_reason = null;
+    if (current.paused_reason) payload.paused_reason = null;
   }
 
   // Order matters for the 0085 pause trigger: links are added before the rule
@@ -278,7 +283,8 @@ export async function updateRule(userId, ruleId, updates = {}, env = process.env
     .single();
 
   if (error) return { ok: false, reason: error.message };
-  if (newSources && newSources.length === 0) {
+  // Only a rule that WAS scoped can have links to clear.
+  if (newSources && newSources.length === 0 && current.source_scope === "selected") {
     const cleared = await replaceRuleSources(db, userId, ruleId, []);
     if (!cleared.ok) return { ok: false, reason: "Could not remove the old sources.", status: 500 };
   }

@@ -5,7 +5,7 @@
 // objective facts from AI strategic interpretations, with user feedback.
 
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import TemplateBacklink from "../components/TemplateBacklink.jsx";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
@@ -15,10 +15,18 @@ import SignedInRequired from "../components/SignedInRequired.jsx";
 import { MATERIALITY, CADENCE_FOR_MATERIALITY } from "../lib/watchlist/materialityModel.js";
 import * as watchlistApi from "../lib/watchlist/watchlistClient.js";
 import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
+import UsedByRules, { InUseMessage } from "../components/UsedByRules.jsx";
+import ConfirmDialog from "../components/ConfirmDialog.jsx";
+import BusyIndicator from "../components/BusyIndicator.jsx";
+import { useBusy } from "../hooks/useBusy.js";
 
 export default function Watchlists() {
   const showToast = useToast();
   const { user, authLoading } = useAuth();
+  const navigate = useNavigate();
+  const { busy, label: busyLabel, run } = useBusy();
+  // A delete refused because rules still listen to the watchlist (409 in_use).
+  const [inUse, setInUse] = useState(null);
 
   const cachedWatchlists = readPageCache("watchlists")?.data || [];
   const [watchlists, setWatchlists] = useState(cachedWatchlists);
@@ -223,23 +231,56 @@ export default function Watchlists() {
     setDeletingWatchlist(wl);
   };
 
+  const removeWatchlist = async (wl, { unlink = false } = {}) => {
+    await watchlistApi.deleteWatchlist(wl.id, { unlink });
+    showToast(`Watchlist "${wl.name}" removed.`);
+    if (selectedId === wl.id) setSelectedId(null);
+    loadWatchlists(true);
+  };
+
   const handleDelete = async () => {
     if (!deletingWatchlist) return;
+    const wl = deletingWatchlist;
     setDeleteLoading(true);
-    try {
-      await watchlistApi.deleteWatchlist(deletingWatchlist.id);
-      showToast(`Watchlist "${deletingWatchlist.name}" removed.`);
-      if (selectedId === deletingWatchlist.id) {
-        setSelectedId(null);
+    await run("Deleting watchlist…", async () => {
+      try {
+        await removeWatchlist(wl);
+        setDeletingWatchlist(null);
+      } catch (err) {
+        if (err.code === "in_use") {
+          // Say why, and offer the two ways forward, instead of an error toast.
+          setDeletingWatchlist(null);
+          setInUse({ watchlist: wl, rules: err.rules || [] });
+        } else {
+          showToast(err.message);
+        }
       }
-      setDeletingWatchlist(null);
-      loadWatchlists(true);
+    });
+    setDeleteLoading(false);
+  };
+
+  const unlinkAndDelete = () => run("Unlinking and deleting…", async () => {
+    try {
+      await removeWatchlist(inUse.watchlist, { unlink: true });
+      setInUse(null);
     } catch (err) {
       showToast(err.message);
-    } finally {
-      setDeleteLoading(false);
     }
-  };
+  });
+
+  // "Alert me": open the rule builder already limited to this watchlist.
+  // Nothing is saved until the user presses Save there.
+  const alertMe = (wl) => navigate("/rules", {
+    state: {
+      newRule: {
+        name: `Alert me: ${wl.name}`,
+        triggerSource: "watchlist",
+        actionType: "email",
+        condition: { field: "materiality", op: "equals", value: "critical" },
+        sources: [{ type: "watchlist", id: wl.id, name: wl.name }],
+      },
+    },
+  });
 
   if (authLoading) {
     return (
@@ -260,6 +301,7 @@ export default function Watchlists() {
   return (
     <div className="container" style={{ padding: "40px 20px" }}>
       <TemplateBacklink />
+      <BusyIndicator label={busyLabel} />
       <header className="page-header" style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
@@ -300,18 +342,30 @@ export default function Watchlists() {
                 </p>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <Button variant="secondary" onClick={handleCheckNow} disabled={checking}>
+                <Button variant="secondary" onClick={() => alertMe(currentWatchlist)} disabled={busy} title="Create a rule that alerts you when this watchlist changes">
+                  <Icon name="bell" size={14} /> Alert me
+                </Button>
+                <Button variant="secondary" onClick={handleCheckNow} disabled={checking || busy}>
                   <Icon name={checking ? "loader" : "zap"} size={14} className={checking ? "spin" : undefined} />
                   {checking ? "Checking…" : "Check now"}
                 </Button>
                 <Button variant="secondary" onClick={() => openEditModal(null, currentWatchlist)}>
                   <Icon name="edit" size={14} /> Edit
                 </Button>
-                <Button variant="ghost" onClick={() => openDeleteModal(null, currentWatchlist)} style={{ color: "var(--danger, #dc2626)" }}>
+                <Button variant="ghost" onClick={() => openDeleteModal(null, currentWatchlist)} disabled={busy} aria-label="Delete watchlist" style={{ color: "var(--danger)" }}>
                   <Icon name="trash-2" size={14} />
                 </Button>
               </div>
             </div>
+
+            <UsedByRules
+              key={currentWatchlist.id}
+              sourceType="watchlist"
+              sourceId={currentWatchlist.id}
+              busy={busy}
+              run={run}
+              onChanged={(rule) => showToast(`Unlinked from "${rule.name}".`)}
+            />
 
             {/* Targets list */}
             <div style={{ marginTop: 20, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -402,9 +456,9 @@ export default function Watchlists() {
                   const isCrit = c.materiality === MATERIALITY.CRITICAL;
                   const isHigh = c.materiality === MATERIALITY.HIGH;
                   const pillColor = isCrit
-                    ? { bg: "rgba(185,28,28,0.12)", text: "#b91c1c" }
+                    ? { bg: "var(--danger-soft)", text: "var(--danger)" }
                     : isHigh
-                    ? { bg: "rgba(217,119,6,0.15)", text: "#b45309" }
+                    ? { bg: "color-mix(in srgb, var(--warning) 15%, transparent)", text: "var(--warning)" }
                     : { bg: "var(--surface-2)", text: "var(--text-2)" };
 
                   return (
@@ -540,7 +594,7 @@ export default function Watchlists() {
                       variant="ghost"
                       size="sm"
                       onClick={(e) => openDeleteModal(e, w)}
-                      style={{ padding: "4px 8px", color: "var(--danger, #dc2626)" }}
+                      style={{ padding: "4px 8px", color: "var(--danger)" }}
                       title="Delete watchlist"
                     >
                       <Icon name="trash-2" size={13} />
@@ -739,7 +793,7 @@ export default function Watchlists() {
           onClick={() => setDeletingWatchlist(null)}
         >
           <div className="error-modal card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
-            <h2 style={{ color: "var(--danger, #dc2626)" }}>Delete Watchlist</h2>
+            <h2 style={{ color: "var(--danger)" }}>Delete Watchlist</h2>
             <p style={{ color: "var(--text-1)", fontSize: "0.92rem", marginTop: 8 }}>
               Are you sure you want to delete <strong>{deletingWatchlist.name}</strong>?
             </p>
@@ -761,10 +815,9 @@ export default function Watchlists() {
                 Cancel
               </Button>
               <Button
-                variant="primary"
+                variant="danger"
                 onClick={handleDelete}
                 disabled={deleteLoading}
-                style={{ background: "var(--danger, #dc2626)", borderColor: "var(--danger, #dc2626)" }}
               >
                 {deleteLoading ? "Deleting…" : "Delete Watchlist"}
               </Button>
@@ -772,6 +825,19 @@ export default function Watchlists() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!inUse}
+        title="Rules still use this watchlist"
+        busy={busy}
+        onClose={() => setInUse(null)}
+        actions={[
+          { label: "Unlink and delete", variant: "danger", primary: true, onClick: unlinkAndDelete },
+          { label: "Open the rules", onClick: () => navigate("/rules") },
+        ]}
+      >
+        <InUseMessage noun="watchlist" rules={inUse?.rules || []} />
+      </ConfirmDialog>
     </div>
   );
 }

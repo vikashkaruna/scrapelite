@@ -171,7 +171,11 @@ describe("buildWorkflowGraph — the broken edges", () => {
         { id: "ex1", rule_id: "r1", status: "delivered", executed_at: "2026-09-16T12:00:00Z" },
       ],
     });
-    expect(g.pipelines).toHaveLength(2); // 1 active rule pipeline + 1 unconnected lists pipeline
+    // Pipelines are real rules only; the unheard list is in `unconnected`.
+    expect(g.pipelines).toHaveLength(1);
+    expect(g.unconnected).toEqual([
+      expect.objectContaining({ trigger_source: "bulk_enrichment", sources: [expect.objectContaining({ id: "l1", name: "Q4" })] }),
+    ]);
     const p1 = g.pipelines.find((p) => p.rule_id === "r1");
     expect(p1).toMatchObject({
       name: "Watch",
@@ -182,5 +186,49 @@ describe("buildWorkflowGraph — the broken edges", () => {
     });
     expect(p1.last_execution).toMatchObject({ id: "ex1", status: "delivered" });
   });
-});
 
+  // 0085 — a rule limited to chosen sources.
+  describe("rule sources", () => {
+    const watchlists = [
+      { id: "w1", name: "Rivals", targets: [{ id: "t" }], change_count: 1 },
+      { id: "w2", name: "Adjacent", targets: [{ id: "t" }], change_count: 1 },
+    ];
+
+    it("a scoped rule's card names only its sources", () => {
+      const g = buildWorkflowGraph({
+        watchlists,
+        rules: [{ id: "r1", name: "Rivals only", status: "active", trigger_source: "watchlist", action_type: "email", source_scope: "selected", sources: [{ type: "watchlist", id: "w1", name: "Rivals" }] }],
+      });
+      const p = g.pipelines[0];
+      expect(p.source_scope).toBe("selected");
+      expect(p.upstream_items.map((i) => i.name)).toEqual(["Rivals"]);
+      expect(p.upstream_summary).toMatch(/Only 1 chosen watchlist/);
+    });
+
+    it("a watchlist no active rule hears is 'not connected', even when a scoped rule exists", () => {
+      const g = buildWorkflowGraph({
+        watchlists,
+        rules: [{ id: "r1", name: "Rivals only", status: "active", trigger_source: "watchlist", action_type: "email", source_scope: "selected", sources: [{ type: "watchlist", id: "w1", name: "Rivals" }] }],
+      });
+      expect(g.unconnected).toHaveLength(1);
+      expect(g.unconnected[0].sources.map((s) => s.id)).toEqual(["w2"]);
+    });
+
+    it("a rule listening to all hears every watchlist", () => {
+      const g = buildWorkflowGraph({
+        watchlists,
+        rules: [{ id: "r1", name: "All", status: "active", trigger_source: "watchlist", action_type: "email" }],
+      });
+      expect(g.unconnected).toEqual([]);
+    });
+
+    it("a paused rule hears nothing, and says why when it lost its sources", () => {
+      const g = buildWorkflowGraph({
+        watchlists,
+        rules: [{ id: "r1", name: "Orphan", status: "paused", paused_reason: "no_sources", trigger_source: "watchlist", action_type: "email", source_scope: "selected", sources: [] }],
+      });
+      expect(g.pipelines[0].health_label).toBe("Paused — no sources left");
+      expect(g.unconnected[0].sources).toHaveLength(2);
+    });
+  });
+});

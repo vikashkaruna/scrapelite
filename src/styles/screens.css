@@ -5361,6 +5361,17 @@
   text-transform: uppercase;
   margin-bottom: 10px;
 }
+/* Home: the chips sit inside the composer's 760px column, which made the
+   sixth chip ("Custom…") wrap with room to spare on both sides. They span the
+   page's content width instead — the same width .container gives its content
+   — and still wrap on a narrow screen, where this equals 100%. */
+.intent-chips-wide {
+  --chips-w: calc(min(1080px, 100vw) - 2 * clamp(20px, 4vw, 44px));
+  width: var(--chips-w);
+  /* The column is centred in the page, so centre the wider row on it too.
+     On a narrow screen the row equals the column and this margin is 0. */
+  margin-left: calc((100% - var(--chips-w)) / 2);
+}
 .intent-chips-row {
   display: flex;
   align-items: center;
@@ -12735,3 +12746,31 @@ html.dark .closed-loop-next-card.is-audit-complete {
 .wf-scope-options { display: flex; flex-wrap: wrap; gap: 6px; }
 .wf-scope-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow: auto; padding: 8px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); }
 .wf-scope-list label { display: flex; align-items: center; gap: 8px; font-size: .88rem; color: var(--text); }
+.wf-chip-x {
+  border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 0 0 2px;
+  font-size: .9rem; line-height: 1; opacity: .7;
+}
+.wf-chip-x:hover, .wf-chip-x:focus-visible { opacity: 1; }
+.wf-chip-x:disabled { cursor: default; opacity: .35; }
+.wf-scope-options label { display: inline-flex; align-items: center; gap: 6px; font-size: .88rem; color: var(--text); }
+
+/* ── Workflow hub layout (plan §8) ───────────────────────────────────────── */
+.wf-section-h { margin: 28px 0 12px; font-size: 1.1rem; font-weight: 750; color: var(--text); }
+.wf-count {
+  display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  font-size: .72rem; font-weight: 800; text-align: center; background: var(--surface-2); color: var(--text-2);
+}
+.wf-engage-block {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; padding: 12px 16px;
+  border: 1px dashed var(--border); border-radius: var(--r); background: var(--surface);
+}
+.wf-engage-block > div { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 180px; }
+.wf-engage-block .wf-stage-link { margin: 0; }
+.wf-unconnected { margin-top: 24px; }
+.wf-unconnected-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; padding: 12px 14px;
+  border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: var(--r); background: var(--surface);
+}
+.wf-unconnected-label { font-weight: 700; color: var(--text); min-width: 110px; }
+.wf-unconnected-items { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.wf-unconnected-items .wf-chip { text-decoration: none; }

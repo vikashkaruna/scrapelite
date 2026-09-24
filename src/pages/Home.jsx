@@ -644,7 +644,7 @@ export default function Home() {
           )}
 
 {/* ── Intent chips ─────────────────────────────────────────── */}
-          <div className="intent-chips">
+          <div className="intent-chips intent-chips-wide">
             <span className="intent-chips-label">What do you want to extract?</span>
             <div className="intent-chips-row">
               {INTENTS.map((ic) => {

@@ -581,6 +581,28 @@ group("Credit ledger — monitoring is a cost-bearing action");
   eq("...against the unit the schema already defined", led.rows[0].unit, "monitor_check");
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LAST, because it removes 0085: a deploy can reach an environment before the
+// operator applies the migration. Rules that listen to every source — every
+// rule that existed before 0085 — must keep saving, pausing and resuming there.
+group("Before 0085 is applied — ordinary rules keep working");
+{
+  await db.exec(`
+    drop trigger if exists signal_rule_sources_pause_orphans on public.signal_rule_sources;
+    drop table if exists public.signal_rule_sources;
+    alter table public.signal_rules drop column if exists source_scope, drop column if exists paused_reason;
+  `);
+  const slack = { url: "https://hooks.slack.com/services/T/B/C" };
+  const made = await rules.createRule(users.alice, { name: "Pre-0085", trigger_source: "watchlist", action_type: "slack", action_config: slack });
+  ok("🔴 a rule that listens to all is created without the new column", made.ok);
+  const edited = await rules.updateRule(users.alice, made.rule?.id, { name: "Pre-0085 (edited)", trigger_source: "watchlist", source_scope: "all", sources: [] });
+  ok("🔴 the rule form's save (scope 'all', no sources) still works", edited.ok);
+  ok("pausing works", (await rules.updateRule(users.alice, made.rule?.id, { status: "paused" })).ok);
+  ok("🔴 resuming works (no paused_reason column to clear)", (await rules.updateRule(users.alice, made.rule?.id, { status: "active" })).ok);
+  const listed = await rules.listRules(users.alice);
+  ok("listing rules works and reads them as 'all'", listed.ok && listed.rules.every((r) => r.source_scope === "all"));
+}
+
 // ── summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${"─".repeat(62)}`);
 console.log(`[verify-workflows] ${pass} assertions passed · ${fail} failed`);

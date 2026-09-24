@@ -501,7 +501,10 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
         <p className="tpl-sub">{template.summary}</p>
       </header>
 
-      {degraded && (
+      {/* A hand-off runs nothing here — it opens another module with the
+          fields filled in — so the template store being unavailable does not
+          stop it. Only a template that runs HERE is held back. */}
+      {degraded && !handoff && (
         <div className="card tpl-error" role="status">
           This template is showing in preview only — running it is temporarily unavailable.
           Your inputs and credits are untouched. Please try again shortly.
@@ -643,7 +646,7 @@ function TemplateRunner({ templateKey, runId = null, onBack }) {
           )}
 
           <div className="tpl-run-row">
-            <Button onClick={run} disabled={busy || degraded}>
+            <Button onClick={run} disabled={busy || (degraded && !handoff)}>
               {handoff ? handoff.label : busy ? "Running…" : "Run this template"}
             </Button>
             {/* A hand-off spends nothing HERE, so showing this template's credit
