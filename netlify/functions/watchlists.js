@@ -123,8 +123,10 @@ async function handlePost(event) {
     if (!(await assertWatchlistOwner(watchlistId, userId))) {
       return json(404, { error: "Watchlist not found" });
     }
-    const res = await deleteWatchlist(userId, watchlistId);
-    if (!res.ok) return json(res.status || 400, { error: res.reason });
+    // `unlink: true` is "Unlink and delete"; without it a watchlist that rules
+    // still use is refused with 409 and the rules' names (0085).
+    const res = await deleteWatchlist(userId, watchlistId, undefined, { unlink: body.unlink === true });
+    if (!res.ok) return json(res.status || 400, { error: res.reason, code: res.code, rules: res.rules });
     return json(200, res);
   }
 

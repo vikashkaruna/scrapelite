@@ -311,6 +311,9 @@ async function processTarget(db, watchlist, target, deadlineAt, meter) {
               domain: target.domain,
               company_name: target.company_name || target.domain,
               watchlist: watchlist.name,
+              // Names the source, so a rule scoped to chosen watchlists (0085)
+              // can tell whether this change is one of its.
+              watchlist_id: watchlist.id,
               field: record.field,
               category: record.category,
               old_value: record.oldValue,

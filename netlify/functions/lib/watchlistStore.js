@@ -3,6 +3,7 @@
 // Manages watchlists, targets, monitored pages, snapshots, field changes, and feedback.
 
 import { createClient } from "@supabase/supabase-js";
+import { rulesUsingSource, unlinkAllFromSource, inUseConflict } from "./ruleSources.js";
 import { normalizeDomain } from "../../../src/lib/bulk/identityModel.js";
 import { buildChangeRecord } from "../../../src/lib/watchlist/materialityModel.js";
 
@@ -173,7 +174,7 @@ export async function updateWatchlist(userId, watchlistId, { name, description, 
   return { ok: true, watchlist: wl, targets: updatedTargets || [] };
 }
 
-export async function deleteWatchlist(userId, watchlistId, env = process.env) {
+export async function deleteWatchlist(userId, watchlistId, env = process.env, { unlink = false } = {}) {
   if (ownerless(userId) || !watchlistId) return { ok: false, reason: "Unauthorized or missing id" };
   const db = serviceDb(env);
   const now = new Date().toISOString();
@@ -187,6 +188,21 @@ export async function deleteWatchlist(userId, watchlistId, env = process.env) {
     return { ok: true, archived: true };
   }
 
+  if (!(await assertWatchlistOwner(watchlistId, userId, env))) {
+    return { ok: false, reason: "Watchlist not found", status: 404 };
+  }
+
+  // A watchlist a rule listens to is not archived silently (0085). The archive
+  // is a soft delete, so no FK cascade would ever remove the links — without
+  // this check a rule would stay "active" and linked to a watchlist that never
+  // runs again. Unlinking a rule's last source pauses it.
+  const usedBy = await rulesUsingSource(db, userId, "watchlist", watchlistId);
+  if (usedBy.length && !unlink) return inUseConflict("watchlist", usedBy);
+  if (usedBy.length) {
+    const cleared = await unlinkAllFromSource(db, userId, "watchlist", watchlistId);
+    if (!cleared.ok) return { ok: false, reason: "Could not unlink the rules using this watchlist." };
+  }
+
   // Soft delete preserves audit trails, snapshots, and field changes
   const { data, error } = await db
     .from("watchlists")
@@ -197,7 +213,7 @@ export async function deleteWatchlist(userId, watchlistId, env = process.env) {
     .single();
 
   if (error) return { ok: false, reason: error.message };
-  return { ok: true, archived: true, watchlist: data };
+  return { ok: true, archived: true, watchlist: data, unlinked: usedBy.map((r) => ({ id: r.id, name: r.name })) };
 }
 
 export async function getWatchlist(watchlistId, userId, env = process.env) {

@@ -250,6 +250,7 @@ const rules = await import("../netlify/functions/lib/ruleStore.js");
 const { isDue } = await import("../netlify/functions/watchlist-monitor.js");
 const { discoverPages } = await import("../src/lib/watchlist/snapshotModel.js");
 const { chargeLedger } = await import("../netlify/functions/lib/templateStore.js");
+const { rulesForEvent } = await import("../netlify/functions/lib/signalDispatch.js");
 
 console.log(`\n[verify-workflows] ${files.length} migrations applied · two real tenants\n`);
 
@@ -478,6 +479,93 @@ group("PRD 5 — signal rules: ownership, destination validation, execution log"
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+group("0085 — rules scoped to chosen watchlists / lists (plan §6b)");
+{
+  const mk = async (user, name) => (await db.query(
+    `insert into public.watchlists (user_id, name) values ($1, $2) returning id`, [user, name])).rows[0].id;
+  const wA = await mk(users.alice, "Close rivals");
+  const wB = await mk(users.alice, "Adjacent");
+  const wM = await mk(users.mallory, "Mallory's");
+  const slack = { url: "https://hooks.slack.com/services/T/B/C" };
+
+  const scoped = await rules.createRule(users.alice, {
+    name: "Rivals only", trigger_source: "watchlist", action_type: "slack", action_config: slack,
+    source_scope: "selected", sources: [{ type: "watchlist", id: wA }],
+  });
+  ok("a rule scoped to one watchlist is created", scoped.ok);
+  eq("...and carries its source by name", scoped.rule?.sources?.map((x) => x.name), ["Close rivals"]);
+  const all = await rules.createRule(users.alice, {
+    name: "Everything", trigger_source: "watchlist", action_type: "slack", action_config: slack,
+  });
+  eq("a rule created without a scope listens to all, as before", all.rule?.source_scope, "all");
+
+  const ev = (watchlist_id) => ({ kind: "monitor.change_detected", userId: users.alice, payload: { watchlist_id } });
+  const names = async (e) => (await rulesForEvent(e)).map((r) => r.name).sort();
+  eq("an event from the linked watchlist fires both", await names(ev(wA)), ["Everything", "Rivals only"]);
+  eq("🔴 an event from another watchlist does not fire the scoped rule", await names(ev(wB)), ["Everything"]);
+  eq("🔴 an event naming no watchlist never fires a scoped rule", await names(ev(undefined)), ["Everything"]);
+
+  const cross = await rules.createRule(users.mallory, {
+    name: "Steal", trigger_source: "watchlist", action_type: "slack", action_config: slack,
+    source_scope: "selected", sources: [{ type: "watchlist", id: wA }],
+  });
+  eq("🔴 another tenant cannot link your watchlist — 404, not 403", cross.status, 404);
+  const wrongKind = await rules.createRule(users.alice, {
+    name: "Mismatch", trigger_source: "bulk_enrichment", action_type: "slack", action_config: slack,
+    source_scope: "selected", sources: [{ type: "watchlist", id: wA }],
+  });
+  eq("a list rule cannot be scoped to a watchlist", wrongKind.status, 400);
+  eq("a scoped rule with no sources is refused", (await rules.createRule(users.alice, {
+    name: "Empty", trigger_source: "watchlist", action_type: "slack", action_config: slack, source_scope: "selected", sources: [],
+  })).status, 400);
+  ok("mallory's own watchlist exists (control)", Boolean(wM));
+
+  const refused = await watch.deleteWatchlist(users.alice, wA);
+  eq("🔴 deleting a watchlist a rule uses is refused (409)", refused.status, 409);
+  eq("...naming the rule", refused.rules?.map((r) => r.name), ["Rivals only"]);
+  eq("...and the watchlist is untouched", (await db.query(`select status from public.watchlists where id=$1`, [wA])).rows[0].status, "active");
+
+  const unlinked = await watch.deleteWatchlist(users.alice, wA, undefined, { unlink: true });
+  ok("'Unlink and delete' archives the watchlist", unlinked.ok && unlinked.archived);
+  const after = (await db.query(`select status, paused_reason from public.signal_rules where id=$1`, [scoped.rule.id])).rows[0];
+  eq("🔴 the rule that lost its only source is PAUSED, not widened", [after.status, after.paused_reason], ["paused", "no_sources"]);
+  eq("...so an event from any watchlist no longer fires it", await names(ev(wB)), ["Everything"]);
+
+  const resume = await rules.updateRule(users.alice, scoped.rule.id, { status: "active" });
+  eq("resuming it with no sources is refused", resume.code, "no_sources");
+  const widened = await rules.updateRule(users.alice, scoped.rule.id, { source_scope: "all", status: "active" });
+  ok("switching it to 'all' on purpose resumes it", widened.ok && widened.rule.status === "active");
+  eq("...and clears the pause reason", widened.rule.paused_reason, null);
+
+  // Re-scope to B and swap sources: the trigger must not pause a rule that is
+  // only CHANGING sources (links are added before old ones are removed).
+  const rescoped = await rules.updateRule(users.alice, scoped.rule.id, { source_scope: "selected", sources: [{ type: "watchlist", id: wB }] });
+  ok("re-scoping to another watchlist works", rescoped.ok);
+  eq("...and leaves the rule active", (await db.query(`select status from public.signal_rules where id=$1`, [scoped.rule.id])).rows[0].status, "active");
+
+  // A list rule and the list delete IDOR fix.
+  const list = (await db.query(`insert into public.lists (user_id, name) values ($1, 'ICP') returning id`, [users.alice])).rows[0].id;
+  await db.query(`insert into public.list_records (list_id, raw_input, canonical_domain) values ($1, 'acme-idor.test', 'acme-idor.test')`, [list]);
+  const recCount = async () => (await db.query(`select count(*)::int c from public.list_records where list_id=$1`, [list])).rows[0].c;
+  eq("(the list has a record to protect)", await recCount(), 1);
+  const byMallory = await bulk.deleteList(users.mallory, list);
+  eq("🔴 another tenant cannot delete your list (404)", byMallory.status, 404);
+  eq("🔴 ...and its records survive the attempt", await recCount(), 1);
+
+  const listRule = await rules.createRule(users.alice, {
+    name: "Hot accounts", trigger_source: "bulk_enrichment", action_type: "slack", action_config: slack,
+    source_scope: "selected", sources: [{ type: "list", id: list }],
+  });
+  ok("a rule scoped to one list is created", listRule.ok);
+  const listEv = (list_id) => ({ kind: "account.score_changed", userId: users.alice, payload: { list_id } });
+  eq("a score from the linked list fires it", (await rulesForEvent(listEv(list))).map((r) => r.name), ["Hot accounts"]);
+  eq("a score from another list does not", (await rulesForEvent(listEv("00000000-0000-0000-0000-000000000000"))).length, 0);
+  eq("🔴 deleting a list a rule uses is refused (409)", (await bulk.deleteList(users.alice, list)).status, 409);
+  ok("'Unlink and delete' removes the list", (await bulk.deleteList(users.alice, list, undefined, { unlink: true })).ok);
+  eq("...and pauses the rule", (await db.query(`select status from public.signal_rules where id=$1`, [listRule.rule.id])).rows[0].status, "paused");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 group("Credit ledger — monitoring is a cost-bearing action");
 {
   await chargeLedger([{
@@ -491,6 +579,28 @@ group("Credit ledger — monitoring is a cost-bearing action");
   // The vocabulary was already in 0037 — the schema anticipated a crawler that
   // had never been built.
   eq("...against the unit the schema already defined", led.rows[0].unit, "monitor_check");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAST, because it removes 0085: a deploy can reach an environment before the
+// operator applies the migration. Rules that listen to every source — every
+// rule that existed before 0085 — must keep saving, pausing and resuming there.
+group("Before 0085 is applied — ordinary rules keep working");
+{
+  await db.exec(`
+    drop trigger if exists signal_rule_sources_pause_orphans on public.signal_rule_sources;
+    drop table if exists public.signal_rule_sources;
+    alter table public.signal_rules drop column if exists source_scope, drop column if exists paused_reason;
+  `);
+  const slack = { url: "https://hooks.slack.com/services/T/B/C" };
+  const made = await rules.createRule(users.alice, { name: "Pre-0085", trigger_source: "watchlist", action_type: "slack", action_config: slack });
+  ok("🔴 a rule that listens to all is created without the new column", made.ok);
+  const edited = await rules.updateRule(users.alice, made.rule?.id, { name: "Pre-0085 (edited)", trigger_source: "watchlist", source_scope: "all", sources: [] });
+  ok("🔴 the rule form's save (scope 'all', no sources) still works", edited.ok);
+  ok("pausing works", (await rules.updateRule(users.alice, made.rule?.id, { status: "paused" })).ok);
+  ok("🔴 resuming works (no paused_reason column to clear)", (await rules.updateRule(users.alice, made.rule?.id, { status: "active" })).ok);
+  const listed = await rules.listRules(users.alice);
+  ok("listing rules works and reads them as 'all'", listed.ok && listed.rules.every((r) => r.source_scope === "all"));
 }
 
 // ── summary ─────────────────────────────────────────────────────────────────

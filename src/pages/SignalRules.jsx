@@ -4,7 +4,8 @@
 // and workflow runs to Slack, Email, Webhooks, and HubSpot.
 
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate, Link, useLocation } from "react-router";
+import TemplateBacklink from "../components/TemplateBacklink.jsx";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -14,6 +15,10 @@ import { TRIGGER_SOURCES, ACTION_TYPES, evaluateSignalRule, formatActionPayload 
 import * as rulesApi from "../lib/rules/rulesClient.js";
 import { getIntegrationStatus } from "../lib/integrationsClient.js";
 import { readPageCache, writePageCache } from "../lib/cache/pageCache.js";
+import RuleSourcesField from "../components/RuleSourcesField.jsx";
+import BusyIndicator from "../components/BusyIndicator.jsx";
+import { useBusy } from "../hooks/useBusy.js";
+import { describeRule, describeSources, scopableSourceType } from "../lib/rules/ruleSentence.js";
 
 export default function SignalRules() {
   const showToast = useToast();
@@ -33,8 +38,39 @@ export default function SignalRules() {
   const [conditionField, setConditionField] = useState("materiality");
   const [conditionOp, setConditionOp] = useState("equals");
   const [conditionVal, setConditionVal] = useState("critical");
+  // Which lists / watchlists the rule listens to (0085). "all" is the old
+  // behaviour; "selected" narrows it to the ticked sources.
+  const [scope, setScope] = useState("all");
+  const [selectedSources, setSelectedSources] = useState([]);
+  const { busy, label: busyLabel, run } = useBusy();
 
   // Edit Modal State
+  // Prefill from the template hub (Price-change Alert to Slack): open the
+  // create form filled in. Nothing is saved until the user presses Create.
+  const location = useLocation();
+  useEffect(() => {
+    const draft = location.state?.newRule;
+    if (!draft) return;
+    if (draft.name) setName(draft.name);
+    if (draft.triggerSource) setTriggerSource(draft.triggerSource);
+    if (draft.actionType) setActionType(draft.actionType);
+    if (draft.actionDest) setActionDest(draft.actionDest);
+    if (draft.condition) {
+      setConditionField(draft.condition.field);
+      setConditionOp(draft.condition.op);
+      setConditionVal(draft.condition.value);
+    }
+    // "Alert me" on a watchlist arrives with that watchlist chosen.
+    if (Array.isArray(draft.sources) && draft.sources.length) {
+      setScope("selected");
+      setSelectedSources(draft.sources);
+    } else {
+      setScope("all");
+      setSelectedSources([]);
+    }
+    setShowCreateModal(true);
+  }, [location.state]);
+
   const [editingRule, setEditingRule] = useState(null);
   const [editName, setEditName] = useState("");
   const [editTriggerSource, setEditTriggerSource] = useState(TRIGGER_SOURCES.WATCHLIST);
@@ -43,6 +79,8 @@ export default function SignalRules() {
   const [editConditionField, setEditConditionField] = useState("materiality");
   const [editConditionOp, setEditConditionOp] = useState("equals");
   const [editConditionVal, setEditConditionVal] = useState("critical");
+  const [editScope, setEditScope] = useState("all");
+  const [editSources, setEditSources] = useState([]);
 
   // Delete Modal State
   const [deletingRule, setDeletingRule] = useState(null);
@@ -138,6 +176,12 @@ export default function SignalRules() {
       return;
     }
 
+    const scoped = scopableSourceType(triggerSource) && scope === "selected";
+    if (scoped && selectedSources.length === 0) {
+      showToast("Choose at least one source, or let the rule listen to all of them.");
+      return;
+    }
+
     const conditions = [{ field: conditionField, operator: conditionOp, value: conditionVal }];
     // These shapes are the server's, not ours. `validateActionConfig` reads
     // `to`/`email` for email and a URL for webhook; the previous
@@ -155,13 +199,15 @@ export default function SignalRules() {
         ? { to: actionDest }
         : {};
 
-    try {
+    await run("Saving rule…", async () => { try {
       const res = await rulesApi.createRule({
         name,
         trigger_source: triggerSource,
         conditions,
         action_type: actionType,
         action_config: actionConfig,
+        source_scope: scoped ? "selected" : "all",
+        sources: scoped ? selectedSources.map(({ type, id }) => ({ type, id })) : [],
       });
 
       const newRule = res?.rule || {
@@ -184,10 +230,12 @@ export default function SignalRules() {
       showToast("Signal rule created.");
       setShowCreateModal(false);
       setName("");
+      setScope("all");
+      setSelectedSources([]);
       loadRules(true);
     } catch (err) {
       showToast(err.message);
-    }
+    } });
   };
 
   const openEditModal = (r) => {
@@ -200,12 +248,19 @@ export default function SignalRules() {
     setEditConditionField(cond.field || "materiality");
     setEditConditionOp(cond.operator || "equals");
     setEditConditionVal(cond.value || "critical");
+    setEditScope(r.source_scope === "selected" ? "selected" : "all");
+    setEditSources(r.sources || []);
     setDestTestResult(null);
   };
 
   const handleUpdateRule = async (e) => {
     e.preventDefault();
     if (!editingRule) return;
+    const scoped = scopableSourceType(editTriggerSource) && editScope === "selected";
+    if (scoped && editSources.length === 0) {
+      showToast("Choose at least one source, or let the rule listen to all of them.");
+      return;
+    }
     const conditions = [{ field: editConditionField, operator: editConditionOp, value: editConditionVal }];
     const actionConfig =
       editActionType === ACTION_TYPES.SLACK
@@ -216,27 +271,44 @@ export default function SignalRules() {
         ? { to: editActionDest }
         : {};
 
-    try {
-      await rulesApi.updateRule(editingRule.id, {
-        name: editName.trim(),
-        trigger_source: editTriggerSource,
-        conditions,
-        action_type: editActionType,
-        action_config: actionConfig,
-      });
+    const updates = {
+      name: editName.trim(),
+      trigger_source: editTriggerSource,
+      conditions,
+      action_type: editActionType,
+      action_config: actionConfig,
+      source_scope: scoped ? "selected" : "all",
+      sources: scoped ? editSources.map(({ type, id }) => ({ type, id })) : [],
+    };
+    // A rule the platform paused because it lost its last source resumes once
+    // the edit gives it a source again — that is why the user opened it.
+    if (editingRule.paused_reason === "no_sources") updates.status = "active";
 
-      showToast("Signal rule updated.");
+    await run("Saving changes…", async () => { try {
+      await rulesApi.updateRule(editingRule.id, updates);
+      showToast(updates.status ? "Signal rule updated and resumed." : "Signal rule updated.");
       setEditingRule(null);
       loadRules(true);
     } catch (err) {
       showToast(err.message || "Failed to update rule");
-    }
+    } });
   };
+
+  const handleUnlink = (rule, source) => run(`Unlinking ${source.name || "source"}…`, async () => {
+    try {
+      await rulesApi.unlinkSource(rule.id, source.type, source.id);
+      const last = (rule.sources || []).length <= 1;
+      showToast(last ? "Unlinked. The rule had no sources left, so it is paused." : "Unlinked.");
+      loadRules(true);
+    } catch (err) {
+      showToast(err.message || "Could not unlink the source");
+    }
+  });
 
   const confirmDelete = async () => {
     if (!deletingRule) return;
     const ruleId = deletingRule.id;
-    try {
+    await run("Deleting rule…", async () => { try {
       setRules((prev) => {
         const next = prev.filter((r) => r.id !== ruleId);
         writePageCache("signalRules", next);
@@ -249,7 +321,7 @@ export default function SignalRules() {
     } catch (err) {
       showToast(err.message || "Failed to delete rule");
       loadRules();
-    }
+    } });
   };
 
   const handleRunTest = () => {
@@ -289,6 +361,8 @@ export default function SignalRules() {
 
   return (
     <div className="container" style={{ padding: "40px 20px" }}>
+      <TemplateBacklink />
+      <BusyIndicator label={busyLabel} />
       <header className="page-header" style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
@@ -361,6 +435,26 @@ export default function SignalRules() {
                         <span style={{ fontSize: "12px", color: "var(--text-3)" }}>URL: {r.action_config.webhook_url}</span>
                       )}
                     </div>
+                    {scopableSourceType(r.trigger_source) && (
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 8, fontSize: "0.8rem", color: "var(--text-2)" }}>
+                        <span>Listens to {describeSources(r.trigger_source, r.source_scope, r.sources)}</span>
+                        {r.source_scope === "selected" && (r.sources || []).map((s) => (
+                          <span key={`${s.type}:${s.id}`} className="wf-chip">
+                            {s.name || "Untitled"}
+                            <button
+                              type="button"
+                              className="wf-chip-x"
+                              aria-label={`Unlink ${s.name || "this source"} from ${r.name}`}
+                              disabled={busy}
+                              onClick={() => handleUnlink(r, s)}
+                            >×</button>
+                          </span>
+                        ))}
+                        {r.paused_reason === "no_sources" && (
+                          <span className="wf-chip wf-chip-warn">Paused — no sources left. Edit to add one.</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <Button
@@ -386,7 +480,7 @@ export default function SignalRules() {
                       size="sm"
                       onClick={() => setDeletingRule(r)}
                       title="Delete rule"
-                      style={{ color: "var(--danger, #dc2626)" }}
+                      style={{ color: "var(--danger)" }}
                     >
                       <Icon name="trash-2" size={14} />
                     </Button>
@@ -430,7 +524,7 @@ export default function SignalRules() {
 
           {testResult && (
             <div style={{ marginTop: 16, padding: 12, background: "var(--surface-2)", borderRadius: 6 }}>
-              <div style={{ fontWeight: 700, color: testResult.matches ? "#059669" : "#b91c1c", marginBottom: 6 }}>
+              <div style={{ fontWeight: 700, color: testResult.matches ? "var(--success)" : "var(--danger)", marginBottom: 6 }}>
                 Verdict: {testResult.matches ? "✓ RULE MATCHED" : "✗ NO MATCH"}
               </div>
               <ul style={{ margin: "0 0 10px 0", paddingLeft: 18, fontSize: "0.82rem", color: "var(--text-2)" }}>
@@ -490,7 +584,7 @@ export default function SignalRules() {
                   </label>
                   <select
                     value={triggerSource}
-                    onChange={(e) => setTriggerSource(e.target.value)}
+                    onChange={(e) => { setTriggerSource(e.target.value); setSelectedSources([]); }}
                     style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
                   >
                     <option value={TRIGGER_SOURCES.WATCHLIST}>Competitor Watchlist Change</option>
@@ -498,6 +592,14 @@ export default function SignalRules() {
                     <option value={TRIGGER_SOURCES.WORKFLOW_RUN}>Workflow Template Run Completed</option>
                   </select>
                 </div>
+
+                <RuleSourcesField
+                  triggerSource={triggerSource}
+                  scope={scope}
+                  setScope={setScope}
+                  selected={selectedSources}
+                  setSelected={setSelectedSources}
+                />
 
                 <div style={{ padding: 12, background: "var(--surface-2)", borderRadius: 6 }}>
                   <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 8 }}>
@@ -561,11 +663,22 @@ export default function SignalRules() {
                 />
               </div>
 
+              <p className="wf-sentence" data-testid="rule-sentence">
+                {describeRule({
+                  triggerSource,
+                  scope,
+                  sources: selectedSources,
+                  condition: { field: conditionField, operator: conditionOp, value: conditionVal },
+                  actionType,
+                  actionDest,
+                })}
+              </p>
+
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
-                <Button variant="ghost" onClick={() => setShowCreateModal(false)}>
+                <Button variant="ghost" type="button" onClick={() => setShowCreateModal(false)}>
                   Cancel
                 </Button>
-                <Button variant="primary" type="submit">
+                <Button variant="primary" type="submit" loading={busy}>
                   Save Rule
                 </Button>
               </div>
@@ -635,7 +748,7 @@ export default function SignalRules() {
                   </label>
                   <select
                     value={editTriggerSource}
-                    onChange={(e) => setEditTriggerSource(e.target.value)}
+                    onChange={(e) => { setEditTriggerSource(e.target.value); setEditSources([]); }}
                     style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
                   >
                     <option value={TRIGGER_SOURCES.WATCHLIST}>Competitor Watchlist Change</option>
@@ -643,6 +756,14 @@ export default function SignalRules() {
                     <option value={TRIGGER_SOURCES.WORKFLOW_RUN}>Workflow Template Run Completed</option>
                   </select>
                 </div>
+
+                <RuleSourcesField
+                  triggerSource={editTriggerSource}
+                  scope={editScope}
+                  setScope={setEditScope}
+                  selected={editSources}
+                  setSelected={setEditSources}
+                />
 
                 <div style={{ padding: 12, background: "var(--surface-2)", borderRadius: 6 }}>
                   <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 8 }}>
@@ -706,11 +827,22 @@ export default function SignalRules() {
                 />
               </div>
 
+              <p className="wf-sentence">
+                {describeRule({
+                  triggerSource: editTriggerSource,
+                  scope: editScope,
+                  sources: editSources,
+                  condition: { field: editConditionField, operator: editConditionOp, value: editConditionVal },
+                  actionType: editActionType,
+                  actionDest: editActionDest,
+                })}
+              </p>
+
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
-                <Button variant="ghost" onClick={() => setEditingRule(null)}>
+                <Button variant="ghost" type="button" onClick={() => setEditingRule(null)}>
                   Cancel
                 </Button>
-                <Button variant="primary" type="submit">
+                <Button variant="primary" type="submit" loading={busy}>
                   Save Changes
                 </Button>
               </div>
@@ -747,8 +879,8 @@ export default function SignalRules() {
               borderRadius: "var(--r, 14px)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--danger, #dc2626)", marginBottom: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--danger-soft, #fee2e2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--danger)", marginBottom: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--danger-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Icon name="alert-triangle" size={18} />
               </div>
               <h3 style={{ margin: 0, fontSize: "1.15rem" }}>Delete Signal Rule?</h3>
@@ -759,7 +891,7 @@ export default function SignalRules() {
             </p>
 
             <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r, 8px)", padding: "10px 12px", fontSize: "0.82rem", color: "var(--text-2)", marginBottom: 16 }}>
-              <Icon name="shield-check" size={14} style={{ color: "var(--success, #10b981)", verticalAlign: "-2px", marginRight: 6 }} />
+              <Icon name="shield-check" size={14} style={{ color: "var(--success)", verticalAlign: "-2px", marginRight: 6 }} />
               <strong>Audit Trail Preserved:</strong> All past trigger events, payload traces, and delivery timestamps will remain securely preserved in your audit logs.
             </div>
 
@@ -767,7 +899,7 @@ export default function SignalRules() {
               <Button variant="ghost" onClick={() => setDeletingRule(null)}>
                 Cancel
               </Button>
-              <Button variant="danger" onClick={confirmDelete} style={{ background: "var(--danger, #dc2626)", color: "#fff" }}>
+              <Button variant="danger" onClick={confirmDelete} loading={busy}>
                 Delete Rule
               </Button>
             </div>
@@ -799,7 +931,7 @@ function DestinationField({
   const NotConnected = ({ name }) => (
     <div style={{
       padding: "12px 14px", borderRadius: 8, border: "1px solid var(--border)",
-      background: "var(--warning-soft, #fef3c7)",
+      background: "color-mix(in srgb, var(--warning) 14%, transparent)",
     }}>
       <p style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
         <strong>{name} is not connected.</strong> This rule needs a {name} connection
@@ -812,7 +944,7 @@ function DestinationField({
   );
 
   const Connected = ({ name, detail }) => (
-    <p style={{ ...note, color: "var(--success, #059669)", marginTop: 0, marginBottom: 8 }}>
+    <p style={{ ...note, color: "var(--success)", marginTop: 0, marginBottom: 8 }}>
       ✓ {name} connected{detail ? ` — ${detail}` : ""}
     </p>
   );
@@ -825,7 +957,7 @@ function DestinationField({
       {testResult && (
         <p style={{
           ...note,
-          color: testResult.ok ? "var(--success, #059669)" : "var(--danger, #b45309)",
+          color: testResult.ok ? "var(--success)" : "var(--danger)",
         }}>
           {testResult.ok
             ? "Test message delivered."

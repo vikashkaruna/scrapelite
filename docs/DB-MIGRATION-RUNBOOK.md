@@ -722,6 +722,47 @@ select pg_get_constraintdef(oid) from pg_constraint where conname = 'public_repo
 -- Expect the list to include 'revops', 'pmm', 'brand-growth', 'market-research' and 'recruiter'.
 ```
 
+## 4k. `0085` — signal rules limited to chosen lists / watchlists
+
+Additive (2026-09-24, Phase C). Two columns on `signal_rules` — `source_scope`
+(`'all'` default | `'selected'`) and `paused_reason` — one table,
+`signal_rule_sources` (one row per rule ↔ list **or** watchlist, both real
+foreign keys with `on delete cascade`, exactly one set), and one trigger,
+`signal_rule_sources_pause_orphans`, which **pauses** a scoped rule with
+`paused_reason = 'no_sources'` when its last link goes. A scoped rule is never
+widened to "all". Service-role-only RLS, nothing granted to anon/authenticated;
+`billing-purge` lists the new table and `npm run verify:rls` probes it.
+
+| If it is missing | Effect |
+|---|---|
+| Columns + table absent | Rules that listen to every source (every rule that existed before) create, edit, pause and resume normally — the store writes `source_scope` only when it is `'selected'`. **Choosing specific sources fails** with a column error, "Used by rules" shows nothing, and deleting a list or watchlist is never refused for being in use. |
+
+### Apply
+
+Apply **only this file** with the subset one-liner in §4. Re-runnable
+(`if not exists` throughout; the trigger is dropped and re-created).
+
+### Verify
+
+```sql
+select column_name from information_schema.columns
+ where table_schema = 'public' and table_name = 'signal_rules'
+   and column_name in ('source_scope', 'paused_reason');
+-- Expect 2 rows.
+
+select c.relrowsecurity,
+       (select count(*) from pg_policies p where p.tablename = 'signal_rule_sources') policies,
+       (select count(*) from pg_trigger t where t.tgname = 'signal_rule_sources_pause_orphans') triggers
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relname = 'signal_rule_sources';
+-- Expect relrowsecurity = t, policies = 1, triggers = 1.
+
+select count(*) from public.signal_rules where source_scope <> 'all';
+-- Expect 0 straight after applying: every existing rule keeps listening to all.
+```
+
+Then `npm run verify:rls` (staging) / `-- --prod`.
+
 ## 5. Database functions — no separate step
 
 There is nothing to run beyond the migrations. All **9 functions and 2 triggers**

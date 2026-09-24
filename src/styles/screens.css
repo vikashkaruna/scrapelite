@@ -68,7 +68,14 @@
 .hdr-source-row > svg:first-child { color: var(--accent); }
 .hdr-source-row > svg:nth-of-type(2) { color: var(--text-3); margin-left: auto; }
 .hdr-source-state { color: var(--accent); font-size: .83em; }
-.hdr-signal-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 10px; position: relative; }
+.hdr-signal-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; position: relative; }
+.hdr-signal-tile { position: relative; }
+.hdr-signal-beta {
+  position: absolute; top: 6px; right: 6px; padding: 0 5px; border-radius: 999px;
+  font-size: .78em; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent-on-soft); background: var(--accent-soft);
+}
+@media (max-width: 400px) { .hdr-signal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .hdr-signal-tile { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 9px; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface) 75%, transparent); color: var(--text-2); font-size: .77em; font-weight: 750; text-decoration: none; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
 .hdr-signal-tile:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); color: var(--accent-on-soft); transform: translateY(-1px); }
 .hdr-signal-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -5354,6 +5361,17 @@
   text-transform: uppercase;
   margin-bottom: 10px;
 }
+/* Home: the chips sit inside the composer's 760px column, which made the
+   sixth chip ("Custom…") wrap with room to spare on both sides. They span the
+   page's content width instead — the same width .container gives its content
+   — and still wrap on a narrow screen, where this equals 100%. */
+.intent-chips-wide {
+  --chips-w: calc(min(1080px, 100vw) - 2 * clamp(20px, 4vw, 44px));
+  width: var(--chips-w);
+  /* The column is centred in the page, so centre the wider row on it too.
+     On a narrow screen the row equals the column and this margin is 0. */
+  margin-left: calc((100% - var(--chips-w)) / 2);
+}
 .intent-chips-row {
   display: flex;
   align-items: center;
@@ -6877,6 +6895,10 @@
 }
 .outcome-tile-title { font-size: .9rem; font-weight: 700; line-height: 1.2; }
 .outcome-tile-desc { font-size: .75rem; color: var(--text-2); line-height: 1.3; }
+.outcome-tile-opens {
+  display: inline-flex; align-items: center; gap: 3px; margin-top: auto; padding-top: 4px;
+  font-size: .7rem; font-weight: 700; color: var(--accent);
+}
 
 /* Q4 — workspace page */
 .ws-container { padding-top: clamp(32px, 5vh, 56px); padding-bottom: clamp(40px, 6vh, 72px); }
@@ -10472,6 +10494,11 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
   border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer;
 }
+.tpl-filter-label { align-self: center; margin-right: 4px; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.tpl-chip svg { vertical-align: -2px; }
+.tpl-card-opens { color: var(--accent); }
+.tpl-backlink { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 10px; font-size: .84rem; font-weight: 700; color: var(--accent); text-decoration: none; }
+.tpl-backlink:hover { text-decoration: underline; }
 .tpl-chip:hover { border-color: var(--accent); color: var(--text); }
 .tpl-chip.on {
   background: var(--accent); border-color: var(--accent);
@@ -12688,3 +12715,62 @@ html.dark .closed-loop-next-card.is-audit-complete {
 .engx-pill.is-skip { background: var(--surface-2); color: var(--text-2); }
 .engx-preview-wrap { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
 .engx-preview-wrap .engx-table th { position: sticky; top: 0; }
+
+/* ── Shared confirm dialog (ConfirmDialog.jsx) ───────────────────────────── */
+.dq-dialog-backdrop {
+  position: fixed; inset: 0; z-index: 1300; display: grid; place-items: center; padding: 16px;
+  background: color-mix(in srgb, var(--bg) 40%, rgba(0, 0, 0, .55));
+}
+.dq-dialog {
+  width: 100%; max-width: 460px; padding: 22px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+}
+.dq-dialog-title { margin: 0 0 8px; font-size: 1.08rem; font-weight: 780; color: var(--text); }
+.dq-dialog-body { color: var(--text-2); font-size: .92rem; line-height: 1.55; }
+.dq-dialog-body ul { margin: 8px 0 0; padding-left: 18px; }
+.dq-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+/* ── "Used by rules" / rule sources (0085) ───────────────────────────────── */
+.wf-usedby { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
+.wf-usedby-h { margin: 0 0 8px; font-size: .78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.wf-usedby-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; font-size: .88rem; color: var(--text); }
+.wf-usedby-row + .wf-usedby-row { border-top: 1px solid var(--border); }
+.wf-usedby-empty { font-size: .85rem; color: var(--text-2); }
+.wf-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px;
+  font-size: .74rem; font-weight: 700; background: var(--accent-soft); color: var(--accent-on-soft);
+}
+.wf-chip-warn { background: color-mix(in srgb, var(--warning, #d97706) 14%, transparent); color: var(--warning, #b45309); }
+.wf-sentence { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--r); background: var(--accent-soft); color: var(--accent-on-soft); font-size: .9rem; font-weight: 600; }
+.wf-scope { display: flex; flex-direction: column; gap: 8px; }
+.wf-scope-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.wf-scope-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow: auto; padding: 8px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); }
+.wf-scope-list label { display: flex; align-items: center; gap: 8px; font-size: .88rem; color: var(--text); }
+.wf-chip-x {
+  border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 0 0 2px;
+  font-size: .9rem; line-height: 1; opacity: .7;
+}
+.wf-chip-x:hover, .wf-chip-x:focus-visible { opacity: 1; }
+.wf-chip-x:disabled { cursor: default; opacity: .35; }
+.wf-scope-options label { display: inline-flex; align-items: center; gap: 6px; font-size: .88rem; color: var(--text); }
+
+/* ── Workflow hub layout (plan §8) ───────────────────────────────────────── */
+.wf-section-h { margin: 28px 0 12px; font-size: 1.1rem; font-weight: 750; color: var(--text); }
+.wf-count {
+  display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  font-size: .72rem; font-weight: 800; text-align: center; background: var(--surface-2); color: var(--text-2);
+}
+.wf-engage-block {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; padding: 12px 16px;
+  border: 1px dashed var(--border); border-radius: var(--r); background: var(--surface);
+}
+.wf-engage-block > div { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 180px; }
+.wf-engage-block .wf-stage-link { margin: 0; }
+.wf-unconnected { margin-top: 24px; }
+.wf-unconnected-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; padding: 12px 14px;
+  border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: var(--r); background: var(--surface);
+}
+.wf-unconnected-label { font-weight: 700; color: var(--text); min-width: 110px; }
+.wf-unconnected-items { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.wf-unconnected-items .wf-chip { text-decoration: none; }

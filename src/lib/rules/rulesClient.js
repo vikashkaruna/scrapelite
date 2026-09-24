@@ -27,7 +27,16 @@ export async function listRules() {
   return res.json();
 }
 
-export async function createRule({ name, trigger_source, conditions, action_type, action_config }) {
+/** An Error carrying the server's code and, for a 409 in_use, the rules. */
+function apiError(body, fallback, status) {
+  const e = new Error(body.error || fallback);
+  e.status = status;
+  e.code = body.code || null;
+  e.rules = body.rules || [];
+  return e;
+}
+
+export async function createRule({ name, trigger_source, conditions, action_type, action_config, source_scope = "all", sources = [] }) {
   const headers = await authHeaders();
   const res = await fetch("/api/signal-rules", {
     method: "POST",
@@ -39,11 +48,13 @@ export async function createRule({ name, trigger_source, conditions, action_type
       conditions,
       action_type,
       action_config,
+      source_scope,
+      sources,
     }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Failed to create signal rule: ${res.status}`);
+    throw apiError(body, `Failed to create signal rule: ${res.status}`, res.status);
   }
   return res.json();
 }
@@ -61,7 +72,7 @@ export async function updateRule(ruleId, updates) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Failed to update signal rule: ${res.status}`);
+    throw apiError(body, `Failed to update signal rule: ${res.status}`, res.status);
   }
   return res.json();
 }
@@ -110,4 +121,30 @@ export async function testDestination(action_type, action_config) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `Could not test the destination (${res.status})`);
   return body;
+}
+
+/** Remove one list/watchlist from a rule. The last one pauses the rule. */
+export async function unlinkSource(ruleId, sourceType, sourceId) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/signal-rules", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "unlink_source", ruleId, sourceType, sourceId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw apiError(body, `Failed to unlink: ${res.status}`, res.status);
+  return body;
+}
+
+/** The rules that listen to one list or watchlist ("Used by rules"). */
+export async function rulesForSource(sourceType, sourceId) {
+  const headers = await authHeaders();
+  const res = await fetch("/api/signal-rules", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "rules_for_source", sourceType, sourceId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw apiError(body, `Failed to load rules: ${res.status}`, res.status);
+  return body.rules || [];
 }

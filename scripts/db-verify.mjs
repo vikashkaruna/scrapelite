@@ -197,10 +197,12 @@ grant usage on schema public to anon, authenticated;
 // 0082 (+1 table engagement_suppressions, +1 function
 // engagement_activity_log_immutable, +1 trigger). Taking these to 124 / 61 / 34.
 // 0083 (+1 table account_brand_kits). Taking these to 125 / 61 / 34.
+// 0084 (CHECK widened only). 0085 (+1 table signal_rule_sources, +1 function
+// signal_rule_sources_pause_orphans, +1 trigger). Taking these to 126 / 62 / 35.
 const EXPECT = {
-  tables: 125,
-  functions: 61,
-  triggers: 34,
+  tables: 126,
+  functions: 62,
+  triggers: 35,
   tablesWithoutRls: 0,
 };
 
@@ -2538,6 +2540,49 @@ group("pql — 'no data' and 'unqualified' must not be the same row");
   eq("deleting the account deletes its brand kit", (await one(`select count(*)::int as n from public.account_brand_kits where user_id = $1`, [U7])).n, 0);
 }
 
+// ── 0085: rule ↔ source links ────────────────────────────────────────────────
+{
+  group("0085 rule sources — real links, exactly one source, no silent widening");
+  const U = "88888888-8888-8888-8888-888888888850";
+  await db.query(`insert into auth.users (id, email) values ($1, 'rules@x.test') on conflict do nothing`, [U]);
+  const wl = await one(`insert into public.watchlists (user_id, name) values ($1, 'Rivals') returning id`, [U]);
+  const wl2 = await one(`insert into public.watchlists (user_id, name) values ($1, 'Others') returning id`, [U]);
+  const list = await one(`insert into public.lists (user_id, name) values ($1, 'ICP') returning id`, [U]);
+
+  const legacy = await one(`insert into public.signal_rules (user_id, name, trigger_source, action_type)
+    values ($1, 'Old rule', 'watchlist', 'slack') returning source_scope, status`, [U]);
+  eq("an existing-style rule keeps scope 'all'", legacy.source_scope, "all");
+
+  const rule = await one(`insert into public.signal_rules (user_id, name, trigger_source, action_type, source_scope)
+    values ($1, 'Scoped', 'watchlist', 'slack', 'selected') returning id`, [U]);
+  await db.query(`insert into public.signal_rule_sources (rule_id, user_id, watchlist_id) values ($1, $2, $3)`, [rule.id, U, wl.id]);
+  await db.query(`insert into public.signal_rule_sources (rule_id, user_id, watchlist_id) values ($1, $2, $3)`, [rule.id, U, wl2.id]);
+
+  check("a link naming both a list and a watchlist is refused", Boolean(await throws(
+    `insert into public.signal_rule_sources (rule_id, user_id, list_id, watchlist_id) values ($1, $2, $3, $4)`, [rule.id, U, list.id, wl.id])));
+  check("a link naming neither is refused", Boolean(await throws(
+    `insert into public.signal_rule_sources (rule_id, user_id) values ($1, $2)`, [rule.id, U])));
+  check("the same link twice is refused", Boolean(await throws(
+    `insert into public.signal_rule_sources (rule_id, user_id, watchlist_id) values ($1, $2, $3)`, [rule.id, U, wl.id])));
+  check("a scope outside all/selected is refused", Boolean(await throws(
+    `update public.signal_rules set source_scope = 'some' where id = $1`, [rule.id])));
+
+  await db.query(`delete from public.watchlists where id = $1`, [wl.id]);
+  const afterOne = await one(`select status, paused_reason from public.signal_rules where id = $1`, [rule.id]);
+  eq("deleting one of two sources leaves the rule active", afterOne.status, "active");
+
+  await db.query(`delete from public.signal_rule_sources where rule_id = $1`, [rule.id]);
+  const afterAll = await one(`select status, paused_reason from public.signal_rules where id = $1`, [rule.id]);
+  eq("losing the last source PAUSES a scoped rule (never widens to all)", afterAll.status, "paused");
+  eq("...and says why", afterAll.paused_reason, "no_sources");
+
+  const legacyAfter = await one(`select status from public.signal_rules where name = 'Old rule' and user_id = $1`, [U]);
+  eq("a scope-'all' rule is never paused by the trigger", legacyAfter.status, "active");
+
+  await db.query(`delete from auth.users where id = $1`, [U]);
+  eq("deleting the account removes its links", (await one(`select count(*)::int n from public.signal_rule_sources where user_id = $1`, [U])).n, 0);
+}
+
 // ── 0084: role ids on curated reports ───────────────────────────────────────
 {
   group("0084 role ids — the eight roles, and retired ids still valid");
@@ -2568,6 +2613,7 @@ group("workflow RLS lockdown — anon reaches none of the Phase 4-6 tables");
     "engagement_campaigns", "engagement_prospects", "engagement_messages",
     "engagement_activity_log", "engagement_sync_configs", "engagement_suppressions",
     "account_brand_kits",
+    "signal_rule_sources",
   ];
 
   for (const t of LOCKED) {

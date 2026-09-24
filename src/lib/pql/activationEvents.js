@@ -78,6 +78,19 @@ export const TEMPLATE_CONDITION = Object.freeze({
   market_landscape_map: null,
   agency_client_teardown: null,
   continuous_account_signal: null,
+  // Template hub (2026-09-24). The eight hand-offs never produce a template run
+  // — the module they open emits its own events — so they satisfy nothing here.
+  // The content brief is a run, but running it is not EXPORTING a brief, which
+  // is what seo-content's condition asks for.
+  competitor_change_monitor: null,
+  price_change_slack_alert: null,
+  account_research_outreach: null,
+  event_followup_campaign: null,
+  weekly_visibility_monitor: null,
+  local_directory_check: null,
+  business_truth_setup: null,
+  icp_list_to_crm: null,
+  competitor_content_brief: null,
 });
 
 const RECRUITER_CAPABILITIES = Object.freeze(["leadership", "contacts", "social"]);

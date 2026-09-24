@@ -32,6 +32,28 @@
 
 import { TEMPLATE_STATUS } from "./templateModel.js";
 
+/**
+ * A template that OPENS a module (see templateHandoffs.js) rather than running
+ * on the Templates page. Nothing to extract and nothing to charge here.
+ */
+function handoff({ template_key, title, persona, summary, fields }) {
+  return {
+    template_key,
+    status: TEMPLATE_STATUS.PUBLISHED,
+    title,
+    persona,
+    summary,
+    input_schema: { fields },
+    extraction_schema: { fields: [] },
+    output_schema: { blocks: [] },
+    prompt_bundle: { delegate: "module" },
+    credit_cost: { base: 0, per_page: 0, per_ai_call: 0, pages_per_unit: 0, ai_calls_per_unit: 0 },
+    plan_entitlement: "template.run",
+    min_plan: "free",
+  };
+}
+
+
 export const SEED_TEMPLATES = [
   {
     template_key: "account_brief",
@@ -669,6 +691,127 @@ export const SEED_TEMPLATES = [
         "Summarize detected account movements and recommend signal rule routing criteria.",
     },
     credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 2, ai_calls_per_unit: 1 },
+    plan_entitlement: "template.run",
+    min_plan: "free",
+  },
+  // ── Template hub (Phase C §18, 2026-09-24) ─────────────────────────────────
+  // Eight of these nine OPEN a module (templateHandoffs.js) instead of running
+  // here: they are entry points into shipped features, prefilled from what the
+  // user types, and they spend nothing — the module charges for its own work.
+  // So their credit_cost is zero and their prompt_bundle is a delegate, never a
+  // prompt this page would have to run.
+  handoff({
+    template_key: "competitor_change_monitor",
+    title: "Competitor Change Monitor",
+    persona: "competitive-intel",
+    summary: "Watch competitors' pricing, product and positioning pages and get alerted when they change — with the before and after.",
+    fields: [
+      { name: "domains", kind: "domain_list", required: true, max: 25, label: "Competitor domains",
+        help: "One per line. You can add pages per competitor on the next screen." },
+      { name: "cadence", kind: "choice", label: "Check", default: "daily",
+        options: [{ value: "daily", label: "Daily" }, { value: "weekly", label: "Weekly" }] },
+    ],
+  }),
+  handoff({
+    template_key: "price_change_slack_alert",
+    title: "Price-change Alert to Slack",
+    persona: "competitive-intel",
+    summary: "Post to a Slack channel whenever a watched competitor changes a price — only the changes that matter, not every page edit.",
+    fields: [
+      { name: "channel", kind: "text", label: "Slack channel", default: "#competitor-alerts" },
+    ],
+  }),
+  handoff({
+    template_key: "account_research_outreach",
+    title: "Account Research → Outreach Campaign",
+    persona: "sales",
+    summary: "Start an Engagement campaign from your research: import contacts, review every draft, and send with per-channel consent (beta).",
+    fields: [
+      { name: "campaign", kind: "text", required: true, label: "Campaign name", placeholder: "Q4 fintech accounts" },
+    ],
+  }),
+  handoff({
+    template_key: "event_followup_campaign",
+    title: "Event / Webinar Follow-up",
+    persona: "sales",
+    summary: "Import attendees from an event and send each a reviewed follow-up — nobody is emailed without an approved draft (beta).",
+    fields: [
+      { name: "event", kind: "text", required: true, label: "Event name", placeholder: "SaaStr Annual 2026" },
+    ],
+  }),
+  handoff({
+    template_key: "weekly_visibility_monitor",
+    title: "Weekly AI Visibility Monitor",
+    persona: "seo",
+    summary: "Re-audit a page every week for search, answer-engine and AI visibility, and see the trend — with an alert when it drops.",
+    fields: [
+      { name: "url", kind: "url", required: true, label: "Page to monitor", placeholder: "https://example.com/pricing" },
+    ],
+  }),
+  handoff({
+    template_key: "local_directory_check",
+    title: "Local & Directory Consistency Check",
+    persona: "agency",
+    summary: "Check that your name, address and phone agree across the directories that matter — equivalent spellings are not reported as mismatches.",
+    fields: [],
+  }),
+  handoff({
+    template_key: "business_truth_setup",
+    title: "Business Truth Setup",
+    persona: "brand-growth",
+    summary: "Record the facts about your company once — legal name, domain, offer — so every audit can check the web against them.",
+    fields: [],
+  }),
+  handoff({
+    template_key: "icp_list_to_crm",
+    title: "ICP List → CRM",
+    persona: "revops",
+    summary: "Enrich and score a list of accounts against your ICP, then push the ranked list to HubSpot, Airtable or Sheets.",
+    fields: [
+      { name: "domains", kind: "domain_list", required: true, max: 500, label: "Company domains",
+        help: "Paste or upload a CSV. We de-duplicate and normalise them for you." },
+    ],
+  }),
+
+  {
+    template_key: "competitor_content_brief",
+    related_key: "mission",
+    status: TEMPLATE_STATUS.PUBLISHED,
+    title: "Competitor Content Brief",
+    persona: "seo",
+    summary: "Read a competitor's page and get a content brief that covers what it covers — and the questions it leaves unanswered.",
+    input_schema: {
+      fields: [
+        { name: "url", kind: "url", required: true, label: "Competitor page", placeholder: "https://competitor.com/guide" },
+        { name: "topic", kind: "text", label: "Your target topic (optional)", placeholder: "customer onboarding" },
+      ],
+    },
+    extraction_schema: {
+      fields: [
+        { name: "title", group: "identity" },
+        { name: "headings", group: "gtm" },
+        { name: "questions_answered", group: "gtm" },
+        { name: "claims", group: "positioning" },
+      ],
+    },
+    output_schema: {
+      blocks: [
+        { kind: "summary", title: "What the page covers" },
+        { kind: "list", title: "Brief: sections and questions to answer", from: "talking_points" },
+        { kind: "fields", title: "Structure and claims", groups: ["gtm", "positioning"] },
+        { kind: "sources", title: "Where this came from" },
+      ],
+    },
+    prompt_bundle: {
+      extract:
+        "Extract the page title, its heading outline in order, the questions it answers, and the specific claims it makes. " +
+        "Quote only what the page says. Never invent or guess — return null for anything the page does not state.",
+      summarize:
+        "Summarise in two sentences what this page covers and who it is written for.",
+      talking_points:
+        "Write a content brief that would out-cover this page: a recommended H1, an H2 outline, and the reader questions this page leaves unanswered. Base every point on the extracted outline and claims.",
+    },
+    credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 2, ai_calls_per_unit: 2 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },

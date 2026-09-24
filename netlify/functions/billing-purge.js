@@ -94,6 +94,8 @@ const PURGE_TABLES = [
   "audit_analytics_import_jobs",
   // ── 0083 account Brand Kit (server copy) ──
   "account_brand_kits",       // user_id is the primary key
+  // ── 0085 rule ↔ list/watchlist links ──
+  "signal_rule_sources",
 ];
 
 // User-scoped tables from 0029-0031 deliberately NOT auto-purged, and why.
