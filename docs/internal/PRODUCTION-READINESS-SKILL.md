@@ -57,7 +57,7 @@ The heart of "runs the same from any model." Seven checks:
 | 2 | Customer email routing → `hello@datiq.app` + `admin@datiq.app` | FAIL | `--fix-emails` |
 | 3 | Help build freshness (markdown vs generated HTML) | WARN | run `docs/build-help.mjs` |
 | 4 | Screenshot integrity (broken ref) / staleness | FAIL / WARN | regenerate screenshots |
-| 5 | Version coherence (changelog vs docs) | WARN | — |
+| 5 | No public version numbers (changelog + docs, D22a) | WARN | remove the string |
 | 6 | Pricing coherence (plan names vs `pricingConfig.js`) | WARN | — |
 | 7 | Gallery / persona coverage (advisory reminder) | WARN | curate gallery |
 

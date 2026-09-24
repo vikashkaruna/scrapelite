@@ -80,6 +80,9 @@ export const REACT_OWNED = [
   { path: "/use-cases/ai-visibility",          priority: "0.8", changefreq: "monthly" },
   { path: "/use-cases/recruiting",             priority: "0.8", changefreq: "monthly" },
   { path: "/use-cases/investor-diligence",     priority: "0.8", changefreq: "monthly" },
+  { path: "/use-cases/revops",                 priority: "0.8", changefreq: "monthly" },
+  { path: "/use-cases/product-marketing",      priority: "0.8", changefreq: "monthly" },
+  { path: "/use-cases/brand-cro",              priority: "0.8", changefreq: "monthly" },
 
   // Programmatic pages — six URLs, three personas. for-* targets audience
   // queries ("DatIQ for sales teams"), extract-* targets task queries
@@ -194,31 +197,45 @@ export const REDIRECTS = [
   // Points at 15-, not 14-, because 14-troubleshooting.html ITSELF now
   // redirects to 15-. Leaving it would create a two-hop chain, which browsers
   // follow but crawlers discount.
-  { from: "/help/14-faq-and-troubleshooting.html", to: "/help/21-troubleshooting.html" },
+  { from: "/help/14-faq-and-troubleshooting.html", to: "/help/24-troubleshooting.html" },
   // The Discoverability guide was inserted as section 11, shifting the six
   // sections after it by one. Their old URLs are in the published sitemap and
   // linked from blog posts; a module about discoverability that broke its own
   // indexed URLs would be a poor advertisement for it.
-  { from: "/help/11-plans-usage-and-billing.html", to: "/help/18-plans-usage-and-billing.html" },
-  { from: "/help/12-accounts-trial-and-sign-in.html", to: "/help/19-accounts-trial-and-sign-in.html" },
-  { from: "/help/13-privacy-and-your-data.html", to: "/help/20-privacy-and-your-data.html" },
-  { from: "/help/14-troubleshooting.html", to: "/help/21-troubleshooting.html" },
-  { from: "/help/15-keyboard-shortcuts.html", to: "/help/22-keyboard-shortcuts.html" },
-  { from: "/help/16-glossary.html", to: "/help/23-glossary.html" },
+  { from: "/help/11-plans-usage-and-billing.html", to: "/help/21-plans-usage-and-billing.html" },
+  { from: "/help/12-accounts-trial-and-sign-in.html", to: "/help/22-accounts-trial-and-sign-in.html" },
+  { from: "/help/13-privacy-and-your-data.html", to: "/help/23-privacy-and-your-data.html" },
+  { from: "/help/14-troubleshooting.html", to: "/help/24-troubleshooting.html" },
+  { from: "/help/15-keyboard-shortcuts.html", to: "/help/25-keyboard-shortcuts.html" },
+  { from: "/help/16-glossary.html", to: "/help/26-glossary.html" },
   // The six intelligence-workflow guides were inserted as sections 10-15,
   // shifting the eight sections after them by six. Those URLs are in the
   // published sitemap and linked from blog posts and the changelog, so each
   // gets a permanent redirect. The pre-existing redirects just above were
   // repointed at the NEW numbers rather than at the intermediate ones, for the
   // reason recorded on the 14-faq entry: a two-hop chain is discounted.
-  { from: "/help/10-exports-and-sharing.html", to: "/help/16-exports-and-sharing.html" },
-  { from: "/help/11-discoverability-seo-aeo-and-geo-audits.html", to: "/help/17-discoverability-seo-aeo-and-geo-audits.html" },
-  { from: "/help/12-plans-usage-and-billing.html", to: "/help/18-plans-usage-and-billing.html" },
-  { from: "/help/13-accounts-trial-and-sign-in.html", to: "/help/19-accounts-trial-and-sign-in.html" },
-  { from: "/help/14-privacy-and-your-data.html", to: "/help/20-privacy-and-your-data.html" },
-  { from: "/help/15-troubleshooting.html", to: "/help/21-troubleshooting.html" },
-  { from: "/help/16-keyboard-shortcuts.html", to: "/help/22-keyboard-shortcuts.html" },
-  { from: "/help/17-glossary.html", to: "/help/23-glossary.html" },
+  { from: "/help/10-exports-and-sharing.html", to: "/help/19-exports-and-sharing.html" },
+  { from: "/help/11-discoverability-seo-aeo-and-geo-audits.html", to: "/help/20-discoverability-seo-aeo-and-geo-audits.html" },
+  { from: "/help/12-plans-usage-and-billing.html", to: "/help/21-plans-usage-and-billing.html" },
+  { from: "/help/13-accounts-trial-and-sign-in.html", to: "/help/22-accounts-trial-and-sign-in.html" },
+  { from: "/help/14-privacy-and-your-data.html", to: "/help/23-privacy-and-your-data.html" },
+  { from: "/help/15-troubleshooting.html", to: "/help/24-troubleshooting.html" },
+  { from: "/help/16-keyboard-shortcuts.html", to: "/help/25-keyboard-shortcuts.html" },
+  { from: "/help/17-glossary.html", to: "/help/26-glossary.html" },
+  // Phase D2 (2026-09-25): the template hub and Workflow hub were inserted as
+  // 14-15 and "Choosing your role" as 18, shifting ten sections. Every old URL
+  // gets a 301, and the redirects above were repointed at the NEW numbers so no
+  // chain is two hops.
+  { from: "/help/16-exports-and-sharing.html", to: "/help/19-exports-and-sharing.html" },
+  { from: "/help/17-discoverability-seo-aeo-and-geo-audits.html", to: "/help/20-discoverability-seo-aeo-and-geo-audits.html" },
+  { from: "/help/18-plans-usage-and-billing.html", to: "/help/21-plans-usage-and-billing.html" },
+  { from: "/help/19-accounts-trial-and-sign-in.html", to: "/help/22-accounts-trial-and-sign-in.html" },
+  { from: "/help/20-privacy-and-your-data.html", to: "/help/23-privacy-and-your-data.html" },
+  { from: "/help/21-troubleshooting.html", to: "/help/24-troubleshooting.html" },
+  { from: "/help/22-keyboard-shortcuts.html", to: "/help/25-keyboard-shortcuts.html" },
+  { from: "/help/23-glossary.html", to: "/help/26-glossary.html" },
+  { from: "/help/14-shareable-reports.html", to: "/help/16-shareable-reports.html" },
+  { from: "/help/15-team-workspaces.html", to: "/help/17-team-workspaces.html" },
   // These were React <Navigate> redirects in App.jsx pointing at /vs/browse-ai.
   // That route is being deleted (the page is static-owned now), so they have to
   // become server-side redirects or they would dead-end in NotFound.

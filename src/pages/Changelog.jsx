@@ -2,25 +2,23 @@
 //
 // URL: /changelog. Linked from TopBar Explore + Footer + llms.txt + sitemap.
 //
-// v1.0 release: this page lists the full set of product features available
-// in the current V1.0 build, grouped by capability. The historical per-
-// release log has been retired — V1.0 is the first externally-visible
-// version number, so the page is now a one-stop "what's in the box" rather
-// than a reverse-chronological journal.
+// This page lists the full set of product features available today, grouped
+// by capability — a one-stop "what's in the box" rather than a
+// reverse-chronological journal. Product version numbers are deliberately NOT
+// shown (plan §22, D22a); "Updated {date}" is what tells a reader it is fresh.
 
 import { useEffect } from "react";
 import { Link } from "react-router";
 import Icon from "../components/Icon.jsx";
 import { setMeta , canonicalUrl } from "../lib/seoMeta.js";
 
-const VERSION = "V" + (typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "1.0.0");
 const SHIPPED = "2026-07";
-const UPDATED = "2026-09-04";
+const UPDATED = "2026-09-25";
 
 // Curated feature groups. Each group is a capability area; each entry is a
 // single user-facing feature. Add a new entry to the right group when a
 // feature ships — this is the single source of truth for "what's in
-// DatIQ V1.0" and feeds the help-site, llms.txt, and the About page.
+// DatIQ" and feeds the help-site, llms.txt, and the About page.
 const FEATURE_GROUPS = [
   {
     id: "extraction",
@@ -85,6 +83,71 @@ const FEATURE_GROUPS = [
       "Fork and edit any template — change the fields, the prompts and the output blocks (Go and above)",
       "Saved run history per template, re-openable, shareable and exportable",
       "Evidence contract on every field: observed, inferred, or absent — never invented",
+    ],
+  },
+  {
+    id: "workflow-hub",
+    icon: "git-merge",
+    title: "Workflow hub",
+    items: [
+      "One screen for Lists → Watchlists → Rules, so a pipeline that is silently not wired shows up as a problem, not a blank",
+      "Needs your attention comes first — the issues lead and the diagram is context",
+      "Building blocks with counts, and a starter template for any block you have not set up yet",
+      "Your pipelines, each with Pause and Resume in place",
+      "A 'Not connected yet' strip naming every list or watchlist that no active rule hears",
+      "Signal rules can listen to chosen lists or watchlists instead of every one",
+      "A rule reads back as one plain sentence before you save it",
+      "A rule that loses its last source is paused with the reason shown — it never widens to 'everything'",
+      "Deleting a list or watchlist a rule uses names those rules and offers Unlink and delete",
+      "'Alert me' on a watchlist opens a rule already limited to it",
+      "Dry trace: pick an event and see which rules fire and which condition turned the others away — nothing is sent",
+    ],
+  },
+  {
+    id: "template-hub",
+    icon: "library",
+    title: "Template hub",
+    items: [
+      "20 templates, filtered by role, each showing what it reads, what it returns and what it costs",
+      "Hand-off templates open the right module with the fields already filled — they never run or charge on their own",
+      "Starter templates for account lists, competitor change monitors and price-change alerts",
+      "A template can belong to several roles, so it appears wherever it fits your job",
+      "Template runs report through the shared progress dock, so leaving the page does not abandon them",
+      "If the template store is unavailable, templates that run are held back while hand-offs keep working",
+    ],
+  },
+  {
+    id: "roles",
+    icon: "users",
+    title: "Roles & onboarding",
+    items: [
+      "Eight roles: Sales, SDR & BDR · RevOps & Growth Operations · Product Manager & Competitive Intelligence · Product Marketing Manager · SEO, Content, AEO & GEO · Brand, Growth & CRO · Founder, VC & Market Research · Agency, Enterprise & Consultant",
+      "Your role shapes the examples, tiles and templates you see first — every feature stays available whichever you pick",
+      "Change your role at any time from the account menu (Switch persona)",
+      "Twelve common jobs on Home, each a single click to a pre-filled run",
+    ],
+  },
+  {
+    id: "engagement",
+    icon: "send",
+    title: "Engagement (private beta)",
+    items: [
+      "Outreach from the accounts you have already researched, in a private beta — ask us for access",
+      "Consent first: opt-outs are honoured per channel and checked at the moment of sending, not only when a message is approved",
+      "Every message is approved by a person before it goes out",
+      "Import prospects from CSV, TSV, TXT or Excel, with every row checked before anything is imported",
+      "A send that cannot go out is recorded as failed — never reported as sent",
+    ],
+  },
+  {
+    id: "credits",
+    icon: "gauge",
+    title: "Credits",
+    items: [
+      "One credit pool for extraction, enrichment, audits, monitoring and templates",
+      "The cost estimate before a run uses the same rule the server charges by, so it never refuses a run the server would allow",
+      "Unused monthly credits carry over for one month",
+      "A refused request — for robots.txt, a private address, or your plan — costs nothing",
     ],
   },
   {
@@ -155,6 +218,11 @@ const FEATURE_GROUPS = [
       "Pillars expand independently, so two can be compared side by side",
       "Markdown, PDF, CSV and JSON exports — each carrying the whole report: summary, pillars, every signal, penalties, evidence and the comparison against your last audit",
       "Create a monitor from the Schedules screen or from Workspace, and see your audits and monitors on the Workspace Discoverability tab",
+      "Business truth record — the facts about your company, approved by a person, checked against what your pages say",
+      "Entity graph of your company, products, people and competitors, approved edge by edge",
+      "Local & directory checks that treat 'Pvt Ltd' and 'Private Limited' as the same name, and name every source not yet checked",
+      "Trust & proof scored by evidence quality, never volume — one verifiable third-party record outweighs any number of self-published ones",
+      "Brand, product and service scores, stored with their coverage so a trend never shows a phantom jump",
       "Signed webhook on completion",
     ],
   },
@@ -336,9 +404,9 @@ function FeatureGroup({ group }) {
 export default function Changelog() {
   useEffect(() => {
     setMeta({
-      title: `${VERSION} — What's in DatIQ`,
+      title: "What's in DatIQ — Changelog",
       description:
-        `Every feature available in DatIQ ${VERSION}, grouped by capability: extraction, batch, schedules, dashboard, auth, billing, and power-user tools.`,
+        "Every feature available in DatIQ today, grouped by capability: extraction, workflows, the workflow and template hubs, discoverability, credits, and power-user tools.",
       url: canonicalUrl("/changelog"),
     });
   }, []);
@@ -351,27 +419,24 @@ export default function Changelog() {
         <header className="cl-head rise">
           <span className="ws-eyebrow">
             <Icon name="package" size={12} />
-            {VERSION}
+            Changelog
           </span>
-          <h1 className="cl-title">What's in DatIQ {VERSION}</h1>
+          <h1 className="cl-title">What's in DatIQ</h1>
           <p className="cl-sub">
             {totalFeatures} features across {FEATURE_GROUPS.length} capability areas — the
-            full set of what ships in the {VERSION} build. No historical log; this is the
-            starting point. Released {SHIPPED}.
+            full set of what ships today. Updated {UPDATED}; first released {SHIPPED}.
           </p>
 
-          {/* 2026-08 update banner — the V1.0 page is a one-stop snapshot, so
-              we surface post-release deltas here rather than restarting the
-              historical log. When V1.1 ships, replace this banner with a
-              brief "what changed" callout pointing at /changelog/v1.1. */}
+          {/* Latest-changes callout. Replace its text when something ships;
+              the groups below are the full list. */}
           <div className="cl-update-banner">
             <Icon name="sparkles" size={16} />
             <div>
               <strong>Updated {UPDATED}</strong>
               <span>
-                <strong>One-click push to HubSpot, Airtable, Notion, Slack, and Zapier</strong>
-                {" "}— server-stored connections set up once in /account#integrations, push forever from Preview, Dashboard, and Batch. Business now ships with
-                {" "}<strong>white-label PDF</strong> and <strong>priority support</strong> (previously Agency-only). The <strong>Extra Workspace</strong> add-on inherits your plan's features. Developer tier retargeted to <strong>H3 2026</strong>.
+                <strong>Workflow hub</strong> and <strong>template hub</strong> — rules can now listen to
+                {" "}chosen lists and watchlists, and every pipeline is on one screen. <strong>Eight roles</strong> replace
+                {" "}the old personas. <strong>Engagement</strong> is in private beta.
               </span>
             </div>
           </div>

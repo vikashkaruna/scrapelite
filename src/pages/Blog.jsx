@@ -98,6 +98,134 @@ Free to start, no credit card. Questions to hello@datiq.app.
 
 const POSTS = [
   {
+    slug: "the-workflow-hub",
+    tag: "Release",
+    title: "The Workflow Hub: Every Pipeline on One Screen, and the Gaps Named",
+    excerpt:
+      "Lists, watchlists and rules were one pipeline shown as three unrelated screens, so a pipeline could be silently not wired while every screen looked fine. The workflow hub puts them together, leads with what needs your attention, and lets a rule listen to exactly the lists you choose.",
+    date: "September 25, 2026",
+    readTime: "5 min read",
+    coverIcon: "git-merge",
+    fullContent: `
+A signal rule that listens to nothing looks exactly like a signal rule that has had a quiet week. That is the problem the workflow hub exists to solve.
+
+## One pipeline, three screens
+
+An account list gets enriched and scored. A watchlist notices a competitor change. A signal rule sends the result to Slack, email, a webhook or HubSpot. Those are three steps of one job, but they lived on three screens — so a list nobody routed, or a watchlist no rule heard, was invisible until someone asked why nothing had arrived.
+
+## What the hub shows
+
+- **Needs your attention** comes first. The issues lead; the diagram is context.
+- **Building blocks** — your lists, watchlists and rules, with counts, and a starter template for any block you have not set up yet.
+- **Your pipelines**, each with Pause and Resume in place.
+- **Not connected yet** — every list or watchlist that no active rule is listening to, by name.
+- **Recent runs**, so you can see what actually fired.
+
+## Rules can listen to chosen sources
+
+Until now a rule listened to a *kind* of event: every watchlist, or every list. Now a rule can listen to the watchlists or lists you pick. The editor reads the rule back as one sentence — *"When something changes on the watchlist Rivals and materiality is critical, post to Slack #alerts"* — so you can check it before you save.
+
+Two things we were careful about:
+
+- **A rule never widens on its own.** If a rule loses the last source it was listening to — you unlink it, or the list is deleted — the rule is paused, with the reason shown. It does not quietly start listening to everything.
+- **Deleting a list or watchlist that a rule uses names those rules first**, and offers to unlink and delete in one step.
+
+On a watchlist, **Alert me** opens a new rule already limited to that watchlist, with the most useful default — email me on critical changes — filled in.
+
+Open it from the menu: **Workflow hub**.
+    `.trim(),
+  },
+  {
+    slug: "the-template-hub",
+    tag: "Release",
+    title: "Twenty Templates, Filtered by Role, and Some That Just Set Things Up",
+    excerpt:
+      "The template catalogue grew from seven to twenty, and some of the new ones do not run at all: they open the right screen with the fields already filled in. Every template shows what it reads, what it returns and what it costs before you start.",
+    date: "September 25, 2026",
+    readTime: "4 min read",
+    coverIcon: "library",
+    fullContent: `
+A template is a named job: an input form, the fields DatIQ reads, the analysis it runs, and the blocks it returns. There are twenty now, and the template hub filters them by your role and by module.
+
+## Two kinds of template
+
+Most templates **run**: you give them a domain or a list, see the cost estimate, confirm, and get a finished brief or table.
+
+Some templates **hand off**. *Competitor Change Monitor*, *ICP List → CRM*, *Price-change Alert to Slack*, *Business Truth Setup* and others open the screen that does the job — a watchlist, an account list, a rule — with the fields already filled in. They never run and never charge on their own; you review and save on the screen you land on.
+
+## A template can serve several roles
+
+An account brief is as useful to RevOps as to Sales, so a template can belong to more than one role and appears under each. Pick **All roles** to see everything.
+
+## Nothing is spent until you confirm
+
+Every run shows its cost first, worked out by the same rule the server charges by. A run you start keeps going if you leave the page — it reports through the progress dock at the bottom of the screen.
+
+Open it from **Templates** in the menu.
+    `.trim(),
+  },
+  {
+    slug: "engagement-private-beta",
+    tag: "Beta",
+    title: "Engagement Is in Private Beta: Outreach That Checks Consent at Send Time",
+    excerpt:
+      "Engagement turns the accounts you have already researched into outreach. It is in private beta, it is consent-first, and a message that cannot be sent is recorded as failed — never reported as sent. Here is what it does and how to ask for access.",
+    date: "September 25, 2026",
+    readTime: "3 min read",
+    coverIcon: "send",
+    fullContent: `
+Research that ends in a spreadsheet still leaves the hardest step to you: reaching out. **Engagement** closes that loop, starting with email, for a small group of beta users.
+
+## Consent first
+
+- **Opt-outs are per channel**, and they are checked at the moment a message is sent — not only when it was approved. Someone who opts out between approval and sending is not emailed.
+- **A person approves every message** before it goes out.
+- **A message that cannot be sent is recorded as failed.** It is never reported as sent.
+
+## Bring your prospects
+
+Import prospects from a CSV, TSV, TXT or Excel file. Every row is checked and you see the problems before anything is imported, and you can edit a prospect afterwards.
+
+## How to join
+
+Engagement is in private beta while we learn from real use. To ask for access, write to hello@datiq.app with the account email you use for DatIQ and a line about what you want to send.
+    `.trim(),
+  },
+  {
+    slug: "choosing-your-role",
+    tag: "Product",
+    title: "Eight Roles Instead of Seven Personas: What Changes When You Pick One",
+    excerpt:
+      "DatIQ now asks which of eight roles fits your work — from Sales and RevOps to Product Marketing and Brand & CRO. Your role decides what you see first, never what you are allowed to use, and you can change it at any time.",
+    date: "September 25, 2026",
+    readTime: "3 min read",
+    coverIcon: "users",
+    fullContent: `
+The first thing DatIQ asks now is what you do. There are eight answers:
+
+- Sales, SDR & BDR
+- RevOps & Growth Operations
+- Product Manager & Competitive Intelligence
+- Product Marketing Manager
+- SEO, Content, AEO & GEO
+- Brand, Growth & CRO
+- Founder, VC & Market Research
+- Agency, Enterprise & Consultant
+
+## What your role changes
+
+Your role picks the examples, the Home tiles and the templates you see first. It never locks anything: every feature is available whichever role you choose, and **All roles** in the template hub shows the full catalogue.
+
+## What happened to the old personas
+
+Most carried straight over under a clearer name. Market Research now sits with Founder & VC, because the jobs — sizing a market, mapping a landscape, briefing before a call — are the same. If you chose a persona before, you do not need to do anything.
+
+## Changing it
+
+Open the account menu and choose **Switch persona**. It takes effect straight away.
+    `.trim(),
+  },
+  {
     slug: "introducing-datiq",
     tag: "Product",
     title: "Introducing DatIQ: From URL to Intelligence in Seconds",
@@ -117,9 +245,9 @@ const POSTS = [
 
   DatIQ is built on that premise. Paste any publicly accessible URL and get back its headings, links, contacts, metadata, and an AI-generated summary — in under 10 seconds.
 
-  ## What we shipped in V1.0
+  ## What we shipped first
 
-  The current release (V1.0) includes:
+  The first public release included:
   - **Custom extraction** — describe any field in plain English ("find the pricing tiers") and the AI locates and structures it
   - **Domain mapping** — crawl an entire site and return every indexed URL
   - **Lead enrichment** — surface leadership contacts and emails from any company page

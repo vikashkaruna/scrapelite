@@ -18,6 +18,27 @@
 
 ---
 
+
+## 2026-09-25 — Phase D2: public pages refreshed, version numbers removed (branch `feat/phase-d2-public-pages`)
+
+**State at start:** #227 (D1) and #231 (Phase C) both merged to `staging` by the owner. D2 branched from `origin/staging` @ `6a8b9aa7`.
+
+**Shipped (plan §22):**
+- **Version numbers removed** from Footer, About, Changelog (title, badge, SEO), Blog, `llms-full.txt`, and every prerendered page. Guard: `scripts/no-version-strings.test.mjs`. Readiness check 5 inverted to "No public version numbers".
+- **Changelog**: 22 groups (new: Workflow hub, Template hub, Roles & onboarding, Engagement (private beta), Credits; Discoverability gained truth record / entity graph / local / trust / subject scores). `Changelog.test.jsx` pinned to 22.
+- **Use cases**: hub regrouped by the 8 roles (derived from `PERSONAS`); 3 new pages (RevOps, Product Marketing, Brand & CRO) wired in App, `site-routes.mjs`, generated sitemap, `pageSeo.js` (Breadcrumb + Article + FAQPage), prerender, `routes.spec.js`, llms.
+- **Compare**: React hub gained a Workflow intelligence group; the 5 static `/vs/*` pages gained workflow hub / AI visibility / outreach rows, and **their stale DatIQ prices were corrected**. Hub's "Scheduled monitoring: Pro and above" corrected to Select.
+- **Blog**: 4 posts (workflow hub, template hub, Engagement private beta, choosing your role); V1.0 wording removed.
+- **Help**: new §14 template hub, §15 Workflow hub, §18 Choosing your role; §3 Home tiles; §13 rule sources; menu locations corrected (Lists/Watchlists/Rules live in the account menu under Workflows, not the top bar). 10 pages renumbered, all 301'd, earlier redirects repointed. All 12 screenshots regenerated (new `12-templates.png`).
+- **FAQ**: 6 questions in both the visible list and FAQPage JSON-LD; "Seven ship today" → twenty; role list rewritten.
+- **Claims guard**: `src/lib/publicClaimsCopy.test.js` — confirmed RED against staging's FAQ/llms-full ("7") and `/vs/clay` (retired prices).
+
+**Verified:** vitest **478 files / 7,875 passed** · build clean · prerender **35 rendered / 0 failed** · check:prerender 35 pages / 175 refs · readiness **4 pass / 3 warn / 0 fail** (warns: help/screenshot freshness compare commit times and clear on commit; gallery is runtime).
+
+**Not done / worth knowing:** no Workflow hub screenshot (needs a real sign-in); account lists have no file import, so none is documented; the menu still says "Switch persona".
+
+**Next:** owner merges the D2 PR to `staging`; apply `0085` on staging if not yet done (runbook §4k); then staging → `main` when ready.
+
 ## 2026-09-23 (latest) — Prospect Engagement Engine: review, then Phase 1 (safe email MVP)
 
 **Branch:** `feat/prospect-engagement-engine` (not merged). **Plan + findings:**

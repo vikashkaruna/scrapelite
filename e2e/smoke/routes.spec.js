@@ -39,6 +39,9 @@ const PUBLIC_ROUTES = [
   "/use-cases/ai-visibility",
   "/use-cases/recruiting",
   "/use-cases/investor-diligence",
+  "/use-cases/revops",
+  "/use-cases/product-marketing",
+  "/use-cases/brand-cro",
   "/payment/success",
   "/payment/cancel",
 ];

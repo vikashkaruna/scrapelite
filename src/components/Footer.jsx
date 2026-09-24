@@ -20,7 +20,6 @@ const SOCIALS = [
   { name: "twitter", href: "https://twitter.com/DatIQApp", label: "Twitter / X" },
 ];
 
-const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "1.0.0";
 
 export default function Footer() {
   const navigate = useNavigate();
@@ -44,22 +43,19 @@ export default function Footer() {
           ))}
         </div>
 
-        {/* Copyright centre + version tag.
-            The tag shows the release and links to /changelog. A bare "V1.0"
-            here once read as a mystery link, which is why it had been replaced
-            by the word "Changelog" — the version now IS the link to the notes,
-            with an aria-label that says so, so it reads as a version and still
-            explains where it goes. One source: package.json via __APP_VERSION__. */}
+        {/* Copyright centre + changelog link.
+            Product version numbers are no longer shown to visitors (plan §22,
+            D22a): a bare release number read as a mystery and went stale between
+            releases. __APP_VERSION__ stays defined for diagnostics only. */}
         <span className="footer-copy">
           © {new Date().getFullYear()} DatIQ · The Unified Web Intelligence Platform · Intelligence, Connected.
           <a
             className="footer-version-tag"
             href="/changelog"
             onClick={(e) => { e.preventDefault(); navigate("/changelog"); }}
-            aria-label={`DatIQ V${APP_VERSION} — changelog`}
             title="See what's new in DatIQ"
           >
-            V{APP_VERSION}
+            Changelog
           </a>
         </span>
 

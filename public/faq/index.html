@@ -190,7 +190,7 @@
       "name": "What is a workflow template?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "A workflow template is a complete, named job rather than a raw extraction: an input form, the fields DatIQ reads, the analysis it runs, and the output blocks you get back. Seven ship today, including a Sales-ready Account Brief, a Competitor Pricing Tracker, a Customer Proof Extractor, an AI Visibility & Competitive Brief, an SEO/GEO/AEO Audit, a Pre-Meeting Due Diligence Brief, and Bulk ICP Account Enrichment. You see a cost estimate before anything runs, and on the Go plan and above you can fork a template and rewrite its fields, prompts and outputs."
+        "text": "A workflow template is a complete, named job rather than a raw extraction: an input form, the fields DatIQ reads, the analysis it runs, and the output blocks you get back. Twenty ship today, filtered by role — among them a Sales-ready Account Brief, a Competitor Pricing Tracker, a Customer Proof Extractor, an AI Visibility & Competitive Brief, an SEO/GEO/AEO Audit, a Pre-Meeting Due Diligence Brief, and Bulk ICP Account Enrichment. You see a cost estimate before anything runs, and on the Go plan and above you can fork a template and rewrite its fields, prompts and outputs."
       }
     },
     {
@@ -231,6 +231,54 @@
       "acceptedAnswer": {
         "@type": "Answer",
         "text": "You choose per report, and you can change it later: private (only you), anyone with the link (unlisted), workspace only, specific people (named email addresses), or public. Only public reports are indexable by search engines \u2014 every other level ships a noindex instruction. Revoking a link burns it permanently and the code is never reissued, and reports can also carry an expiry date. Sharing is free on every plan, including Free."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which role should I pick, and can I change it later?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Pick the one closest to your day-to-day work. Your role decides which examples, Home tiles and templates you see first — it never locks anything, and every feature is available whichever you choose. You can change it at any time from the account menu (Switch persona)."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the template hub?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The template hub is where DatIQ's twenty templates live, filtered by role and by module. Most templates run: you give them a domain or a list, see the cost estimate, and confirm. Some hand off instead — they open the right screen, such as a watchlist or an account list, with the fields already filled in, and never run or charge on their own."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the workflow hub?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "One screen for your account lists, watchlists and signal rules. It leads with anything that needs your attention, shows each pipeline with Pause and Resume, and names every list or watchlist that no rule is listening to. A rule can listen to chosen lists or watchlists, and if it loses the last one it is paused with the reason shown — it never widens to listen to everything."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is Engagement, and how do I join the beta?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Engagement turns accounts you have researched into outreach, starting with email. It is in private beta: every message is approved by a person before it is sent, and a message that cannot be sent is recorded as failed, never reported as sent. To ask for access, email hello@datiq.app from the address you use for DatIQ."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do opt-outs work in Engagement?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Every Engagement email carries an unsubscribe link and supports one-click unsubscribe from the mailbox itself. An opt-out applies per channel and is checked at the moment each message is sent, not only when it was approved — so someone who opts out after a message was approved is not emailed."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which files can I import into Engagement?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Prospect imports in Engagement accept CSV, TSV, plain text and Excel (.xlsx). Every row is checked before anything is imported, and you see which rows have problems and why, so nothing half-imports. Account lists take pasted company domains or names."
       }
     }
   ]
@@ -319,15 +367,15 @@
 <section class="faq-section" id="who">
     <h2>Who is DatIQ for?</h2>
     <ul>
-      <li><strong>SDRs and BDRs</strong> doing prospect research — pull leadership names, emails, and pricing from a company site in one click.</li>
-      <li><strong>Competitive intelligence analysts</strong> — monitor competitor pricing, messaging, and leadership changes on a schedule.</li>
-      <li><strong>SEO and content marketers</strong> — extract heading structure, link profiles, and content gaps from any site.</li>
-      <li><strong>Market researchers</strong> — aggregate structured data from many company sites in a single batch run.</li>
-      <li><strong>Recruiters</strong> — find candidate sources, extract team pages, and surface tech-stack signals.</li>
-      <li><strong>Startup founders</strong> — research competitors and customers during discovery.</li>
-      <li><strong>VCs</strong> doing due diligence — pull product, pricing, and team data from a target's site in minutes.</li>
-      <li><strong>Digital agencies</strong> — handle multi-client prospect research and reporting at scale.</li>
-    </ul>
+      <li><strong>Sales, SDR &amp; BDR</strong> — a sourced account brief and the contacts a company publishes, pushed to your CRM.</li>
+      <li><strong>RevOps &amp; Growth Operations</strong> — clean, score and route account lists against ICP rules you write.</li>
+      <li><strong>Product Manager &amp; Competitive Intelligence</strong> — watch competitor pricing and positioning, with only material changes alerted.</li>
+      <li><strong>Product Marketing Manager</strong> — battlecards and claims built from what competitors publish, each with its source.</li>
+      <li><strong>SEO, Content, AEO &amp; GEO</strong> — be found by search engines and cited by AI answers, with copy-ready fixes.</li>
+      <li><strong>Brand, Growth &amp; CRO</strong> — an approved business truth record, share of voice and a trust score based on evidence.</li>
+      <li><strong>Founder, VC &amp; Market Research</strong> — a sourced brief before a first call, and a landscape you can compare.</li>
+      <li><strong>Agency, Enterprise &amp; Consultant</strong> — the same research for many clients, in your brand.</li>
+</ul>
   </section>
 
 <section class="faq-section" id="extract">
@@ -371,7 +419,7 @@
 
     <details class="faq-item" id="faq-who">
       <summary>Who is DatIQ for?</summary>
-      <p class="answer">SDRs and BDRs doing prospect research, competitive intelligence analysts, SEO and content marketers, market researchers, recruiters, startup founders, VCs doing due diligence, and digital agencies. See <a href="#who">the full persona list below</a> for the full persona list.</p>
+      <p class="answer">Eight roles: Sales, SDR &amp; BDR; RevOps &amp; Growth Operations; Product Manager &amp; Competitive Intelligence; Product Marketing Manager; SEO, Content, AEO &amp; GEO; Brand, Growth &amp; CRO; Founder, VC &amp; Market Research; and Agency, Enterprise &amp; Consultant. See <a href="#who">what each one uses DatIQ for</a>.</p>
     </details>
   </section>
 
@@ -464,7 +512,7 @@
 
     <details class="faq-item" id="faq-workflows">
       <summary>What is a workflow template?</summary>
-      <p class="answer">A workflow template is a complete, named job rather than a raw extraction: an input form, the fields DatIQ reads, the analysis it runs, and the output blocks you get back. Seven ship today, including a Sales-ready Account Brief, a Competitor Pricing Tracker, a Customer Proof Extractor, an AI Visibility &amp; Competitive Brief, an SEO/GEO/AEO Audit, a Pre-Meeting Due Diligence Brief, and Bulk ICP Account Enrichment. You see a cost estimate before anything runs, and on the Go plan and above you can fork a template and rewrite its fields, prompts and outputs.</p>
+      <p class="answer">A workflow template is a complete, named job rather than a raw extraction: an input form, the fields DatIQ reads, the analysis it runs, and the output blocks you get back. Twenty ship today, filtered by role — among them a Sales-ready Account Brief, a Competitor Pricing Tracker, a Customer Proof Extractor, an AI Visibility &amp; Competitive Brief, an SEO/GEO/AEO Audit, a Pre-Meeting Due Diligence Brief, and Bulk ICP Account Enrichment. You see a cost estimate before anything runs, and on the Go plan and above you can fork a template and rewrite its fields, prompts and outputs.</p>
     </details>
 
     <details class="faq-item" id="faq-bulk-icp">
@@ -485,6 +533,36 @@
     <details class="faq-item" id="faq-signal-rules">
       <summary>Can DatIQ notify my team automatically when something changes?</summary>
       <p class="answer">Yes, with signal routing rules. A rule triggers on a competitor watchlist change, a bulk enrichment result such as an account crossing your ICP threshold, or a workflow run finishing; you add conditions; and the action posts to <strong>Slack</strong>, sends an <strong>email</strong>, calls a <strong>webhook</strong>, or writes to <strong>HubSpot</strong>. Every rule has a live test against a sample payload that uses the same evaluator as the runtime, and every dispatch is recorded whether it succeeded or not, with retries on failure. Signal routing is available from the Select plan upwards.</p>
+    </details>
+
+    <details class="faq-item" id="faq-role">
+      <summary>Which role should I pick, and can I change it later?</summary>
+      <p class="answer">Pick the one closest to your day-to-day work. Your role decides which examples, Home tiles and templates you see first — it never locks anything, and every feature is available whichever you choose. You can change it at any time from the account menu (Switch persona).</p>
+    </details>
+
+    <details class="faq-item" id="faq-template-hub">
+      <summary>What is the template hub?</summary>
+      <p class="answer">The template hub is where DatIQ's twenty templates live, filtered by role and by module. Most templates run: you give them a domain or a list, see the cost estimate, and confirm. Some hand off instead — they open the right screen, such as a watchlist or an account list, with the fields already filled in, and never run or charge on their own.</p>
+    </details>
+
+    <details class="faq-item" id="faq-workflow-hub">
+      <summary>What is the workflow hub?</summary>
+      <p class="answer">One screen for your account lists, watchlists and signal rules. It leads with anything that needs your attention, shows each pipeline with Pause and Resume, and names every list or watchlist that no rule is listening to. A rule can listen to chosen lists or watchlists, and if it loses the last one it is paused with the reason shown — it never widens to listen to everything.</p>
+    </details>
+
+    <details class="faq-item" id="faq-engagement">
+      <summary>What is Engagement, and how do I join the beta?</summary>
+      <p class="answer">Engagement turns accounts you have researched into outreach, starting with email. It is in private beta: every message is approved by a person before it is sent, and a message that cannot be sent is recorded as failed, never reported as sent. To ask for access, email hello@datiq.app from the address you use for DatIQ.</p>
+    </details>
+
+    <details class="faq-item" id="faq-opt-outs">
+      <summary>How do opt-outs work in Engagement?</summary>
+      <p class="answer">Every Engagement email carries an unsubscribe link and supports one-click unsubscribe from the mailbox itself. An opt-out applies per channel and is checked at the moment each message is sent, not only when it was approved — so someone who opts out after a message was approved is not emailed.</p>
+    </details>
+
+    <details class="faq-item" id="faq-import-files">
+      <summary>Which files can I import into Engagement?</summary>
+      <p class="answer">Prospect imports in Engagement accept CSV, TSV, plain text and Excel (.xlsx). Every row is checked before anything is imported, and you see which rows have problems and why, so nothing half-imports. Account lists take pasted company domains or names.</p>
     </details>
 
     <details class="faq-item" id="faq-report-visibility">

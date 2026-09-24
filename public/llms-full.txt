@@ -165,7 +165,7 @@ DatIQ makes no claim that a score predicts rankings, citations or traffic.
 
 
 ### Intelligence workflows (templates)
-A workflow template is a named end-to-end job: an input form, the fields DatIQ reads, the analysis it runs, and the output blocks returned. Seven ship today, filtered by persona in the catalogue:
+A workflow template is a named end-to-end job: an input form, the fields DatIQ reads, the analysis it runs, and the output blocks returned. Twenty ship today in the template hub, filtered by role and by module; a template can serve several roles. Some are hand-offs (for example Competitor Change Monitor, ICP List → CRM, Price-change Alert to Slack, Business Truth Setup): they open the right screen with the fields already filled in and never run or charge on their own. Among the templates that run:
 - **Sales-ready Account Brief** (sales) — a company framed for a discovery call, a displacement, or an expansion
 - **Bulk ICP Account Enrichment** (sales / RevOps) — a list of domains in, a scored account table out
 - **Competitor Pricing Tracker** (competitive intelligence) — a pricing page as a structured tier table you can diff later
@@ -204,6 +204,19 @@ Every run shows a cost estimate before it starts and spends nothing until confir
 - "Test with sample payload" shows the verdict and which conditions matched, using the same evaluator as the live runtime
 - Every dispatch is recorded whether it succeeded or not; unreachable destinations are retried on a backoff schedule; destinations are re-validated at dispatch time rather than only at save time
 - Available from the Select plan upwards, alongside integrations
+- A rule listens either to every source of its kind or to chosen lists/watchlists only. A rule that loses its last chosen source is paused with the reason shown — it never widens to 'everything' — and deleting a list or watchlist that rules use names those rules first
+- The editor reads each rule back as one sentence before it is saved
+
+### Workflow hub
+- Lists, watchlists and rules on one screen, because they are one pipeline
+- Order: needs your attention, building blocks (with a starter template for any block not set up), your pipelines (pause/resume in place), not connected yet (every list or watchlist no active rule hears), recent runs
+- Dry trace: pick an event and see which rules would fire and which condition turned the others away; nothing is sent
+
+### Engagement (private beta)
+- Consent-first email outreach to accounts already researched in DatIQ, for invited beta users; request access at hello@datiq.app
+- Opt-outs are per channel and checked at the moment of sending, not only at approval; every message is approved by a person first
+- A message that cannot be sent is recorded as failed, never reported as sent
+- Prospects import from CSV, TSV, TXT or Excel, with every row checked before anything is imported
 
 ### Shareable reports
 - Any run, audit or extraction can be published as a report at its own link
@@ -267,15 +280,16 @@ Monthly prices shown; annual billing is billed twelve months upfront and works o
 
 ## 5. Target Users (Personas)
 
-DatIQ is designed for seven core personas. Each has a tailored home-screen example, dashboard label, and onboarding flow:
+DatIQ asks which of eight roles fits your work. The role decides the examples, Home tiles and templates shown first; it never restricts a feature, and it can be changed at any time.
 
-1. **Sales / SDR / BDR** — Turn any company website into a qualified prospect in 30 seconds. Extract contacts, leadership, mission, summary.
-2. **Competitive Intelligence** — Monitor competitor pricing, messaging, leadership changes. Full teardown in 5 minutes.
-3. **SEO / Content Marketer** — Audit any site's H1→H6, link profile, content gaps. No setup required.
-4. **Market Researcher** — Map your entire market landscape at machine speed. Aggregate missions, pricing, leadership.
-5. **Recruiter** — Source leadership, contact info, hiring signals from any company. Build a sourcing database.
-6. **Startup Founder / VC** — 10× faster due diligence. AI brief, team, pricing from any startup URL.
-7. **Agency / Enterprise** — Extract at scale across clients, competitors, and data pipelines. White-label ready.
+1. **Sales, SDR & BDR** — a sourced account brief and published contacts, pushed to the CRM.
+2. **RevOps & Growth Operations** — clean, score and route account lists against ICP rules.
+3. **Product Manager & Competitive Intelligence** — watch competitors; only material changes alert.
+4. **Product Marketing Manager** — battlecards and claims built from competitor pricing, proof and positioning.
+5. **SEO, Content, AEO & GEO** — SEO, AEO and GEO scores with copy-ready fixes.
+6. **Brand, Growth & CRO** — an approved business truth record, share of voice, and trust scored by evidence.
+7. **Founder, VC & Market Research** — sourced diligence briefs and market landscapes.
+8. **Agency, Enterprise & Consultant** — the same research for many clients, in your brand.
 
 ---
 
@@ -391,6 +405,9 @@ Extract article structures, FAQs, and key topics from top-ranking pages to infor
 - AI visibility: https://datiq.app/use-cases/ai-visibility
 - Recruiting research: https://datiq.app/use-cases/recruiting
 - Investor diligence: https://datiq.app/use-cases/investor-diligence
+- RevOps: https://datiq.app/use-cases/revops
+- Product marketing: https://datiq.app/use-cases/product-marketing
+- Brand & CRO: https://datiq.app/use-cases/brand-cro
 
 ### Programmatic SEO
 - Extract pricing from any page: https://datiq.app/extract-pricing
@@ -418,8 +435,8 @@ Extract article structures, FAQs, and key topics from top-ranking pages to infor
 - https://datiq.app/help/11-bulk-account-intelligence-and-icp-scoring.html — bulk enrichment and ICP guide
 - https://datiq.app/help/12-competitor-watchlists-and-change-intelligence.html — watchlists and materiality guide
 - https://datiq.app/help/13-signal-routing-getting-the-right-change-to-the-right-place.html — signal routing guide
-- https://datiq.app/help/14-shareable-reports.html — report visibility guide
-- https://datiq.app/help/17-discoverability-seo-aeo-and-geo-audits.html — audit engine guide
+- https://datiq.app/help/16-shareable-reports.html — report visibility guide
+- https://datiq.app/help/20-discoverability-seo-aeo-and-geo-audits.html — audit engine guide
 
 ## 8. FAQ (12 questions and answers)
 
@@ -563,6 +580,15 @@ Full contact page: https://datiq.app/contact
 
 ## 16. Recent releases (2026)
 
+**September 2026 — Workflow hub, template hub, roles.** Signal rules can listen
+to chosen lists and watchlists (and are paused, never widened, when they lose
+the last one); the Workflow hub shows every pipeline on one screen with the
+unwired pieces named; the template hub carries twenty templates filtered by
+role, including hand-offs that set up a watchlist, list or rule for you; eight
+roles replace the seven personas; and Engagement — consent-first outreach — is
+in private beta. Three new use-case pages cover RevOps, product marketing and
+brand & CRO.
+
 **September 2026 — Intelligence workflows.** The platform layer above
 extraction: workflow templates that return a finished artefact rather than raw
 fields, bulk account intelligence with customer-editable ICP scoring and a
@@ -606,7 +632,7 @@ zero, and every score reports its evidence coverage.
 - Google-Extended enabled for Gemini citation
 - Bytespider enabled for ByteDance crawler discoverability
 
-### 2026-07 — V1.0 release ("Web Intelligence Core")
+### 2026-07 — First public release ("Web Intelligence Core")
 - Single, batch, and scheduled URL extraction
 - AI summary, custom extraction, 5 quick-action enrichments
 - Domain mapping, leadership contacts, custom extraction
