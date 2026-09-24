@@ -68,7 +68,14 @@
 .hdr-source-row > svg:first-child { color: var(--accent); }
 .hdr-source-row > svg:nth-of-type(2) { color: var(--text-3); margin-left: auto; }
 .hdr-source-state { color: var(--accent); font-size: .83em; }
-.hdr-signal-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 10px; position: relative; }
+.hdr-signal-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; position: relative; }
+.hdr-signal-tile { position: relative; }
+.hdr-signal-beta {
+  position: absolute; top: 6px; right: 6px; padding: 0 5px; border-radius: 999px;
+  font-size: .78em; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent-on-soft); background: var(--accent-soft);
+}
+@media (max-width: 400px) { .hdr-signal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .hdr-signal-tile { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 9px; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface) 75%, transparent); color: var(--text-2); font-size: .77em; font-weight: 750; text-decoration: none; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
 .hdr-signal-tile:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); color: var(--accent-on-soft); transform: translateY(-1px); }
 .hdr-signal-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -6877,6 +6884,10 @@
 }
 .outcome-tile-title { font-size: .9rem; font-weight: 700; line-height: 1.2; }
 .outcome-tile-desc { font-size: .75rem; color: var(--text-2); line-height: 1.3; }
+.outcome-tile-opens {
+  display: inline-flex; align-items: center; gap: 3px; margin-top: auto; padding-top: 4px;
+  font-size: .7rem; font-weight: 700; color: var(--accent);
+}
 
 /* Q4 — workspace page */
 .ws-container { padding-top: clamp(32px, 5vh, 56px); padding-bottom: clamp(40px, 6vh, 72px); }

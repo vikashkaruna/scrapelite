@@ -131,11 +131,13 @@ test("CLAIM: Single-URL extraction surfaces the Preview page", async ({ page }) 
   await expect(page).toHaveURL(/\/preview/);
 });
 
-test("CLAIM: Home page shows the 7 outcome tiles above the hero", async ({ page }) => {
+test("CLAIM: Home page shows 12 Common-jobs tiles above the hero", async ({ page }) => {
   await page.goto("/");
-  // Q3 — outcome tiles row (7 since "Write a content brief" joined, 2026-09-24)
+  // 12 fills whole rows at 6 / 3 / 2 columns (owner, 2026-09-24): 7 that fill
+  // the composer + 5 that open a module.
   const tiles = page.locator(".outcome-tile");
-  await expect(tiles).toHaveCount(7);
+  await expect(tiles).toHaveCount(12);
+  await expect(page.locator(".outcome-tile-open")).toHaveCount(5);
 });
 
 test("CLAIM: Home page offers a template gallery, collapsed by default", async ({ page }) => {
