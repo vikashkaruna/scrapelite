@@ -28,13 +28,13 @@
 | 16 | Home "Common jobs": 12 tiles (was 7), adding Discover / Compete / Engage / Connect / Templates jobs | 🟢 | C |
 | 17 | Home "From signal to next step": DatIQ Engage (BETA) → Engagement, DatIQ Compete → Workflow hub; hero card gains an Engage tile (Discover · Connect · Compete · Engage) | 🟢 | C |
 | 18 | `/templates` becomes the template hub: 9 new templates that run or open the right module | 🟡 | C |
-| 19 | Eight roles replace the seven personas (existing ids kept where a role carries forward) | 🟡 | D (build first) |
-| 20 | Onboarding face-lift: what each role can do, modules, outcome, first step | 🟡 | D |
-| 21 | New roles applied everywhere personas are used (Templates filter, Home, Gallery, packs…) | 🟡 | D |
+| 19 | ✅ Eight roles replace the seven personas (existing ids kept where a role carries forward) | 🟡 | D1 |
+| 20 | ✅ Onboarding face-lift: what each role can do, modules, outcome, first step | 🟡 | D1 |
+| 21 | ✅ New roles applied everywhere personas are used (Templates filter, Home, Gallery, packs…) | 🟡 | D1 |
 | 22 | Public pages refreshed (compare, use-cases, blog, changelog, help, FAQ); version numbers removed | 🟡 | D |
 
 **Phase A** (now including 10–12) is safe to ship on its own in one PR. **Phase B** adds one small dependency. **Phase C** needs
-migration **`0084`** (`0083` went to the account Brand Kit in Phase B) and changes how rules match events, so it gets its own PR and staging pass.
+migration **`0085`** (`0083` went to the account Brand Kit in Phase B and `0084` to the role ids in D1) and changes how rules match events, so it gets its own PR and staging pass.
 
 **Decisions** are collected in §13 — **all locked by the owner on 2026-09-24.** Nothing in Phase C or D is built until the owner says build.
 
@@ -181,7 +181,7 @@ so "this rule is for these two watchlists" cannot be expressed, and deleting a w
 List events already carry `list_id`; **watchlist events don't carry the watchlist ID** yet.
 
 **Proposal**
-- **Migration `0084`:** `signal_rule_sources (rule_id, source_type 'list'|'watchlist', source_id)`, unique per
+- **Migration `0085`:** `signal_rule_sources (rule_id, source_type 'list'|'watchlist', source_id)`, unique per
   triple, cascading with the rule, RLS service-only (the `0044` pattern).
 - **Scope per rule:** "All watchlists" (today's behaviour, and what existing rules keep) **or** "These watchlists: …".
 - **Matching:** the rule dispatcher honours the scope; the watchlist monitor adds `watchlist_id` to its event.
@@ -545,6 +545,12 @@ analytics); read it before a further round (D18a).
 
 ## 19. Eight roles replace the seven personas 🟡
 
+> **D1 built (2026-09-24).** Two things moved forward from Phase C because the new onboarding shows them:
+> Home module statuses (Discover → Available, Engage → Beta linking to `/engagement`, Compete → Workflow hub).
+> The hero Engage tile (§17b) is still Phase C. §21's "Discoverability packs for PMM and Brand": both packs
+> **already existed** (`product_marketing`, `cro`), so each role now points at one (`discoverPack`) and the
+> SXO dashboard opens on that lens.
+
 **Now:** `personaConfig.js` has 7 personas: Sales, Competitive Intelligence, SEO / Content, Market
 Researcher, Recruiter, Founder / VC, Agency / Enterprise. **The ids are stored data, not just labels.** They
 live in:
@@ -589,7 +595,7 @@ choice, shared report or analytics history breaks.
 
   Each module tag must name a real route. Anything not shipped is either dropped or shown as "Coming", the
   same rule `platformModules.js` already enforces. The `[datiq]` citation markers are removed.
-- **Migration** (the next free number when built; `0085` if Phase C's `0084` lands first):
+- **Migration `0084_role_ids`** (built in D1):
   - widen `public_reports_persona_check` to the 8 ids **plus** the 2 legacy ids;
   - mirror the list in `admin-gallery.js`.
 
@@ -718,7 +724,7 @@ build if a `V\d+\.\d+` string appears in public page text again.
 |---|---|---|
 | D3 | Menu: Workflow hub, Engagement (name unchanged), divider, then Account lists / Watchlists / Signal rules | ✅ Decided by owner; home-screen "DatIQ Engage" link deferred |
 | D5 | Account Brand Kit: button only (this browser), or also store it server-side (`0083`)? | Server-side (option B) |
-| D6 | Existing rules keep "All watchlists / All lists" scope after `0084`? | Yes — no behaviour change for them |
+| D6 | Existing rules keep "All watchlists / All lists" scope after `0085`? | Yes — no behaviour change for them |
 | D6b | A scoped rule that loses its last source: pause it, or delete it? | Pause, with the reason shown |
 | D8a | Rename "Overview" → **"Workflow hub"**? | Yes |
 | D8b | Add rule action "Add to an Engagement campaign"? | Later, as its own item (needs consent design) |
@@ -747,7 +753,7 @@ build if a `V\d+\.\d+` string appears in public page text again.
 
 - **Phase A** (items 1, 3, 4, 6a, 9, 10, 11, 12): one PR to `staging`.
 - **Phase B** (items 2, 5): one PR.
-- **Phase C** (6b, 7, 8, 16, 17, 18): one PR with migration `0084` (6b only), applied to staging Supabase
+- **Phase C** (6b, 7, 8, 16, 17, 18): one PR with migration `0085` (6b only), applied to staging Supabase
   before testing (runbook section added). Items 16–18 need no migration: new templates are seeded per key on
   first read. If you want them sooner, 16–18 can ship as their own small PR ahead of 6b/7/8.
 - **Phase D** (19–22), in this order:
