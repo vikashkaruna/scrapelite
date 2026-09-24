@@ -1,9 +1,9 @@
 # Prospect Engagement Engine — Review, Gaps & Rollout Plan
 
-> **Updated:** 2026-09-24 · **Branch:** `feat/prospect-engagement-engine` (code @ `fedb0195`) · **Preview:** [deploy-preview-219](https://deploy-preview-219--datiqapp.netlify.app/engagement)
-> **Status:** Phase 1 (safe email MVP) **built, verified and in beta testing on the deploy preview.** Not merged, not in production.
-> **Database:** `0081` + `0082` are **applied to staging Supabase** (tables confirmed present, anon reads refused). **Not applied to production.** ⚠️ **The next migration number is `0084`** (`0083` = account Brand Kit, 2026-09-24).
-> **Sending:** no real email has left. The preview runs with `ENGAGEMENT_MOCK_SEND=1`.
+> **Updated:** 2026-09-25 · **Code:** merged to `staging` (PRs #219–#222) and on `main` since the #229 promotion — **production deploy of #229 failed on the Lambda 4KB env limit and has not shipped** (see CLAUDE.md, 2026-09-25 incident).
+> **Status:** **Phase 1 (email) is built, merged and in beta on staging. Phases 2, 3 and 4 are NOT started** — only email can send today (`LIVE_CHANNELS = ["email"]`); WhatsApp and SMS drafts are skipped as `channel_not_enabled`.
+> **Database:** `0081` + `0082` + `0083` applied to **staging** Supabase. **None applied to production.** ⚠️ **The next migration number is `0086`** (`0084` roles, `0085` rule sources).
+> **Sending:** no real email has left. Staging runs with `ENGAGEMENT_MOCK_SEND=1`.
 > Supersedes the rollout parts of [PROSPECT-ENGAGEMENT-ENGINE-TEST-AND-CONFIG.md](PROSPECT-ENGAGEMENT-ENGINE-TEST-AND-CONFIG.md).
 
 **How to read this document.** §A–§D are the current state and what to do next. §1–§3 are the original
@@ -15,6 +15,22 @@ updated to where it stands.
 ---
 
 ## A. Where things stand
+
+### What is left — at a glance (2026-09-25)
+
+| Phase | Scope | State |
+|---|---|---|
+| 0 · Hygiene | Source docs out of the repo, redirect aliases removed | ✅ code · 👤 Meta Business verification + India DLT registration **not started** |
+| 1 · Safe email | Send, consent, unsubscribe, webhooks, credits, import, brand kit, UX A+B | ✅ built and merged · 🟡 **manual pass M-1…M-26 on staging not done** · 👤 outreach domain in Resend, webhook secret, legal review, credit weight, `canLiftSuppression()` |
+| 2 · Personalisation + follow-ups | LLM slot filling via `runChain`; **follow-up cron** (closes F-16 — `check_stale_prospects` exists as an action but **nothing schedules it**); headline funnel from message timestamps (closes F-27) | ⏳ **not started** |
+| 3 · WhatsApp + SMS | Twilio sender adapter, Content Templates (F-17), `X-Twilio-Signature` webhook, India DLT headers/templates, add channels to `LIVE_CHANNELS` | ⏳ **not started** — blocked on 👤 Meta verification + DLT (weeks) |
+| 4 · Sheets / Airtable | One-way import reusing `prospectImport.js` (F-19) | ⏳ **not started** |
+| Telegram | Internal hot-lead alerts only; never outbound | — |
+
+**Already in place for Phase 3**, so it is an adapter + templates job, not a redesign: consent is per
+channel (`engagement_suppressions`), the drawer opts out per channel, `addressFor()` resolves phone and
+WhatsApp addresses, the dispatcher's claim/consent/credit path is channel-agnostic, and `CREDIT_KIND` is
+keyed by channel.
 
 ### Findings, by severity
 
@@ -161,17 +177,17 @@ transactional one** (F-8).
 
 | # | Item | Owner | Blocks |
 |---|---|---|---|
-| 1 | Fix `ENGAGEMENT_ALLOWLIST` and `ENGAGEMENT_PUBLIC_URL` on the preview contexts; redeploy | 👤 Operator | Beta testing |
+| 1 | Staging env: `ENGAGEMENT_ALLOWLIST` = account UUIDs (or bare `*`), `ENGAGEMENT_PUBLIC_URL` = bare origin; redeploy | 👤 Operator | Beta testing |
 | 2 | Write `canLiftSuppression()` (`src/lib/engagement/suppressionModel.js`) | 👤 Owner | "Remove opt-out" in the UI |
 | 3 | Set the credit weight for `outreach_email` (provisional 1) | 👤 Owner | Charging customers |
-| 4 | Verify a dedicated outreach domain in Resend; list it in `ENGAGEMENT_SENDER_DOMAINS`; real `whsec_` secret | 👤 Operator | Any real send |
+| 4 | Verify a dedicated outreach domain in Resend; list it in `ENGAGEMENT_SENDER_DOMAINS`; real `whsec_` secret; register the webhook | 👤 Operator | Any real send |
 | 5 | Legal review: unsubscribe page, Terms/AUP for customer-sent outreach, DPDP basis | 👤 Owner/counsel | Customers |
-| 6 | Manual pass M-1 … M-16 on staging with Resend test addresses (§5.2) | Owner + Claude | Merge to staging |
-| 7 | Squash-merge PR → `staging`; then production per §7 | Owner | Production |
-| 8 | Phase 2: follow-up worker (closes F-16), LLM slot filling, headline funnel from message timestamps (closes F-27) | Claude | — |
-| 9 | Meta Business verification + India DLT registration | 👤 Operator | Phase 3 |
-
----
+| 6 | Manual pass M-1 … M-26 on staging with Resend test addresses (§5.2 + the walkthrough) | Owner + Claude | Production enablement |
+| 7 | Production: fix the 4KB env issue, release, apply `0081`–`0083`, enable for the owner allowlist only (§7) | 👤 Operator | Production |
+| 8 | **Phase 2:** follow-up cron (F-16), LLM slot filling, funnel from message timestamps (F-27) | Claude | — |
+| 9 | **Start now:** Meta Business verification + WhatsApp sender, India SMS DLT registration | 👤 Operator | Phase 3 |
+| 10 | **Phase 3:** Twilio adapter, Content Templates, signed Twilio webhook, DLT, turn on `whatsapp`/`sms` in `LIVE_CHANNELS` | Claude (after #9) | — |
+| 11 | **Phase 4:** Sheets/Airtable import | Claude | — |
 
 ## 0. History of this branch
 
@@ -352,10 +368,10 @@ business verification) measured in weeks.
 | Phase | Scope | Exit criteria | State |
 |---|---|---|---|
 | **0 · Hygiene** | Root documents removed (F-9); redundant redirects removed (F-29). Start Meta Business verification + DLT registration. | Repo root clean; squash-merge noted on the PR. | ✅ code · 👤 registrations |
-| **1 · Safe email MVP** | F-1…F-8, F-10, F-12…F-15, F-20, F-26, F-28; `0082`; Send button; dispatch cron with per-message claim; per-channel consent + unsubscribe. | Every P0 test RED→GREEN; two-tenant real-Postgres suite green; a staging campaign to Resend test addresses produces exactly one send per prospect, correct state, suppression on bounce/complaint/unsubscribe. | ✅ built and tested · 🟡 **staging manual pass outstanding** (D-6) |
-| **2 · Real personalisation + follow-ups** | LLM generation through `runChain` (metered, budgeted, schema output, skeleton + slots, *no factual claims not in the prospect record*). **Follow-up worker** (a cron like `engagement-dispatcher`) replaces the n8n state monitor. Headline funnel from message timestamps. | Follow-up fires once after N days, never to replied/opted-out; generated copy passes guardrails and cites only supplied fields. | ⏳ |
-| **3 · WhatsApp + SMS** | Twilio Content Templates, Twilio signature verification, India DLT headers/templates, STOP per channel (the suppression table is already per channel). | Template approved; sandbox + one real number round-trip; STOP suppresses across campaigns. | ⏳ |
-| **4 · Sheets / Airtable** | One-way import first (reuses `prospectImport.js`'s validation); two-way only if a customer needs it. | 1,000-row import idempotent; no duplicate outreach. | ⏳ |
+| **1 · Safe email MVP** | F-1…F-8, F-10, F-12…F-15, F-20, F-26, F-28; `0082`; Send button; dispatch cron with per-message claim; per-channel consent + unsubscribe. | Every P0 test RED→GREEN; two-tenant real-Postgres suite green; a staging campaign to Resend test addresses produces exactly one send per prospect, correct state, suppression on bounce/complaint/unsubscribe. | ✅ built, tested, **merged to staging and main** · 🟡 **staging manual pass outstanding** (D-6) |
+| **2 · Real personalisation + follow-ups** *(not started)* | LLM generation through `runChain` (metered, budgeted, schema output, skeleton + slots, *no factual claims not in the prospect record*). **Follow-up worker** (a cron like `engagement-dispatcher`) replaces the n8n state monitor. Headline funnel from message timestamps. | Follow-up fires once after N days, never to replied/opted-out; generated copy passes guardrails and cites only supplied fields. | ⏳ |
+| **3 · WhatsApp + SMS** *(not started; blocked on Meta + DLT)* | Twilio Content Templates, Twilio signature verification, India DLT headers/templates, STOP per channel (the suppression table is already per channel). | Template approved; sandbox + one real number round-trip; STOP suppresses across campaigns. | ⏳ |
+| **4 · Sheets / Airtable** *(not started)* | One-way import first (reuses `prospectImport.js`'s validation); two-way only if a customer needs it. | 1,000-row import idempotent; no duplicate outreach. | ⏳ |
 | Telegram | **Dropped from outbound** — internal "hot lead" alert channel only. | — | — |
 
 ---
@@ -426,11 +442,11 @@ Production pass is **read-only + owner allowlist only**, sending to the owner's 
 |---|---|---|
 | 1 | Phase 0 + 1 on the feature branch; all P0 tests RED→GREEN; pre-push gate green | ✅ |
 | 2 | Apply `0081` + `0082` to **staging** Supabase | ✅ tables present; confirm with `npm run verify:rls` |
-| 3 | Preview/staging env vars correct (§C) | 👤 allow-list and public URL need fixing |
+| 3 | Staging env vars correct (§C) | 👤 allow-list and public URL need fixing |
 | 4 | Register the Resend webhook for staging | 👤 |
 | 5 | Manual pass M-1…M-16 with test identities | pending |
-| 6 | **Squash-merge** PR → `staging`; Staging Gate green | pending |
-| 7 | `ENGAGEMENT_ENABLED=0` in production; promote `staging → main` (manual unlock + `approved`) | pending |
+| 6 | **Squash-merge** PR → `staging`; Staging Gate green | ✅ #219–#222 merged |
+| 7 | `ENGAGEMENT_ENABLED=0` in production; promote `staging → main` (manual unlock + `approved`) | 🟡 on `main`; the #229 production deploy failed (4KB env limit, fixed 2026-09-25) — re-run after unlock |
 | 8 | Apply migrations to **production**; `npm run verify:rls -- --prod` | pending |
 | 9 | Enable for the owner allowlist only; send to own addresses; watch Resend 7 days (bounce < 2%, complaint < 0.1%) | pending |
 | 10 | Open to paid plans; Phases 2–4 follow the same sequence | pending |
