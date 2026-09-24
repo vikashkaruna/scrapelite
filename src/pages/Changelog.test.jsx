@@ -1,6 +1,6 @@
-// src/pages/Changelog.test.jsx — V1.0 page.
+// src/pages/Changelog.test.jsx — the changelog page.
 //
-// Asserts: the page renders the V1.0 header, all feature groups with their
+// Asserts: the page renders its header (with NO product version number), all feature groups with their
 // counts, the Product Hunt banner, the in-page TOC, and the SEO meta.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -25,20 +25,21 @@ function renderPage() {
   );
 }
 
-describe("Changelog V1.0", () => {
+describe("Changelog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("renders the V1.0 title", () => {
-    renderPage();
-    expect(screen.getByRole("heading", { name: /What's in DatIQ V1\.0/i })).toBeInTheDocument();
+  it("renders the title with no version number (plan §22, D22a)", () => {
+    const { container } = renderPage();
+    expect(screen.getByRole("heading", { name: /^What's in DatIQ$/i })).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/\bV\d+\.\d+/);
   });
 
-  it("renders all 17 feature groups with at least one item each", () => {
+  it("renders all 22 feature groups with at least one item each", () => {
     const { container } = renderPage();
     const groups = container.querySelectorAll(".cl-group");
-    expect(groups.length).toBe(17);
+    expect(groups.length).toBe(22);
     groups.forEach((g) => {
       const items = g.querySelectorAll(".cl-group-list li");
       expect(items.length).toBeGreaterThanOrEqual(3);
@@ -60,6 +61,11 @@ describe("Changelog V1.0", () => {
       "feature-guest",
       "feature-ux",
       "feature-docs",
+      "feature-workflow-hub",
+      "feature-template-hub",
+      "feature-roles",
+      "feature-engagement",
+      "feature-credits",
     ]) {
       expect(ids).toContain(id);
     }
@@ -77,8 +83,8 @@ describe("Changelog V1.0", () => {
     renderPage();
     const toc = screen.getByLabelText("Feature groups");
     const links = within(toc).getAllByRole("link");
-    // 17 groups → 17 TOC links
-    expect(links.length).toBe(17);
+    // 22 groups → 22 TOC links
+    expect(links.length).toBe(22);
     for (const l of links) {
       expect(l.getAttribute("href")).toMatch(/^#feature-/);
     }
@@ -89,7 +95,8 @@ describe("Changelog V1.0", () => {
     renderPage();
     expect(setMeta).toHaveBeenCalledTimes(1);
     const arg = setMeta.mock.calls[0][0];
-    expect(arg.title).toMatch(/V1\.0/);
+    expect(arg.title).toMatch(/What's in DatIQ/);
+    expect(arg.title).not.toMatch(/\bV\d+\.\d+/);
     expect(arg.url).toMatch(/\/changelog$/);
   });
 
@@ -102,7 +109,7 @@ describe("Changelog V1.0", () => {
   it("does not include the old R0–R19 version tags anywhere on the page", () => {
     const { container } = renderPage();
     const text = container.textContent;
-    // R-numbered history is retired; only V1.0 + the group names should appear.
+    // R-numbered history is retired; only the group names should appear.
     expect(text).not.toMatch(/\bR1[0-9]\b/);
     expect(text).not.toMatch(/\bR[0-9]\b/);
   });

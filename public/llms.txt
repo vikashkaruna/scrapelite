@@ -42,7 +42,7 @@ Governing rule: every field DatIQ returns is OBSERVED (read off a page, with the
 - Prioritised remediation with copy-ready constructs: FAQPage and Organization JSON-LD generated from the page's own visible content, 40-60 word answer blocks, corrected heading outlines, robots.txt entries for answer-engine crawlers
 - Re-audit and compare: score deltas, resolved vs newly introduced issues, and a trend line per page
 - Scheduled discoverability monitoring and competitive benchmark sets
-- Workflow templates: named end-to-end jobs (Sales-ready Account Brief, Competitor Pricing Tracker, Customer Proof Extractor, AI Visibility & Competitive Brief, SEO/GEO/AEO Audit, Pre-Meeting Due Diligence Brief, Bulk ICP Account Enrichment), each with a cost estimate shown before it runs
+- Template hub: 20 named end-to-end jobs filtered by role and module (among them Sales-ready Account Brief, Competitor Pricing Tracker, Customer Proof Extractor, AI Visibility & Competitive Brief, SEO/GEO/AEO Audit, Pre-Meeting Due Diligence Brief, Bulk ICP Account Enrichment), each with a cost estimate shown before it runs. Hand-off templates open the right screen with the fields filled in and never run or charge on their own
 - Forkable templates: duplicate any template and rewrite its fields, prompts and outputs (Go plan and above)
 - Bulk account intelligence: import up to 500 company domains by paste or CSV, de-duplicated on import, enriched from each company's own public site, in durable chunked runs
 - ICP scoring: customer-editable weighted criteria with required fields and a qualification threshold, testable live against a sample domain before a run
@@ -50,7 +50,9 @@ Governing rule: every field DatIQ returns is OBSERVED (read off a page, with the
 - Competitor watchlists: standing watches that re-read domains on a cadence, with materiality classification (critical alerts immediately, high daily, medium weekly, low never) and a silent baseline on the first run
 - Watchlist page discovery: adding a domain crawls its homepage and suggests the pages worth monitoring, kept visibly separate from pages the user added, since every monitored page is a recurring charged crawl
 - Change records that keep objective facts separate from labelled AI interpretation
-- Signal routing rules: trigger on a watchlist change, a bulk enrichment result or a workflow run; act into Slack, email, a webhook or HubSpot, with every dispatch recorded and retried on failure
+- Signal routing rules: trigger on a watchlist change, a bulk enrichment result or a workflow run; act into Slack, email, a webhook or HubSpot, with every dispatch recorded and retried on failure. A rule can listen to every source of its kind or to chosen lists/watchlists only; a rule that loses its last chosen source is paused, never widened
+- Workflow hub: lists, watchlists and rules on one screen — issues first, each pipeline with pause/resume, and every list or watchlist that no rule hears named as not connected
+- Engagement (private beta): consent-first email outreach to researched accounts — per-channel opt-outs checked at send time, every message approved by a person, a message that cannot be sent recorded as failed; access by request to hello@datiq.app
 - Shareable reports with five visibility levels (private, link, workspace, named people, public); only public reports are indexable, and links can be permanently revoked or given an expiry
 - Team workspaces with owner, admin and member roles, email-bound single-use invites, and per-seat pause
 - Usage ledger: an itemised record of what each job actually consumed, reconciled against its estimate
@@ -89,7 +91,7 @@ All of the above are reachable from a single Push menu on Preview, Dashboard, an
 - Annual billing is billed twelve months upfront and works out cheaper per month (e.g. Select $12 / ₹1,209 annually vs $15 / ₹1,449 monthly)
 
 ## Target Users
-SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and content marketers, Market researchers, Recruiters, Startup founders, VCs (due diligence), Digital agencies
+Eight roles: Sales, SDR & BDR; RevOps & Growth Operations; Product Manager & Competitive Intelligence; Product Marketing Manager; SEO, Content, AEO & GEO; Brand, Growth & CRO; Founder, VC & Market Research; Agency, Enterprise & Consultant. The role chosen at sign-up only changes what is shown first; every feature is available to every role
 
 ## Use Cases
 - Lead generation: extract company info and leadership contacts for outbound sales
@@ -101,6 +103,9 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - Market research: aggregate structured data from multiple company sites
 - Recruiting research: brief yourself on a company before a candidate call, and watch its hiring pages
 - Investor diligence: a source-backed pre-meeting company brief with a citation behind every claim
+- RevOps: clean, score and route account lists against ICP rules, with the Workflow hub showing any list no rule is listening to
+- Product marketing: battlecards and claims built from competitor pricing, proof and positioning, each with its source
+- Brand & CRO: an approved business truth record, share of voice against competitors, and trust scored by evidence quality
 - Content creation: generate briefs and outlines from competitor content
 
 ## Key Pages
@@ -119,6 +124,9 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - Use case — AI visibility: https://datiq.app/use-cases/ai-visibility
 - Use case — Recruiting research: https://datiq.app/use-cases/recruiting
 - Use case — Investor diligence: https://datiq.app/use-cases/investor-diligence
+- Use case — RevOps: https://datiq.app/use-cases/revops
+- Use case — Product marketing: https://datiq.app/use-cases/product-marketing
+- Use case — Brand & CRO: https://datiq.app/use-cases/brand-cro
 - Help documentation: https://datiq.app/help/index.html
 - Privacy Policy: https://datiq.app/privacy
 - Terms of Service: https://datiq.app/terms
@@ -130,12 +138,16 @@ SDRs and BDRs (prospect research), Competitive Intelligence analysts, SEO and co
 - /lists — bulk account intelligence and ICP scoring (sign-in required)
 - /watchlists — competitor watchlists and change intelligence (sign-in required)
 - /rules — signal routing rules (sign-in required)
+- /workflows — the Workflow hub (sign-in required)
 - /help/10-intelligence-workflows-templates-that-finish-the-job.html — how workflow templates work
 - /help/11-bulk-account-intelligence-and-icp-scoring.html — bulk enrichment and ICP scoring
 - /help/12-competitor-watchlists-and-change-intelligence.html — watchlists and materiality
 - /help/13-signal-routing-getting-the-right-change-to-the-right-place.html — routing rules
-- /help/14-shareable-reports.html — report visibility and revocation
-- /help/17-discoverability-seo-aeo-and-geo-audits.html — how the audit engine works
+- /help/14-the-template-hub.html — the template hub, hand-offs and cost estimates
+- /help/15-the-workflow-hub.html — the Workflow hub and rule sources
+- /help/16-shareable-reports.html — report visibility and revocation
+- /help/18-choosing-your-role.html — the eight roles and what each puts first
+- /help/20-discoverability-seo-aeo-and-geo-audits.html — how the audit engine works
 
 ## Persona landing pages
 - For sales teams: https://datiq.app/for-sales

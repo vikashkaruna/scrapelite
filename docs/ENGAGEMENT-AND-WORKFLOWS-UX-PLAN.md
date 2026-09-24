@@ -1,7 +1,8 @@
 # Engagement & Workflows — UX improvement plan (for approval)
 
-> **Date:** 2026-09-24 · **Based on:** `staging` @ `949bc452` (after PR #221) · **Status:** ✅ **Phases A and B built**
-> (branch `feat/engagement-ux-phase-ab`, PR #222); **Phase C (6b, 7, 8, 16–18) and Phase D (19–22) are planned, with decisions locked; nothing is built until the owner says build.** Each item says what was found in the code, what is proposed, what needs your decision,
+> **Date:** 2026-09-24 · **Based on:** `staging` @ `949bc452` (after PR #221) · **Status:** ✅ **All phases built.**
+> A and B (PR #222), D1 (PR #227) and C (PR #231) are merged to `staging`; **D2 (item 22) is built on
+> `feat/phase-d2-public-pages`, PR to `staging`** (2026-09-25). Each item says what was found in the code, what is proposed, what needs your decision,
 > and how it will be tested.
 
 **Legend:** 🟢 small (hours) · 🟡 medium (≈1 day) · 🔴 large (multi-day, schema change)
@@ -31,10 +32,21 @@
 | 19 | ✅ Eight roles replace the seven personas (existing ids kept where a role carries forward) | 🟡 | D1 |
 | 20 | ✅ Onboarding face-lift: what each role can do, modules, outcome, first step | 🟡 | D1 |
 | 21 | ✅ New roles applied everywhere personas are used (Templates filter, Home, Gallery, packs…) | 🟡 | D1 |
-| 22 | Public pages refreshed (compare, use-cases, blog, changelog, help, FAQ); version numbers removed | 🟡 | D |
+| 22 | ✅ Public pages refreshed (compare, use-cases, blog, changelog, help, FAQ); version numbers removed | 🟡 | D |
 
 **Phase A** (now including 10–12) is safe to ship on its own in one PR. **Phase B** adds one small dependency. **Phase C** needs
 migration **`0085`** (`0083` went to the account Brand Kit in Phase B and `0084` to the role ids in D1) and changes how rules match events, so it gets its own PR and staging pass. **Phase C shipped 2026-09-24** — apply `0085` per [DB-MIGRATION-RUNBOOK §4k](DB-MIGRATION-RUNBOOK.md) before relying on scoped rules; the next migration number is **`0086`**.
+**Phase D2 shipped 2026-09-25** (item 22; no migration). What differed from the plan, and why:
+- **No file import on Account lists was documented**, because none exists — lists take pasted domains or names.
+  File import (CSV/TSV/TXT/Excel) is Engagement prospects only, and the copy says so.
+- **The account menu still says "Switch persona"** (pinned by `TopBar.integration.test.jsx`, decision Q8), so the
+  new copy uses that label rather than "Switch role".
+- **The Workflow hub help section has no screenshot**: `/workflows` needs a signed-in session and none is created
+  from an agent. The template hub has one (`12-templates.png`).
+- **The `/vs/*` static pages still quoted retired prices** ($4.80, $44.40, $106.80, "10 extractions") — corrected,
+  and `publicClaimsCopy.test.js` now refuses them.
+- Help renumbering: template hub → 14, Workflow hub → 15, Choosing your role → 18; ten pages moved, each 301'd,
+  and every older redirect repointed so no chain is two hops.
 
 **Decisions** are collected in §13 — **all locked by the owner on 2026-09-24.** Nothing in Phase C or D is built until the owner says build.
 

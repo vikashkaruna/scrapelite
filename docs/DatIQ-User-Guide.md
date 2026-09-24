@@ -31,19 +31,22 @@ no scrapers to configure.
 11. Bulk account intelligence & ICP scoring
 12. Competitor watchlists & change intelligence
 13. Signal routing — getting the right change to the right place
-14. Shareable reports
-15. Team workspaces
+14. The template hub
+15. The Workflow hub
+16. Shareable reports
+17. Team workspaces
+18. Choosing your role
 
 **Distribution, audits & account**
 
-16. Exports & sharing
-17. Discoverability — SEO, AEO & GEO audits
-18. Plans, usage & billing
-19. Accounts, trial & sign-in
-20. Privacy & your data
-21. Troubleshooting
-22. Keyboard shortcuts
-23. Glossary
+19. Exports & sharing
+20. Discoverability — SEO, AEO & GEO audits
+21. Plans, usage & billing
+22. Accounts, trial & sign-in
+23. Privacy & your data
+24. Troubleshooting
+25. Keyboard shortcuts
+26. Glossary
 
 ---
 
@@ -161,6 +164,13 @@ Dashboard, start reading another page, or move around the app; the run is not ti
 it from. Progress appears in a small **dock** in the corner showing `Extracting 3 / 12 URLs…`, the URL being
 read right now, and a **Cancel** button. The setting is remembered between visits and applies to single and
 batch runs alike.
+
+### Common jobs
+
+Below the box, **twelve tiles** start the jobs people run most — *Build a lead list*, *Scrape pricing*,
+*Competitor intel*, *SEO audit*, *Tech stack*, *Job postings*, *Write a content brief*, *AI visibility check*,
+*Watch a competitor*, *Account brief*, *Weekly pricing watch* and *Send results to your CRM*. A tile fills the
+box and the options for you; you still press the button. Which tiles lead depends on your role (see §18).
 
 > **Tip:** the quick-example chips above the box ("SaaS pricing page", "Company about page", "Blog / content")
 > fill the box with a sample so you can try DatIQ instantly.
@@ -372,7 +382,7 @@ a brief you can open a call with, a comparison you can take into a pricing meeti
 your reps can work today. Workflows are where DatIQ stops being a tool you operate and starts being a
 process that runs.
 
-Open **Templates** from the top bar. Every template is a complete, named job: an input form, the fields
+Open **Templates** from the **Explore** menu in the top bar (see §14 for the hub itself). Every template is a complete, named job: an input form, the fields
 DatIQ will read, the analysis it will run, and the output blocks you get back.
 
 ### The template catalogue
@@ -384,7 +394,7 @@ DatIQ will read, the analysis it will run, and the output blocks you get back.
 | **Competitor Pricing Tracker** | Competitive intelligence | A competitor's pricing page as a structured tier table you can diff later — the starting snapshot for a watchlist. |
 | **Customer Proof Extractor** | Competitive intelligence | Every named customer, case study, logo and quantified outcome on a site — the evidence layer under a battlecard. |
 | **AI Visibility & Competitive Brief** | Competitive intelligence / Marketing | How you and up to four competitors describe, price and position yourselves — and what an AI answer engine would say about each of you. |
-| **SEO / GEO / AEO Audit** | SEO / Content | A page scored for classic search, answer engines and generative engines, with a prioritised fix list. See §17. |
+| **SEO / GEO / AEO Audit** | SEO / Content | A page scored for classic search, answer engines and generative engines, with a prioritised fix list. See §20. |
 | **Pre-Meeting Due Diligence Brief** | Founder / VC | A source-backed company brief before a first call: what they do, traction signals, team, and what to ask. |
 
 The catalogue is filtered by your persona by default, so the templates that fit your job are the ones you
@@ -398,7 +408,7 @@ see first. Switch personas from the user menu, or clear the filter to browse eve
    AI calls it expects to make. Nothing is spent until you press Run.
 3. The run streams its progress. When it finishes you get the output blocks: structured facts, the written
    analysis, and the sources behind them.
-4. Every run is saved. Re-open it from the template's run history, share it as a report (§14), or export it.
+4. Every run is saved. Re-open it from the template's run history, share it as a report (§16), or export it.
 
 ### Every claim carries its source
 
@@ -426,7 +436,7 @@ baseline to fork again.
 **Lists** is where a spreadsheet of company domains becomes a worked, scored, prioritised account table.
 It is built for the moment a rep or a RevOps lead is handed 300 domains and asked which ones matter.
 
-Open **Lists** from the top bar.
+Open **Account Lists** from your account menu, under **Workflows**.
 
 ### Building a list
 
@@ -481,7 +491,7 @@ from the same screen. Scores, coverage, and the source URL behind each field tra
 the rep working the list can see *why* an account qualified, not just that it did.
 
 > **Plan note.** Bulk lists use your plan's batch allowance, so the number of accounts you can enrich in one
-> list matches the batch size your plan already includes (see §18). Top-up bundles raise it.
+> list matches the batch size your plan already includes (see §21). Top-up bundles raise it.
 
 ---
 
@@ -491,7 +501,7 @@ A one-off competitor snapshot is out of date the week you take it. **Watchlists*
 standing watch: DatIQ re-reads the pages you care about on a cadence, works out what actually changed, and
 tells you only when the change is worth your attention.
 
-Open **Watchlists** from the top bar.
+Open **Watchlists** from your account menu, under **Workflows**.
 
 ### Setting one up
 
@@ -551,7 +561,7 @@ Changes appear in the watchlist's own feed, and — if you want them elsewhere �
 §13 to Slack, email, a webhook, or your CRM.
 
 > **Plan note.** A watchlist is a recurring monitor, so it uses your plan's scheduled-monitoring allowance
-> (see §18). Plans without scheduled monitoring do not include watchlists.
+> (see §21). Plans without scheduled monitoring do not include watchlists.
 
 ---
 
@@ -560,7 +570,7 @@ Changes appear in the watchlist's own feed, and — if you want them elsewhere �
 Intelligence that stays inside a tool is intelligence nobody acts on. **Rules** is DatIQ's if-this-then-that
 layer: it watches for the things you care about and pushes them where your team already works.
 
-Open **Rules** from the top bar.
+Open **Signal Rules** from your account menu, under **Workflows**.
 
 ### Building a rule
 
@@ -572,6 +582,20 @@ A rule is three parts:
    above 80; the domain is in this set. Conditions are combined, and an event has to satisfy all of them.
 3. **Action** — what happens: post to **Slack**, send an **email**, call a **webhook**, or create or update
    a record in **HubSpot**.
+
+### Which lists or watchlists a rule listens to
+
+A rule listens to **every** source of its kind by default — every watchlist, or every account list. Choose
+**Only these** to pick specific ones instead. The editor reads the rule back as one sentence, for example
+*"When something changes on the watchlist Rivals and materiality is critical, post to Slack #alerts."*, so
+you can check it before you save.
+
+A rule that loses the **last** source it was listening to — because you unlinked it or deleted the list — is
+**paused**, and its card says *Paused — no sources left*. It never quietly widens to listen to everything.
+Edit it, choose a source, and save to turn it back on.
+
+Deleting a list or watchlist that a rule uses shows you which rules use it first, and offers **Unlink and
+delete** in one step. On a watchlist, **Alert me** opens a new rule already limited to that watchlist.
 
 ### Test it before you trust it
 
@@ -590,11 +614,54 @@ Destinations are re-validated at the moment of dispatch, not only when you saved
 that was fine last month and points somewhere it should not today is refused.
 
 > **Plan note.** Signal routing pushes into the same destinations as the Integrations feature, so it is
-> available on the **Select plan and above** (see §18).
+> available on the **Select plan and above** (see §21).
 
 ---
 
-## 14. Shareable reports
+## 14. The template hub
+
+The **template hub** is where DatIQ's twenty templates live. Open it from **Explore → Templates**.
+
+![The template hub](assets/screenshots/12-templates.png)
+
+- **Filter by role and by module.** The hub opens on your role (see §18); choose **All roles** to see the
+  whole catalogue. A template can belong to several roles — an account brief is as useful to RevOps as to
+  Sales — so it appears under each.
+- **Templates that run.** Give them a domain or a list, check the **cost estimate**, and confirm. Nothing is
+  spent until you do. A run keeps going if you leave the page; it reports through the progress dock.
+- **Templates that hand off.** Some templates — *Competitor Change Monitor*, *ICP List → CRM*,
+  *Price-change Alert to Slack*, *Business Truth Setup* and others — do not run at all. They open the screen
+  that does the job, such as a watchlist, an account list or a rule, with the fields already filled in. You
+  review and save there. A hand-off never charges on its own.
+
+If the template service is briefly unavailable, templates that run are held back with a notice, while
+hand-offs keep working — they only open another screen.
+
+---
+
+## 15. The Workflow hub
+
+Account lists, watchlists and signal rules are one pipeline: a list or watchlist produces events, and a rule
+sends them somewhere. The **Workflow hub** shows that pipeline on one screen. Open it from your account menu,
+under **Workflows**.
+
+From top to bottom:
+
+1. **Needs your attention** — anything that is set up but not working, such as a rule that listens to a kind
+   of source you do not have, or a rule paused because it lost its last source.
+2. **Building blocks** — your account lists, watchlists and rules, with counts. A block you have not set up
+   yet offers a starter template.
+3. **Your pipelines** — each rule with what it listens to and where it sends things. **Pause** and
+   **Resume** are right there, and a chosen source can be unlinked from the pipeline.
+4. **Not connected yet** — every list or watchlist that no active rule is listening to, by name.
+5. **Recent runs** — what actually fired, and whether it was delivered.
+
+**Dry trace** lets you pick something that could happen and see which rules would fire and which condition
+turned the others away. It sends nothing.
+
+---
+
+## 16. Shareable reports
 
 Any workflow run, audit, or extraction can become a **report** — a clean, presentable page at its own link
 that you can send to a colleague, a client, or a prospect without giving them an account.
@@ -632,7 +699,7 @@ Set it up under Account → Brand Kit; it applies to reports, PDF exports and em
 
 ---
 
-## 15. Team workspaces
+## 17. Team workspaces
 
 A **workspace** is a shared container for work: the people in it, and what they are allowed to do.
 
@@ -642,7 +709,7 @@ Open **Workspace** from the user menu.
   be accepted by the address they were sent to.
 - **Roles** — owner, admin, member. Owners and admins can invite and remove; members work.
 - **Seats** — the seat count includes the owner. Your plan sets how many seats and how many workspaces you
-  can own (see §18); the Agency plan adds client workspaces, and extra workspaces can be bought as an add-on.
+  can own (see §21); the Agency plan adds client workspaces, and extra workspaces can be bought as an add-on.
 - **Pause a seat** — a member you pause keeps their access to what they can read but cannot spend the
   workspace's allowance. Useful for a contractor between engagements.
 
@@ -651,7 +718,33 @@ simplest way to circulate an internal brief.
 
 ---
 
-## 16. Exports & sharing
+## 18. Choosing your role
+
+When you sign up, DatIQ asks which of eight roles fits your work:
+
+| Role | What DatIQ puts first for you |
+|---|---|
+| **Sales, SDR & BDR** | Account briefs, published contacts, pushing results to your CRM |
+| **RevOps & Growth Operations** | Account lists, ICP scoring, routing rules |
+| **Product Manager & Competitive Intelligence** | Competitor watchlists and pricing trackers |
+| **Product Marketing Manager** | Battlecards, customer proof, AI visibility briefs |
+| **SEO, Content, AEO & GEO** | Discoverability audits and content briefs |
+| **Brand, Growth & CRO** | Business truth, share of voice, trust & proof |
+| **Founder, VC & Market Research** | Diligence briefs and market landscapes |
+| **Agency, Enterprise & Consultant** | Client teardowns, audits, reports in your brand |
+
+Your role decides the examples, the **Home tiles** and the templates you see first. It **never** limits
+what you can use — every feature is available whichever role you pick.
+
+To change it, open your account menu and choose **Switch persona**. If you picked *Market Research* before,
+you are now under **Founder, VC & Market Research**; nothing else changes.
+
+> **Engagement** — outreach to the accounts you have researched — is in **private beta**. To ask for access,
+> email hello@datiq.app from the address you use for DatIQ.
+
+---
+
+## 19. Exports & sharing
 
 **One menu, three sections.** Wherever results appear — Preview, the Dashboard, Batch results and a
 workflow run — the same **Export** menu opens with the same three groups:
@@ -714,13 +807,13 @@ Public reports can be unshared at any time. Recent public extractions also surfa
 
 ---
 
-## 17. Discoverability — SEO, AEO & GEO audits
+## 20. Discoverability — SEO, AEO & GEO audits
 
 Extraction answers *"what is on this page?"*. Discoverability answers a different
 question about a page you usually already own: **"can this page be found, and
 can an AI assistant quote it?"**
 
-Open **Discoverability** in the top nav, paste a URL, and press **Run audit**.
+Open **Discover** in the top nav, paste a URL, and press **Run audit**.
 You can also paste a URL into the Home composer and press **Discover**, which
 carries it straight here.
 
@@ -956,7 +1049,7 @@ If the site is yours, or you have the owner's permission, you can record that
 once per site and re-run. That confirmation is tied to your account and to that
 exact site, it expires after 180 days, and you can withdraw it at any time.
 
-## 18. Plans, usage & billing
+## 21. Plans, usage & billing
 
 DatIQ is sold in one unit: **credits**. One credit is one page fetch, and
 everything else is priced as a multiple of it — so there is a single number to
@@ -1116,7 +1209,7 @@ straight back to normal. Invoices are retained after deletion, because we are re
 
 ---
 
-## 19. Accounts, trial & sign-in
+## 22. Accounts, trial & sign-in
 
 - **Try without an account** — you can start extracting straight away. A trial banner shows how many free
   single extractions and batch runs remain. DatIQ never interrupts you on arrival: the limit is checked
@@ -1133,7 +1226,7 @@ straight back to normal. Invoices are retained after deletion, because we are re
 
 ---
 
-## 20. Privacy & your data
+## 23. Privacy & your data
 
 - DatIQ extracts only from **publicly accessible** pages you point it at.
 - Your saved extractions are tied to your account (or kept on your device when you use DatIQ without signing in).
@@ -1144,7 +1237,7 @@ straight back to normal. Invoices are retained after deletion, because we are re
 
 ---
 
-## 21. Troubleshooting
+## 24. Troubleshooting
 
 > Looking for general questions — pricing, plans, sharing, keyboard shortcuts, what DatIQ can
 > extract? Those all live in one place now: **[the DatIQ FAQ](https://datiq.app/faq)**. This section
@@ -1190,7 +1283,7 @@ alerts, keyboard shortcuts and what each screen does. If it is still not covered
 
 ---
 
-## 22. Keyboard shortcuts
+## 25. Keyboard shortcuts
 
 DatIQ has power-user shortcuts for fast navigation and common actions. Press <kbd>?</kbd> any time
 to see the full list.
@@ -1210,7 +1303,7 @@ to see the full list.
 
 ---
 
-## 23. Glossary
+## 26. Glossary
 
 - **Extraction** — one run of DatIQ against a page, producing structured results.
 - **Intent** — what you want from a page (summary, contacts, pricing, map, or custom).

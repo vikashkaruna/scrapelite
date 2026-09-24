@@ -986,6 +986,249 @@ export const PAGE_SEO = {
       }
     ]
   },
+  "/use-cases/revops": {
+    "title": "Account list cleaning, ICP scoring and routing for RevOps - DatIQ",
+    "description": "Import company domains, enrich each from its own site, score against ICP rules you write, and route qualified accounts to HubSpot, Slack, email or a webhook. Every field carries its source.",
+    "canonical": "https://datiq.app/use-cases/revops",
+    "jsonLd": [
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://datiq.app/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Use cases",
+            "item": "https://datiq.app/use-cases"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "RevOps",
+            "item": "https://datiq.app/use-cases/revops"
+          }
+        ]
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "RevOps",
+        "description": "Import company domains, enrich each from its own site, score against ICP rules you write, and route qualified accounts to HubSpot, Slack, email or a webhook. Every field carries its source.",
+        "datePublished": "2026-09-25",
+        "dateModified": "2026-09-25",
+        "author": {
+          "@type": "Organization",
+          "name": "DatIQ"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "DatIQ",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://datiq.app/favicon.svg"
+          }
+        }
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How does DatIQ score an account list for RevOps?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Paste company domains or names. DatIQ reads each company's own website for firmographics, then scores every account against ICP rules you write - field, operator, value and weight, plus required criteria and a threshold. Each score carries its coverage."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What happens when DatIQ cannot find a field?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "It leaves the field absent rather than estimating it. An unmeasured ICP criterion is excluded and its weight redistributed across the criteria that were measured, so a score is never pulled down by something DatIQ could not read."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Where do qualified accounts go?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "A signal rule sends them to HubSpot, Slack, email or a webhook. A rule can listen to one specific list, and the Workflow hub shows any list that no rule is listening to."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "/use-cases/product-marketing": {
+    "title": "Competitor battlecards and claims for product marketing - DatIQ",
+    "description": "Read competitor pricing, proof and positioning under one shared schema, watch the pages that matter, and hear about material changes. Every battlecard claim carries the page and quote it came from.",
+    "canonical": "https://datiq.app/use-cases/product-marketing",
+    "jsonLd": [
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://datiq.app/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Use cases",
+            "item": "https://datiq.app/use-cases"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Product Marketing",
+            "item": "https://datiq.app/use-cases/product-marketing"
+          }
+        ]
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "Product Marketing",
+        "description": "Read competitor pricing, proof and positioning under one shared schema, watch the pages that matter, and hear about material changes. Every battlecard claim carries the page and quote it came from.",
+        "datePublished": "2026-09-25",
+        "dateModified": "2026-09-25",
+        "author": {
+          "@type": "Organization",
+          "name": "DatIQ"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "DatIQ",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://datiq.app/favicon.svg"
+          }
+        }
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How does DatIQ help build a battlecard?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The Competitor Pricing Tracker, the Customer Proof Extractor and the AI Visibility & Competitive Brief read you and up to four competitors under one shared schema, so pricing, proof and positioning sit in comparable rows, each with its source."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Will a competitor watch flood me with alerts?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. The first check is a silent baseline, and each change is classified by materiality: critical changes alert immediately, high daily, medium weekly, and low never."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What if a competitor's page stops showing a field?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "DatIQ reports it as no longer observed rather than as a deletion, because the usual cause is a page that failed to render - not a competitor removing their pricing."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "/use-cases/brand-cro": {
+    "title": "Brand, share of voice and trust for growth and CRO teams - DatIQ",
+    "description": "Record your company facts once, approved by a person, and DatIQ checks every audited page against them. Score SEO, AEO and GEO visibility, compare share of voice, and score trust by evidence quality.",
+    "canonical": "https://datiq.app/use-cases/brand-cro",
+    "jsonLd": [
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://datiq.app/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Use cases",
+            "item": "https://datiq.app/use-cases"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Brand & CRO",
+            "item": "https://datiq.app/use-cases/brand-cro"
+          }
+        ]
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "Brand & CRO",
+        "description": "Record your company facts once, approved by a person, and DatIQ checks every audited page against them. Score SEO, AEO and GEO visibility, compare share of voice, and score trust by evidence quality.",
+        "datePublished": "2026-09-25",
+        "dateModified": "2026-09-25",
+        "author": {
+          "@type": "Organization",
+          "name": "DatIQ"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "DatIQ",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://datiq.app/favicon.svg"
+          }
+        }
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is a business truth record?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The facts about your company - legal name, canonical domain and more - recorded once and approved by a person. DatIQ compares each audited page against it and flags a contradiction separately from an absence, because they need opposite fixes."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does DatIQ score trust?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "By the quality of the evidence, not its volume. Each signal is weighted by how independent and how verifiable it is, so one verifiable third-party record outweighs any number of unattributed testimonials on your own site."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does an outage lower my score?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. A signal DatIQ could not measure is excluded and its weight redistributed, and every score carries its coverage, so a third-party outage never appears as a drop in your score."
+            }
+          }
+        ]
+      }
+    ]
+  },
   "/use-cases/investor-diligence": {
     "title": "Pre-meeting diligence with DatIQ - a sourced company brief in minutes",
     "description": "A source-backed company brief before a first call: what they build, how they price, the traction signals they publish, the team, and the questions worth asking. Every claim carries a citation.",

@@ -73,8 +73,9 @@ It checks, and prints PASS/WARN/FAIL for, each of these:
 4. **Screenshot integrity** — every `assets/screenshots/*` referenced by help
    or docs resolves to a real file, and the newest screenshot is not older than
    the newest shipped UI change.
-5. **Version coherence** — the changelog version, the release blog, and the docs
-   all reference the same current version.
+5. **No public version numbers** — no product release number (for example
+   "V1.0") appears on the changelog or the public docs; release numbers are not
+   shown to visitors (decision D22a). `/api/v1` is an API path and is fine.
 6. **Pricing coherence** — plan names/prices in the public pricing surfaces match
    `src/lib/pricingConfig.js` (the source of truth) and each other.
 7. **Gallery / persona coverage** — the public gallery has at least one curated

@@ -1,9 +1,15 @@
-// UseCases.jsx — /use-cases — aggregate hub linking to all use-case pages.
+// UseCases.jsx — /use-cases — the hub, grouped by the eight roles (plan §22).
+//
+// Role names come from PERSONAS, never a copy, and UseCases.test.jsx asserts
+// every offered role has a section — so adding a role fails the build until
+// the hub says what it is for. Each section links to one or more of the
+// use-case landing pages below.
 import { useNavigate } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { useSeo } from "../hooks/useSeo.js";
 import { seoFor } from "../lib/pageSeo.js";
+import { PERSONAS } from "../lib/personaConfig.js";
 
 const USE_CASES = [
   {
@@ -78,7 +84,76 @@ const USE_CASES = [
     highlights: ["Every fact carries its page and quote", "Same schema across a whole pipeline", "Share to a link, a workspace, or named people only"],
     cta: "Explore investor diligence",
   },
+  {
+    slug: "revops",
+    title: "RevOps",
+  },
+  {
+    slug: "product-marketing",
+    title: "Product Marketing",
+  },
+  {
+    slug: "brand-cro",
+    title: "Brand & CRO",
+  },
 ];
+
+// One section per offered role: the job, the modules that do it, the outcome,
+// and the landing pages that go deeper. Keyed by PERSONAS id.
+export const ROLE_SECTIONS = {
+  "sales": {
+    job: "Walk into every call knowing the account.",
+    modules: ["Enrich", "Templates", "Push to CRM"],
+    outcome: "A sourced account brief and the contacts a company publishes, pushed to your CRM.",
+    pages: ["lead-generation", "account-intelligence"],
+  },
+  "revops": {
+    job: "Clean, score and route account lists.",
+    modules: ["Account lists", "ICP scoring", "Signal rules", "Workflow hub"],
+    outcome: "A scored account table with coverage on every score, routed where your team works.",
+    pages: ["revops", "account-intelligence"],
+  },
+  "competitive-intel": {
+    job: "Know the day a competitor changes something that matters.",
+    modules: ["Watchlists", "Compete", "Signal rules"],
+    outcome: "Material changes to pricing, features and positioning, classified and routed.",
+    pages: ["competitive-monitoring", "competitor-research"],
+  },
+  "pmm": {
+    job: "Build battlecards and claims you can back up.",
+    modules: ["Templates", "Watchlists", "Discover"],
+    outcome: "Like-for-like competitor rows for pricing, proof and positioning, each with its source.",
+    pages: ["product-marketing"],
+  },
+  "seo": {
+    job: "Be found by search engines and cited by AI answers.",
+    modules: ["Discover", "Templates", "Monitors"],
+    outcome: "SEO, AEO and GEO scores with a prioritised, copy-ready fix list.",
+    pages: ["seo-audit", "ai-visibility"],
+  },
+  "brand-growth": {
+    job: "Make sure the web says the right things about you.",
+    modules: ["Business truth", "Discover", "Trust & proof"],
+    outcome: "An approved truth record, share of voice against competitors, and a trust score based on evidence.",
+    pages: ["brand-cro", "ai-visibility"],
+  },
+  "founder-vc": {
+    job: "Understand a company or a market before the first call.",
+    modules: ["Templates", "Extract", "Reports"],
+    outcome: "A sourced diligence brief, and a landscape you can compare across a pipeline.",
+    pages: ["investor-diligence", "market-research"],
+  },
+  "agency": {
+    job: "Run the same research for many clients.",
+    modules: ["Discover", "Templates", "Workspaces", "Reports"],
+    outcome: "A client teardown and audit in your brand, shared to a link, a workspace or named people.",
+    pages: ["seo-audit", "competitor-research", "ai-visibility"],
+  },
+};
+
+// A use case that fits no single role today; kept and linked below the roles.
+const ALSO = ["recruiting"];
+const BY_SLUG = Object.fromEntries(USE_CASES.map((u) => [u.slug, u]));
 
 export default function UseCases() {
   // Title, description, canonical and JSON-LD for this route.
@@ -101,41 +176,48 @@ export default function UseCases() {
           <p className="uc-hero-sub">
             DatIQ is not one tool with one job. It reads the public web, runs the workflow that turns
             what it found into a finished brief or a scored list, watches what matters, and routes the
-            result to where your team already works. Nine ways teams use it — no setup, no code.
+            result to where your team already works. Pick your role to see what it does for you — no setup, no code.
           </p>
           <Button variant="primary" icon="rocket" onClick={() => navigate("/")}>
             Try it free
           </Button>
         </div>
 
-        {/* Use case cards */}
+        {/* One card per role */}
         <div className="uc-hub-grid">
-          {USE_CASES.map((uc) => (
-            <div key={uc.slug} className="uc-hub-card card card-pad fade">
-              <div className="uc-hub-icon">
-                <Icon name={uc.icon} size={22} />
-              </div>
-              <div className="uc-hub-title">{uc.title}</div>
-              <p className="uc-hub-desc">{uc.desc}</p>
-              <ul className="uc-hub-highlights">
-                {uc.highlights.map((h) => (
-                  <li key={h}>
-                    <Icon name="check" size={12} strokeWidth={3} />
-                    {h}
-                  </li>
-                ))}
-              </ul>
-              <Button
-                variant="secondary"
-                size="sm"
-                iconRight="arrow-right"
-                onClick={() => navigate(`/use-cases/${uc.slug}`)}
-                style={{ marginTop: "auto" }}
-              >
-                {uc.cta}
-              </Button>
-            </div>
-          ))}
+          {PERSONAS.map((role) => {
+            const sec = ROLE_SECTIONS[role.id];
+            if (!sec) return null;
+            return (
+              <section key={role.id} className="uc-hub-card card card-pad fade" aria-labelledby={`uc-role-${role.id}`}>
+                <div className="uc-hub-icon"><Icon name={role.icon} size={22} /></div>
+                <h2 className="uc-hub-title" id={`uc-role-${role.id}`}>{role.label}</h2>
+                <p className="uc-hub-desc">{sec.job}</p>
+                <ul className="uc-hub-highlights">
+                  <li><Icon name="layers" size={12} /> {sec.modules.join(" · ")}</li>
+                  <li><Icon name="check" size={12} strokeWidth={3} /> {sec.outcome}</li>
+                </ul>
+                <div className="uc-related" style={{ marginTop: "auto" }}>
+                  {sec.pages.map((slug) => (
+                    <button key={slug} className="uc-related-link" onClick={() => navigate(`/use-cases/${slug}`)}>
+                      {BY_SLUG[slug]?.title || slug}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+
+        <div className="uc-section fade" style={{ marginTop: 32 }}>
+          <h2 style={{ fontSize: "1em", fontWeight: 700, marginBottom: "12px", color: "var(--text-2)" }}>Also</h2>
+          <div className="uc-related">
+            {ALSO.map((slug) => (
+              <button key={slug} className="uc-related-link" onClick={() => navigate(`/use-cases/${slug}`)}>
+                {BY_SLUG[slug].title}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* CTA */}
