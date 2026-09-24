@@ -12,6 +12,8 @@
 // could lock the table down without breaking guest sync — see that
 // function's header comment for the full reasoning.
 
+import { randomUuid } from "./secureRandom.js";
+
 const ENDPOINT = "/api/usage-sync";
 const SESSION_KEY = "datiq.sessionId";
 
@@ -19,9 +21,7 @@ export function getSessionId() {
   try {
     let id = localStorage.getItem(SESSION_KEY);
     if (!id) {
-      id = (typeof crypto !== "undefined" && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2) + Date.now().toString(36);
+      id = randomUuid();
       localStorage.setItem(SESSION_KEY, id);
     }
     return id;

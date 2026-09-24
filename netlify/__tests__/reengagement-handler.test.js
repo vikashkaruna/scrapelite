@@ -10,6 +10,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// Exact host match — a substring check would also accept "api.example.com.evil.test".
+const hostIs = (url, host) => { try { return new URL(String(url)).hostname === host; } catch { return false; } };
+
 const ENV = {
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_KEY: "service-key",
@@ -74,7 +77,7 @@ describe("reengagement handler — the real schema, not user_email", () => {
       }
 
       // 5. Resend send.
-      if (u.includes("api.resend.com")) {
+      if (hostIs(u, "api.resend.com")) {
         return new Response(JSON.stringify({ id: "email_1" }), { status: 200 });
       }
 
@@ -88,7 +91,7 @@ describe("reengagement handler — the real schema, not user_email", () => {
     expect(res.body).toMatch(/1 email\(s\) sent/);
     expect(res.body).toMatch(/1 user\(s\) checked/);
 
-    const resendCall = calls.find((c) => c.includes("api.resend.com"));
+    const resendCall = calls.find((c) => hostIs(c, "api.resend.com"));
     expect(resendCall).toBeTruthy();
 
     const authCall = calls.find((c) => c.includes("/auth/v1/admin/users"));

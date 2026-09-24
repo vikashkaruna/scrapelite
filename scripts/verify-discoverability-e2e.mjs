@@ -2295,9 +2295,12 @@ function writeReports({ verdict }) {
     writeFileSync(resolve(jsonPath), JSON.stringify(payload, null, 2));
     console.log(`  json report → ${jsonPath}`);
   }
+  // Escape backslashes first, then pipes, so a cell ending in "\" cannot
+  // un-escape the pipe that follows it and split the table row.
+  const mdCell = (v) => String(v).replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
   if (mdPath) {
     const rows = results.map((r) =>
-      `| ${r.id} | ${r.title.replace(/\|/g, "\\|")} | ${MARK[r.verdict]} ${r.verdict} | ${String(r.detail).replace(/\|/g, "\\|").replace(/\n/g, " ").slice(0, 220)} |`);
+      `| ${r.id} | ${mdCell(r.title)} | ${MARK[r.verdict]} ${r.verdict} | ${mdCell(String(r.detail).replace(/\n/g, " ")).slice(0, 220)} |`);
     const md = [
       `# Discoverability P1 + P2 — automated run \`${RUN_ID}\``, "",
       `**Environment:** ${ENV} · **Base URL:** ${BASE} · **Verdict: ${verdict}**`, "",

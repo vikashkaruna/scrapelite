@@ -5,6 +5,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Exact host match — a substring check would also accept "api.example.com.evil.test".
+const hostIs = (url, host) => { try { return new URL(String(url)).hostname === host; } catch { return false; } };
+
 let fetchMock;
 let mod;
 
@@ -52,7 +55,7 @@ function wire({ samples = [], dbOk = true } = {}) {
     if (u.includes("app_config")) return json([]);
     if (u.includes("/auth/v1/health")) return json({ name: "GoTrue" });
     if (u.includes("status.json")) return json({ status: { indicator: "none" }, page: {} });
-    if (u.includes("api.resend.com")) return json({ id: "mail_1" }, 200);
+    if (hostIs(u, "api.resend.com")) return json({ id: "mail_1" }, 200);
     return json({});
   });
 }
@@ -199,7 +202,7 @@ describe("alerting (HM-02)", () => {
     process.env.OPS_ALERT_EMAIL = "ops@datiq.app";
     fetchMock.mockImplementation(async (url, opts = {}) => {
       const u = String(url);
-      if (u.includes("api.resend.com")) throw new Error("mail down");
+      if (hostIs(u, "api.resend.com")) throw new Error("mail down");
       if (u.includes("health_samples")) {
         return opts.method === "POST" ? json({}, 201)
           : json([{ component: "supabase-db", status: "ok", observed_at: new Date().toISOString() }]);

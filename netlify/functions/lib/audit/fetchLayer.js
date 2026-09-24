@@ -32,6 +32,7 @@ import { record as meterRecord } from "../creditMeter.js";
 import { fetchRobotsText, evaluateAgentAccess } from "../complianceEngine.js";
 import { AI_CRAWLERS } from "../../../../src/lib/discoverability/constructTemplates.js";
 import { visibleText, wordCount, capHtml } from "./htmlParse.js";
+import { decodeHtmlEntities } from "../htmlEntities.js";
 
 export const RAW_FETCH_TIMEOUT_MS = 10_000;
 export const CANONICAL_TIMEOUT_MS = 6_000;
@@ -251,8 +252,7 @@ export function extractSitemapLocs(xml = "") {
   let guard = 0;
   while ((m = re.exec(xml)) !== null) {
     if (++guard > MAX_SITEMAP_URLS) break;
-    const raw = m[1].trim()
-      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+    const raw = decodeHtmlEntities(m[1].trim());
     if (/^https?:\/\//i.test(raw)) out.push(raw);
   }
   return out;

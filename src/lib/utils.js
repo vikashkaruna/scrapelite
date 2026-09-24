@@ -8,6 +8,7 @@ import {
   brandingCsvFooterRows,
   brandingJsonMeta,
 } from "./exportBranding.js";
+import { randomString } from "./secureRandom.js";
 
 export function hostOf(url) {
   try {
@@ -61,7 +62,7 @@ export function snippet(text, n = 130) {
 }
 
 export function uid() {
-  return "ex_" + Math.random().toString(36).slice(2, 6) + Date.now().toString(36).slice(-3);
+  return "ex_" + randomString(4) + Date.now().toString(36).slice(-3);
 }
 
 // Validate a user-typed URL (scheme optional) and normalize it to include https://.

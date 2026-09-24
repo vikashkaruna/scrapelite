@@ -23,6 +23,8 @@
 //   inferred      derived from observed content; still a claim about the source
 //   ai_generated  net-new prose; NOT a claim about the source
 //   user_provided a human supplied or confirmed it (PRD 3's review queue)
+import { randomString } from "./secureRandom.js";
+
 export const METHOD = Object.freeze({
   OBSERVED: "observed",
   INFERRED: "inferred",
@@ -105,7 +107,7 @@ function makeProvenanceField({
 export function attachProvenance(extraction, opts = {}) {
   if (!extraction || typeof extraction !== "object") return extraction;
   const now = opts.now || new Date().toISOString();
-  const runId = opts.runId || `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const runId = opts.runId || `run_${Date.now()}_${randomString(6)}`;
   const sourceUrl = extraction.url || null;
   const fieldProvenance = {};
 
