@@ -3,6 +3,7 @@
 // Manages signal_rules and rule_executions audit records.
 
 import { createClient } from "@supabase/supabase-js";
+import { validateScope, replaceRuleSources, sourcesForRules } from "./ruleSources.js";
 import { evaluateSignalRule, formatActionPayload } from "../../../src/lib/rules/ruleModel.js";
 import { isPublicHttpUrlAsync } from "./publicUrl.js";
 import { statusFor, nextRetryAt } from "../../../src/lib/rules/retryModel.js";
@@ -124,10 +125,13 @@ export async function listRules(userId, env = process.env) {
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   if (error) return { ok: false, reason: error.message, rules: [] };
-  return { ok: true, rules: data || [] };
+  const rules = data || [];
+  // Each rule carries the lists/watchlists it is linked to (0085).
+  const sources = await sourcesForRules(db, userId, rules.map((r) => r.id));
+  return { ok: true, rules: rules.map((r) => ({ ...r, source_scope: r.source_scope || "all", sources: sources[r.id] || [] })) };
 }
 
-export async function createRule(userId, { name, trigger_source, conditions = [], action_type, action_config = {} }, env = process.env) {
+export async function createRule(userId, { name, trigger_source, conditions = [], action_type, action_config = {}, source_scope = "all", sources = [] }, env = process.env) {
   if (ownerless(userId)) return NO_OWNER;
 
   // A rule's action_config carries an outbound destination the server will
@@ -150,12 +154,19 @@ export async function createRule(userId, { name, trigger_source, conditions = []
       conditions,
       action_type: action_type || "slack",
       action_config,
+      source_scope: "all",
+      sources: [],
       created_at: now,
       updated_at: now,
     };
     _localRules.set(ruleId, rule);
     return { ok: true, rule };
   }
+
+  // Which lists/watchlists this rule listens to (0085). Checked before the rule
+  // exists, so a bad source never leaves a half-made rule behind.
+  const scope = await validateScope(db, userId, trigger_source, source_scope, sources);
+  if (!scope.ok) return scope;
 
   const { data, error } = await db
     .from("signal_rules")
@@ -167,12 +178,20 @@ export async function createRule(userId, { name, trigger_source, conditions = []
       action_type,
       action_config,
       status: "active",
+      source_scope: scope.scope,
     })
     .select()
     .single();
 
-    if (error) return { ok: false, reason: error.message };
-  return { ok: true, rule: data };
+  if (error) return { ok: false, reason: error.message };
+  if (scope.sources.length) {
+    const linked = await replaceRuleSources(db, userId, data.id, scope.sources);
+    if (!linked.ok) {
+      await db.from("signal_rules").delete().eq("id", data.id).eq("user_id", userId);
+      return { ok: false, reason: "Could not link the chosen sources.", status: 500 };
+    }
+  }
+  return { ok: true, rule: { ...data, sources: scope.sources } };
 }
 
 export async function updateRule(userId, ruleId, updates = {}, env = process.env) {
@@ -206,6 +225,49 @@ export async function updateRule(userId, ruleId, updates = {}, env = process.env
   };
   delete payload.id;
   delete payload.user_id;
+  delete payload.sources;
+  delete payload.paused_reason; // the platform's field, never the client's
+
+  const { data: current, error: readErr } = await db
+    .from("signal_rules").select("*").eq("id", ruleId).eq("user_id", userId).maybeSingle();
+  if (readErr) return { ok: false, reason: readErr.message };
+  if (!current) return { ok: false, reason: "Rule not found or unauthorized", status: 404 };
+
+  // Scope / sources change (0085). Validated against the rule's (possibly new)
+  // trigger before anything is written.
+  let newSources = null;
+  const scopeChange = "source_scope" in updates || "sources" in updates || "trigger_source" in updates;
+  if (scopeChange) {
+    const trigger = updates.trigger_source || current.trigger_source;
+    const scopeName = updates.source_scope || current.source_scope || "all";
+    let requested = updates.sources;
+    if (requested === undefined && scopeName === "selected") {
+      requested = (await sourcesForRules(db, userId, [ruleId]))[ruleId] || [];
+    }
+    const scope = await validateScope(db, userId, trigger, scopeName, requested || []);
+    if (!scope.ok) return scope;
+    payload.source_scope = scope.scope;
+    newSources = scope.sources;
+  }
+
+  // Resuming a rule the platform paused for lack of sources: allowed only once
+  // it has sources again (or listens to all), and it clears the reason.
+  if (updates.status === "active") {
+    const scopeName = payload.source_scope || current.source_scope || "all";
+    const count = newSources ? newSources.length
+      : ((await sourcesForRules(db, userId, [ruleId]))[ruleId] || []).length;
+    if (scopeName === "selected" && count === 0) {
+      return { ok: false, status: 409, code: "no_sources", reason: "Link at least one source before resuming this rule, or let it listen to all of them." };
+    }
+    payload.paused_reason = null;
+  }
+
+  // Order matters for the 0085 pause trigger: links are added before the rule
+  // is saved, and removed only after a switch to 'all' is saved.
+  if (newSources?.length) {
+    const linked = await replaceRuleSources(db, userId, ruleId, newSources);
+    if (!linked.ok) return { ok: false, reason: "Could not link the chosen sources.", status: 500 };
+  }
 
   const { data, error } = await db
     .from("signal_rules")
@@ -216,7 +278,12 @@ export async function updateRule(userId, ruleId, updates = {}, env = process.env
     .single();
 
   if (error) return { ok: false, reason: error.message };
-  return { ok: true, rule: data };
+  if (newSources && newSources.length === 0) {
+    const cleared = await replaceRuleSources(db, userId, ruleId, []);
+    if (!cleared.ok) return { ok: false, reason: "Could not remove the old sources.", status: 500 };
+  }
+  const sources = newSources || (await sourcesForRules(db, userId, [ruleId]))[ruleId] || [];
+  return { ok: true, rule: { ...data, sources } };
 }
 
 export async function deleteRule(ruleId, userId, env = process.env) {

@@ -7,12 +7,14 @@
 //   POST /api/signal-rules { action: "test", rule, samplePayload }
 
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
+import { unlinkSource, rulesUsingSource } from "./lib/ruleSources.js";
 import { performAction } from "./lib/signalDispatch.js";
 import { resolveRequestEntitlement, checkCapability, denyResponse } from "./lib/requireEntitlement.js";
 import {
   listRules,
   createRule,
   updateRule,
+  serviceDb,
   deleteRule,
   testRuleWithPayload,
 } from "./lib/ruleStore.js";
@@ -69,7 +71,7 @@ async function handlePost(event) {
   const action = body.action || "create";
 
   if (action === "create") {
-    const { name, trigger_source, conditions, action_type, action_config } = body;
+    const { name, trigger_source, conditions, action_type, action_config, source_scope, sources } = body;
     if (!name?.trim()) return json(400, { error: "Rule name is required." });
 
     // A rule's only purpose is to dispatch into an integration, so it answers
@@ -84,6 +86,9 @@ async function handlePost(event) {
       conditions,
       action_type,
       action_config,
+      // Which lists/watchlists it listens to (0085). Omitted = all, as before.
+      source_scope: source_scope || "all",
+      sources: sources || [],
     });
     // A rejected destination URL is the caller's mistake, not a server fault.
     if (!res.ok) return json(res.status || 400, { error: res.reason });
@@ -94,8 +99,30 @@ async function handlePost(event) {
     const { ruleId, updates } = body;
     if (!ruleId) return json(400, { error: "ruleId is required." });
     const res = await updateRule(userId, ruleId, updates || {});
-    if (!res.ok) return json(res.status || 400, { error: res.reason });
+    if (!res.ok) return json(res.status || 400, { error: res.reason, code: res.code });
     return json(200, res);
+  }
+
+  // Remove one list/watchlist from a rule's scope. Unlinking the last one
+  // pauses the rule (0085 trigger) — it never starts listening to everything.
+  if (action === "unlink_source") {
+    const { ruleId, sourceType, sourceId } = body;
+    if (!ruleId || !sourceType || !sourceId) return json(400, { error: "ruleId, sourceType and sourceId are required." });
+    const db = serviceDb();
+    if (!db) return json(503, { error: "Rules are not available right now." });
+    const res = await unlinkSource(db, userId, ruleId, sourceType, sourceId);
+    if (!res.ok) return json(res.status || 400, { error: res.reason });
+    const after = await listRules(userId);
+    return json(200, { ok: true, rule: (after.rules || []).find((r) => r.id === ruleId) || null });
+  }
+
+  // "Used by rules" for one list or watchlist.
+  if (action === "rules_for_source") {
+    const { sourceType, sourceId } = body;
+    if (!sourceType || !sourceId) return json(400, { error: "sourceType and sourceId are required." });
+    const db = serviceDb();
+    if (!db) return json(200, { ok: true, rules: [] });
+    return json(200, { ok: true, rules: await rulesUsingSource(db, userId, sourceType, sourceId) });
   }
 
   if (action === "delete") {

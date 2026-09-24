@@ -50,6 +50,7 @@
 //    function that has ten seconds to live.
 
 import { evaluateSignalRule, formatActionPayload, ACTION_TYPES } from "../../../src/lib/rules/ruleModel.js";
+import { filterRulesByScope, sourcesForRules } from "./ruleSources.js";
 import { recordExecution, validateActionConfig, serviceDb } from "./ruleStore.js";
 import { isPublicHttpUrlAsync } from "./publicUrl.js";
 import { getConnection } from "./integrationConnectionStore.js";
@@ -167,7 +168,13 @@ export async function rulesForEvent(event, env = process.env) {
     console.error("[signalDispatch] rule lookup failed:", error.message);
     return [];
   }
-  return data || [];
+  const rules = data || [];
+  // A rule scoped to chosen lists/watchlists (0085) fires only for events from
+  // one of them — and never widens to "all" when it has none left.
+  const scoped = rules.filter((r) => r.source_scope === "selected");
+  if (!scoped.length) return rules;
+  const sources = await sourcesForRules(db, event.userId, scoped.map((r) => r.id));
+  return filterRulesByScope(rules, sources, event);
 }
 
 /**

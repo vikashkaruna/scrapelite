@@ -66,16 +66,20 @@ export async function updateWatchlist({ watchlistId, name, description, cadence,
   return res.json();
 }
 
-export async function deleteWatchlist(watchlistId) {
+// `unlink: true` is "Unlink and delete". Without it, a watchlist that rules
+// use is refused with a 409 whose error carries `code: "in_use"` and `rules`.
+export async function deleteWatchlist(watchlistId, { unlink = false } = {}) {
   const headers = await authHeaders();
   const res = await fetch("/api/watchlists", {
     method: "POST",
     headers,
-    body: JSON.stringify({ action: "delete", watchlistId }),
+    body: JSON.stringify({ action: "delete", watchlistId, unlink }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Failed to delete watchlist: ${res.status}`);
+    const e = new Error(body.error || `Failed to delete watchlist: ${res.status}`);
+    e.status = res.status; e.code = body.code || null; e.rules = body.rules || [];
+    throw e;
   }
   return res.json();
 }

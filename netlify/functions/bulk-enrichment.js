@@ -163,8 +163,8 @@ async function handlePost(event) {
   if (action === "delete_list") {
     const { listId } = body;
     if (!listId) return json(400, { error: "listId is required." });
-    const res = await deleteList(userId, listId);
-    if (res && res.ok === false) return json(res.status || 400, { error: res.reason });
+    const res = await deleteList(userId, listId, undefined, { unlink: body.unlink === true });
+    if (res && res.ok === false) return json(res.status || 400, { error: res.reason, code: res.code, rules: res.rules });
     return json(200, res);
   }
 

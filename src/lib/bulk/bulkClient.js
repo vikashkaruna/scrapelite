@@ -66,16 +66,19 @@ export async function updateList({ listId, name, description }) {
   return res.json();
 }
 
-export async function deleteList(listId) {
+// `unlink: true` is "Unlink and delete" (see watchlistClient.deleteWatchlist).
+export async function deleteList(listId, { unlink = false } = {}) {
   const headers = await authHeaders();
   const res = await fetch("/api/bulk-enrichment", {
     method: "POST",
     headers,
-    body: JSON.stringify({ action: "delete_list", listId }),
+    body: JSON.stringify({ action: "delete_list", listId, unlink }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Failed to delete list: ${res.status}`);
+    const e = new Error(body.error || `Failed to delete list: ${res.status}`);
+    e.status = res.status; e.code = body.code || null; e.rules = body.rules || [];
+    throw e;
   }
   return res.json();
 }

@@ -12704,3 +12704,34 @@ html.dark .closed-loop-next-card.is-audit-complete {
 .engx-pill.is-skip { background: var(--surface-2); color: var(--text-2); }
 .engx-preview-wrap { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
 .engx-preview-wrap .engx-table th { position: sticky; top: 0; }
+
+/* ── Shared confirm dialog (ConfirmDialog.jsx) ───────────────────────────── */
+.dq-dialog-backdrop {
+  position: fixed; inset: 0; z-index: 1300; display: grid; place-items: center; padding: 16px;
+  background: color-mix(in srgb, var(--bg) 40%, rgba(0, 0, 0, .55));
+}
+.dq-dialog {
+  width: 100%; max-width: 460px; padding: 22px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+}
+.dq-dialog-title { margin: 0 0 8px; font-size: 1.08rem; font-weight: 780; color: var(--text); }
+.dq-dialog-body { color: var(--text-2); font-size: .92rem; line-height: 1.55; }
+.dq-dialog-body ul { margin: 8px 0 0; padding-left: 18px; }
+.dq-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+/* ── "Used by rules" / rule sources (0085) ───────────────────────────────── */
+.wf-usedby { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
+.wf-usedby-h { margin: 0 0 8px; font-size: .78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.wf-usedby-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; font-size: .88rem; color: var(--text); }
+.wf-usedby-row + .wf-usedby-row { border-top: 1px solid var(--border); }
+.wf-usedby-empty { font-size: .85rem; color: var(--text-2); }
+.wf-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px;
+  font-size: .74rem; font-weight: 700; background: var(--accent-soft); color: var(--accent-on-soft);
+}
+.wf-chip-warn { background: color-mix(in srgb, var(--warning, #d97706) 14%, transparent); color: var(--warning, #b45309); }
+.wf-sentence { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--r); background: var(--accent-soft); color: var(--accent-on-soft); font-size: .9rem; font-weight: 600; }
+.wf-scope { display: flex; flex-direction: column; gap: 8px; }
+.wf-scope-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.wf-scope-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow: auto; padding: 8px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); }
+.wf-scope-list label { display: flex; align-items: center; gap: 8px; font-size: .88rem; color: var(--text); }
