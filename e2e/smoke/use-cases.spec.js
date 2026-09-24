@@ -8,18 +8,26 @@ test.beforeEach(async ({ page }) => {
   await installOfflineMocks(page);
 });
 
-test("/use-cases hub renders all 9 use-case cards", async ({ page }) => {
+// Plan §22: the hub is one section per role (8), each linking to its pages.
+test("/use-cases hub renders one section per role", async ({ page }) => {
   await page.goto("/use-cases");
-  const cards = page.locator(".uc-hub-card");
-  await expect(cards).toHaveCount(9);
-  // Named individually rather than counted alone: dropping one card and adding
-  // another elsewhere would keep a bare count green while a persona lost its page.
+  await expect(page.locator(".uc-hub-card")).toHaveCount(8);
   for (const name of [
-    /Lead generation/i, /Competitor research/i, /SEO audit/i, /Market research/i,
-    /Account intelligence/i, /Competitive monitoring/i, /AI visibility/i,
-    /Recruiting research/i, /Investor diligence/i,
+    /Sales, SDR & BDR/, /RevOps & Growth Operations/, /Product Marketing Manager/,
+    /SEO, Content, AEO & GEO/, /Brand, Growth & CRO/, /Founder, VC & Market Research/,
   ]) {
-    await expect(page.getByText(name).first()).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
+  }
+  // Every older landing page is still reachable from the hub, plus the new ones.
+  for (const name of [/Lead Generation/, /Investor Diligence/, /Recruiting Research/, /^RevOps$/, /^Product Marketing$/, /^Brand & CRO$/]) {
+    await expect(page.getByRole("button", { name }).first()).toBeVisible();
+  }
+});
+
+test("new role pages render an H1", async ({ page }) => {
+  for (const slug of ["revops", "product-marketing", "brand-cro"]) {
+    await page.goto(`/use-cases/${slug}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   }
 });
 
