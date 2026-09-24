@@ -2045,6 +2045,104 @@
 .ob-foot-link:hover { color: var(--text-2); }
 .ob-foot-sep { color: var(--border-strong); }
 
+/* ── Onboarding face-lift (Phase D, 2026-09-24) ─────────────────────────────
+   Hero card + 8 role cards + a detail panel. Reuses the Home hero card's
+   accent-tinted gradient, radius and shadow so onboarding reads as the same
+   product. */
+.ob-content-wide { max-width: 1080px; }
+.ob-step-wide { align-items: stretch; text-align: left; }
+.ob-hero {
+  position: relative; width: 100%; padding: clamp(20px, 3.4vw, 34px);
+  border: 1px solid color-mix(in srgb, var(--card-accent, var(--accent)) 28%, var(--border));
+  border-radius: calc(var(--r-lg) + 4px); box-shadow: var(--shadow-lg);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--card-accent, var(--accent)) 11%, var(--surface)), var(--surface));
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.ob-hero .ob-title { max-width: 26ch; }
+.ob-hero-compact { margin-bottom: 18px; }
+.ob-hero-compact .ob-welcome-badge { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.ob-layout {
+  display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .9fr);
+  gap: 18px; margin-top: 22px; align-items: start;
+}
+.ob-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ob-role {
+  position: relative; display: flex; gap: 12px; align-items: flex-start; text-align: left;
+  padding: 14px; border: 1.5px solid var(--border); border-radius: var(--r);
+  background: var(--surface); box-shadow: var(--shadow-sm); cursor: pointer;
+  font: inherit; color: inherit; transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.ob-role:hover { border-color: var(--card-accent); transform: translateY(-2px); box-shadow: var(--shadow); }
+.ob-role:focus-visible { outline: 2px solid var(--card-accent, var(--accent)); outline-offset: 2px; }
+.ob-role-selected {
+  border-color: var(--card-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--card-accent) 20%, transparent), var(--shadow);
+}
+.ob-role-icon { flex-shrink: 0; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; }
+.ob-role-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ob-role-label { font-weight: 750; font-size: .93em; letter-spacing: -.01em; color: var(--text); line-height: 1.25; }
+.ob-role-job { font-size: .8em; color: var(--text-2); line-height: 1.45; }
+.ob-detail {
+  position: sticky; top: 84px; padding: clamp(18px, 2.6vw, 24px);
+  border: 1px solid color-mix(in srgb, var(--card-accent, var(--accent)) 28%, var(--border));
+  border-radius: calc(var(--r-lg) + 4px); box-shadow: var(--shadow-lg);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--card-accent, var(--accent)) 9%, var(--surface)), var(--surface));
+}
+.ob-detail-top { display: flex; align-items: center; gap: 9px; font-weight: 780; font-size: .95em; color: var(--text); }
+.ob-detail-icon { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; }
+.ob-detail-lead { margin: 10px 0 0; color: var(--text-2); font-size: .9em; line-height: 1.55; }
+.ob-detail-h {
+  margin: 18px 0 8px; font-size: .72em; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.ob-jobs, .ob-glance, .ob-first-steps ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ob-jobs li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; font-size: .86em; color: var(--text); line-height: 1.45; }
+.ob-jobs li svg { margin-top: 2px; }
+.ob-glance li { display: flex; align-items: center; gap: 10px; font-size: .84em; color: var(--text-2); }
+.ob-glance li .ob-mod-chip { min-width: 112px; }
+.ob-mods { display: flex; flex-wrap: wrap; gap: 6px; }
+.ob-mod-chip {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  padding: 3px 8px; border-radius: 999px; font-size: .74rem; font-weight: 700;
+  color: var(--accent-on-soft); background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.ob-mod-status {
+  margin-left: 2px; padding: 0 5px; border-radius: 999px; font-size: .64rem; letter-spacing: .04em;
+  text-transform: uppercase; background: var(--surface); color: var(--text-2); border: 1px solid var(--border);
+}
+.ob-outcome {
+  display: flex; gap: 8px; align-items: flex-start; margin-top: 16px; padding: 10px 12px;
+  border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--border);
+  font-size: .86em; color: var(--text); line-height: 1.5;
+}
+.ob-outcome svg { color: #16a34a; flex-shrink: 0; margin-top: 2px; }
+.ob-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 18px; }
+.ob-step-wide .ob-skip { margin-top: 20px; text-align: center; }
+.ob-first-steps { width: 100%; max-width: 580px; margin: 0 auto 16px; text-align: left; }
+.ob-first-steps li {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface);
+  font-size: .88em;
+}
+.ob-first-num { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: .78em; font-weight: 800; }
+.ob-first-link { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; font-size: .92em; color: var(--accent); text-decoration: none; white-space: nowrap; }
+.ob-first-link:hover { color: var(--accent-strong); text-decoration: underline; }
+@media (max-width: 900px) {
+  .ob-layout { grid-template-columns: 1fr; }
+  .ob-detail { position: static; }
+}
+@media (max-width: 560px) {
+  .ob-roles { grid-template-columns: 1fr; }
+  .ob-jobs li { grid-template-columns: auto minmax(0, 1fr); }
+  .ob-jobs li .ob-mod-chip { grid-column: 2; justify-self: start; }
+  .ob-first-steps li { grid-template-columns: auto minmax(0, 1fr); }
+  .ob-first-link { grid-column: 2; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-role, .ob-role:hover { transition: none; transform: none; }
+}
+
 /* ── V4: Site footer ───────────────────────────────────────────── */
 .site-footer {
   border-top: 1px solid var(--border);

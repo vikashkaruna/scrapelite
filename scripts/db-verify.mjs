@@ -2538,6 +2538,18 @@ group("pql — 'no data' and 'unqualified' must not be the same row");
   eq("deleting the account deletes its brand kit", (await one(`select count(*)::int as n from public.account_brand_kits where user_id = $1`, [U7])).n, 0);
 }
 
+// ── 0084: role ids on curated reports ───────────────────────────────────────
+{
+  group("0084 role ids — the eight roles, and retired ids still valid");
+  for (const id of ["revops", "pmm", "brand-growth", "market-research", "recruiter"]) {
+    const r = await one(`insert into public.public_reports (slug, title, url, data, persona)
+      values ($1,'T','https://x.com','{}'::jsonb,$2) returning persona`, [`role-${id}`, id]);
+    eq(`persona accepts '${id}'`, r.persona, id);
+  }
+  check("an unknown role id is still rejected", Boolean(await throws(`insert into public.public_reports (slug, title, url, data, persona)
+    values ('role-bad','T','https://x.com','{}'::jsonb,'growth-hacker')`)));
+}
+
 // ── 0044: workflow RLS lockdown (Phases 4-6 & Engagement) ───────────────────
 // 0041-0043 shipped `grant all ... to anon` plus a policy whose
 // `or auth.uid() is null` branch is TRUE for exactly the anonymous role, making

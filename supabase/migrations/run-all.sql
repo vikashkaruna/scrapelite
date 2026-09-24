@@ -97,6 +97,7 @@
 --   0081  0081_prospect_engagement_engine.sql
 --   0082  0082_engagement_send_safety.sql
 --   0083  0083_account_brand_kits.sql — the account Brand Kit, stored server-side.
+--   0084  0084_role_ids.sql — allow the 2026-09-24 roles on curated gallery reports.
 --
 -- Individual files are also committed for source control. If you prefer to run
 -- them one at a time, paste each numbered file separately in the order above.
@@ -11279,6 +11280,31 @@ begin
       for all to service_role using (true) with check (true);
   end if;
 end $$;
+
+
+-- ============================================================
+-- 0084_role_ids.sql
+-- ============================================================
+-- 0084_role_ids.sql — allow the 2026-09-24 roles on curated gallery reports.
+--
+-- 0025 pinned public_reports.persona to the seven V4 persona ids. The product
+-- now has eight roles (src/lib/personaConfig.js): three are new ids (revops,
+-- pmm, brand-growth). The two retired ids stay ALLOWED — market-research
+-- (merged into founder-vc) and recruiter (a hidden legacy role) — because rows
+-- already curated under them must keep satisfying the constraint, and a
+-- constraint change that fails on existing rows is an apply that fails.
+--
+-- Additive only: every value 0025 accepted is still accepted. Re-runnable.
+
+alter table public.public_reports drop constraint if exists public_reports_persona_check;
+alter table public.public_reports
+  add constraint public_reports_persona_check
+  check (persona is null or persona in (
+    'sales', 'revops', 'competitive-intel', 'pmm', 'seo',
+    'brand-growth', 'founder-vc', 'agency',
+    -- retired ids, kept valid for existing rows
+    'market-research', 'recruiter'
+  ));
 
 -- Final: refresh the PostgREST schema cache so the API picks up new tables/RPCs immediately.
 NOTIFY pgrst, 'reload schema';

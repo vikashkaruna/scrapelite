@@ -21,6 +21,7 @@
 // screen.
 
 import { bearerFromEvent, verifyAdminToken } from "./lib/adminToken.js";
+import { ALL_PERSONA_IDS } from "../../src/lib/personaConfig.js";
 
 const HEADERS = {
   "Content-Type": "application/json",
@@ -32,12 +33,10 @@ const HEADERS = {
 
 const respond = (status, body) => ({ statusCode: status, headers: HEADERS, body: JSON.stringify(body) });
 
-// Mirrors src/lib/personaConfig.js PERSONAS ids and the CHECK constraint in
-// 0025_gallery_curation.sql — update all three together if a persona is added.
-const VALID_PERSONAS = new Set([
-  "sales", "competitive-intel", "seo", "market-research",
-  "recruiter", "founder-vc", "agency",
-]);
+// Every id personaConfig.js can hold (the eight roles + retired ids that still
+// resolve) — the same set 0084's CHECK constraint allows. Derived, not retyped,
+// so a new role cannot be offered in the admin UI and refused here.
+const VALID_PERSONAS = new Set(ALL_PERSONA_IDS);
 
 function getDb() {
   const url = process.env.SUPABASE_URL || "";

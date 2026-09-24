@@ -182,12 +182,19 @@ describe("F-01 — Home composer", () => {
     ]);
     expect(screen.getByText("DatIQ Discover")).toBeInTheDocument();
 
-    const upcoming = container.querySelector('[data-module-status="upcoming"]');
-    expect(upcoming).toHaveTextContent("DatIQ Engage");
-    expect(upcoming.querySelector("button")).toBeNull();
-    expect(upcoming).toHaveTextContent("Upcoming");
+    // No upcoming modules now: Engage is in beta and links to /engagement.
+    expect(container.querySelector('[data-module-status="upcoming"]')).toBeNull();
+    const engage = [...container.querySelectorAll('[data-module-status="beta"]')]
+      .find((module) => module.textContent?.includes("DatIQ Engage"));
+    expect(engage).toBeTruthy();
+    expect(engage).toHaveTextContent("Beta");
+    expect(engage).toHaveTextContent("Open Engagement");
 
-    const discover = [...container.querySelectorAll('[data-module-status="beta"]')]
+    const compete = [...container.querySelectorAll('[data-module-status="beta"]')]
+      .find((module) => module.textContent?.includes("DatIQ Compete"));
+    expect(compete).toHaveTextContent("Open Workflow hub");
+
+    const discover = [...container.querySelectorAll('[data-module-status="available"]')]
       .find((module) => module.textContent?.includes("DatIQ Discover"));
     expect(discover).toBeTruthy();
     expect(discover).toHaveTextContent("Run a visibility audit");

@@ -20,6 +20,8 @@ import { computeMasterScore } from "../../lib/discoverability/sxoScoring.js";
 import { FUNNEL_STAGES, calculateJourneyFunnel } from "../../lib/discoverability/journeyModel.js";
 import { PORTFOLIO_ROLLUP_AXES } from "../../lib/discoverability/portfolioModel.js";
 import { PERSONA_PACKS, filterPersonaQueue } from "../../lib/discoverability/personaPacks.js";
+import { usePersona } from "../PersonaProvider.jsx";
+import { PERSONA_BY_ID } from "../../lib/personaConfig.js";
 
 const OVERLAP_DISCLOSURE =
   "Master score weights include: SEO 0.25, AEO 0.20, GEO 0.20, SXO 0.35. Technical accessibility signals (including Core Web Vitals and mobile parity) are evaluated across both technical SEO foundation and SXO experience friction layers as specified in §11.3.";
@@ -95,7 +97,12 @@ export default function SxoDashboard({ auditId, fullAudit, workspaceId = null, o
   // 🔴 2026-09-22 — track the last recalculation error so the empty-state
   // diagnostic can show WHY nothing rendered, not just that nothing rendered.
   const [recalcError, setRecalcError] = useState(null);
-  const [selectedPersona, setSelectedPersona] = useState("all");
+  // Open on the lens that matches the user's role (PMM → Product Marketing,
+  // Brand & Growth → CRO, SEO → SEO, Agency → Agency client); everyone else,
+  // and anyone outside the provider, starts on "all". Only the starting chip —
+  // the queue itself is the same for every lens.
+  const rolePack = PERSONA_BY_ID[usePersona()?.personaId]?.discoverPack;
+  const [selectedPersona, setSelectedPersona] = useState(rolePack && PERSONA_PACKS[rolePack] ? rolePack : "all");
   const [creatingExperiment, setCreatingExperiment] = useState(false);
   const [newExperimentName, setNewExperimentName] = useState("");
   const [newHypothesis, setNewHypothesis] = useState("");
