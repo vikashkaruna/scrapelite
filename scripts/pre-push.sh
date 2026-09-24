@@ -183,7 +183,11 @@ fi
 # (see c4330e8 and the CLAUDE.md entry above it). `npm run prerender --
 # --check` is the real answer and now runs as a gate below.
 if [ "${PREPUSH_SKIP_PRERENDER:-0}" != "1" ] && [ -n "${CHANGED_FILES:-}" ]; then
-  PRERENDER_SRC="$(printf '%s\n' "$CHANGED_FILES" | grep -E '^(src/(pages|components|styles|lib|hooks)/|index\.html$|scripts/site-routes\.mjs$)' || true)"
+  # Test files live beside the sources but are never rendered, so a test-only
+  # change cannot stale a page. Counting them made a commit that only touched
+  # a *.test.jsx unpushable without a skip flag, because `npm run prerender`
+  # correctly writes nothing and so there is nothing to commit.
+  PRERENDER_SRC="$(printf '%s\n' "$CHANGED_FILES" | grep -E '^(src/(pages|components|styles|lib|hooks)/|index\.html$|scripts/site-routes\.mjs$)' | grep -vE '(\.test\.[cm]?[jt]sx?$|/__tests__/)' || true)"
   PRERENDER_OUT="$(printf '%s\n' "$CHANGED_FILES" | grep -E '^public/.*/index\.html$' || true)"
   if [ -n "$PRERENDER_SRC" ] && [ -z "$PRERENDER_OUT" ]; then
     printf '\033[31m✗ pre-push:\033[0m prerendered pages are stale.\n'
