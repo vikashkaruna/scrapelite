@@ -19,9 +19,15 @@ export function getSessionId() {
   try {
     let id = localStorage.getItem(SESSION_KEY);
     if (!id) {
-      id = (typeof crypto !== "undefined" && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2) + Date.now().toString(36);
+      if (typeof crypto !== "undefined" && crypto.randomUUID) {
+        id = crypto.randomUUID();
+      } else if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        id = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      } else {
+        throw new Error("Secure random source unavailable");
+      }
       localStorage.setItem(SESSION_KEY, id);
     }
     return id;
