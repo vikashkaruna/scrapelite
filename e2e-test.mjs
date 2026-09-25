@@ -379,7 +379,22 @@ async function run() {
   const privacyContent = await page.content();
   log("Privacy: DPDP Act 2023 section present", privacyContent.includes("DPDP") || privacyContent.includes("Digital Personal Data Protection"));
   const privacyText = await page.content();
-  log("Privacy: references datiq.app (not scrapelite.netlify.app)", privacyText.includes("datiq.app") && !privacyText.includes("scrapelite.io"));
+  const extractedUrls = Array.from(
+    privacyText.matchAll(/\b(?:href|src)=["']([^"']+)["']/gi),
+    (m) => m[1]
+  );
+  const extractedHosts = extractedUrls
+    .map((u) => {
+      try {
+        return new URL(u, BASE).hostname.toLowerCase();
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  const hasDatiqHost = extractedHosts.includes("datiq.app") || extractedHosts.includes("www.datiq.app");
+  const hasScrapeliteHost = extractedHosts.includes("scrapelite.io");
+  log("Privacy: references datiq.app (not scrapelite.netlify.app)", hasDatiqHost && !hasScrapeliteHost);
 
   // ── 16. TERMS PAGE ───────────────────────────────────────────────────
   console.log("\n📄 TERMS PAGE (/terms)");

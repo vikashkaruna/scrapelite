@@ -52,9 +52,13 @@ export function PersonaProvider({ children }) {
   // metadata-triggered re-render (updateUserMetadata's own USER_UPDATED
   // event would otherwise cause it to re-run against its own write).
   const reconciledFor = useRef(null);
+  // Which signed-in user the local state has been reconciled with. Anything
+  // that decides "has this ACCOUNT picked a role?" must wait for this, or a
+  // second device would be sent to onboarding before its synced role arrives.
+  const [syncedUserId, setSyncedUserId] = useState(null);
 
   useEffect(() => {
-    if (!user) { reconciledFor.current = null; return; }
+    if (!user) { reconciledFor.current = null; setSyncedUserId(null); return; }
     if (reconciledFor.current === user.id) return;
     reconciledFor.current = user.id;
 
@@ -77,6 +81,7 @@ export function PersonaProvider({ children }) {
       // it up so the NEXT device sees it.
       updateUserMetadata({ persona_id: personaId, onboarded, user_name: userName || undefined }).catch(() => {});
     }
+    setSyncedUserId(user.id);
     // Only the sign-in transition (user.id changing) should trigger a merge;
     // personaId/onboarded/userName are read, not depended on, to avoid
     // re-running this on every local selection.
@@ -112,7 +117,12 @@ export function PersonaProvider({ children }) {
 
   return (
     <PersonaContext.Provider
-      value={{ personaId, onboarded, userName, selectPersona, completeOnboarding, resetOnboarding }}
+      value={{
+        personaId, onboarded, userName, selectPersona, completeOnboarding, resetOnboarding,
+        // True once there is nothing left to learn from the server: signed out,
+        // or signed in and reconciled.
+        synced: !user || syncedUserId === user.id,
+      }}
     >
       {children}
     </PersonaContext.Provider>

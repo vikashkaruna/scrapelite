@@ -12774,3 +12774,30 @@ html.dark .closed-loop-next-card.is-audit-complete {
 .wf-unconnected-label { font-weight: 700; color: var(--text); min-width: 110px; }
 .wf-unconnected-items { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
 .wf-unconnected-items .wf-chip { text-decoration: none; }
+
+/* ── Persona nudge ("Personalise DatIQ") — PersonaNudge.jsx ─────────────── */
+.persona-nudge-wrap {
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 8%, var(--surface)));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+}
+.persona-nudge {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 10px clamp(20px, 4vw, 44px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.persona-nudge-icon {
+  display: inline-flex;
+  width: 30px; height: 30px;
+  align-items: center; justify-content: center;
+  border-radius: 50%;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  flex-shrink: 0;
+}
+.persona-nudge-text { margin: 0; flex: 1 1 280px; font-size: .92em; color: var(--text); }
+.persona-nudge-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ob-switch-note { margin: 6px 0 0; font-size: .9em; color: var(--text-muted, var(--text-2)); }

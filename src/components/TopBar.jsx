@@ -8,6 +8,7 @@ import { useAuth } from "./AuthProvider.jsx";
 import { signOut, getUserInitials, getUserAvatar, getUserDisplayName } from "../lib/authService.js";
 import { usePersona } from "./PersonaProvider.jsx";
 import { PERSONA_BY_ID } from "../lib/personaConfig.js";
+import { onboardingUrl } from "../lib/postAuthIntent.js";
 import { useWorkspace } from "./WorkspaceContext.jsx";
 
 function Brand({ onClick }) {
@@ -428,10 +429,10 @@ function MobileNav({ isOpen, onClose, pathname, navigate, mainLinks, isExploreAc
 // ── TopBar root ───────────────────────────────────────────────────
 export default function TopBar() {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const { theme, toggle } = useTheme();
   const { user, openAuth } = useAuth();
-  const { personaId, resetOnboarding } = usePersona();
+  const { personaId } = usePersona();
 
   const [showExplore, setShowExplore]  = useState(false);
   const [mobileOpen,  setMobileOpen]   = useState(false);
@@ -470,7 +471,9 @@ export default function TopBar() {
     try { await signOut(); } catch { /* ignore */ }
     navigate("/");
   }
-  const handleSwitchRole = () => { resetOnboarding(); navigate("/onboarding"); };
+  // Non-destructive: the current role stays in force until a new one is
+  // confirmed, and "Keep" on /onboarding returns here unchanged.
+  const handleSwitchRole = () => navigate(onboardingUrl({ mode: "switch", next: pathname + search }));
   const handleExploreNav = (path) => { setShowExplore(false); if (path) navigate(path); };
 
   return (

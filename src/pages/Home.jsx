@@ -31,6 +31,7 @@ import { OUTCOME_TILES, homeTiles } from "../lib/outcomeTiles.js";
 import { useAuth } from "../components/AuthProvider.jsx";
 import { getAccess as getEngagementAccess } from "../lib/engagement/engagementClient.js";
 import { getStats, fmtStat } from "../lib/statsService.js";
+import { onboardingUrl } from "../lib/postAuthIntent.js";
 import { PLATFORM_MODULES, hasModuleCta, moduleStatusLabel } from "../lib/platformModules.js";
 
 // Derive the pricing prompt from the existing QUICK_ACTIONS config.
@@ -260,7 +261,7 @@ export default function Home() {
       },
     ],
   });
-  const { personaId, userName, resetOnboarding } = usePersona();
+  const { personaId, userName } = usePersona();
   const billing = useBilling();
   const showToast = useToast();
   const navigate = useNavigate();
@@ -970,7 +971,7 @@ export default function Home() {
             <span style={{ color: "var(--text-3)", fontSize: ".86em" }}>
               Viewing as <b style={{ color: "var(--text-2)" }}>{persona.label}</b>
             </span>
-            <button className="ob-skip-link" onClick={() => { resetOnboarding(); navigate("/onboarding"); }}>
+            <button className="ob-skip-link" onClick={() => navigate(onboardingUrl({ mode: "switch" }))}>
               Switch role
             </button>
           </div>

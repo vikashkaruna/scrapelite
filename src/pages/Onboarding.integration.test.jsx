@@ -70,10 +70,15 @@ beforeEach(() => {
   window.history.replaceState(null, "", window.location.pathname);
 });
 
-function Tree() {
+function Where() {
+  const { pathname, search } = useLocation();
+  return <div data-testid="where">{pathname + search}</div>;
+}
+
+function Tree({ at = "/onboarding" }) {
   return (
     <MemoryRouter
-      initialEntries={["/onboarding"]}
+      initialEntries={[at]}
     >
       <ToastProvider>
         <ErrorModalProvider>
@@ -86,6 +91,7 @@ function Tree() {
                       <Route path="/onboarding" element={<Onboarding />} />
                       <Route path="/" element={<div data-testid="home">home</div>} />
                       <Route path="/templates" element={<div data-testid="templates">templates</div>} />
+                      <Route path="/discoverability" element={<Where />} />
                     </Routes>
                   </ExtractionProvider>
                 </BillingProvider>
@@ -129,7 +135,8 @@ describe("I-40 — Onboarding: role flow (face-lift, 2026-09-24)", () => {
     expect(panel).toHaveTextContent(seo.outcome);
     expect(panel).toHaveTextContent("Discover");
     expect(screen.getByRole("button", { name: new RegExp(seo.firstStep.label, "i") })).toBeInTheDocument();
-    expect(localStorage.getItem("datiq.persona")).toBe("seo");
+    // Nothing is saved until the user finishes, so backing out changes nothing.
+    expect(localStorage.getItem("datiq.persona")).toBeNull();
   });
 
   it("arrow keys move the selection like a native radio set", async () => {
@@ -178,5 +185,90 @@ describe("I-40 — Onboarding: role flow (face-lift, 2026-09-24)", () => {
     act(() => skip.click());
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByTestId("home")).toBeInTheDocument();
+  });
+
+  it("finishing saves the picked role", async () => {
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => cards()[0].click());
+    act(() => screen.getByRole("button", { name: new RegExp(`^Or start here`) }).click());
+    await act(async () => { await Promise.resolve(); });
+    expect(localStorage.getItem("datiq.persona")).toBe(PERSONAS[0].id);
+    expect(localStorage.getItem("datiq.onboarded")).toBe("1");
+  });
+
+  it("'Skip for now' marks onboarding done so nobody is asked again", async () => {
+    render(<Tree />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => screen.getByText(/skip for now/i).click());
+    await act(async () => { await Promise.resolve(); });
+    expect(localStorage.getItem("datiq.onboarded")).toBe("1");
+  });
+
+  it("?role= from a use-case page pre-selects that role without saving it", async () => {
+    render(<Tree at="/onboarding?role=revops" />);
+    await act(async () => { await Promise.resolve(); });
+    const i = PERSONAS.findIndex((p) => p.id === "revops");
+    expect(cards()[i].getAttribute("aria-checked")).toBe("true");
+    expect(localStorage.getItem("datiq.persona")).toBeNull();
+  });
+
+  it("?next= returns the user to the task they were on", async () => {
+    render(<Tree at="/onboarding?next=%2Fdiscoverability%3Furl%3Dx" />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => cards()[0].click());
+    act(() => screen.getByRole("button", { name: /Save and go back to what I was doing/i }).click());
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId("where")).toHaveTextContent("/discoverability?url=x");
+    expect(localStorage.getItem("datiq.persona")).toBe(PERSONAS[0].id);
+  });
+
+  it("an off-site ?next= is ignored", async () => {
+    render(<Tree at="/onboarding?next=%2F%2Fevil.example" />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => screen.getByText(/skip for now/i).click());
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId("home")).toBeInTheDocument();
+  });
+});
+
+describe("Switch persona (mode=switch)", () => {
+  const cards = () => [...document.querySelectorAll(".ob-role")];
+
+  it("pre-selects the current role and names it", async () => {
+    localStorage.setItem("datiq.persona", "seo");
+    localStorage.setItem("datiq.onboarded", "1");
+    render(<Tree at="/onboarding?mode=switch" />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole("heading", { level: 1, name: /Switch your role/i })).toBeInTheDocument();
+    const i = PERSONAS.findIndex((p) => p.id === "seo");
+    expect(cards()[i].getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/Current role:/)).toHaveTextContent(PERSONAS[i].label);
+  });
+
+  it("'Keep' returns to where the user was with the role unchanged", async () => {
+    localStorage.setItem("datiq.persona", "seo");
+    localStorage.setItem("datiq.onboarded", "1");
+    render(<Tree at="/onboarding?mode=switch&next=%2Fdiscoverability" />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => cards()[0].click()); // look at another role, then back out
+    const seo = PERSONAS.find((p) => p.id === "seo");
+    act(() => screen.getByRole("button", { name: new RegExp(`Keep ${seo.label}`) }).click());
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId("where")).toHaveTextContent("/discoverability");
+    expect(localStorage.getItem("datiq.persona")).toBe("seo");
+    expect(localStorage.getItem("datiq.onboarded")).toBe("1");
+  });
+
+  it("confirming a new role switches it and returns to the page", async () => {
+    localStorage.setItem("datiq.persona", "seo");
+    localStorage.setItem("datiq.onboarded", "1");
+    render(<Tree at="/onboarding?mode=switch&next=%2Fdiscoverability" />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => cards()[0].click());
+    act(() => screen.getByRole("button", { name: /Save and go back/i }).click());
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId("where")).toHaveTextContent("/discoverability");
+    expect(localStorage.getItem("datiq.persona")).toBe(PERSONAS[0].id);
   });
 });
