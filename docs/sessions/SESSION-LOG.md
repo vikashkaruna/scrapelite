@@ -19,6 +19,15 @@
 ---
 
 
+
+## 2026-09-25 — /extract 502 was Lambda's 6 MB response cap (PR #238 → staging)
+
+- **Symptom:** "Service temporarily unavailable — API POST /extract failed (502)".
+- **Cause:** very large pages (reproduced: html.spec.whatwg.org, ~12 MB HTML) made the JSON response exceed Lambda's 6,291,556-byte cap; the platform substituted an error-less 502 `Function.ResponseSizeTooLarge` after the scrape was already charged.
+- **Fix:** `netlify/functions/lib/responseBudget.js` trims `data.html` to a 5.5 MB budget (`htmlTruncated`, `htmlOriginalChars`) before cache write; `apiClient.js` reports `{errorType}` bodies as our fault. 3 new tests; pre-push gate green.
+- **Open:** map mode has no deadline — `mapMode` on stripe.com hits the platform timeout (HTML 504). Not fixed.
+- **Not deployed to production:** merged to `staging` only; `main` needs the manual Netlify unlock + `approved`.
+
 ## 2026-09-25 — Persona-based onboarding after sign-in, task first (branch `persona-based-onboarding`)
 
 > **Branch:** `persona-based-onboarding` @ `8c89e34` (+ this docs commit), cut from `origin/staging` @ `67bfc88`

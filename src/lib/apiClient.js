@@ -103,6 +103,10 @@ async function request(path, method = "GET", body) {
       message = res.status >= 500 || res.status === 0
         ? `The server did not complete this request (${res.status}). This is a problem on our side, not with the page you asked for — try again shortly.`
         : `This request could not be reached (${res.status}). Please refresh and try again.`;
+    } else if (!message && errData.errorType) {
+      // A Lambda runtime error ({errorType, errorMessage}) — e.g. a response
+      // over the 6 MB payload cap. Never the reader's fault.
+      message = `The server did not complete this request (${res.status}). This is a problem on our side, not with the page you asked for — try again shortly.`;
     } else if (!message) {
       message = `API ${method} ${path} failed (${res.status})`;
     }
