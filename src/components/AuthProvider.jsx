@@ -9,6 +9,7 @@ import { applyTrialCredit } from "../lib/usageService.js";
 import { linkConsentToUser } from "../lib/consentService.js";
 import { claimBillingSession } from "../lib/billingRepo.js";
 import { clearEntitlementCache } from "../lib/entitlementClient.js";
+import { setPostAuthIntent } from "../lib/postAuthIntent.js";
 
 export const AuthContext = createContext(null);
 
@@ -41,6 +42,10 @@ export function AuthProvider({ children }) {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState("signin");
   const [authError, setAuthError] = useState("");
+  // True when this page load is the landing of an auth callback (OAuth return,
+  // email-confirmation link). PostAuthOnboardingRedirect treats that as a
+  // fresh sign-in; a plain reload with a stored session is not one.
+  const [arrivedViaAuthCallback, setArrivedViaAuthCallback] = useState(false);
 
   useEffect(() => {
     // ── 1. Clean up the URL hash on the FIRST mount ───────────────────────
@@ -96,6 +101,7 @@ export function AuthProvider({ children }) {
       hash.includes("type=recovery") ||
       /[?&](code|access_token|provider_token)=/.test(search);
     let signInDetected = hasSuccessShape;
+    if (hasSuccessShape) setArrivedViaAuthCallback(true);
 
     getSession().then((s) => {
       setSession(s);
@@ -187,12 +193,18 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  const openAuth = useCallback((mode = "signin") => { setAuthMode(mode); setShowAuthModal(true); }, []);
+  const openAuth = useCallback((mode = "signin") => {
+    // Remember where the user was, so a sign-in started mid-task returns them
+    // to that task — including across an OAuth round trip.
+    try { setPostAuthIntent(window.location.pathname + window.location.search); } catch { /* ignore */ }
+    setAuthMode(mode);
+    setShowAuthModal(true);
+  }, []);
   const closeAuth = useCallback(() => { setShowAuthModal(false); setAuthError(""); }, []);
 
   return (
     <AuthContext.Provider
-      value={{ user, session, authLoading, showAuthModal, authMode, authError, openAuth, closeAuth }}
+      value={{ user, session, authLoading, arrivedViaAuthCallback, showAuthModal, authMode, authError, openAuth, closeAuth }}
     >
       {children}
     </AuthContext.Provider>

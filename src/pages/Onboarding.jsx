@@ -9,10 +9,16 @@
 //         steps" — each a link into the module that does it. Finish goes to
 //         the role's first step, not a blanket "/".
 //
+// Entry (see lib/postAuthIntent.js): ?next= is where to return afterwards (a
+// mid-task sign-in, the Personalise card); ?role= pre-selects a role (a use-case
+// page sign-up); ?mode=switch is "Switch persona" from the account menu — the
+// current role stays in force until a new one is confirmed, and "Keep" leaves
+// everything exactly as it was. Nothing is written until the user finishes.
+//
 // Style: the Home hero card (accent-tinted gradient card, eyebrow, big title)
 // and the existing ob-* tokens — no new visual language.
-import { useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import Icon from "../components/Icon.jsx";
 import Button from "../components/Button.jsx";
 import { PERSONAS, PERSONA_BY_ID } from "../lib/personaConfig.js";
@@ -20,6 +26,18 @@ import { ROLE_MODULES, roleModuleStatus } from "../lib/roleModules.js";
 import { usePersona } from "../components/PersonaProvider.jsx";
 import { RECIPE_PACKS, getPackByKey } from "../lib/extractionTemplates.js";
 import { useSeo } from "../hooks/useSeo.js";
+import { useAuth } from "../components/AuthProvider.jsx";
+import { safeNext } from "../lib/postAuthIntent.js";
+import { track } from "../lib/analyticsService.js";
+
+const offered = (id) => (PERSONA_BY_ID[id] && !PERSONA_BY_ID[id].legacy ? id : null);
+
+// First name from the account, so step two does not ask for something we know.
+function nameFromUser(user) {
+  const m = user?.user_metadata || {};
+  const full = m.user_name || m.full_name || m.name || "";
+  return String(full).trim().split(/\s+/)[0] || "";
+}
 
 // The module order used when showing "DatIQ at a glance" before a role is picked.
 const GLANCE = ["extract", "enrich", "discover", "compete", "connect", "engage", "templates", "workflows"];
@@ -77,7 +95,7 @@ function RoleCard({ persona, selected, onSelect, tabIndex, onKeyDown, cardRef })
   );
 }
 
-function RoleDetail({ persona, onContinue, onStartHere }) {
+function RoleDetail({ persona, onContinue, onStartHere, startLabel }) {
   if (!persona) {
     return (
       <aside id="ob-role-detail" className="ob-detail" aria-live="polite">
@@ -131,14 +149,14 @@ function RoleDetail({ persona, onContinue, onStartHere }) {
       <div className="ob-detail-actions">
         <Button variant="primary" iconRight="arrow-right" onClick={onContinue}>Continue</Button>
         <button type="button" className="home-secondary-cta" onClick={onStartHere}>
-          Or start here: {persona.firstStep.label}
+          {startLabel || `Or start here: ${persona.firstStep.label}`}
         </button>
       </div>
     </aside>
   );
 }
 
-function StepOne({ selected, onSelect, onNext, onStartHere, onSkip }) {
+function StepOne({ selected, onSelect, onNext, onStartHere, onSkip, switchMode, currentLabel, returning, headingRef }) {
   const refs = useRef([]);
   const selectedIndex = Math.max(0, PERSONAS.findIndex((p) => p.id === selected));
   const persona = PERSONA_BY_ID[selected] && !PERSONA_BY_ID[selected].legacy ? PERSONA_BY_ID[selected] : null;
@@ -158,12 +176,19 @@ function StepOne({ selected, onSelect, onNext, onStartHere, onSkip }) {
       <section className="ob-hero" aria-labelledby="ob-title">
         <div className="ob-eyebrow">
           <Icon name="sparkles" size={14} />
-          Set up DatIQ for your work
+          {switchMode ? "Switch persona" : "Set up DatIQ for your work"}
         </div>
-        <h1 id="ob-title" className="ob-title">What do you want DatIQ to do for you?</h1>
+        <h1 id="ob-title" className="ob-title" tabIndex={-1} ref={headingRef}>
+          {switchMode ? "Switch your role" : "What do you want DatIQ to do for you?"}
+        </h1>
         <p className="ob-subtitle">
-          Pick the role closest to yours. We'll show what you can do, the modules that do it, and the best place to start — you can change it any time.
+          {switchMode
+            ? "Pick a new role and we'll re-tailor your home screen, templates and first steps. Your saved extractions, audits, lists and settings stay exactly as they are."
+            : "Pick the role closest to yours. We'll tailor your home screen, templates and first steps to it — you can change it any time from the account menu."}
         </p>
+        {switchMode && currentLabel && (
+          <p className="ob-switch-note">Current role: <b>{currentLabel}</b></p>
+        )}
       </section>
 
       <div className="ob-layout">
@@ -180,19 +205,34 @@ function StepOne({ selected, onSelect, onNext, onStartHere, onSkip }) {
             />
           ))}
         </div>
-        <RoleDetail persona={persona} onContinue={onNext} onStartHere={onStartHere} />
+        <RoleDetail
+          persona={persona}
+          onContinue={onNext}
+          onStartHere={onStartHere}
+          startLabel={returning ? "Save and go back to what I was doing" : null}
+        />
       </div>
 
       <p className="ob-skip">
-        Just exploring?{" "}
-        <button type="button" className="ob-skip-link" onClick={onSkip}>Skip for now</button>
+        {switchMode ? (
+          <button type="button" className="ob-skip-link" onClick={onSkip}>
+            {currentLabel ? `Keep ${currentLabel}` : "Cancel"}
+          </button>
+        ) : (
+          <>
+            Just exploring?{" "}
+            <button type="button" className="ob-skip-link" onClick={onSkip}>Skip for now</button>
+          </>
+        )}
       </p>
     </div>
   );
 }
 
-function StepTwo({ persona, onComplete, onBack }) {
-  const [name, setName] = useState("");
+function StepTwo({ persona, onComplete, onBack, initialName = "", returnTo }) {
+  const [name, setName] = useState(initialName);
+  const primaryTo = returnTo || persona.firstStep.to;
+  const primaryLabel = returnTo ? "Save and go back to what I was doing" : persona.firstStep.label;
   const [packKey, setPackKey] = useState(
     getPackByKey(persona?.starterPack) ? persona.starterPack : RECIPE_PACKS[0]?.key,
   );
@@ -282,7 +322,7 @@ function StepTwo({ persona, onComplete, onBack }) {
           placeholder="Your first name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && finish(persona.firstStep.to)}
+          onKeyDown={(e) => e.key === "Enter" && finish(primaryTo)}
           autoComplete="given-name"
         />
       </div>
@@ -290,10 +330,10 @@ function StepTwo({ persona, onComplete, onBack }) {
       <Button
         variant="primary"
         iconRight="arrow-right"
-        onClick={() => finish(persona.firstStep.to)}
+        onClick={() => finish(primaryTo)}
         style={{ minWidth: 240, height: 52, fontSize: "1.05em" }}
       >
-        {persona.firstStep.label}
+        {primaryLabel}
       </Button>
 
       <p className="ob-skip">
@@ -313,30 +353,59 @@ export default function Onboarding() {
     canonical: "https://datiq.app/onboarding",
   });
   const navigate = useNavigate();
-  const { personaId, selectPersona, completeOnboarding } = usePersona();
+  const [params] = useSearchParams();
+  const { user } = useAuth();
+  const { personaId, onboarded, userName, selectPersona, completeOnboarding } = usePersona();
+  const switchMode = params.get("mode") === "switch";
+  const next = safeNext(params.get("next"));
+  const returnTo = next && !next.startsWith("/onboarding") ? next : null;
   const [step, setStep] = useState(1);
   // A legacy role (recruiter) is not offered here, so it shows as "none picked".
-  const [localSelected, setLocalSelected] = useState(
-    PERSONA_BY_ID[personaId] && !PERSONA_BY_ID[personaId].legacy ? personaId : null,
-  );
+  // A ?role= hint (signed up from a use-case page) is pre-selected, never saved
+  // until the user confirms it.
+  const current = offered(personaId);
+  const [localSelected, setLocalSelected] = useState(() => offered(params.get("role")) || current);
+  const headingRef = useRef(null);
 
-  const handleSelect = (id) => {
-    setLocalSelected(id);
-    selectPersona(id);
-  };
+  // Land keyboard and screen-reader users on the question, not the page top.
+  useEffect(() => { headingRef.current?.focus?.(); }, []);
 
   const persona = PERSONAS.find((p) => p.id === localSelected) || null;
+  const currentLabel = current ? PERSONA_BY_ID[current].label : "";
 
+  // Selection is local until the user finishes, so backing out of a switch
+  // leaves the current role exactly as it was.
   const finish = (name, to) => {
+    if (localSelected && localSelected !== personaId) selectPersona(localSelected);
     completeOnboarding(name);
-    navigate(to || "/", { replace: true });
+    try {
+      track("onboarding_completed", {
+        persona: localSelected || null,
+        mode: switchMode ? "switch" : "first_run",
+        returned: Boolean(returnTo),
+      });
+    } catch { /* best-effort */ }
+    navigate(to || returnTo || "/", { replace: true });
+  };
+
+  const skip = () => {
+    if (switchMode) {
+      navigate(returnTo || "/", { replace: true });
+      return;
+    }
+    // "Skip for now" still counts as onboarded, so nobody is asked again; the
+    // role stays changeable from the account menu.
+    if (!onboarded) completeOnboarding("");
+    try { track("onboarding_completed", { persona: current, mode: "first_run", skipped: true }); } catch { /* best-effort */ }
+    navigate(returnTo || "/", { replace: true });
   };
 
   return (
     <div className="page ob-page">
       <div className="ob-bg-glow" />
 
-      <div className="ob-stepper" aria-label={`Step ${step} of 2`}>
+      <p className="sr-only" role="status" aria-live="polite">Step {step} of 2</p>
+      <div className="ob-stepper" aria-hidden="true">
         <div className={"ob-step-dot" + (step >= 1 ? " ob-step-dot-on" : "")} />
         <div className="ob-step-line" />
         <div className={"ob-step-dot" + (step >= 2 ? " ob-step-dot-on" : "")} />
@@ -346,13 +415,23 @@ export default function Onboarding() {
         {step === 1 || !persona ? (
           <StepOne
             selected={localSelected}
-            onSelect={handleSelect}
+            onSelect={setLocalSelected}
             onNext={() => persona && setStep(2)}
-            onStartHere={() => persona && finish("", persona.firstStep.to)}
-            onSkip={() => finish("", "/")}
+            onStartHere={() => persona && finish("", returnTo || persona.firstStep.to)}
+            onSkip={skip}
+            switchMode={switchMode}
+            currentLabel={currentLabel}
+            returning={Boolean(returnTo)}
+            headingRef={headingRef}
           />
         ) : (
-          <StepTwo persona={persona} onComplete={finish} onBack={() => setStep(1)} />
+          <StepTwo
+            persona={persona}
+            onComplete={finish}
+            onBack={() => setStep(1)}
+            initialName={userName || nameFromUser(user)}
+            returnTo={returnTo}
+          />
         )}
       </div>
     </div>

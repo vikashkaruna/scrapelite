@@ -92,6 +92,8 @@ import UsageUpsellBanner from "./components/UsageUpsellBanner.jsx";
 import SuspendedBanner from "./components/SuspendedBanner.jsx";
 import { GuestTrialProvider } from "./components/GuestTrialProvider.jsx";
 import GuestTrialBanner from "./components/GuestTrialBanner.jsx";
+import PersonaNudge from "./components/PersonaNudge.jsx";
+import PostAuthOnboardingRedirect from "./components/PostAuthOnboardingRedirect.jsx";
 import { WorkspaceProvider } from "./components/WorkspaceContext.jsx";
 import ReferralBanner from "./components/ReferralBanner.jsx";
 import ConsentBanner from "./components/ConsentBanner.jsx";
@@ -240,6 +242,7 @@ function Shell() {
       <ReferralBanner />
       <SuspendedBanner />
       <UsageUpsellBanner />
+      <PersonaNudge />
       <main id="main-content">
         <Routes>
           <Route path="/"                              element={<Home />} />
@@ -335,6 +338,8 @@ function Shell() {
       <PendingReferralFlush />
       <PendingWorkspaceInviteFlush />
       <PendingAuditFlush />
+      {/* Fresh sign-in → /onboarding (front door) or back to the task (mid-task). */}
+      <PostAuthOnboardingRedirect />
       <HotkeyHelp open={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
       <OnboardingTour
         key={tourForceOpen}
