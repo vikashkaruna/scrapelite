@@ -720,7 +720,7 @@ simplest way to circulate an internal brief.
 
 ## 18. Choosing your role
 
-When you sign up, DatIQ asks which of eight roles fits your work:
+When you create an account, DatIQ asks which of eight roles fits your work:
 
 | Role | What DatIQ puts first for you |
 |---|---|
@@ -736,8 +736,16 @@ When you sign up, DatIQ asks which of eight roles fits your work:
 Your role decides the examples, the **Home tiles** and the templates you see first. It **never** limits
 what you can use — every feature is available whichever role you pick.
 
-To change it, open your account menu and choose **Switch persona**. If you picked *Market Research* before,
-you are now under **Founder, VC & Market Research**; nothing else changes.
+**When you are asked.** If you sign up from the home page, pricing or a use-case page, you go straight to
+role selection (a use-case page suggests its role — you still confirm it). If you sign in partway through
+something — reviewing an extraction, running a Discover audit, accepting an invite — you go straight back to
+it, and a small **Personalise DatIQ** card offers the choice instead. Picking a role from that card brings you
+back to the same page. **Skip for now** and **Not now** are always there; you are never blocked.
+
+To change it, open your account menu and choose **Switch persona**. Your current role stays selected and
+nothing changes until you confirm a new one — **Keep** returns you to where you were. Your saved extractions,
+audits, lists and settings are untouched either way. If you picked *Market Research* before, you are now under
+**Founder, VC & Market Research**; nothing else changes.
 
 > **Engagement** — outreach to the accounts you have researched — is in **private beta**. To ask for access,
 > email hello@datiq.app from the address you use for DatIQ.
