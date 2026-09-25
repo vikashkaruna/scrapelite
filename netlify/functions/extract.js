@@ -64,6 +64,7 @@ import { meterContext, flush as flushMeter } from "./lib/creditMeter.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
 import { decodeHtmlEntities } from "./lib/htmlEntities.js";
+import { fitResponseBudget } from "./lib/responseBudget.js";
 
 function respond(statusCode, body, extraHeaders = {}) {
   return {
@@ -1007,17 +1008,21 @@ export const handler = async (event) => {
       };
     }
 
+    // Lambda caps a response at ~6 MB and replaces anything larger with an
+    // error-less 502. Trim BEFORE caching so a cache hit can never exceed it.
+    const fittedBody = fitResponseBudget(responseBody);
+
     // FD2: write to cache (best-effort, fire-and-forget).
     if (isCacheable(options) && !options.noCache) {
       try {
         const key = buildCacheKey(url, options);
         // Don't await — the response goes back to the client immediately.
-        setCached(key, "ok", { data: responseBody.data, source: result.source })
+        setCached(key, "ok", { data: fittedBody.data, source: result.source })
           .catch(() => {});
       } catch { /* cache write failure is non-fatal */ }
     }
 
-    return reply(200, responseBody);
+    return reply(200, fittedBody);
   } catch (err) {
     return reply(502, { error: `Scrape chain failed: ${err.message}` });
   }
