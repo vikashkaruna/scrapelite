@@ -1,13 +1,12 @@
-// AuthModal.jsx — sign-in / sign-up modal with email+password, OAuth, and optional persona step.
+// AuthModal.jsx — sign-in / sign-up modal with email+password and OAuth.
+// Role selection is NOT here: PostAuthOnboardingRedirect sends a front-door
+// sign-up to /onboarding and a mid-task one back to its task.
 // Also handles the forgot-password request view (in-modal email entry + reset link send).
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router";
 import Icon from "./Icon.jsx";
 import Button from "./Button.jsx";
 import { useAuth } from "./AuthProvider.jsx";
-import { usePersona } from "./PersonaProvider.jsx";
-import { PERSONAS } from "../lib/personaConfig.js";
 import {
   signInWithEmail,
   signUpWithEmail,
@@ -170,40 +169,8 @@ function ForgotView({
   );
 }
 
-// ── Persona picker step (shown after sign-up if not yet onboarded) ──
-function PersonaStep({ onSelect, onSkip }) {
-  return (
-    <div className="auth-persona-step">
-      <div className="auth-title" style={{ marginBottom: 4 }}>One more thing</div>
-      <p className="auth-sub" style={{ marginBottom: 16 }}>
-        Choose your primary role so DatIQ can tailor your experience. You can change this any time.
-      </p>
-      <div className="auth-persona-grid">
-        {PERSONAS.map((p) => (
-          <button
-            key={p.id}
-            className="auth-persona-card"
-            onClick={() => onSelect(p.id)}
-            style={{ "--pc": p.color }}
-          >
-            <span className="auth-persona-icon" style={{ background: `color-mix(in srgb, ${p.color} 14%, transparent)`, color: p.color }}>
-              <Icon name={p.icon} size={16} />
-            </span>
-            <span className="auth-persona-label">{p.label}</span>
-          </button>
-        ))}
-      </div>
-      <button className="ob-skip-link" onClick={onSkip} style={{ marginTop: 12, fontSize: ".84em" }}>
-        Skip for now
-      </button>
-    </div>
-  );
-}
-
 export default function AuthModal() {
   const { closeAuth, authError, authMode } = useAuth();
-  const { onboarded, selectPersona, completeOnboarding } = usePersona();
-  const navigate = useNavigate();
 
   // "signin" | "signup" | "forgot" | "forgot-sent"
   const [tab, setTab] = useState(authMode === "signup" ? "signup" : "signin");
@@ -213,7 +180,6 @@ export default function AuthModal() {
   const [errorCta, setErrorCta] = useState(null); // {label, action} from classifyAuthError
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState("");
-  const [showPersonaStep, setShowPersonaStep] = useState(false);
 
   // A11y: Escape closes the modal. Standard dialog keyboard contract.
   useEffect(() => {
@@ -261,19 +227,6 @@ export default function AuthModal() {
     }
   }
 
-  function handlePersonaSelect(id) {
-    selectPersona(id);
-    completeOnboarding("");
-    closeAuth();
-    navigate("/");
-  }
-
-  function handlePersonaSkip() {
-    completeOnboarding("");
-    closeAuth();
-    navigate("/");
-  }
-
   async function handleEmail(e) {
     e.preventDefault();
     if (!authEnabled) {
@@ -291,9 +244,6 @@ export default function AuthModal() {
         const { user } = await signUpWithEmail(email, password);
         if (user && !user.confirmed_at && !user.email_confirmed_at) {
           setInfo("Check your email for a confirmation link to activate your account.");
-        } else if (!onboarded) {
-          // Account created & confirmed — offer persona selection
-          setShowPersonaStep(true);
         }
       }
     } catch (err) {
@@ -350,14 +300,12 @@ export default function AuthModal() {
 
   return createPortal(
     <div className="auth-backdrop" onClick={handleBackdropClick}>
-      <div className="auth-modal" role="dialog" aria-modal="true" aria-label={showPersonaStep ? "Choose your role" : "Sign in"}>
+      <div className="auth-modal" role="dialog" aria-modal="true" aria-label="Sign in">
         <button className="auth-close" onClick={closeAuth} aria-label="Close">
           <Icon name="x" size={18} />
         </button>
 
-        {showPersonaStep ? (
-          <PersonaStep onSelect={handlePersonaSelect} onSkip={handlePersonaSkip} />
-        ) : tab === "forgot" || tab === "forgot-sent" ? (
+        {tab === "forgot" || tab === "forgot-sent" ? (
           <ForgotView
             tab={tab}
             email={email}

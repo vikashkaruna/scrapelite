@@ -19,6 +19,35 @@
 ---
 
 
+## 2026-09-25 — Persona-based onboarding after sign-in, task first (branch `persona-based-onboarding`)
+
+> **Branch:** `persona-based-onboarding` @ `8c89e34` (+ this docs commit), cut from `origin/staging` @ `67bfc88`
+> **Target:** feature branch — pushed, **not merged, no PR**
+> **Verification:** `npm run test:prepush` 9/9 green; 24 new tests + Onboarding integration 8 → 16
+
+### What was built
+- **`src/lib/postAuthIntent.js`** — `openAuth()` stashes where the user was (sessionStorage, 30-min expiry, survives OAuth). `classifyPostAuth()` → `task` (app surfaces, or a pending audit/schedule/invite/referral) or `plain` (front door); use-case pages map to a role hint. Also `onboardingUrl`, `safeNext` (same-origin only), exempt paths, nudge dismissal (session, then permanent after 2).
+- **`PostAuthOnboardingRedirect`** (Shell) — acts **only on a fresh sign-in**: an intent stash or an auth-callback landing (`AuthProvider.arrivedViaAuthCallback`). Reload / tab-refocus `SIGNED_IN` never redirect. Waits for `PersonaProvider.synced` (new) so a second device is not re-asked. Plain + no role → `/onboarding?next=&role=`; task → back to the task (OAuth lands on `/`).
+- **`PersonaNudge`** — "Personalise DatIQ" card for signed-in, un-onboarded accounts (new AND existing users), links to `/onboarding?next=<this page>`.
+- **Onboarding page** — reads `?next`, `?role`, `?mode=switch`. Role is saved **only on finish**; Skip marks onboarded; name pre-filled from account; focus on h1; step announced to screen readers; `onboarding_started/_completed/_nudge_dismissed` events.
+- **AuthModal** — in-modal `PersonaStep` removed (one onboarding experience).
+
+### Root cause fixed in passing
+**Switch persona was destructive.** TopBar and Home called `resetOnboarding()` before navigating, which wrote `persona_id: null, onboarded: false` to `user_metadata`. Abandoning the page left the account role-less — and with the new redirect it would have been pushed back through onboarding. Now `?mode=switch`: current role pre-selected and named, "Keep" returns unchanged, confirm switches and returns to `next`. `resetOnboarding` is still exported but has no UI caller.
+
+### Verification
+- `test:prepush` 9/9 (readiness, unit, contract, integration, system, db+referral, build, prerender, security).
+- Browser (local vite + bundled chromium): switch mode heading focused, Keep → `/dashboard` role unchanged, confirm → `/dashboard` role switched.
+- ⚠️ Playwright e2e smoke NOT run — `@playwright/test` absent from this container's `node_modules`. The Staging Gate will run it.
+- ⚠️ Real OAuth round trip not exercised (no live Supabase here) — redirect proven by unit tests only. Container ran Node 22 against the pinned `>=24`.
+
+### Open items
+- [ ] Open a PR `persona-based-onboarding` → `staging` when the owner is ready; watch `e2e/smoke/onboarding.spec.js`.
+- [ ] Manually verify on a deploy preview: Google sign-up from `/pricing` → `/onboarding`; sign-in from `/discoverability` → stays + card; email-confirmation link → `/onboarding`.
+- [x] Help §18 updated and regenerated (`node docs/build-help.mjs`).
+
+---
+
 ## 2026-09-25 — Phase D2: public pages refreshed, version numbers removed (branch `feat/phase-d2-public-pages`)
 
 **State at start:** #227 (D1) and #231 (Phase C) both merged to `staging` by the owner. D2 branched from `origin/staging` @ `6a8b9aa7`.
