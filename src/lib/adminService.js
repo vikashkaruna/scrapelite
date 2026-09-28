@@ -7,7 +7,7 @@ const ADMIN_AUTH_KEY  = "scrapelite.adminAuth";     // now holds the session tok
 const ADMIN_EXP_KEY   = "scrapelite.adminAuthExp";  // token expiry (ms epoch)
 const ADMIN_LOCK_KEY  = "datiq.adminLock";          // failed-attempt lockout state
 
-const FUNCTIONS = "/.netlify/functions";
+const FUNCTIONS = "/api";
 const DEMO_PIN  = "ADMIN123";
 const EIGHT_H   = 1000 * 60 * 60 * 8;
 

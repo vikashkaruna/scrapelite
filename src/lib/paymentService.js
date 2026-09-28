@@ -10,7 +10,7 @@ import { getEffectivePlanById } from "./pricingOverrides.js";
 import { convertPrice } from "./currencyService.js";
 
 const PENDING_KEY = "datiq.pendingPayment";
-const FUNCTIONS   = "/.netlify/functions";
+const FUNCTIONS   = "/api";
 
 // ── Payment stage constants (consumed by PaymentProcessingModal via BillingProvider) ─
 export const PAYMENT_STAGE = {
@@ -57,7 +57,7 @@ if (typeof window !== "undefined") {
         return `blocked: ${e?.message || e}`;
       }
     };
-    const proxy = await probe("/.netlify/functions/razorpay-sdk");
+    const proxy = await probe("/api/razorpay-sdk");
     const cdn   = await probe("https://checkout.razorpay.com/v1/checkout.js");
     const out = { rzpLoaded: rzp, scriptTags: tags, proxy, cdn };
     console.info("[DatIQ diagnose] Razorpay:", out);
