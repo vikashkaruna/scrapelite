@@ -66,7 +66,7 @@ async function sendAlertNotification(email, payload) {
   const body =
     `Hi,\n\nYou've used ${payload.pct}% of your ${payload.planName} plan this month.\n` +
     `Extractions: ${payload.used} / ${payload.total}\nMonth: ${payload.month}\n\n` +
-    `Upgrade or purchase a top-up bundle at https://datiq.netlify.app/pricing`;
+    `Upgrade or purchase a top-up bundle at https://datiq.app/pricing`;
   try {
     window.open(`mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   } catch {}

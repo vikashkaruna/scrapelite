@@ -20,6 +20,24 @@
 
 
 
+## 2026-09-28 — GCP compat release: same-origin function paths + GCP-aware runtime-config (branch `docker-desktop-build`)
+
+> **Branch:** `docker-desktop-build` (cut from `staging` @ `07e88c72`, byte-identical at cut)
+> **Scope:** Step 0 of the Netlify → GCP migration (`docs/plans/gcp-docker-migration/`) — behaviour-neutral on Netlify, required for Cloud Run.
+> **Verification:** targeted vitest suites green; `npm run build` clean; prerender regenerated (35 pages, 0 failed); `check:prerender` green; pre-push gate green.
+
+### What changed
+- **`src/lib/paymentService.js` / `src/lib/adminService.js`** — the last two frontend modules hardcoding `/.netlify/functions/*` now call `/api/*` (Netlify already maps `/api/*` → functions, so production behaviour is unchanged; Cloud Run has no `/.netlify/functions` path). The Razorpay-SDK probe literal moved too.
+- **`public/runtime-config.js`** — GCP host routing: `_GCP_PROD_HOSTS` (default `datiq-vsp-fhs-prod.web.app`) joins the production-Supabase branch (`_isMain`); any other `*.web.app` / `*.firebaseapp.com` host behaves like a branch deploy (dev project). `authReturnUrl` now keys on the new `_isPrimary` so the GCP production twin returns OAuth/email callbacks to its own origin while it shadows Netlify. `supabaseUrl`/`supabaseAnonKey` keep the `_isMain ? … : …` shape asserted by `runtimeConfigIdentity.test.js`.
+- **PostHog env gating** — `posthogKey`/`posthogHost` added to runtime-config: production loads PostHog with the same key as before; staging/branch/localhost now get `""` (deliberate disable) instead of the hardcoded fallback firing everywhere. `public/analytics.js` needed no change (its absent-vs-empty contract already existed).
+- **`src/lib/alertService.js`** — dead `https://datiq.netlify.app/pricing` in the usage-alert mailto → `https://datiq.app/pricing`.
+- **`docs/plans/gcp-docker-migration/`** — migration plan of record: codebase analysis, impact assessment, BRD/PRD, two-phase implementation plan, naming/env conventions (doc 06), fast-track option (doc 07).
+
+### Not done / next
+- `integrations-router.js`'s `/.netlify/functions` path-prefix parsing stays — the Cloud Run adapter will deliver Netlify-shaped `event.path` (plan doc 05, FR-2).
+- `apiClient` BASE runtime override (optional plan item) skipped — same-origin hosting rewrites make it unnecessary on both platforms.
+- Next: `deployment/` assets (Dockerfiles, adapter, compose) per plan Phase 0.
+
 ## 2026-09-25 — /extract 502 was Lambda's 6 MB response cap (PR #238 → staging)
 
 - **Symptom:** "Service temporarily unavailable — API POST /extract failed (502)".
