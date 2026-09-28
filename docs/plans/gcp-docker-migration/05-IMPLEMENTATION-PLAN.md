@@ -134,6 +134,8 @@ and scripts read `TF_VAR_*`/env vars from the loader.
 | Item | Choice (default names per doc 06) |
 |---|---|
 | Edge | **Firebase Hosting** site `datiq-vsp-fhs-stg` (redirects + rewrites to Cloud Run + headers) — default; Cloud Run gateway behind a Global LB is the documented alternative |
+
+**Static/dynamic split on GCP (the Firebase pattern):** the ENTIRE `dist/` payload — SPA shell, all 35 prerendered pages **including home** (`/` → `/home/index.html` forced rewrite), static `/vs/*`, `/faq`, `/dmca`, the help site, sitemap/robots/llms.txt, and the admin+tracker files — deploys to **Firebase Hosting as static files** (no container; the local `web`/`admin`/`trackers` images are the stand-ins proving the same payload). Only the **dynamic** surfaces get containers: `/api/**` → Cloud Run `datiq-vsp-run-api-stg` and `/run` jobs via Scheduler. **Phase-dependent rewrites:** while the stack talks to hosted Supabase (staging + shadow), the frontend calls the hosted project URL directly (from `runtime-config.js`) — so Firebase needs NO `/auth/v1` or `/rest/v1` rewrites; those are added only at the cutover, pointing at the Cloud Run GoTrue/PostgREST services. `gen-firebase-config.mjs` must therefore emit rewrites conditionally from `DATA_MODE`.
 | API | Cloud Run `datiq-vsp-run-api-stg` (api image, min-instances 0, concurrency 80, ingress: internal+hosting) |
 | Jobs | Cloud Run `datiq-vsp-run-jobs-stg` (**no public ingress**, Scheduler OIDC only) |
 | Auth/Rest | Cloud Run `datiq-vsp-run-auth-stg` (GoTrue), `datiq-vsp-run-rest-stg` (PostgREST) — proves the target model against staging data |
