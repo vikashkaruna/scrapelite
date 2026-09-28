@@ -1,0 +1,113 @@
+# deployment/compose/compose.local.yaml — the local-db profile (supabase-lite):
+# Postgres (Supabase-flavoured image: roles + auth/storage schemas + extensions
+# pre-provisioned), self-hosted GoTrue auth, PostgREST, Mailpit (SMTP capture),
+# and the on-demand migrations runner. Used when DATA_MODE=local-db.
+services:
+  db:
+    image: ${DB_IMAGE}
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-54329}:5432"   # host psql/pg_restore convenience
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # supabase/postgres does not seed service-role passwords from POSTGRES_PASSWORD —
+  # align the two LOGIN roles the stack connects as, before auth/rest start.
+  db-passwords:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        psql -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -c "alter role supabase_auth_admin password '$$POSTGRES_PASSWORD'; alter role authenticator password '$$POSTGRES_PASSWORD';"
+        # recent supabase/postgres images ship auth.users.role WITHOUT the
+        # 'authenticated' default — hosted projects have it; restore it so
+        # GoTrue-issued tokens carry a usable role claim for PostgREST.
+        psql -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -c "alter table auth.users alter column role set default 'authenticated'; update auth.users set role='authenticated' where role is null or role='';"
+        # newer GoTrue inserts role='' explicitly (the column default never
+        # fires) — a trigger stamps 'authenticated' on every user instead.
+        psql -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -c "create or replace function auth.stamp_role() returns trigger language plpgsql as \$\$ begin if new.role is null or new.role = '' then new.role := 'authenticated'; end if; return new; end \$\$; drop trigger if exists stamp_role_on_users on auth.users; create trigger stamp_role_on_users before insert or update on auth.users for each row execute function auth.stamp_role();"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  auth:
+    image: ${AUTH_IMAGE}
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: ${AUTH_PORT:-9999}
+      API_EXTERNAL_URL: ${PUBLIC_BASE_URL}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_SITE_URL: ${PUBLIC_BASE_URL}
+      GOTRUE_URI_ALLOW_LIST: http://localhost:*,http://127.0.0.1:*
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"      # no SMTP locally: signups return a session immediately
+      GOTRUE_SMS_AUTOCONFIRM: "true"
+      GOTRUE_LOG_LEVEL: "warn"
+    depends_on:
+      db:
+        condition: service_healthy
+      db-passwords:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${AUTH_PORT:-9999}/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  rest:
+    image: ${REST_IMAGE}
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_SERVER_PORT: ${REST_PORT:-3000}
+    depends_on:
+      db:
+        condition: service_healthy
+      db-passwords:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  mailpit:
+    image: ${MAILPIT_IMAGE}
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"   # web UI: captured email
+    restart: unless-stopped
+
+  # On-demand migrations runner (npm-equivalent: compose --profile migrate run --rm migrator).
+  # Idempotent: tracks applied versions; on a DB restored from a Supabase dump it
+  # marks every repo migration as applied instead of re-running them.
+  migrator:
+    image: postgres:16-alpine
+    profiles: ["migrate"]
+    environment:
+      DATABASE_URL: postgres://supabase_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      MARK_ALL_IF_POPULATED: "1"
+    volumes:
+      - ../../supabase/migrations:/migrations:ro
+      - ../migrator/apply-migrations.sh:/apply-migrations.sh:ro
+    entrypoint: ["/bin/sh", "/apply-migrations.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  dbdata:

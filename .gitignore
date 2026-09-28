@@ -85,3 +85,10 @@ ds-bundle/
 # Source BRD/PRD documents — kept locally, never committed (this repo is public)
 /DatIQ *.md
 /DatIQ *.pdf
+
+# Local deployment stack (doc 06): generated config + real env files + dumps
+deployment/generated/
+deployment/env/.env.local
+deployment/env/.env.staging
+deployment/env/.env.prod
+deployment/generated/*.dump
