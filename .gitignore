@@ -11,6 +11,9 @@ dist-extension
 env.*
 scripts/env/
 !.env.example
+!deployment/env/.env.local.example
+!deployment/env/.env.staging.example
+!deployment/env/.env.prod.example
 
 # Operator-only env files: real Supabase service keys + admin PIN hashes.
 # Created locally by the pre-cutover Netlify-env workflow, never committed.

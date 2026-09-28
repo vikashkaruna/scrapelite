@@ -1,5 +1,13 @@
 # 05 — Implementation Plan (v2, two phases)
 
+**Date:** 2026-09-28 · **Branch:** `docker-desktop-build` · **Status:** Phase 0 **IMPLEMENTED & VERIFIED locally (2026-09-28, `d14dff1d`)** — smoke 16/16, signon E2E green, staging→local migration rehearsed. Step 0 compat release **shipped to production** (PRs #241/#242). Phase 1a not started.
+
+**Implementation deviations from this plan (all deliberate, see session handoff):**
+- `db`/`auth`/`rest` use upstream images directly (`supabase/postgres:17.6.1.165`, `supabase/auth`, `postgrest/postgrest`) instead of custom Dockerfiles — better provenance, nothing to maintain.
+- `jobs` and `scheduler` reuse the **api image** with different commands/entrypoints — exactly how Cloud Run will reuse the one Artifact Registry image.
+- Added a `db-passwords`/schema-init one-shot (supabase/postgres role-password + `auth.users.role` quirks — see session handoff root causes).
+- Phase 0 checklist status: all boxes verified except the optional contract-test-runner profile (handler contract tests already cover the 75 functions; adapter is validated live by stack-smoke) and the full `local-db` qualification (deferred per doc 07).
+
 **Date:** 2026-09-28 · **Branch:** `docker-desktop-build` · **Status:** draft — **do not implement until owner confirms**
 
 Two phases only, per owner decision: **Phase 0 = local Docker Desktop run & test**, **Phase 1 = GCP deploy &

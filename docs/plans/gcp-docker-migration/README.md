@@ -1,6 +1,6 @@
 # GCP + Docker Migration — Plan of Record (v2)
 
-**Status: DRAFT — awaiting owner confirmation. Nothing has been implemented.**
+**Status: Phase 0 IMPLEMENTED & running locally (2026-09-28, `d14dff1d`); Step 0 compat release LIVE on datiq.app; Phase 1a (GCP staging) not started. Owner is testing locally before any merge to staging/main.**
 **Date: 2026-09-28 · Branch: `docker-desktop-build` (currently byte-identical to `staging`)**
 
 This folder supersedes the earlier two-phase draft (`DatIQ - Docker and GCP/DatIQ - Local Docker and GCP Migration.md`)

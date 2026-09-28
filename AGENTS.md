@@ -20,8 +20,8 @@
 | **GitHub** | https://github.com/vikashkaruna/scrapelite |
 | **Netlify** | https://app.netlify.com/projects/datiqapp |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
-| **Current branch** | `staging` |
-| **Active handoff** | `docs/sessions/SESSION-HANDOFF-2026-09-20-DISCOVERABILITY-IMPROVEMENTS.md` |
+| **Current branch** | `docker-desktop-build` (GCP migration work; NOT merged to staging/main — owner testing locally) |
+| **Active handoff** | `docs/sessions/SESSION-HANDOFF-2026-09-28-GCP-PHASE-0-LOCAL-DOCKER-STACK.md` |
 | **Session history** | `docs/sessions/SESSIONS-HISTORY.md` (all 70 prior session records consolidated; see `docs/sessions/README.md`) |
 | **Safety tag** | `pre-integration-merge` @ `ebaa4bf` (main's pre-merge HEAD) — in case the staging promotion needs to roll back |
 | **Remaining operator action** | Add `/api/*` to Netlify Edge Access bypass (~2 min UI walkthrough in the late-night handoffs) so the in-browser Connect/Push calls stop hitting the SSO gate on the branch preview |
