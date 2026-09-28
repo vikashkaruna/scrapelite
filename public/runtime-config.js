@@ -30,7 +30,7 @@
 //
 // ── Environment routing (2026-08-10) ──────────────────────────────────────────
 //
-// THREE classes of deployment are recognized, mapped to TWO Supabase projects:
+// FOUR classes of deployment are recognized, mapped to TWO Supabase projects:
 //
 //   1. Main (production)  — datiq.app, www.datiq.app, main--datiqapp.netlify.app
 //                          → PRODUCTION Supabase (sikkfxysjhirmtwkumpt)
@@ -45,6 +45,15 @@
 //                          integration-with-outside-ecosystem--datiqapp.netlify.app)
 //                          → DEV/STAGING Supabase (aubwooslkkrprdxuiyvj)
 //                          Uses the project URL directly.
+//
+//   4. GCP (2026-09-28)  — Firebase Hosting sites from the Netlify → GCP
+//                          migration (docs/plans/gcp-docker-migration/). The
+//                          staging site (datiq-vsp-fhs-stg.web.app) → DEV/STAGING
+//                          Supabase; the production site (datiq-vsp-fhs-prod
+//                          .web.app, listed in _GCP_PROD_HOSTS below) →
+//                          PRODUCTION Supabase. Any other *.web.app /
+//                          *.firebaseapp.com host falls to the dev project,
+//                          exactly like a Netlify branch deploy.
 //
 // Why this matters: before this change, the rule was "staging.* → dev, anything else
 // → prod". A branch deploy like `integration-with-outside-ecosystem--datiqapp.netlify.app`
@@ -75,21 +84,44 @@
 // See: docs/SESSION-HANDOFF-2026-07-29-OAUTH-CALLBACK-FIX.md.
 var _isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
 
+// GCP production Firebase Hosting sites. Hosts listed here are served the
+// PRODUCTION Supabase project and flagged isProduction. The GCP staging site
+// (datiq-vsp-fhs-stg.web.app) is deliberately NOT listed — it behaves like a
+// branch deploy. Add a host here ONLY when it serves production traffic.
+var _GCP_PROD_HOSTS = ["datiq-vsp-fhs-prod.web.app"];
+var _isGcpProd = _GCP_PROD_HOSTS.indexOf(location.hostname) !== -1;
+var _isGcpHost =
+  _isGcpProd ||
+  /(^|\.)web\.app$/.test(location.hostname) ||
+  /(^|\.)firebaseapp\.com$/.test(location.hostname);
+
 // "Main" is the only deployment that uses the PRODUCTION Supabase project.
 // Recognised on:
 //   - https://datiq.app (custom primary)
 //   - https://www.datiq.app (alternate)
 //   - https://main--datiqapp.netlify.app (Netlify branch-deploy for main)
+//   - the GCP production Firebase Hosting site (see _GCP_PROD_HOSTS)
 var _isMain =
+  location.hostname === "datiq.app" ||
+  location.hostname === "www.datiq.app" ||
+  location.hostname === "main--datiqapp.netlify.app" ||
+  _isGcpProd;
+
+// The production PRIMARY — the host OAuth/email callbacks return to. The GCP
+// production twin is NOT the primary while it shadows Netlify: its
+// authReturnUrl must be its own origin so callbacks land back on the twin.
+var _isPrimary =
   location.hostname === "datiq.app" ||
   location.hostname === "www.datiq.app" ||
   location.hostname === "main--datiqapp.netlify.app";
 
 // "Staging" gets its own explicit branch so future tooling (badges,
-// feature flags, billing) can branch on it without re-deriving.
+// feature flags, billing) can branch on it without re-deriving. GCP staging
+// hosts (*.web.app / *.firebaseapp.com that are not the prod site) count.
 var _isStaging =
   location.hostname === "staging.datiq.app" ||
-  location.hostname === "staging--datiqapp.netlify.app";
+  location.hostname === "staging--datiqapp.netlify.app" ||
+  (_isGcpHost && !_isGcpProd);
 
 // Supabase project selection: ONLY main → production. Everything else
 // (staging, branch deploys, localhost) → the dev/staging project.
@@ -135,7 +167,7 @@ window.__DATIQ_RUNTIME__ = {
   // The Supabase project’s "Additional Redirect URLs" allowlist (configured
   // separately in the Supabase Dashboard) must include every value this can
   // take. See docs/SUPABASE-AUTH-REDIRECT-URLS.md for the master list.
-  authReturnUrl: _isMain
+  authReturnUrl: _isPrimary
     ? "https://datiq.app"
     : window.location.origin,
   // ── Google Analytics 4 ──────────────────────────────────────────────────
@@ -151,6 +183,17 @@ window.__DATIQ_RUNTIME__ = {
   // create a SECOND GA4 property and put its id in the else-branch — do not
   // reuse the production id, or staging sessions become production sessions.
   gaMeasurementId: _isMain ? "G-B0DZLRWG63" : "",
+
+  // ── PostHog ──────────────────────────────────────────────────────────────
+  // Same absent-vs-empty contract as gaMeasurementId (see public/analytics.js):
+  // an ABSENT key falls back to the loader's built-in literal, an EMPTY string
+  // is a deliberate disable. Until 2026-09-28 the key existed ONLY as that
+  // built-in literal, so PostHog fired on staging, branch deploys and
+  // localhost. The empty branch below is the fix: only production sends.
+  posthogKey: _isMain
+    ? "phc_nGVqCMMbixTafmtb46bLZZakeEV2cpmEMQYf8uLVymUs"
+    : "",
+  posthogHost: "https://us.i.posthog.com",
 
   // Bumped whenever the cookie/analytics wording in the Privacy Policy changes
   // materially. Stamped onto every consent record so an old consent is
