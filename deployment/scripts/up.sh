@@ -19,6 +19,16 @@ else
   echo "→ DATA_MODE=shared-db: using the hosted dev Supabase (no local db/auth/rest)"
 fi
 
+# ── Ensure project dependencies are installed ─────────────────────────────────
+# The web build (build-docker-web.mjs) needs the project-local vite binary and
+# all its plugins. A fresh clone, a git worktree, or a post-`down.sh -v` run
+# may have an empty or missing node_modules.
+REPO_ROOT="$(cd "$HERE/.." && pwd)"
+if [ ! -x "$REPO_ROOT/node_modules/.bin/vite" ]; then
+  echo "→ node_modules incomplete — running npm install (needed for Vite build)"
+  npm install --prefix "$REPO_ROOT"
+fi
+
 # ⚠️ THE WEB IMAGE IS nginx + A PREBUILT dist/ — THE DOCKERFILE COPIES dist/ AND
 # BUILDS NOTHING. So `docker compose up --build` was serving whatever dist/
 # happened to be on disk, which on a developer machine is the output of a
