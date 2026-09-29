@@ -47,7 +47,16 @@
 - **Production Parity**:
   - Parameterised Studio and pg-meta configurations across `.env.staging.example`, `.env.prod.example`, and `deploy-run.sh`.
 
-### 3. Documentation Updates
+### 3. Docker Web Build Vite Fix (`scripts/build-docker-web.mjs` & `deployment/scripts/up.sh`)
+- **Root Cause**: `build-docker-web.mjs` was calling `npx vite build --config <generated-config>`. `npx vite` downloads a standalone `vite` binary into an isolated temp cache that lacks visibility into the project's `node_modules` dependencies (e.g. `@vitejs/plugin-react`, `vitest/config`), producing `[UNRESOLVED_IMPORT]` warnings and `Cannot find package 'vite' imported from .../vite.docker.config.mjs` failures.
+- **Fix**:
+  - Replaced `npx vite` invocation with the project-local `node_modules/.bin/vite` binary so all dependencies resolve within the project dependency tree.
+  - Added pre-flight check in `build-docker-web.mjs` ensuring the local Vite binary exists with clear error guidance.
+  - Stripped unused `test` block from the generated wrapper config in `build-docker-web.mjs`.
+  - Added automatic `npm install` check in `deployment/scripts/up.sh` to self-heal fresh clones or worktrees missing `node_modules`.
+- **Cross-Environment Safety**: Standardised across local, staging, and CI Docker builds.
+
+### 4. Documentation Updates
 - Updated `docs/plans/gcp-docker-migration/README.md`:
   - Added Section 8: "Domain Mapping: Staging vs Production Details" detailing URLs, Firebase Hosting sites, Cloud SQL instances, custom domains, and DNS records.
   - Updated Table of Contents.
