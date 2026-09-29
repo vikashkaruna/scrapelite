@@ -46,6 +46,9 @@ check        "trackers: analytics.js"                 200          "$BASE/analyt
 if [ "${DATA_MODE:-local-db}" = "local-db" ]; then
   check        "auth: GoTrue health via gateway"        200          "$BASE/auth/v1/health"
   check        "rest: PostgREST OpenAPI via gateway"    200          "$BASE/rest/v1/"
+  if [ -n "${STUDIO_HOST_PORT:-}" ]; then
+    check      "studio: Supabase Studio UI"             307          "http://127.0.0.1:${STUDIO_HOST_PORT}/"
+  fi
 else
   # shared-db: the browser talks to the hosted dev Supabase directly
   # (runtime-config.js) — the gateway intentionally has no auth/rest upstreams.

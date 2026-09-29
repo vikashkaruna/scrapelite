@@ -47,19 +47,54 @@ export const PROVIDERS = {
     label: "Google Gemini",
     keyEnv: "GEMINI_API_KEY",
     modelEnv: "GEMINI_MODEL",
+    modelFastEnv: "GEMINI_MODEL_FAST",
+    modelDeepEnv: "GEMINI_MODEL_DEEP",
     docsUrl: "https://aistudio.google.com/apikey",
     structured: true, // native responseSchema
     models: {
-      fast: "gemini-2.0-flash",
-      deep: "gemini-2.5-pro",
-      catalogue: ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"],
+      // 🔴 EVERY ID THAT WAS HERE BEFORE IS DEAD, AND GOOGLE SAYS SO IN THE
+      // ERROR. `gemini-2.0-flash`, `gemini-2.5-flash`, `gemini-2.5-pro` and
+      // `gemini-2.5-flash-lite` all answer `:generateContent` with
+      //   404 "This model is no longer available" / "no longer available to
+      //        new users"
+      // for the live key. The 2.x line is retired wholesale.
+      //
+      // ⚠️ AND THE MODEL LISTING LIES ABOUT IT. GET /v1beta/models returns 200
+      // for gemini-2.5-flash and gemini-2.5-pro. Only a real generateContent
+      // call reveals the retirement — so a health check that enumerates models
+      // reports a fully retired provider as healthy. Do not "verify" these ids
+      // against the listing; run scripts/verify-ai-models.mjs.
+      //
+      // The replacement naming drops the version pin in favour of a family
+      // (`-latest`) or a post-2.x concrete id, which is what Google's own 404
+      // tells you to use. Tier INTENT is what we are actually pricing on
+      // (see MODEL_TIER: `fast` is a cost decision, `deep` a quality one), so
+      // tracking the family is the honest encoding of that — pinning a
+      // concrete id would just guarantee this file needs editing again the
+      // next time Google rotates a line.
+      fast: "gemini-3.8-flash",
+      deep: "gemini-pro-latest",
+      catalogue: ["gemini-3.8-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest"],
     },
   },
   anthropic: {
     kind: PROVIDER_KIND.AI,
     label: "Anthropic Claude",
-    keyEnv: "AI_API_KEY",
-    keyEnvFallback: "VITE_AI_API_KEY", // local `netlify dev` only
+    // 🔴 A `VITE_`-PREFIXED NAME CANNOT BE A SERVER KEY SOURCE. Vite inlines
+    // every `VITE_*` var into the public browser bundle, so reading an
+    // Anthropic key from one guarantees it ships to every visitor. The
+    // registry used to list `VITE_AI_API_KEY` as the fallback for exactly
+    // that reason ("local `netlify dev` only"), and the consequence was that a
+    // live `sk-ant-api03-…` sat inside the shipped JS of a public stack.
+    //
+    // The two uses of one name are mutually exclusive by construction: a var
+    // cannot be server-only and browser-visible at the same time.
+    //
+    // `ANTHROPIC_API_KEY` is now the preferred name, because it says which
+    // vendor it is for. `AI_API_KEY` is kept second so every existing
+    // deployment (staging, production) keeps resolving the same credential it
+    // resolves today — changing the order alone must not be a key rotation.
+    keyEnvList: ["ANTHROPIC_API_KEY", "AI_API_KEY"],
     modelEnv: "AI_MODEL",
     docsUrl: "https://console.anthropic.com/settings/keys",
     structured: true, // via forced tool use
@@ -257,7 +292,12 @@ export function areasForProvider(providerKey) {
 /** Env var names that may hold this provider's key, most-preferred first. */
 export function keyEnvNames(providerKey) {
   const p = PROVIDERS[providerKey];
-  if (!p || !p.keyEnv) return [];
+  if (!p) return [];
+  // `keyEnvList` is the general form: a provider can legitimately accept more
+  // than one name (ANTHROPIC_API_KEY preferred, AI_API_KEY kept for existing
+  // deployments). `keyEnv`/`keyEnvFallback` remain the two-name shorthand.
+  if (Array.isArray(p.keyEnvList) && p.keyEnvList.length) return p.keyEnvList.slice();
+  if (!p.keyEnv) return [];
   return p.keyEnvFallback ? [p.keyEnv, p.keyEnvFallback] : [p.keyEnv];
 }
 
@@ -274,9 +314,29 @@ export function readKey(providerKey, env = {}) {
 export function defaultModel(providerKey, tier = MODEL_TIER.DEEP, env = {}) {
   const p = PROVIDERS[providerKey];
   if (!p || !p.models) return "";
+  // Tier-specific env override takes precedence for that tier
+  if (tier === MODEL_TIER.FAST && p.modelFastEnv && env[p.modelFastEnv]) {
+    return String(env[p.modelFastEnv]);
+  }
+  if (tier === MODEL_TIER.DEEP && p.modelDeepEnv && env[p.modelDeepEnv]) {
+    return String(env[p.modelDeepEnv]);
+  }
   // A single *_MODEL env var pins BOTH tiers — it predates tiering and the
-  // operator who set it meant "use exactly this", so it wins over the tier.
+  // operator who set it meant "use exactly this", so it wins over the tier defaults.
   const pinned = p.modelEnv ? env[p.modelEnv] : "";
   if (pinned) return String(pinned);
   return p.models[tier] || p.models.deep || "";
+}
+
+/** Known-retired Gemini model IDs that Google returns 404 for. */
+export const RETIRED_GEMINI_MODELS = new Set([
+  "gemini-1.5-flash", "gemini-1.5-pro",
+  "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash-exp",
+  "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro",
+]);
+
+/** Check whether a model id is a retired Gemini model. */
+export function isRetiredGeminiModel(name) {
+  if (!name || typeof name !== "string") return false;
+  return RETIRED_GEMINI_MODELS.has(name) || /^gemini-2\.[05]-/.test(name) || /^gemini-1\.5-/.test(name);
 }

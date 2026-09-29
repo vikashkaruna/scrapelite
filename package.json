@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/sync-prerender-assets.mjs",
+    "build:docker-web": "node scripts/build-docker-web.mjs",
     "preview": "vite preview",
     "version:bump": "node scripts/bump-version.mjs",
     "version:bump:minor": "node scripts/bump-version.mjs --minor",

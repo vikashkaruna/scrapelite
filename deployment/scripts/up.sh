@@ -19,6 +19,16 @@ else
   echo "→ DATA_MODE=shared-db: using the hosted dev Supabase (no local db/auth/rest)"
 fi
 
+# ⚠️ THE WEB IMAGE IS nginx + A PREBUILT dist/ — THE DOCKERFILE COPIES dist/ AND
+# BUILDS NOTHING. So `docker compose up --build` was serving whatever dist/
+# happened to be on disk, which on a developer machine is the output of a
+# `npm run build` that read the REPO-ROOT .env: a public bundle pointed at the
+# hosted dev Supabase project while every container here talked to the local one.
+# Building it here, from the env this stack is actually configured with, is what
+# makes the two halves agree.
+echo "→ building the web payload from .env.${DATIQ_ENV}"
+node "$HERE/../scripts/build-docker-web.mjs"
+
 echo "→ building + starting stack ($COMPOSE_PROJECT_NAME, mode=$DATA_MODE)"
 $COMPOSE up -d --build
 
@@ -37,4 +47,5 @@ echo "    admin:      ${PUBLIC_BASE_URL}/admin/  (PIN from .env)"
 echo "    mailpit:    http://127.0.0.1:${MAILPIT_UI_PORT:-8025}"
 if [ "${DATA_MODE}" = "local-db" ]; then
   echo "    postgres:   127.0.0.1:${DB_HOST_PORT:-54329} (postgres / \$POSTGRES_PASSWORD)"
+  echo "    studio:     http://localhost:${STUDIO_HOST_PORT:-54328}"
 fi

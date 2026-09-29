@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Codex session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-29 (GCP migration Phase 1a EXECUTED: GCP staging live at https://datiq-vsp-fhs-stg.web.app — smoke 13/13, Cloud SQL migrated, 13 scheduler jobs; operator checklist in `docs/plans/gcp-docker-migration/08-STAGING-DEPLOY-RUNBOOK.md`; see `CLAUDE.md` and `docs/sessions/SESSION-HANDOFF-2026-09-29-GCP-PHASE-1A-STAGING-DEPLOY-GREEN.md`.)**
+> **Last updated: 2026-09-29 (Docker Desktop fixes & Staging Supabase Studio Cloud Run deploy; see `docs/sessions/SESSION-HANDOFF-2026-09-29-DOCKER-DESKTOP-AND-STAGING-STUDIO.md`.)**
 >
 > **The current source of truth is `CLAUDE.md`** — that file is updated with every release.
 > This `AGENTS.md` is kept as a minimal pointer for tooling that auto-loads it.
@@ -21,7 +21,7 @@
 | **Netlify** | https://app.netlify.com/projects/datiqapp |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `docker-desktop-build` (GCP migration work; NOT merged to staging/main — owner testing locally) |
-| **Active handoff** | `docs/sessions/SESSION-HANDOFF-2026-09-29-GCP-PHASE-1A-STAGING-DEPLOY-GREEN.md` |
+| **Active handoff** | `docs/sessions/SESSION-HANDOFF-2026-09-29-DOCKER-DESKTOP-AND-STAGING-STUDIO.md` |
 | **Session history** | `docs/sessions/SESSIONS-HISTORY.md` (all 70 prior session records consolidated; see `docs/sessions/README.md`) |
 | **Safety tag** | `pre-integration-merge` @ `ebaa4bf` (main's pre-merge HEAD) — in case the staging promotion needs to roll back |
 | **Remaining operator action** | Add `/api/*` to Netlify Edge Access bypass (~2 min UI walkthrough in the late-night handoffs) so the in-browser Connect/Push calls stop hitting the SSO gate on the branch preview |

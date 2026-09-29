@@ -9,6 +9,7 @@ import {
   PROVIDERS, PROVIDER_KEYS, AI_PROVIDERS, SCRAPE_PROVIDERS_LIST, INTEL_PROVIDERS,
   FUNCTION_AREAS, FUNCTION_AREA_KEYS, AI_AREA_KEYS, MODEL_TIER, PROVIDER_KIND,
   areasForProvider, keyEnvNames, readKey, defaultModel,
+  RETIRED_GEMINI_MODELS, isRetiredGeminiModel,
 } from "./providerRegistry.js";
 import { CAPABILITY_SCHEMAS } from "./extractionSchemas.js";
 import { RELATED_PAGE_HINTS, QUICK_ACTION_BY_KEY } from "./extractionPresets.js";
@@ -99,9 +100,23 @@ describe("function areas", () => {
 describe("key + model resolution", () => {
   it("reads the primary env var, then the fallback, and never leaks a default", () => {
     expect(readKey("gemini", { GEMINI_API_KEY: "g" })).toBe("g");
-    expect(readKey("anthropic", { VITE_AI_API_KEY: "legacy" })).toBe("legacy");
-    expect(readKey("anthropic", { AI_API_KEY: "primary", VITE_AI_API_KEY: "legacy" })).toBe("primary");
+    expect(readKey("anthropic", { ANTHROPIC_API_KEY: "explicit" })).toBe("explicit");
+    // AI_API_KEY is the LEGACY name, kept so staging/production keep resolving
+    // the credential they resolve today — reordering the list must never double
+    // as a key rotation.
+    expect(readKey("anthropic", { AI_API_KEY: "legacy" })).toBe("legacy");
+    expect(readKey("anthropic", { ANTHROPIC_API_KEY: "explicit", AI_API_KEY: "legacy" })).toBe("explicit");
     expect(readKey("gemini", {})).toBe("");
+  });
+
+  it("a VITE_-prefixed name is never a server key source", () => {
+    // 🔴 This assertion used to be the OPPOSITE — the suite pinned
+    // `VITE_AI_API_KEY` as the anthropic fallback, so the "fix" that put a live
+    // `sk-ant-api03-…` in the public browser bundle was, by the repo's own
+    // tests, correct behaviour. A `VITE_` name is inlined into the shipped JS
+    // by definition, so it cannot be a server credential.
+    expect(readKey("anthropic", { VITE_AI_API_KEY: "sk-ant-browser" })).toBe("");
+    expect(keyEnvNames("anthropic")).not.toContain("VITE_AI_API_KEY");
   });
 
   it("a single *_MODEL env var pins BOTH tiers", () => {
@@ -113,9 +128,39 @@ describe("key + model resolution", () => {
     expect(defaultModel("gemini", MODEL_TIER.DEEP, env)).toBe("gemini-pinned");
   });
 
+  it("tier-specific env vars override fast and deep individually", () => {
+    const env = {
+      GEMINI_MODEL_FAST: "gemini-custom-fast",
+      GEMINI_MODEL_DEEP: "gemini-custom-deep",
+    };
+    expect(defaultModel("gemini", MODEL_TIER.FAST, env)).toBe("gemini-custom-fast");
+    expect(defaultModel("gemini", MODEL_TIER.DEEP, env)).toBe("gemini-custom-deep");
+  });
+
+  it("tier-specific env vars take precedence over generic GEMINI_MODEL", () => {
+    const env = {
+      GEMINI_MODEL: "gemini-generic",
+      GEMINI_MODEL_FAST: "gemini-specific-fast",
+    };
+    expect(defaultModel("gemini", MODEL_TIER.FAST, env)).toBe("gemini-specific-fast");
+    expect(defaultModel("gemini", MODEL_TIER.DEEP, env)).toBe("gemini-generic");
+  });
+
   it("falls back to the registry tier defaults with no env", () => {
     expect(defaultModel("gemini", MODEL_TIER.FAST, {})).toBe(PROVIDERS.gemini.models.fast);
     expect(defaultModel("gemini", MODEL_TIER.DEEP, {})).toBe(PROVIDERS.gemini.models.deep);
+  });
+
+  it("identifies retired Gemini models accurately", () => {
+    for (const retired of RETIRED_GEMINI_MODELS) {
+      expect(isRetiredGeminiModel(retired)).toBe(true);
+    }
+    expect(isRetiredGeminiModel("gemini-2.0-flash")).toBe(true);
+    expect(isRetiredGeminiModel("gemini-2.5-pro")).toBe(true);
+    expect(isRetiredGeminiModel("gemini-1.5-flash")).toBe(true);
+    expect(isRetiredGeminiModel("gemini-3.8-flash")).toBe(false);
+    expect(isRetiredGeminiModel("gemini-pro-latest")).toBe(false);
+    expect(isRetiredGeminiModel("gemini-flash-latest")).toBe(false);
   });
 });
 

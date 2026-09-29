@@ -7,18 +7,21 @@
 // endpoint by editing this one file and reloading (dev) or redeploying just this
 // file (prod) — no rebuild required.
 //
-// Precedence — ⚠️ NOT the same for every field, and the difference matters
-// when you are debugging why an updated value "isn't reflecting":
+// Precedence — ⚠️ THIS FILE WINS, FOR EVERY FIELD. It is the only input that
+// can differ per deployment: a VITE_* var is inlined into the artifact at build
+// time and is fixed for its whole life, whereas this file is read at load. A
+// per-deployment input has to outrank a per-build one, or the environment
+// routing below is decoration and editing supabaseUrl here silently does
+// nothing on any deployment where a VITE_SUPABASE_URL is also set.
 //
-//   webhookUrl / emailApiUrl / contactWebhookUrl
-//       → THIS FILE WINS. config.js `endpoint()` reads the runtime value
-//         first and only falls back to the VITE_* build-time value.
-//
-//   supabaseUrl / supabaseAnonKey
-//       → THE VITE_* ENV VAR WINS. config.js only falls back to the value
-//         here when the env var is absent or was redacted by the secret
-//         scanner. So editing supabaseUrl here will NOT override a
-//         VITE_SUPABASE_URL set in Netlify.
+//   ⚠️ supabaseUrl / supabaseAnonKey used to be the EXCEPTION: the baked VITE_*
+//   won, and this file was only consulted when the env var was missing or had
+//   been redacted. That made every host-routing rule below unreachable wherever
+//   a build also carried an env var — which is everywhere. The local Docker
+//   stack shipped a bundle pointed at the hosted DEV project while its
+//   api/jobs containers talked to the local database, so sign-up failed in a
+//   foreign project's broken SMTP and every authenticated call 401'd. The
+//   exception is gone; these two now behave like webhookUrl below.
 //
 // Leave a value as "" to fall back to the build-time .env value.
 //

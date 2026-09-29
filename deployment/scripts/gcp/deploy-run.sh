@@ -20,7 +20,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/lib-gcp.sh"
-ENV_NAME="${1:?usage: deploy-run.sh <staging|prod> [api jobs admin trackers auth rest]}"
+ENV_NAME="${1:?usage: deploy-run.sh <staging|prod> [api jobs admin trackers auth rest studio]}"
 load_gcp_env "$ENV_NAME"
 shift || true
 SERVICES="${*:-api jobs admin trackers}"
@@ -72,6 +72,8 @@ APP_ENV_VARS=(env_vars_file app \
   "SUPABASE_URL=$SUPABASE_URL" "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}" \
   "VITE_SUPABASE_URL=$SUPABASE_URL" "VITE_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}" \
   "VITE_AI_MODEL=${VITE_AI_MODEL:-}" \
+  "GEMINI_MODEL_FAST=${GEMINI_MODEL_FAST:-}" \
+  "GEMINI_MODEL_DEEP=${GEMINI_MODEL_DEEP:-}" \
   "SCRAPE_PROVIDER_ORDER=${SCRAPE_PROVIDER_ORDER:-direct,spider,jina}" \
   "ENGAGEMENT_ENABLED=${ENGAGEMENT_ENABLED:-0}" \
   "OPS_JOBS_DISABLED=${OPS_JOBS_DISABLED:-1}" \
@@ -133,7 +135,7 @@ for svc in $SERVICES; do
         --ingress=all --min-instances=0 --max-instances=2 --concurrency=80 \
         --memory=512Mi --cpu=1 --timeout=60 --service-account="$SA_JOBS_EMAIL" \
         --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${SQL_INSTANCE:?SQL_INSTANCE missing}" \
-        --set-env-vars="GOTRUE_DB_DRIVER=postgres,GOTRUE_API_HOST=0.0.0.0,GOTRUE_API_PORT=8080,API_EXTERNAL_URL=${APP_BASE_URL},GOTRUE_SITE_URL=${APP_BASE_URL},GOTRUE_JWT_EXP=3600,GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated,GOTRUE_DISABLE_SIGNUP=false,GOTRUE_EXTERNAL_EMAIL_ENABLED=true,GOTRUE_MAILER_AUTOCONFIRM=true,GOTRUE_LOG_LEVEL=warn" \
+        --set-env-vars="GOTRUE_DB_DRIVER=postgres,GOTRUE_API_HOST=0.0.0.0,GOTRUE_API_PORT=8080,API_EXTERNAL_URL=${APP_BASE_URL},GOTRUE_SITE_URL=${APP_BASE_URL},GOTRUE_JWT_EXP=3600,GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated,GOTRUE_DISABLE_SIGNUP=false,GOTRUE_EXTERNAL_EMAIL_ENABLED=true,GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false},GOTRUE_LOG_LEVEL=warn" \
         --set-secrets="GOTRUE_DB_DATABASE_URL=$(sm_name GOTRUE_DB_DATABASE_URL):latest,GOTRUE_JWT_SECRET=$(sm_name JWT_SECRET):latest" --quiet
       ;;
     rest)
@@ -147,7 +149,49 @@ for svc in $SERVICES; do
         --env-vars-file="$REST_ENV_JSON" \
         --set-secrets="PGRST_DB_URI=$(sm_name PGRST_DB_URI):latest,PGRST_JWT_SECRET=$(sm_name JWT_SECRET):latest" --quiet
       ;;
-    *) echo "✗ unknown service: $svc (api|jobs|admin|trackers|auth|rest)"; exit 1;;
+    studio)
+      require_vars CLOUD_RUN_STUDIO SQL_INSTANCE
+      studio_img="${STUDIO_IMAGE:-$IMG_STUDIO}"
+      pg_meta_img="${PG_META_IMAGE:-$IMG_PG_META}"
+      studio_port="${STUDIO_PORT:-3000}"
+      echo "→ Cloud Run ${CLOUD_RUN_STUDIO} (Supabase Studio + pg-meta → Cloud SQL)"
+      studio_secrets=()
+      if gcloud secrets describe "$(sm_name POSTGRES_PASSWORD)" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+        studio_secrets+=("POSTGRES_PASSWORD=$(sm_name POSTGRES_PASSWORD):latest")
+      fi
+      if gcloud secrets describe "$(sm_name SUPABASE_SERVICE_KEY)" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+        studio_secrets+=("SUPABASE_SERVICE_KEY=$(sm_name SUPABASE_SERVICE_KEY):latest")
+      fi
+      studio_sec_flag=""
+      [ ${#studio_secrets[@]} -gt 0 ] && studio_sec_flag="--set-secrets=$(IFS=,; echo "${studio_secrets[*]}")"
+
+      pg_meta_sec_flag=""
+      if gcloud secrets describe "$(sm_name PG_META_DB_URL)" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+        pg_meta_sec_flag="--set-secrets=PG_META_DB_URL=$(sm_name PG_META_DB_URL):latest"
+      elif gcloud secrets describe "$(sm_name POSTGRES_PASSWORD)" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+        pg_meta_sec_flag="--set-secrets=PG_META_DB_PASSWORD=$(sm_name POSTGRES_PASSWORD):latest"
+      fi
+
+      gcloud run deploy "$CLOUD_RUN_STUDIO" "${GCP_FLAGS[@]}" --quiet \
+        --no-allow-unauthenticated \
+        --ingress=all --min-instances=0 --max-instances=2 \
+        --service-account="$SA_JOBS_EMAIL" \
+        --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${SQL_INSTANCE}" \
+        --container=studio \
+          --image="$studio_img" \
+          --port="$studio_port" \
+          --memory=1Gi --cpu=1 \
+          --depends-on=pg-meta \
+          --set-env-vars="STUDIO_PG_META_URL=http://127.0.0.1:8080,SUPABASE_URL=${APP_BASE_URL},SUPABASE_PUBLIC_URL=${APP_BASE_URL},AUTH_JWT_SECRET=${JWT_SECRET:-},SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}" \
+          $studio_sec_flag \
+        --container=pg-meta \
+          --image="$pg_meta_img" \
+          --memory=512Mi --cpu=1 \
+          --startup-probe="tcpSocket.port=8080,timeoutSeconds=10,failureThreshold=15" \
+          --set-env-vars="PG_META_PORT=8080" \
+          $pg_meta_sec_flag
+      ;;
+    *) echo "✗ unknown service: $svc (api|jobs|admin|trackers|auth|rest|studio)"; exit 1;;
   esac
 done
 

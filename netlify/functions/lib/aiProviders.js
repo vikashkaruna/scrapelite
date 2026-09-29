@@ -33,7 +33,7 @@
 import { record as meterRecord } from "./creditMeter.js";
 import {
   PROVIDERS, AI_PROVIDERS, AI_AREA_KEYS, FUNCTION_AREAS, MODEL_TIER,
-  readKey, defaultModel,
+  readKey, defaultModel, keyEnvNames, isRetiredGeminiModel,
 } from "../../../src/lib/providerRegistry.js";
 
 // ── Back-compat surface ──────────────────────────────────────────────────────
@@ -43,7 +43,10 @@ import {
 export const PROVIDER_META = Object.fromEntries(
   AI_PROVIDERS.map((p) => [p, {
     label: PROVIDERS[p].label,
-    keyEnv: PROVIDERS[p].keyEnv,
+    // The admin UI and the health probe both print this ("No key set (…)"), so
+    // it must stay a STRING. A provider declaring `keyEnvList` instead of
+    // `keyEnv` used to render "undefined" there.
+    keyEnv: keyEnvNames(p).join(" / "),
     modelEnv: PROVIDERS[p].modelEnv,
     docsUrl: PROVIDERS[p].docsUrl,
     structured: PROVIDERS[p].structured === true,
@@ -83,19 +86,76 @@ function schemaInstruction(schema) {
   );
 }
 
-// Gemini's responseSchema rejects several standard JSON Schema keywords.
-// Strip them rather than failing the call — the prompt still carries intent.
-function toGeminiSchema(node) {
+// Gemini's responseSchema is NOT JSON Schema. It is a proto message whose
+// `type` is a single enum and whose `items` is a single message, so every
+// standard-JSON-Schema construct that uses a LIST in either position is a
+// guaranteed 400. We translate rather than reject, because the alternative is
+// losing the entire structured extraction to a shape difference.
+//
+// ── WHAT ACTUALLY BROKE ─────────────────────────────────────────────────────
+// The shipped translation special-cased `properties`/`items`/`anyOf` and copied
+// everything else through verbatim. So `type: ["string", "null"]` — the way
+// every nullable field in src/lib/extractionSchemas.js is written, 44 times —
+// went to Gemini as a list, and proto answered:
+//
+//   Invalid JSON payload received. Unknown name "type" at
+//   'generation_config.response_schema.properties[0].value.items…'
+//   Proto field is not repeating, cannot start list.
+//
+// That 400 is not a warning: it is the ONLY response, so the provider is
+// dropped from the chain and the run loses its structured facts. It is also
+// invisible to the health dashboard, because pingProvider() calls each adapter
+// with NO schema — the probe proves the key and model work and says nothing
+// about whether the schema we actually send in production is acceptable.
+//
+// A second, quieter hazard lived in the same function: `properties` was
+// converted with Object.entries() unconditionally. Given an ARRAY, that
+// silently yields `{"0": …, "1": …}` — numeric keys that look like a map to
+// every reader until the API rejects them.
+const GEMINI_DROP = [
+  "additionalProperties", "$schema", "definitions", "$defs", "examples", "default", "title",
+  // No responseSchema equivalent; the instruction still rides in the prompt.
+  "anyOf", "oneOf", "allOf", "not", "const", "patternProperties", "dependencies",
+];
+
+/**
+ * JSON Schema `type` accepts an array of types (`["string", "null"]` is the
+ * idiomatic nullable). Gemini accepts exactly one. Collapse to the first
+ * member that actually carries information — a field declared
+ * `["string", "null"]` is a string field that may be absent, and Gemini models
+ * absence with the absence of the property, not with a null literal.
+ */
+function collapseGeminiType(type) {
+  if (Array.isArray(type)) {
+    const meaningful = type.find((t) => String(t).toLowerCase() !== "null");
+    return collapseGeminiType(meaningful ?? type[0]);
+  }
+  return type;
+}
+
+export function toGeminiSchema(node) {
   if (!node || typeof node !== "object") return node;
   if (Array.isArray(node)) return node.map(toGeminiSchema);
   const out = {};
   for (const [k, v] of Object.entries(node)) {
-    if (["additionalProperties", "$schema", "definitions", "$defs", "examples", "default", "title"].includes(k)) continue;
-    out[k] = (k === "properties" || k === "items" || k === "anyOf")
-      ? (k === "properties"
-          ? Object.fromEntries(Object.entries(v).map(([pk, pv]) => [pk, toGeminiSchema(pv)]))
-          : toGeminiSchema(v))
-      : v;
+    if (GEMINI_DROP.includes(k)) continue;
+    if (k === "type") { out[k] = collapseGeminiType(v); continue; }
+    // `items` is a single message in Gemini. JSON Schema's tuple form makes it
+    // a list; keeping the first entry preserves the "shape of the element"
+    // information instead of failing the call.
+    if (k === "items") {
+      out[k] = toGeminiSchema(Array.isArray(v) ? v[0] : v);
+      continue;
+    }
+    if (k === "properties") {
+      // A map in JSON Schema. An ARRAY here is malformed input, and the old
+      // Object.entries() path turned it into numeric keys rather than
+      // dropping it — see the header.
+      if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+      out[k] = Object.fromEntries(Object.entries(v).map(([pk, pv]) => [pk, toGeminiSchema(pv)]));
+      continue;
+    }
+    out[k] = v;
   }
   return out;
 }
@@ -419,8 +479,14 @@ function sanitizePillarEntry(raw) {
     ? raw.order.map((s) => String(s).toLowerCase()).filter((p) => PROVIDER_META[p])
     : null;
   if (order && order.length) out.order = order;
-  if (raw.models && typeof raw.models === "object") out.models = { ...raw.models };
-  if (raw.modelsFast && typeof raw.modelsFast === "object") out.modelsFast = { ...raw.modelsFast };
+  if (raw.models && typeof raw.models === "object") {
+    out.models = { ...raw.models };
+    if (out.models.gemini && isRetiredGeminiModel(out.models.gemini)) delete out.models.gemini;
+  }
+  if (raw.modelsFast && typeof raw.modelsFast === "object") {
+    out.modelsFast = { ...raw.modelsFast };
+    if (out.modelsFast.gemini && isRetiredGeminiModel(out.modelsFast.gemini)) delete out.modelsFast.gemini;
+  }
   if (raw.enabled && typeof raw.enabled === "object") out.enabled = { ...raw.enabled };
   if (raw.tier === MODEL_TIER.FAST || raw.tier === MODEL_TIER.DEEP) out.tier = raw.tier;
   return out;
@@ -440,6 +506,17 @@ function merge(base, ov) {
       pillars[key] = { ...(base.pillars[key] || {}), ...sanitizePillarEntry(ov.pillars[key]) };
     }
   }
+  // Filter out retired Gemini models from stored overrides so a stale database
+  // row cannot resurrect an invalid model ID that returns 404 from Google.
+  const rawModels = ov.models && typeof ov.models === "object" ? { ...ov.models } : {};
+  const rawModelsFast = ov.modelsFast && typeof ov.modelsFast === "object" ? { ...ov.modelsFast } : {};
+  for (const [k, v] of Object.entries(rawModels)) {
+    if (k === "gemini" && isRetiredGeminiModel(v)) delete rawModels[k];
+  }
+  for (const [k, v] of Object.entries(rawModelsFast)) {
+    if (k === "gemini" && isRetiredGeminiModel(v)) delete rawModelsFast[k];
+  }
+
   // ── A PRE-TIER STORED CONFIG IS DETECTED, NOT SILENTLY REINTERPRETED ──────
   // Tiering added `modelsFast`. A stored row with `models` and NO `modelsFast`
   // therefore predates it, and in that world there was ONE model per provider
@@ -456,8 +533,8 @@ function merge(base, ov) {
   // real complaint ("why is my deep tier on gpt-4o-mini?"). So we do neither —
   // the shape is FLAGGED, /admin/ai says so plainly, and the operator gets a
   // one-click split. The decision stays theirs; only the invisibility goes.
-  const storedModels = ov.models && Object.keys(ov.models).length > 0;
-  const storedFast = ov.modelsFast && Object.keys(ov.modelsFast).length > 0;
+  const storedModels = Object.keys(rawModels).length > 0;
+  const storedFast = Object.keys(rawModelsFast).length > 0;
 
   return {
     // Surfaced by /admin/ai so an operator can confirm which write is live.
@@ -466,14 +543,14 @@ function merge(base, ov) {
     // into a banner and a migration button; nothing acts on it automatically.
     legacyModelConfig: Boolean(storedModels && !storedFast),
     order: order.length ? order : base.order,
-    models:     { ...base.models,     ...(ov.models || {}) },
+    models:     { ...base.models,     ...rawModels },
     // A stored `models` map also lands on the FAST tier unless `modelsFast` is
     // set explicitly. Every config written before tiering existed has one map
     // and one meaning ("use this model here"); making it apply to only half
     // the tiers would silently retire live operator settings — precisely the
     // "the fix shipped and nothing changed" failure mode this codebase has
     // already hit once, where a stored app_config row quietly outranked code.
-    modelsFast: { ...base.modelsFast, ...(ov.models || {}), ...(ov.modelsFast || {}) },
+    modelsFast: { ...base.modelsFast, ...rawModels, ...rawModelsFast },
     enabled:    { ...base.enabled,    ...(ov.enabled || {}) },
     maxTokens: Number(ov.maxTokens) > 0 ? Number(ov.maxTokens) : base.maxTokens,
     pillars,
@@ -652,6 +729,36 @@ export const PING_TOKENS = 64;          // enough for "ok" on any non-reasoning 
 export const PING_RETRY_TOKENS = 2048;  // enough for a reasoning pass plus "ok"
 
 /**
+ * The schema the liveness probe sends, which is the one thing that made the
+ * probe lie.
+ *
+ * The probe used to call each adapter with NO schema at all, so it proved the
+ * key was funded and the model id was alive and said NOTHING about whether the
+ * schema we actually send in production is acceptable to that provider's
+ * structured-output mechanism. Gemini rejected every nullable field in
+ * src/lib/extractionSchemas.js (`type: ["string","null"]` — 44 occurrences) with
+ * a 400, dropped out of the chain, and /admin/health kept reporting it green,
+ * because a plain "reply ok" needs no schema.
+ *
+ * So the probe now sends a real one, and deliberately includes the two shapes
+ * that actually broke: a union `type`, and a nullable nested object. A
+ * provider whose structured-output path rejects either now reports DOWN at the
+ * moment it breaks, instead of failing every extraction run silently for days.
+ */
+export const PING_SCHEMA = {
+  type: "object",
+  properties: {
+    ok: { type: "boolean" },
+    note: { type: ["string", "null"] },
+    detail: {
+      type: ["object", "null"],
+      properties: { seen: { type: "string" }, score: { type: ["number", "null"] } },
+    },
+  },
+  required: ["ok"],
+};
+
+/**
  * LIVE reachability + credit check for one provider. This is the thing key
  * presence could never tell us: all three of DatIQ's AI keys were PRESENT and
  * all three were dead (invalid key, no credit, no credit) while /admin/health
@@ -669,7 +776,7 @@ export const PING_RETRY_TOKENS = 2048;  // enough for a reasoning pass plus "ok"
  * generous enough for any reasoning pass, and if that answers, the provider is
  * reported as WORKING with a note about how much room the model needs.
  */
-export async function pingProvider(provider, { model, timeoutMs = 12_000 } = {}) {
+export async function pingProvider(provider, { model, timeoutMs = 12_000, withSchema = true } = {}) {
   const meta = PROVIDER_META[provider];
   if (!meta) return { provider, ok: false, code: "unknown_provider", error: "Unknown provider" };
   const apiKey = keyFor(provider);
@@ -681,9 +788,15 @@ export async function pingProvider(provider, { model, timeoutMs = 12_000 } = {})
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   const startedAt = Date.now();
+  // Only providers with NATIVE structured output get the schema — sending it
+  // to one without would just prove nothing (runChain inlines the schema as
+  // prompt text for those instead, so the shape is still exercised, just not
+  // through a mechanism that can reject it).
+  const schema = withSchema && meta.structured ? PING_SCHEMA : null;
   const ask = (budget) => ADAPTERS[provider](
     [{ role: "user", content: "Reply with the single word: ok" }],
-    useModel, budget, apiKey, { signal: ctrl.signal }
+    useModel, budget, apiKey,
+    schema ? { signal: ctrl.signal, schema } : { signal: ctrl.signal }
   );
   try {
     let r = await ask(PING_TOKENS);

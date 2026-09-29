@@ -2,7 +2,7 @@
 
 > This directory contains all historical and active development session handoffs and milestone records.
 > Managed by the `session-handoff-management` skill.
-> **Total Sessions Archived:** 9
+> **Total Sessions Archived:** 10
 
 ---
 
@@ -13,6 +13,7 @@
 | — | [`SESSIONS-HISTORY.md`](./SESSIONS-HISTORY.md) | DatIQ — Master Consolidated Historical Session Archive |
 | — | [`SESSION-LOG.md`](./SESSION-LOG.md) | DatIQ — Session Log (active, consolidated) |
 | 2026-09-29 | [`SESSION-HANDOFF-2026-09-29-GCP-PHASE-1A-STAGING-DEPLOY-GREEN.md`](./SESSION-HANDOFF-2026-09-29-GCP-PHASE-1A-STAGING-DEPLOY-GREEN.md) | 2026-09-29 — GCP-PHASE-1A-STAGING-DEPLOY-GREEN |
+| 2026-09-29 | [`SESSION-HANDOFF-2026-09-29-DOCKER-DESKTOP-AND-STAGING-STUDIO.md`](./SESSION-HANDOFF-2026-09-29-DOCKER-DESKTOP-AND-STAGING-STUDIO.md) | 2026-09-29 — Docker Desktop Fixes & Staging Supabase Studio Deploy |
 | 2026-09-28 | [`SESSION-HANDOFF-2026-09-28-GCP-PHASE-0-LOCAL-DOCKER-STACK.md`](./SESSION-HANDOFF-2026-09-28-GCP-PHASE-0-LOCAL-DOCKER-STACK.md) | 2026-09-28 — Phase 0: local Docker Desktop stack live + staging→local migration |
 | 2026-09-20 | [`SESSION-HANDOFF-2026-09-20-DISCOVERABILITY-IMPROVEMENTS.md`](./SESSION-HANDOFF-2026-09-20-DISCOVERABILITY-IMPROVEMENTS.md) | 2026-09-20 — Discoverability Audit Improvements & Industry Landing Pages |
 | 2026-09-20 | [`SESSION-HANDOFF-2026-09-20-ADMIN-PRODUCTION-FIXES.md`](./SESSION-HANDOFF-2026-09-20-ADMIN-PRODUCTION-FIXES.md) | 2026-09-20 — ADMIN-PRODUCTION-FIXES |

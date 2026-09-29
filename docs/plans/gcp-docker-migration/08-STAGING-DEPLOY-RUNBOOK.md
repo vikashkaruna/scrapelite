@@ -21,11 +21,12 @@ not executed** until you finish testing local + staging.
 | Jobs | Cloud Run `datiq-vsp-run-jobs-stg` | **NOT public** — Scheduler OIDC only |
 | GoTrue (proof) | Cloud Run `datiq-vsp-run-auth-stg` | IAM-gated; wired via `/auth/v1/**` rewrite only in cloud-sql mode |
 | PostgREST (proof) | Cloud Run `datiq-vsp-run-rest-stg` | IAM-gated; same phase rule |
+| Supabase Studio | Cloud Run `datiq-vsp-run-studio-stg` | **NOT public** — IAM-gated; multi-container (`studio` on 3000 + `pg-meta` on 8080); accessed via `./deployment/scripts/gcp/proxy-studio.sh staging` |
 | Database | Cloud SQL `datiq-vsp-sql-datiq-stg` | POSTGRES_16, ENTERPRISE `db-custom-1-3840` (1 vCPU / 3.75 GB), SSD, asia-south1 |
 | DB contents | migrated from dev Supabase `aubwooslkkrprdxuiyvj` | 127 tables, 127 RLS-enabled, 29 extractions, extensions in `extensions` schema, GoTrue migrated 23 auth tables from zero. **2026-09-29 re-restore (FK-safe path): audit tables now fully populated** (16 audits / 8 subjects / 25 events / 114 recommendations — the first restore silently dropped those rows; see §7). 37 FK constraints referencing `auth.users` stay DROPPED on the rehearsal path by design (auth rows absent in the public-only dump) and are reported, not silent |
 | Scheduler | 13 jobs `datiq-vsp-sch-*-stg` | 1:1 with `netlify.toml` schedules; OIDC SA + `x-datiq-cron-token`; **App Engine app in asia-south1** |
-| Secrets | 17 `datiq-vsp-sm-*-stg` | incl. runtime keys, `jwt-secret` (STAGING-ONLY, see §3.5), `pgrst-db-uri`, `gotrue-db-database-url` |
-| Images | AR `datiq-vsp-ar-images-stg` | api/admin/trackers built by Cloud Build (`build-images.yaml`, tag = git sha `ad655d1b`); GoTrue/PostgREST mirrored by `stage-third-party.yaml` |
+| Secrets | 19 `datiq-vsp-sm-*-stg` | incl. runtime keys, `jwt-secret` (STAGING-ONLY, see §3.5), `pgrst-db-uri`, `gotrue-db-database-url`, `postgres-password`, `pg-meta-db-url` |
+| Images | AR `datiq-vsp-ar-images-stg` | api/admin/trackers built by Cloud Build (`build-images.yaml`, tag = git sha `ad655d1b`); GoTrue/PostgREST/Studio/pg-meta mirrored by `stage-third-party.yaml` / `stage-studio.sh` |
 | CI | `.github/workflows/gcp-staging.yml` | workflow_dispatch + push to `staging` branch — **needs the GitHub secrets in §3.4 before first run** |
 
 Supabase Auth/DB for the site itself: still the **hosted dev Supabase project**

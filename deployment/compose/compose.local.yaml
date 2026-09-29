@@ -56,7 +56,7 @@ services:
       GOTRUE_URI_ALLOW_LIST: http://localhost:*,http://127.0.0.1:*
       GOTRUE_DISABLE_SIGNUP: "false"
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
-      GOTRUE_MAILER_AUTOCONFIRM: "true"      # no SMTP locally: signups return a session immediately
+      GOTRUE_MAILER_AUTOCONFIRM: ${GOTRUE_MAILER_AUTOCONFIRM:-true}
       GOTRUE_SMS_AUTOCONFIRM: "true"
       GOTRUE_LOG_LEVEL: "warn"
     depends_on:
@@ -90,6 +90,37 @@ services:
     image: ${MAILPIT_IMAGE}
     ports:
       - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"   # web UI: captured email
+    restart: unless-stopped
+
+  pg-meta:
+    image: ${PG_META_IMAGE:-public.ecr.aws/supabase/postgres-meta:v0.96.6}
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  studio:
+    image: ${STUDIO_IMAGE:-public.ecr.aws/supabase/studio:2026.07.06-sha-66cf431}
+    environment:
+      STUDIO_PG_META_URL: http://pg-meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SUPABASE_URL: http://gateway:${LOCAL_GATEWAY_PORT:-8080}
+      SUPABASE_PUBLIC_URL: ${PUBLIC_BASE_URL}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
+    ports:
+      - "127.0.0.1:${STUDIO_HOST_PORT:-54328}:3000"
+    depends_on:
+      - pg-meta
+      - db
     restart: unless-stopped
 
   # On-demand migrations runner (npm-equivalent: compose --profile migrate run --rm migrator).

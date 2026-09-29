@@ -1,0 +1,22 @@
+# deployment/gcp/cloudbuild/stage-studio.yaml — mirror upstream studio/pg-meta
+# images into Artifact Registry so Cloud Run can deploy them (doc 06: names
+# composed from env; the upstream refs arrive as substitutions).
+substitutions:
+  _STUDIO_SRC: ""
+  _PG_META_SRC: ""
+  _IMG_STUDIO: ""
+  _IMG_PG_META: ""
+options:
+  logging: CLOUD_LOGGING_ONLY
+steps:
+  - id: stage-studio
+    name: gcr.io/cloud-builders/docker
+    args: [build, -f, deployment/gcp/cloudbuild/third-party/studio.Dockerfile, --build-arg, BASE_IMAGE=$_STUDIO_SRC, -t, $_IMG_STUDIO, .]
+  - id: stage-pg-meta
+    name: gcr.io/cloud-builders/docker
+    args: [build, -f, deployment/gcp/cloudbuild/third-party/pg-meta.Dockerfile, --build-arg, BASE_IMAGE=$_PG_META_SRC, -t, $_IMG_PG_META, .]
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args: [-c, docker push $_IMG_STUDIO && docker push $_IMG_PG_META]
+images: [$_IMG_STUDIO, $_IMG_PG_META]
