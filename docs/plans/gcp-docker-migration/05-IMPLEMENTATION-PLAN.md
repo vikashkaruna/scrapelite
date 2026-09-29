@@ -1,6 +1,6 @@
 # 05 — Implementation Plan (v2, two phases)
 
-**Date:** 2026-09-28 · **Branch:** `docker-desktop-build` · **Status:** Phase 0 **IMPLEMENTED & VERIFIED locally (2026-09-28, `d14dff1d`)** — smoke 16/16, signon E2E green, staging→local migration rehearsed. Step 0 compat release **shipped to production** (PRs #241/#242). Phase 1a not started.
+**Date:** 2026-09-28 · **Branch:** `docker-desktop-build` · **Status:** Phase 0 **IMPLEMENTED & VERIFIED locally (2026-09-28, `d14dff1d`)** — smoke 16/16, signon E2E green, staging→local migration rehearsed. Step 0 compat release **shipped to production** (PRs #241/#242). **Phase 1a EXECUTED & GREEN (2026-09-29)** — GCP staging live at https://datiq-vsp-fhs-stg.web.app, edge smoke 13/13, Cloud SQL migrated (127 RLS tables, 29 extractions), 13 scheduler jobs, all artifacts for prod-shadow + cutover committed; **operator checklist in `08-STAGING-DEPLOY-RUNBOOK.md`**. Phase 1b/2/3 (prod shadow, cutover) NOT executed — awaiting owner testing of local + staging.
 
 **Implementation deviations from this plan (all deliberate, see session handoff):**
 - `db`/`auth`/`rest` use upstream images directly (`supabase/postgres:17.6.1.165`, `supabase/auth`, `postgrest/postgrest`) instead of custom Dockerfiles — better provenance, nothing to maintain.

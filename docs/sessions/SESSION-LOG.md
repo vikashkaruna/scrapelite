@@ -20,6 +20,36 @@
 
 
 
+## 2026-09-29 — GCP migration Phase 1a EXECUTED: GCP staging live, all gates green (branch `docker-desktop-build`)
+
+> **Branch:** `docker-desktop-build`
+> **Scope:** Phase 1a of `docs/plans/gcp-docker-migration/` — the GCP staging deploy run for real (bootstrap → images → Cloud Run ×6 → Cloud SQL migration → 13 scheduler jobs → Firebase Hosting → smoke).
+> **Verification:** edge smoke **13/13** at https://datiq-vsp-fhs-stg.web.app; parameterisation gate green; firebase-config unit tests **11/11**; `npm run test:all` **10/10 suites green**; DB verified 127 tables / 127 RLS / 29 extractions.
+
+### What was executed
+- **Bootstrap + secrets:** AR repo `datiq-vsp-ar-images-stg`, 4 SAs, App Engine app (Scheduler), Firebase web app + Hosting site `datiq-vsp-fhs-stg`, 17 secrets (`datiq-vsp-sm-*-stg`).
+- **Cloud Run ×6:** api/jobs/admin/trackers/auth/rest. api/admin/trackers **`--allow-unauthenticated`** (deliberate Netlify-parity deviation, documented); jobs OIDC-only; auth/rest are IAM-gated proof services on Cloud SQL unix sockets.
+- **DB migration:** Cloud SQL `datiq-vsp-sql-datiq-stg` (POSTGRES_16, `db-custom-1-3840`) ← dev Supabase dump; GoTrue migrated 23 auth tables **from zero** on a clean `auth` schema (`create schema auth authorization supabase_auth_admin` after `grant supabase_auth_admin to postgres`).
+- **Scheduler ×13:** 1:1 with netlify.toml; GCP staging runs `OPS_JOBS_DISABLED=1` — **Netlify staging owns crons**.
+- **Hosting:** full dist payload; `/` serves the **prerendered home** (dist/index.html swapped; SPA shell at `/__shell/index.html`); per-route extensionless rewrites from `scripts/site-routes.mjs`; **`trailingSlash:false`**.
+- **Artifacts ready, NOT run:** `promote-prod.sh`, `cutover-db.sh`, `.github/workflows/gcp-staging.yml`, prod-site routing in runtime-config.
+
+### Root causes fixed this session (non-obvious)
+1. **Firebase's trailing-slash 301 fires BEFORE rewrites** — per-route rewrites cannot prevent `/pricing`→`/pricing/`; `trailingSlash:false` is the only knob (slash form then 301s back; one canonical per page).
+2. **`deploy-run.sh` env-vars JSON collision** — all callers shared one `env-vars-$ENV.json`; rest's PGRST file overwrote the app file → api/jobs deployed with 3 env vars (`supabase not configured`). Filenames now per-caller.
+3. **workflow-orchestrator is POST-only AND Bearer-gated even for `/ping`** — smoke asserts anon 401 (gate) + authed pong (path).
+4. **Shebang breaks Vitest import** of `gen-firebase-config.mjs` (Vite injects `/@vite/client` before `#!` → parse error); removed — script runs via `node` only.
+
+### Operator items (full list: runbook §3)
+- [ ] **Add `https://datiq-vsp-fhs-stg.web.app` to dev Supabase Auth → Additional Redirect URLs** (OAuth is broken on the new host until then).
+- [ ] GitHub Environment `gcp-staging` secrets for CI deploys; Netlify Edge Access bypass (carried over).
+- [ ] Cloud SQL is the main staging cost — `--activation-policy=NEVER` to park it.
+- [ ] At real cutover: JWT_SECRET from prod Supabase; never both sides own crons.
+
+**Detail:** `docs/plans/gcp-docker-migration/08-STAGING-DEPLOY-RUNBOOK.md` · handoff `docs/sessions/SESSION-HANDOFF-2026-09-29-GCP-PHASE-1A-STAGING-DEPLOY-GREEN.md`.
+
+---
+
 ## 2026-09-28 — Phase 0: local Docker Desktop stack live + staging→local migration scripts (branch `docker-desktop-build`)
 
 > **Branch:** `docker-desktop-build` (adds `deployment/` on top of the compat release)

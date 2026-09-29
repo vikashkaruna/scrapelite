@@ -1,0 +1,100 @@
+# .github/workflows/gcp-staging.yml — GCP staging deploy CI (doc 05 §3a).
+# Runs the SAME operator scripts against the SAME .env contract; GitHub
+# Environment "gcp-staging" mirrors the .env.staging variable names (doc 06 §5).
+# Requires repo Environment secrets/variables: GCP_PROJECT_ID, GCP_REGION,
+# DATIQ_PROJECT_CODE, GCP_BILLING_ACCOUNT_ID, SUPABASE_URL, SUPABASE_ANON_KEY,
+# SUPABASE_SERVICE_KEY, JOBS_TOKEN, DB_APP_PASSWORD, GCP_SA_KEY (deploy SA JSON),
+# VITE_RAZORPAY_KEY_ID, and the non-secret naming defaults (or rely on the
+# shipped defaults from deployment/env/.env.staging.example).
+name: gcp-staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_db:
+        description: "Skip the Cloud SQL dump/restore step"
+        type: boolean
+        default: false
+      skip_scheduler:
+        description: "Skip Cloud Scheduler job creation"
+        type: boolean
+        default: false
+  push:
+    branches: [staging]
+    paths:
+      - "deployment/**"
+      - "netlify/functions/**"
+      - "src/**"
+      - "public/**"
+      - "netlify.toml"
+      - "package-lock.json"
+
+concurrency:
+  group: gcp-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: gcp-staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install CLIs
+        run: npm i -g firebase-tools
+
+      - name: Write the deploy env file (mirrors the operator contract)
+        run: |
+          mkdir -p deployment/env
+          cat > deployment/env/.env.staging <<ENV
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION=${{ secrets.GCP_REGION }}
+          DATIQ_PROJECT_CODE=${{ secrets.DATIQ_PROJECT_CODE }}
+          DATIQ_ENV=staging
+          DATIQ_ENV_SUFFIX=-stg
+          DATIQ_OWNER_LABEL=vikash
+          GCP_BILLING_ACCOUNT_ID=${{ secrets.GCP_BILLING_ACCOUNT_ID }}
+          APP_BASE_URL=https://${{ vars.FHS_SITE_ID }}.web.app
+          DATA_MODE=hosted-supabase
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
+          JOBS_TOKEN=${{ secrets.JOBS_TOKEN }}
+          DB_NAME=datiq
+          DB_APP_USER=datiq_app
+          DB_APP_PASSWORD=${{ secrets.DB_APP_PASSWORD }}
+          CLOUD_SQL_TIER=db-custom-1-3840
+          VITE_RAZORPAY_KEY_ID=${{ secrets.VITE_RAZORPAY_KEY_ID }}
+          APP_CONTEXT=branch-deploy
+          GIT_BRANCH=staging
+          IMG_TAG=${{ github.sha }}
+          ENV
+          # Resource names: the shipped defaults from the .example are the contract.
+          grep -E '^(CLOUD_RUN_|AR_REPO|SQL_INSTANCE|SA_|FHS_SITE_ID|FB_WEB_APP_DISPLAY|TFSTATE_BUCKET|ARTIFACTS_BUCKET)=' \
+            deployment/env/.env.staging.example >> deployment/env/.env.staging
+
+      - name: Deploy everything (skips per inputs)
+        env:
+          SKIP_DB: ${{ inputs.skip_db && '1' || '' }}
+          SKIP_SCHEDULER: ${{ inputs.skip_scheduler && '1' || '' }}
+          SKIP_BUILD: ""
+          RUNTIME_ENV_FILE: ""
+        run: |
+          # Operator env file is unavailable in CI; secrets come from the env file
+          # above (RUNTIME_ENV_FILE points at it via bootstrap-secrets.sh fallback).
+          chmod +x deployment/scripts/gcp/*.sh
+          ./deployment/scripts/gcp/deploy-staging.sh staging
+
+      - name: Smoke the deployed URL
+        run: ./deployment/scripts/gcp/smoke.sh staging

@@ -1,0 +1,24 @@
+# .gcloudignore — keeps `gcloud builds submit` uploads lean. Values/config flow
+# from deployment/env/.env.<env> at deploy time; source secrets NEVER upload.
+.git
+.github
+node_modules
+dist
+dist-extension
+coverage
+test-results
+playwright-report
+e2e
+e2e-screenshots
+docs
+n8n
+extensions
+tools
+sdlc
+.env
+.env.*
+scripts/env
+deployment/generated
+*.dump
+*.local
+.DS_Store

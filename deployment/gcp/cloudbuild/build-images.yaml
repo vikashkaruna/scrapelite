@@ -1,0 +1,93 @@
+# deployment/gcp/cloudbuild/build-images.yaml — DatIQ image build on Cloud Build.
+# Substitutions only (doc 06 §1): every value is passed by build-images.sh from
+# the .env file; nothing project-specific is baked in here.
+#
+# Builds the same three images the local stack builds (doc 05 §0/§3a):
+#   api      — the 75-function adapter image (also reused by the jobs service)
+#   admin    — /admin surface container (stand-in; Firebase serves the shell)
+#   trackers — analytics.js + runtime-config.js container (config layer stand-in)
+# The web payload (dist/) is built in step 1 and deploys to Firebase Hosting
+# directly — there is no web container on GCP.
+
+substitutions:
+  # NOTE: only substitutions the template actually uses may be declared/passed
+  # (Cloud Build rejects unused ones). _IMG_* values are composed by
+  # build-images.sh from GCP_PROJECT_ID/GCP_REGION/AR_REPO (doc 06).
+  _IMG_API: ""
+  _IMG_ADMIN: ""
+  _IMG_TRACKERS: ""
+  _VITE_RAZORPAY_KEY_ID: ""
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  - id: build-web-dist
+    name: node:24
+    entrypoint: bash
+    env:
+      - VITE_RAZORPAY_KEY_ID=$_VITE_RAZORPAY_KEY_ID
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        npm ci --no-audit --no-fund
+        npm run build
+        echo "dist/ built: $(du -sh dist | cut -f1)"
+
+  - id: build-api-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - deployment/docker/api/Dockerfile
+      - -t
+      - $_IMG_API
+      - .
+
+  - id: build-admin-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - deployment/docker/admin/Dockerfile
+      - -t
+      - $_IMG_ADMIN
+      - .
+
+  - id: build-trackers-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - deployment/docker/trackers/Dockerfile
+      - -t
+      - $_IMG_TRACKERS
+      - .
+
+  - id: push-images
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        docker push $_IMG_API
+        docker push $_IMG_ADMIN
+        docker push $_IMG_TRACKERS
+
+  - id: report-digests
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        for img in $_IMG_API $_IMG_ADMIN $_IMG_TRACKERS; do
+          echo "DIGEST $img @ $(docker inspect --format='{{index .RepoDigests 0}}' "$img" 2>/dev/null || echo "$img")"
+        done
+
+images:
+  - $_IMG_API
+  - $_IMG_ADMIN
+  - $_IMG_TRACKERS
