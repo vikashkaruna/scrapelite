@@ -111,6 +111,7 @@ window.__DATIQ_RUNTIME__ = {
   emailApiUrl: "",
   supabaseUrl: ${JSON.stringify(supabaseUrl)},
   supabaseAnonKey: ${JSON.stringify(supabaseAnonKey)},
+  razorpayKeyId: ${JSON.stringify(env.VITE_RAZORPAY_KEY_ID || env.RAZORPAY_KEY_ID || "")},
   authReturnUrl: window.location.origin,
   gaMeasurementId: "",                 // analytics OFF outside production (same contract as prod file)
   posthogKey: "",                      // deliberate disable outside production

@@ -242,6 +242,9 @@ async function fetchSafe(url, options, retries = 2, timeoutMs = 12000) {
       clearTimeout(timer);
       const isTimeout = e.name === "AbortError";
       const isNetwork = !isTimeout;
+      if (typeof console !== "undefined") {
+        console.warn("[DatIQ] fetchSafe error:", { url, attempt, error: e?.message || e });
+      }
       if (attempt < retries) {
         await new Promise((r) => setTimeout(r, (attempt + 1) * 1200));
         continue;

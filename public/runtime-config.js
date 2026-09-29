@@ -133,6 +133,8 @@ window.__DATIQ_RUNTIME__ = {
     ? "https://vkaruna.app.n8n.cloud/webhook-test/datiq"
     : "https://vkaruna.app.n8n.cloud/webhook/datiq",
   emailApiUrl: "",
+  // Razorpay publishable key override (runtime). Leave empty to use build-time VITE_RAZORPAY_KEY_ID.
+  razorpayKeyId: "",
   supabaseUrl: _isMain
     ? "https://sikkfxysjhirmtwkumpt.supabase.co"
     : "https://aubwooslkkrprdxuiyvj.supabase.co",
