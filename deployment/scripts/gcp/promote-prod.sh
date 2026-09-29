@@ -20,14 +20,23 @@ if [ $# -eq 3 ]; then
   export IMG_API="$1" IMG_ADMIN="$2" IMG_TRACKERS="$3"
 elif [ "${DIGESTS_FROM:-staging}" = "staging" ]; then
   echo "→ resolving image digests from the staging deploy (digest promotion — no rebuild)"
-  staging_project="${STAGING_GCP_PROJECT_ID:-$GCP_PROJECT_ID}"
-  staging_repo="${STAGING_AR_REPO:-$(echo "$AR_REPO" | sed "s/-${SM_ENV_SUFFIX}$/-stg/")}"
+  # The staging repo lives in the STAGING project's registry — IMG_BASE here is
+  # the PROD base (lib-gcp composes it from the prod env), so the staging
+  # coordinates must come from the prod env file (doc 06):
+  #   STAGING_GCP_PROJECT_ID, STAGING_AR_REPO, STAGING_IMG_TAG
+  # STAGING_IMG_TAG is the staging image tag to promote (the staging git sha
+  # that build-images.sh pushed — build-images.sh never tags `:staging`).
+  staging_project="${STAGING_GCP_PROJECT_ID:?set STAGING_GCP_PROJECT_ID in .env.prod (staging project id)}"
+  staging_repo="${STAGING_AR_REPO:?set STAGING_AR_REPO in .env.prod (staging AR repo name, e.g. the -stg repo)}"
+  staging_region="${STAGING_GCP_REGION:-$GCP_REGION}"
+  staging_tag="${STAGING_IMG_TAG:?set STAGING_IMG_TAG=<staging git sha> in .env.prod (the tag build-images.sh staging pushed)}"
+  staging_base="${staging_region}-docker.pkg.dev/${staging_project}/${staging_repo}"
   for kind in api admin trackers; do
     var="IMG_$(printf '%s' "$kind" | tr '[:lower:]' '[:upper:]')"
     digest="$(gcloud artifacts docker images describe \
-      "${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-${kind}:staging" \
+      "${staging_base}/datiq-${DATIQ_PROJECT_CODE}-ctr-${kind}:${staging_tag}" \
       --project="$staging_project" --format='value(fullyQualifiedDigest)' 2>/dev/null || true)"
-    [ -n "$digest" ] || { echo "✗ no staging digest for ctr-${kind} — build staging first"; exit 1; }
+    [ -n "$digest" ] || { echo "✗ no staging digest for ctr-${kind}:${staging_tag} in ${staging_base} — run build-images.sh staging first"; exit 1; }
     export "$var=$digest"
   done
 else

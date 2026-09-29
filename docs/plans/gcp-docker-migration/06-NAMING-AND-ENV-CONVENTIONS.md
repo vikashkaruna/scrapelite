@@ -125,7 +125,10 @@ load_env() {                       # usage: load_env staging
   set -a; source "$file"; set +a   # export everything defined
   require_vars "$REQUIRED_VARS"    # fail fast with the missing-key list
   derive_defaults                  # compose unset name vars via ${VAR:-…} chains
-  export_tf_vars                   # GCP_PROJECT_ID→TF_VAR_gcp_project_id, SQL_*→TF_VAR_*, …
+  export_tf_vars                    # ⚠ NOT IMPLEMENTED — Terraform is deferred (see plan doc 05 deviations):
+                                  #   GCP resources are created by bootstrap.sh + deploy-*.sh via gcloud.
+                                  #   All Terraform examples in this doc are the CONTRACT for a future
+                                  #   terraform/ tree; TFSTATE_BUCKET is reserved for it. No .tf files exist.                   # GCP_PROJECT_ID→TF_VAR_gcp_project_id, SQL_*→TF_VAR_*, …
 }
 ```
 
@@ -251,7 +254,7 @@ SMOKE_TARGET=${APP_BASE_URL}
 
 ## 9. Parameterisation acceptance criteria (enforced, not aspirational)
 
-- [ ] `scripts/check-parameterisation.sh` greps `deployment/{scripts,compose,gcp,terraform,docker}` for
+- [ ] `scripts/check-parameterisation.sh` greps `deployment/{scripts,compose,gcp,docker}   # (terraform/ does not exist yet — added back when it lands)` for
       forbidden literals (`vikash-saas-project`, `asia-south1`, `datiq.app`, resource names, emails, keys) —
       hits are allowed **only** in `env/*.example`, docs and test fixtures. Wired into CI and the pre-push gate.
 - [ ] Loader fails fast listing every missing required variable; unset optional variables derive the

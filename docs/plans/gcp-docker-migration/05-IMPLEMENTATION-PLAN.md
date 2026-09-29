@@ -6,6 +6,10 @@
 - `db`/`auth`/`rest` use upstream images directly (`supabase/postgres:17.6.1.165`, `supabase/auth`, `postgrest/postgrest`) instead of custom Dockerfiles — better provenance, nothing to maintain.
 - `jobs` and `scheduler` reuse the **api image** with different commands/entrypoints — exactly how Cloud Run will reuse the one Artifact Registry image.
 - Added a `db-passwords`/schema-init one-shot (supabase/postgres role-password + `auth.users.role` quirks — see session handoff root causes).
+- **Terraform is NOT implemented** — the plan's §0 `terraform/` tree was deferred; GCP resources are created by `bootstrap.sh` + `deploy-*.sh` (gcloud CLI), which honor the same `.env` contract. Doc 06's Terraform sections are marked NOT IMPLEMENTED. `TFSTATE_BUCKET` remains in the env files as a reserved name for the future tree.
+- `event-adapter.mjs` / `response-adapter.mjs` / `routes.manifest.json` (plan §0) were consolidated into a single `deployment/adapter/server.mjs` (d14dff1d).
+- `compose.shared-db.yaml` (plan §0) was replaced by the `DATA_MODE=shared-db` switch inside `compose.yaml`/`compose.local.yaml` (doc 06 env contract).
+- **Post-review remediation (2026-09-29)**: the deployment tree passed a full code review (5 passes + confidence scoring); fixes include the DB-restore silent-data-loss bug (FK-safe restore, staging re-restored complete), the CI workflow that could never run, smoke SIGPIPE false negative, `promote-prod.sh` digest promotion, `down.sh -v`, shared-db smoke, jobs-mode fail-closed token gate, and fully documented env files. Details in `08-STAGING-DEPLOY-RUNBOOK.md` §7.
 - Phase 0 checklist status: all boxes verified except the optional contract-test-runner profile (handler contract tests already cover the 75 functions; adapter is validated live by stack-smoke) and the full `local-db` qualification (deferred per doc 07).
 
 **Date:** 2026-09-28 · **Branch:** `docker-desktop-build` · **Status:** draft — **do not implement until owner confirms**

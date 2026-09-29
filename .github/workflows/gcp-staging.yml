@@ -1,11 +1,20 @@
 # .github/workflows/gcp-staging.yml — GCP staging deploy CI (doc 05 §3a).
 # Runs the SAME operator scripts against the SAME .env contract; GitHub
-# Environment "gcp-staging" mirrors the .env.staging variable names (doc 06 §5).
-# Requires repo Environment secrets/variables: GCP_PROJECT_ID, GCP_REGION,
+# Environment "gcp-staging" holds ONLY secrets (doc 06 golden rule 1: every
+# non-secret value comes from deployment/env/.env.staging.example, which the
+# grep step appends verbatim — change the deployment by editing the env files,
+# never this workflow).
+#
+# Required repo Environment secrets: GCP_PROJECT_ID, GCP_REGION,
 # DATIQ_PROJECT_CODE, GCP_BILLING_ACCOUNT_ID, SUPABASE_URL, SUPABASE_ANON_KEY,
-# SUPABASE_SERVICE_KEY, JOBS_TOKEN, DB_APP_PASSWORD, GCP_SA_KEY (deploy SA JSON),
-# VITE_RAZORPAY_KEY_ID, and the non-secret naming defaults (or rely on the
-# shipped defaults from deployment/env/.env.staging.example).
+# SUPABASE_SERVICE_KEY, JOBS_TOKEN, DB_APP_PASSWORD, VITE_RAZORPAY_KEY_ID,
+# GCP_SA_KEY (deploy SA JSON), FHS_SITE_ID (optional var — else the example
+# default is used).
+#
+# NOTE: the push trigger skips the Cloud SQL step by default (SKIP_DB=1): the
+# runner has no Supabase CLI login and the rehearsal dumps are gitignored. Run
+# the DB migration via workflow_dispatch (skip_db=false) from a machine that
+# has `supabase login`, or with SOURCE_DB_URL set as a secret.
 name: gcp-staging
 
 on:
@@ -54,45 +63,49 @@ jobs:
       - name: Install CLIs
         run: npm i -g firebase-tools
 
-      - name: Write the deploy env file (mirrors the operator contract)
+      - name: Parameterisation gate (doc 06 §9 — no literals outside env/*.example)
+        run: bash deployment/scripts/check-parameterisation.sh
+
+      - name: Write the deploy env file (secrets + the shipped env contract)
         run: |
           mkdir -p deployment/env
-          cat > deployment/env/.env.staging <<ENV
+          # Quoted delimiter: GitHub substitutes ${{ secrets.* }} BEFORE the
+          # shell runs, so quoting is safe — and any $ or backtick inside a
+          # secret value is written verbatim instead of being expanded.
+          cat > deployment/env/.env.staging <<'ENV'
           GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
           GCP_REGION=${{ secrets.GCP_REGION }}
           DATIQ_PROJECT_CODE=${{ secrets.DATIQ_PROJECT_CODE }}
           DATIQ_ENV=staging
-          DATIQ_ENV_SUFFIX=-stg
-          DATIQ_OWNER_LABEL=vikash
           GCP_BILLING_ACCOUNT_ID=${{ secrets.GCP_BILLING_ACCOUNT_ID }}
-          APP_BASE_URL=https://${{ vars.FHS_SITE_ID }}.web.app
-          DATA_MODE=hosted-supabase
           SUPABASE_URL=${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
           JOBS_TOKEN=${{ secrets.JOBS_TOKEN }}
-          DB_NAME=datiq
-          DB_APP_USER=datiq_app
           DB_APP_PASSWORD=${{ secrets.DB_APP_PASSWORD }}
-          CLOUD_SQL_TIER=db-custom-1-3840
           VITE_RAZORPAY_KEY_ID=${{ secrets.VITE_RAZORPAY_KEY_ID }}
-          APP_CONTEXT=branch-deploy
-          GIT_BRANCH=staging
           IMG_TAG=${{ github.sha }}
           ENV
-          # Resource names: the shipped defaults from the .example are the contract.
-          grep -E '^(CLOUD_RUN_|AR_REPO|SQL_INSTANCE|SA_|FHS_SITE_ID|FB_WEB_APP_DISPLAY|TFSTATE_BUCKET|ARTIFACTS_BUCKET)=' \
+          # Optional GitHub Environment override, else the shipped default below.
+          if [ -n "${{ vars.FHS_SITE_ID }}" ]; then
+            echo "FHS_SITE_ID=${{ vars.FHS_SITE_ID }}" >> deployment/env/.env.staging
+          fi
+          APP_BASE_URL="https://$(grep -E '^FHS_SITE_ID=' deployment/env/.env.staging | tail -1 | cut -d= -f2- || true).web.app"
+          echo "APP_BASE_URL=${APP_BASE_URL}" >> deployment/env/.env.staging
+          # Non-secret contract values from the example (LAST — later lines win,
+          # so an accidental duplicate above cannot override the contract).
+          grep -E '^(DATIQ_ENV_SUFFIX|DATIQ_OWNER_LABEL|CLOUD_RUN_|AR_REPO|SQL_INSTANCE|SA_|FHS_SITE_ID|FB_WEB_APP_DISPLAY|ARTIFACTS_BUCKET|DATA_MODE|SOURCE_PROJECT_REF|AUTH_IMAGE|REST_IMAGE|APP_CONTEXT|GIT_BRANCH|OPS_JOBS_DISABLED|ENGAGEMENT_ENABLED|DAILY_HOUR_UTC|SITE_NAME|SCRAPE_PROVIDER_ORDER|VITE_AI_MODEL|VITE_WEBHOOK_URL|N8N_PUBLIC_WEBHOOK_URL|API_BASE_URL|SHADOW_BASE_URL|PW_BASE_URL|SMOKE_TARGET|GA_MEASUREMENT_ID|POSTHOG_HOST|CONSENT_POLICY_VERSION|DB_NAME|DB_APP_USER|CLOUD_SQL_TIER|CLOUD_SQL_EDITION|CLOUD_SQL_HA|CLOUD_SQL_BACKUP_PITR|CLOUD_SQL_CONNECTIVITY|CLOUD_SQL_PROXY_PORT|PURGE_ENABLED|CLOUD_SQL_BACKUP_START)=' \
             deployment/env/.env.staging.example >> deployment/env/.env.staging
 
       - name: Deploy everything (skips per inputs)
         env:
-          SKIP_DB: ${{ inputs.skip_db && '1' || '' }}
+          # workflow_dispatch: tick the box to skip; push trigger: always skip
+          # (no Supabase CLI login and no rehearsal dumps on a fresh runner).
+          SKIP_DB: ${{ (inputs.skip_db == true || github.event_name == 'push') && '1' || '' }}
           SKIP_SCHEDULER: ${{ inputs.skip_scheduler && '1' || '' }}
           SKIP_BUILD: ""
-          RUNTIME_ENV_FILE: ""
+          RUNTIME_ENV_FILE: deployment/env/.env.staging
         run: |
-          # Operator env file is unavailable in CI; secrets come from the env file
-          # above (RUNTIME_ENV_FILE points at it via bootstrap-secrets.sh fallback).
           chmod +x deployment/scripts/gcp/*.sh
           ./deployment/scripts/gcp/deploy-staging.sh staging
 

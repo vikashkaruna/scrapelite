@@ -97,13 +97,16 @@ for svc in $SERVICES; do
       ;;
     jobs)
       echo "→ Cloud Run ${CLOUD_RUN_JOBS} (jobs — Scheduler OIDC only)"
+      # $JOBS_SECRETS deliberately UNQUOTED (like the api branch): secret_flags()
+      # returns "" on a fresh project, and a quoted expansion would hand gcloud
+      # a literal empty positional argument.
       gcloud run deploy "$CLOUD_RUN_JOBS" "${GCP_FLAGS[@]}" \
         --image="$IMG_API" --port=8080 --no-allow-unauthenticated \
         --ingress=all --min-instances=0 --max-instances=2 --concurrency=80 \
         --memory=1Gi --cpu=1 --timeout=900 \
         --command=node --args=adapter/server.mjs --args=jobs \
         --service-account="$SA_JOBS_EMAIL" \
-        --env-vars-file="$ENV_VARS_JSON" "$JOBS_SECRETS" --quiet
+        --env-vars-file="$ENV_VARS_JSON" $JOBS_SECRETS --quiet
       grant_run_invoker "$CLOUD_RUN_JOBS" "serviceAccount:${SA_SCHEDULER_EMAIL}" "serviceAccount:${SA_DEPLOY_EMAIL}"
       ;;
     admin)

@@ -36,11 +36,26 @@ echo "── 3/5 REPOINT auth + rest at production Cloud SQL (same JWT secret �
 echo "   existing sessions stay valid; smoke auth immediately)"
 "$HERE/deploy-run.sh" "$ENV_NAME" auth rest
 
-echo "── 4/5 REPOINT api/jobs env to the self-hosted trio (Secret Manager update"
-echo "   + revision deploy)"
-gcloud secrets versions add "$(sm_name SUPABASE_URL)" \
-  --project="$GCP_PROJECT_ID" --data-file=- --quiet >/dev/null <<< "${APP_BASE_URL}"
+echo "── 4/5 REPOINT api/jobs env to the self-hosted trio. api/jobs read"
+echo "   SUPABASE_URL as a plain env var from the env file (deploy-run.sh) —"
+echo "   NOT from a secret — so the repoint is: DATA_MODE=cloud-sql and"
+echo "   SUPABASE_URL=<app base> persisted into .env.prod, then redeploy api/jobs"
+echo "   (their Supabase calls now flow through the /rest/v1 Hosting rewrites)"
+echo "   and Hosting (gen-firebase-config emits /auth/v1+/rest/v1 rewrites only"
+echo "   in cloud-sql mode)."
+update_env() { # update_env KEY VALUE — replace/add a line in deployment/env/.env.<env>
+  local k="$1" v="$2" tmp touched=0 line
+  tmp="$(mktemp)"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "${k}="*) printf '%s=%s\n' "$k" "$v"; touched=1;; *) printf '%s\n' "$line";; esac
+  done < "$DEPLOY_DIR/env/.env.$ENV_NAME" > "$tmp"
+  [ "$touched" = "1" ] || printf '%s=%s\n' "$k" "$v" >> "$tmp"
+  mv "$tmp" "$DEPLOY_DIR/env/.env.$ENV_NAME"
+}
+update_env DATA_MODE cloud-sql
+update_env SUPABASE_URL "$APP_BASE_URL"
 "$HERE/deploy-run.sh" "$ENV_NAME" api jobs
+"$HERE/deploy-hosting.sh" "$ENV_NAME"
 
 echo "── 5/5 POST-FLIP SMOKE (payments test event + n8n round-trip are MANUAL —"
 echo "   see docs/plans/gcp-docker-migration/09-CUTOVER-RUNBOOK.md)"

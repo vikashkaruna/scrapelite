@@ -50,7 +50,7 @@ for literal in "${FORBIDDEN[@]}"; do
       grep -nF -- "$literal" "$f" | head -3 | sed 's/^/    /'
       hits=$((hits+1))
     fi
-  done < <(find "${SCAN_DIRS[@]}" -type f \( -name '*.sh' -o -name '*.mjs' -o -name '*.yaml' -o -name '*.yml' -o -name 'Dockerfile*' -o -name '*.conf' -o -name 'manifest*' -o -name 'firebase*' \) -print0 2>/dev/null)
+  done < <(find "${SCAN_DIRS[@]}" -type f \( -name '*.sh' -o -name '*.mjs' -o -name '*.yaml' -o -name '*.yml' -o -name 'Dockerfile*' -o -name '*.Dockerfile' -o -name '*.conf' -o -name 'manifest*' -o -name '*.manifest' -o -name 'firebase*' \) -print0 2>/dev/null)
 done
 
 # Root-level deployable files too (Cloud Build triggers from repo root).

@@ -49,13 +49,32 @@ if [ "${CLI_MODE}" = "1" ]; then
   docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q \
     < "$HERE/generated/staging-full.sql" 2>&1 | grep -iE "error" | head -5 || true
 
-  echo "→ restoring PUBLIC data only (auth/storage rows skipped — schema drift;"
-  echo "   staging users are OAuth-only, signon locally is fresh signup)"
-  # The extracted COPY blocks lose the dump's header SETs — re-add the
-  # superuser-only FK bypass or rows referencing auth.users fail to load.
-  { echo "SET session_replication_role = replica;"
-    awk '/^COPY "public"\./{p=1} p{print} p && /^\\\.$/{p=0}' "$HERE/generated/staging-data.sql"
-  } > "$HERE/generated/staging-public-data.sql"
+echo "→ restoring PUBLIC data only (auth/storage rows skipped — schema drift;"
+echo "   staging users are OAuth-only, signon locally is fresh signup)"
+# The extracted COPY blocks lose the dump's header SETs — re-add the
+# superuser-only FK bypass or rows referencing auth.users fail to load.
+# MIGRATE_EXCLUDE_TABLES: comma-separated public tables to skip entirely
+# (e.g. huge audit tables for a faster local rehearsal) — each excluded COPY
+# block AND its terminator are dropped from the stream.
+AWK_PROG="$HERE/generated/data-filter.awk"
+{
+  echo 'BEGIN { skip = 0 }'
+  echo '/^COPY "public"\./ { p = 1 }'
+  if [ -n "${MIGRATE_EXCLUDE_TABLES:-}" ]; then
+    IFS=',' read -ra EXCL_TABLES <<< "$MIGRATE_EXCLUDE_TABLES"
+    for t in "${EXCL_TABLES[@]}"; do
+      t="$(printf '%s' "$t" | tr -d ' ')"
+      [ -n "$t" ] || continue
+      echo "/^COPY \"public\"\\.\"${t}\"\$/ { skip = 1 }"
+    done
+  fi
+  echo 'p && !skip { print }'
+  echo 'skip && /^\\.$/ { skip = 0; p = 0; next }'
+  echo 'p && /^\\.$/ { p = 0 }'
+} > "$AWK_PROG"
+{ echo "SET session_replication_role = replica;"
+  awk -f "$AWK_PROG" "$HERE/generated/staging-data.sql"
+} > "$HERE/generated/staging-public-data.sql"
   docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q \
     < "$HERE/generated/staging-public-data.sql" 2>&1 | grep -iE "error" | head -5 || true
 else

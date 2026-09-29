@@ -43,8 +43,14 @@ check        "web: SPA fallback for client routes"    200          "$BASE/this-r
 check        "admin: /admin/ serves shell"            200          "$BASE/admin/"
 check        "trackers: runtime-config.js"            200          "$BASE/runtime-config.js"
 check        "trackers: analytics.js"                 200          "$BASE/analytics.js"
-check        "auth: GoTrue health via gateway"        200          "$BASE/auth/v1/health"
-check        "rest: PostgREST OpenAPI via gateway"    200          "$BASE/rest/v1/"
+if [ "${DATA_MODE:-local-db}" = "local-db" ]; then
+  check        "auth: GoTrue health via gateway"        200          "$BASE/auth/v1/health"
+  check        "rest: PostgREST OpenAPI via gateway"    200          "$BASE/rest/v1/"
+else
+  # shared-db: the browser talks to the hosted dev Supabase directly
+  # (runtime-config.js) — the gateway intentionally has no auth/rest upstreams.
+  echo "  ⊘ shared-db mode: gateway auth/rest checks not applicable"
+fi
 check        "api: templates function"                200          "$BASE/api/templates"
 check        "api: v1 router rejects unauthenticated" 401          "$BASE/api/v1/extractions"
 check        "api: admin-auth rejects wrong PIN"      401          -X POST "$BASE/api/admin-auth" -H 'content-type: application/json' -d '{"pin":"definitely-wrong"}'
@@ -54,12 +60,16 @@ body_contains "web: sitemap.xml"                      "$BASE/sitemap.xml"       
 body_contains "web: robots.txt"                       "$BASE/robots.txt"                        "User-agent"
 
 echo "── smoke: jobs service (internal) ───────────────────────────"
-JOBS_CODE=$(docker compose --env-file "$HERE/env/.env.${DATIQ_ENV}" \
-  -f "$HERE/compose/compose.yaml" -f "$HERE/compose/compose.local.yaml" \
-  exec -T -e JT="$JOBS_TOKEN" scheduler node -e \
-  "fetch('http://jobs:8080/run/health-monitor',{method:'POST',headers:{'x-datiq-cron-token':process.env.JT},body:'{}'}).then(r=>{console.log(r.status);process.exit(0)}).catch(e=>{console.log('ERR');process.exit(0)})" 2>/dev/null | tail -1)
-if [ "$JOBS_CODE" = "200" ]; then echo "  ✓ jobs: token-authenticated run works ($JOBS_CODE)"; PASS=$((PASS+1));
-else echo "  ✗ jobs: token run got '$JOBS_CODE'"; FAIL=$((FAIL+1)); fi
+if [ "${DATA_MODE:-local-db}" = "local-db" ]; then
+  JOBS_CODE=$(docker compose --env-file "$HERE/env/.env.${DATIQ_ENV}" \
+    -f "$HERE/compose/compose.yaml" -f "$HERE/compose/compose.local.yaml" \
+    exec -T -e JT="$JOBS_TOKEN" scheduler node -e \
+    "fetch('http://jobs:8080/run/health-monitor',{method:'POST',headers:{'x-datiq-cron-token':process.env.JT},body:'{}'}).then(r=>{console.log(r.status);process.exit(0)}).catch(e=>{console.log('ERR');process.exit(0)})" 2>/dev/null | tail -1)
+  if [ "$JOBS_CODE" = "200" ]; then echo "  ✓ jobs: token-authenticated run works ($JOBS_CODE)"; PASS=$((PASS+1));
+  else echo "  ✗ jobs: token run got '$JOBS_CODE'"; FAIL=$((FAIL+1)); fi
+else
+  echo "  ⊘ shared-db mode: no local scheduler container — jobs check not applicable"
+fi
 
 echo "─────────────────────────────────────────────────────────────"
 echo "smoke: $PASS passed, $FAIL failed"

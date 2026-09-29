@@ -20,8 +20,13 @@ code() { curl -s -o /dev/null -m 30 -w '%{http_code}' "$1"; }
 body() { curl -s -m 30 "$1"; }
 
 echo "→ smoke ${BASE}"
+# Body goes to a FILE: piping the ~80KB single-line prerendered home into
+# `grep -q` makes grep exit early and the writer die with SIGPIPE (141) —
+# the same false negative stack-smoke.sh documents and avoids.
+SMOKE_HOME="$(mktemp)"; trap 'rm -f "$SMOKE_HOME"' EXIT
+body "$BASE/" > "$SMOKE_HOME"
 check "home serves the PRERENDERED document (forced rewrite)" \
-  "yes" "$(body "$BASE/" | grep -qi '<h1' && echo yes || echo no)"
+  "yes" "$(grep -qi '<h1' "$SMOKE_HOME" && echo yes || echo no)"
 check "/pricing (prerendered react page)" "200" "$(code "$BASE/pricing")"
 check "/vs/firecrawl (static-owned)" "200" "$(code "$BASE/vs/firecrawl")"
 check "/faq (static-owned)" "200" "$(code "$BASE/faq")"
@@ -50,8 +55,9 @@ if [ -n "$ADMIN_TOKEN" ]; then
       -H 'content-type: application/json' -d '{}' \
       "$BASE/api/workflow-orchestrator/ping" | head -c 64 | tr -d '\n' | grep -o 'pong' | head -1 || echo none)"
 else
-  check "workflow-orchestrator ping (POST + Bearer admin token)" \
-    "skipped-no-token" "skipped-no-token"
+  # NOT counted as a pass: the caller's identity lacks secretmanager.secretAccessor
+  # (bootstrap.sh grants it to the deploy SA; humans need roles/secretmanager.secretAccessor).
+  echo "  ⚠ SKIP workflow-orchestrator ping (no secret access for this identity) — not counted"
 fi
 
 echo

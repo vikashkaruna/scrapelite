@@ -42,7 +42,15 @@ for (const block of toml.split(/\[\[redirects\]\]/).slice(1)) {
   const status = Number(pick("status") || "301");
   if (!from || !to) continue;
   if (status !== 301) continue; // 200-rewrites are handled by upstreams/gateway routing
-  if (/[:*]/.test(from)) continue; // splat rules are not exact-location material
+  if (/[:*]/.test(from)) {
+    // Splat rules with a splat TARGET are upstream routing (API functions),
+    // not edge redirects. Pure page splat redirects (e.g. /compare/* →
+    // /vs/browse-ai) become nginx PREFIX locations so the local edge matches
+    // Netlify/Firebase instead of dropping into the SPA fallback.
+    if (/[:*]/.test(to)) continue;
+    redirects.push({ from: from.replace(/\/\*$/, "/"), to, prefix: true });
+    continue;
+  }
   redirects.push({ from, to });
 }
 
@@ -104,7 +112,9 @@ ${adminNoindex}    include /etc/nginx/conf.d/baseline.inc;
   location /auth/ { set $up http://\${AUTH_UPSTREAM}; rewrite ^/auth/v1(/.*)$ $1 break; rewrite ^/auth/v1$ / break; proxy_pass $up; include /etc/nginx/conf.d/baseline.inc; }
   location /rest/ { set $up http://\${REST_UPSTREAM}; rewrite ^/rest/v1(/.*)$ $1 break; rewrite ^/rest/v1$ / break; proxy_pass $up; include /etc/nginx/conf.d/baseline.inc; }
 
-${redirects.map((r) => `  location = ${r.from} { return 301 ${r.to}; }`).join("\n")}
+${redirects.map((r) => r.prefix
+  ? `  location ^~ ${r.from} { return 301 ${r.to}; }`
+  : `  location = ${r.from} { return 301 ${r.to}; }`).join("\n")}
 
   # everything else: the web surface (static + prerendered + SPA fallback)
   location / { set $up http://\${WEB_UPSTREAM}; proxy_pass $up; include /etc/nginx/conf.d/baseline.inc; }

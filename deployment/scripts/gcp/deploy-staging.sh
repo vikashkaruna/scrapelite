@@ -33,4 +33,7 @@ if [ -z "${SKIP_HOSTING:-}" ]; then
 fi
 
 step "smoke"
-"$HERE/smoke.sh" "$ENV_NAME" || true
+# NOT `|| true`: a failed parity smoke must fail the deploy (CI re-runs it
+# unguarded, but the operator path is the primary gate). Genuinely
+# environment-specific smoke degradations print their own SKIP line.
+"$HERE/smoke.sh" "$ENV_NAME"

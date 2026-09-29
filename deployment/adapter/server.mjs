@@ -147,7 +147,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Jobs mode: every dispatch is token-gated (OIDC stands in for this on GCP).
-    if (MODE === "jobs" && JOBS_TOKEN) {
+    // Fail-closed: a jobs service without JOBS_TOKEN refuses to dispatch rather
+    // than expose the 13 scheduled functions unauthenticated.
+    if (MODE === "jobs" && !JOBS_TOKEN) {
+      res.statusCode = 503;
+      res.setHeader("content-type", "application/json");
+      return res.end(JSON.stringify({ error: "jobs mode requires JOBS_TOKEN — refusing dispatch" }));
+    }
+    if (MODE === "jobs") {
       const got = req.headers["x-datiq-cron-token"] || String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
       if (got !== JOBS_TOKEN) {
         res.statusCode = 401;

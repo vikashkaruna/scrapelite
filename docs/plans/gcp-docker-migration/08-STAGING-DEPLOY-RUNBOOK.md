@@ -22,7 +22,7 @@ not executed** until you finish testing local + staging.
 | GoTrue (proof) | Cloud Run `datiq-vsp-run-auth-stg` | IAM-gated; wired via `/auth/v1/**` rewrite only in cloud-sql mode |
 | PostgREST (proof) | Cloud Run `datiq-vsp-run-rest-stg` | IAM-gated; same phase rule |
 | Database | Cloud SQL `datiq-vsp-sql-datiq-stg` | POSTGRES_16, ENTERPRISE `db-custom-1-3840` (1 vCPU / 3.75 GB), SSD, asia-south1 |
-| DB contents | migrated from dev Supabase `aubwooslkkrprdxuiyvj` | 127 tables, 127 RLS-enabled, 29 extractions, extensions in `extensions` schema, GoTrue migrated 23 auth tables from zero |
+| DB contents | migrated from dev Supabase `aubwooslkkrprdxuiyvj` | 127 tables, 127 RLS-enabled, 29 extractions, extensions in `extensions` schema, GoTrue migrated 23 auth tables from zero. **2026-09-29 re-restore (FK-safe path): audit tables now fully populated** (16 audits / 8 subjects / 25 events / 114 recommendations — the first restore silently dropped those rows; see §7). 37 FK constraints referencing `auth.users` stay DROPPED on the rehearsal path by design (auth rows absent in the public-only dump) and are reported, not silent |
 | Scheduler | 13 jobs `datiq-vsp-sch-*-stg` | 1:1 with `netlify.toml` schedules; OIDC SA + `x-datiq-cron-token`; **App Engine app in asia-south1** |
 | Secrets | 17 `datiq-vsp-sm-*-stg` | incl. runtime keys, `jwt-secret` (STAGING-ONLY, see §3.5), `pgrst-db-uri`, `gotrue-db-database-url` |
 | Images | AR `datiq-vsp-ar-images-stg` | api/admin/trackers built by Cloud Build (`build-images.yaml`, tag = git sha `ad655d1b`); GoTrue/PostgREST mirrored by `stage-third-party.yaml` |
@@ -37,8 +37,9 @@ crons** during the parallel run.
 **Deploy verification gates, all green:**
 - `deployment/scripts/gcp/smoke.sh staging` → **13/13** (prerendered home, page
   parity, 301s, SPA fallback, security headers, API auth gate + tokened ping)
-- `node deployment/scripts/check-parameterisation.sh` → green (zero hardcoded
-  project/region/key literals)
+- `bash deployment/scripts/check-parameterisation.sh` → green (zero hardcoded
+  project/region/key literals) — note: it is a BASH script; the runbook's
+  earlier `node …` invocation was wrong and would throw a SyntaxError
 - `npx vitest run deployment/tests/firebase-config.test.mjs` → 11/11
 - full `npm run test:all` suite → green (see session handoff for the run log)
 
@@ -72,10 +73,11 @@ Env/secret changes: edit `deployment/env/.env.staging` (plain vars) — secrets 
 through `deployment/gcp/secrets.manifest` + `bootstrap-secrets.sh`. Then redeploy
 the affected services (`--env-vars-file`/`--set-secrets` are applied at deploy).
 
-DB re-migration (idempotent-ish; it re-runs dump/restore): see §5 of
-`deployment/scripts/gcp/migrate-db.sh` header comments. It does NOT drop data on
-re-run of the restore (FK-tolerant), but treat it as a rehearsal tool, not a sync
-mechanism.
+DB re-migration: `migrate-db.sh` is now a **repeatable rehearsal**: on re-run it
+parks FK constraints, TRUNCATES public tables and reloads the dump with
+`ON_ERROR_STOP=1` (no silently swallowed row failures). Treat it as a rehearsal
+tool, not a sync mechanism — re-running it discards Cloud SQL data created after
+the last dump.
 
 ---
 
@@ -198,3 +200,33 @@ substitutions rather than digest promotion.
 | `/pricing` returns 301 to `/pricing/` | old firebase.json cached — redeploy hosting; `trailingSlash:false` is in the generator |
 | Scheduler jobs error | App Engine app must exist in the same region as `deploy-scheduler.sh` ran; check OIDC SA invoker on the jobs service |
 | GoTrue 500 on boot | check `datiq-vsp-sm-gotrue-db-database-url-stg` (unix-socket form) and that `--add-cloudsql-instances` is on the service |
+
+---
+
+## 7. Code-review remediation (2026-09-29) — what changed after the initial green
+
+A full review of the deployment tree (5 review passes + confidence scoring)
+landed these fixes, all committed on `docker-desktop-build`:
+
+- **Silent data loss in the DB restore (worst finding).** The first staging
+  restore ran with `ON_ERROR_STOP=0 … || true` and swallowed 29 errors — audit
+  rows never loaded and the green smoke never knew. `migrate-db.sh` now parks FK
+  constraints, loads with `ON_ERROR_STOP=1`, re-adds FKs, and fails loudly on the
+  production (SOURCE_DB_URL) path. Staging was re-restored: data complete.
+- **CI workflow could never run.** `RUNTIME_ENV_FILE: ""` fell back to a
+  gitignored operator file and aborted at the secrets step; the push trigger
+  always failed at the DB step (no Supabase CLI on runners). Both fixed; the
+  parameterisation gate is now wired into CI.
+- **Smoke SIGPIPE false negative** (piping the 80KB prerendered home into
+  `grep -q`) — fixed with a temp-file grep, same as the local stack-smoke.
+- **`promote-prod.sh` digest promotion** referenced a `:staging` tag nothing
+  pushes — now uses `STAGING_*` coordinates from the prod env file.
+- **Local fixes**: `down.sh -v` actually works now; shared-db mode no longer
+  fails the smoke (auth/rest checks skipped in that mode); `/compare/*` 301
+  parity restored in the local gateway; `MIGRATE_EXCLUDE_TABLES` is implemented;
+  jobs-mode token gate is fail-closed; `.env.<env>.example` files fully
+  documented (purpose · obtain · DO/DON'T) and inline comments removed (they
+  poisoned parsed values).
+- **New doc**: `09-CUTOVER-RUNBOOK.md` (the runbook `cutover-db.sh` references).
+- **New skill**: `.agents/skills/datiq-deployment-standards/SKILL.md` encodes
+  the env-file/naming/parameterisation conventions for future sessions.

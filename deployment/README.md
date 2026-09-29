@@ -19,12 +19,16 @@ values). **The local stack mirrors the staging/GCP topology 1:1:**
 ```bash
 cp deployment/env/.env.local.example deployment/env/.env.local   # fill values
 deployment/scripts/up.sh          # build + start + migrate + smoke
-deployment/scripts/down.sh        # stop (add -v to wipe the local database)
+deployment/scripts/down.sh -v     # stop + wipe the local database (any arg order works)
 ```
+
+Every `.env.<env>.example` file documents each variable with its purpose,
+how to obtain the value, and DO/DON'T notes (doc 06). Comments belong on their
+own lines above values — inline trailing comments are NOT parsed away.
 
 Data modes (`.env.local` `DATA_MODE=`):
 - **local-db** — full supabase-lite in Docker (db + GoTrue + PostgREST + Mailpit). Rehearse the migration here.
-- **shared-db** — API + auth point at the hosted **dev** Supabase project (no local DB). Signon works instantly with existing dev accounts.
+- **shared-db** — API + auth point at the hosted **dev** Supabase project (no local DB). Signon works instantly with existing dev accounts; the smoke skips the gateway auth/rest checks in this mode (they only exist in local-db).
 
 ## DB migration rehearsal (staging Supabase → local)
 

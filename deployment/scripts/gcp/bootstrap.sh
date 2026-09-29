@@ -45,8 +45,10 @@ echo "→ Runtime/deploy role bindings"
 bind() { gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" --member="$1" --role="$2" --quiet >/dev/null; }
 for sa_email in "$SA_API_EMAIL" "$SA_JOBS_EMAIL"; do
   bind "serviceAccount:${sa_email}" roles/secretmanager.secretAccessor
-  bind "serviceAccount:${sa_email}" roles/cloudsql.client
 done
+# The deploy identity reads ADMIN_TOKEN_SECRET during smoke (authed-pong check)
+# — without this the check silently degrades to a skip for CI.
+bind "serviceAccount:${SA_DEPLOY_EMAIL}" roles/secretmanager.secretAccessor
 bind "serviceAccount:${SA_SCHEDULER_EMAIL}" roles/cloudscheduler.jobRunner
 bind "serviceAccount:${SA_SCHEDULER_EMAIL}" roles/iam.serviceAccountTokenCreator
 bind "serviceAccount:${SA_DEPLOY_EMAIL}" roles/run.admin

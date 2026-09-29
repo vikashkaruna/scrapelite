@@ -14,8 +14,10 @@ load_gcp_env "$ENV_NAME"
 
 have firebase || { echo "✗ firebase CLI not installed — npm i -g firebase-tools"; exit 1; }
 
-echo "→ build dist/ (skipped when present; SKIP_BUILD=1 forces reuse)"
-if [ ! -f "$REPO_DIR/dist/index.html" ] || [ "${SKIP_BUILD:-0}" = "0" ]; then
+echo "→ build dist/ (SKIP_BUILD=1 reuses an existing dist/; otherwise always rebuilt)"
+if [ "${SKIP_BUILD:-0}" = "1" ]; then
+  [ -f "$REPO_DIR/dist/index.html" ] || { echo "✗ SKIP_BUILD=1 but dist/ is missing — run npm run build first"; exit 1; }
+else
   (cd "$REPO_DIR" && npm ci --no-audit --no-fund && npm run build)
 fi
 
@@ -28,7 +30,10 @@ cp "$REPO_DIR/dist/index.html" "$REPO_DIR/dist/__shell/index.html"
 if [ -f "$REPO_DIR/dist/home/index.html" ]; then
   cp "$REPO_DIR/dist/home/index.html" "$REPO_DIR/dist/index.html"
 else
-  echo "  ⚠ dist/home/index.html missing — '/' will serve the SPA shell"
+  echo "✗ dist/home/index.html missing — refusing to ship the SPA shell for '/'"
+  echo "   (Netlify parity: the forced / → /home/index.html rewrite never serves"
+  echo "   the shell; an empty home would break the prerendered-home smoke check)"
+  exit 1
 fi
 
 echo "→ render firebase.json + .firebaserc from netlify.toml + .env.$ENV_NAME"

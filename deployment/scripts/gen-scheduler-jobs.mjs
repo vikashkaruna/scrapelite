@@ -2,11 +2,13 @@
 // gen-scheduler-jobs.mjs — renders the Cloud Scheduler job set from the single
 // source of truth (netlify.toml [functions."name"] schedule blocks — the same
 // parser shape gen-routes-manifest.mjs uses). Output: scheduler.json consumed
-// by deploy-scheduler.sh. Names/schedules carry no literals (doc 06): the job
-// name is composed from SCH_NAME_PREFIX and the function name at deploy time.
+// by deploy-scheduler.sh. Names/schedules carry no literals (doc 06):
+// deploy-scheduler.sh composes each job id as
+// `datiq-${DATIQ_PROJECT_CODE}-sch-<fn>${DATIQ_ENV_SUFFIX}` from the env contract.
 //
-// Netlify @hourly → "0 * * * *"; @daily → "0 ${DAILY_HOUR_UTC} * * *" (the
-// local cron-sim staggers dailies the same way so they don't share one tick).
+// Netlify @hourly → "0 * * * *"; @daily → "0 ${DAILY_HOUR_UTC} * * *". All
+// dailies share one tick on GCP (no staggering knob here — 5 jobs at once is
+// fine); the LOCAL cron-sim staggers three of them (hours 3/4/5) by design.
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";

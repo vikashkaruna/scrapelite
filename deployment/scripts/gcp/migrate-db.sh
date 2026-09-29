@@ -33,12 +33,18 @@ mkdir -p "$GEN_DIR/bin" "$GEN_DIR/db"
 
 # ── 1. instance ───────────────────────────────────────────────────────────────
 if ! gcloud sql instances describe "$SQL_INSTANCE" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
-  echo "→ Cloud SQL ${SQL_INSTANCE} (Postgres 16, ${CLOUD_SQL_TIER}, ${GCP_REGION})"
+  echo "→ Cloud SQL ${SQL_INSTANCE} (Postgres 16, ${CLOUD_SQL_TIER}, ${GCP_REGION}, HA=${CLOUD_SQL_HA:-ZONAL})"
+  case "${CLOUD_SQL_CONNECTIVITY:-public}" in
+    private) echo "  ⚠ CLOUD_SQL_CONNECTIVITY=private is NOT automated — configure private IP +"
+             echo "    private services access BEFORE relying on it (proxy path below needs public IP or PSC)";;
+  esac
   gcloud sql instances create "$SQL_INSTANCE" \
     --project="$GCP_PROJECT_ID" --database-version=POSTGRES_16 \
     --edition="${CLOUD_SQL_EDITION:-ENTERPRISE}" \
     --tier="${CLOUD_SQL_TIER}" --region="$GCP_REGION" \
-    --storage-auto-increase --backup-start-time=09:00 \
+    --storage-auto-increase --backup-start-time="${CLOUD_SQL_BACKUP_START:-09:00}" \
+    --availability-type="${CLOUD_SQL_HA:-ZONAL}" \
+    ${CLOUD_SQL_BACKUP_PITR:+--enable-point-in-time-recovery} \
     --quiet >/dev/null
 else
   echo "→ Cloud SQL ${SQL_INSTANCE} exists"
@@ -72,7 +78,13 @@ resolve_proxy() {
     printf '%s' "$(command -v cloud-sql-proxy)"; return 0
   fi
   echo "→ downloading cloud-sql-proxy"
-  os="$(uname -s | tr A-Z a-z)"; arch="$(uname -m)"
+  os="$(uname -s | tr A-Z a-z)"
+  case "$(uname -m)" in
+    x86_64)          arch="amd64" ;;
+    aarch64|arm64)   arch="arm64" ;;
+    *)               arch="$(uname -m)" ;;
+  esac
+  # Release assets use go GOARCH names (linux.amd64), not `uname -m` output.
   curl -fsSL "https://storage.googleapis.com/cloud-sql-proxy/v2.14.2/cloud-sql-proxy.${os}.${arch}" -o "$PROXY_BIN" \
     && chmod +x "$PROXY_BIN" && printf '%s' "$PROXY_BIN"
 }
@@ -89,33 +101,42 @@ DATA_SQL="$GEN_DIR/db/${ENV_NAME}-data.sql"
 ROLES_SQL="$GEN_DIR/db/${ENV_NAME}-roles.sql"
 if [ -n "$SOURCE_DB_URL" ]; then
   echo "→ pg_dump (full, incl. auth schema) from SOURCE_DB_URL"
+  # NO --disable-triggers: it emits superuser-only SET session_replication_role
+  # which Cloud SQL rejects; the restore below parks FK constraints instead.
   pg_dump --schema-only --no-owner --no-privileges "$SOURCE_DB_URL" > "$SCHEMA_SQL"
-  pg_dump --data-only --no-owner --no-privileges --disable-triggers "$SOURCE_DB_URL" > "$DATA_SQL"
+  pg_dump --data-only --no-owner --no-privileges "$SOURCE_DB_URL" > "$DATA_SQL"
   : > "$ROLES_SQL"   # full dump carries roles/GRANTs inline
 else
   echo "→ supabase CLI dump (management API — no DB password needed)"
-  have supabase || { echo "✗ supabase CLI missing"; exit 1; }
   REF="${SOURCE_PROJECT_REF:-}"
   [ -n "$REF" ] || { echo "✗ set SOURCE_PROJECT_REF in .env.$ENV_NAME (supabase project ref)"; exit 1; }
-  # Roles first (CREATE ROLE + GRANT scaffolding), then schema, then data.
-  supabase db dump --project-ref "$REF" --role-only > "$ROLES_SQL" 2>"$GEN_DIR/db/roles.err" || \
-    echo "  ⚠ role dump failed ($(head -1 "$GEN_DIR/db/roles.err")) — roles created manually below"
-  if ! supabase db dump --project-ref "$REF" --file "$SCHEMA_SQL" 2>"$GEN_DIR/db/schema.err"; then
-    # No stored CLI login right now? The Phase 0 rehearsal's dumps of the same
-    # project are still valid as the migration source (same SOURCE_PROJECT_REF).
+  DUMP_OK=0
+  if have supabase; then
+    # Roles first (CREATE ROLE + GRANT scaffolding), then schema, then data.
+    supabase db dump --project-ref "$REF" --role-only > "$ROLES_SQL" 2>"$GEN_DIR/db/roles.err" || \
+      echo "  ⚠ role dump failed ($(head -1 "$GEN_DIR/db/roles.err")) — roles created manually below"
+    if supabase db dump --project-ref "$REF" --file "$SCHEMA_SQL" 2>"$GEN_DIR/db/schema.err"; then
+      if supabase db dump --project-ref "$REF" --data-only --use-copy --file "$DATA_SQL" 2>"$GEN_DIR/db/data.err"; then
+        DUMP_OK=1
+      else
+        echo "✗ data dump failed: $(head -3 "$GEN_DIR/db/data.err")"; exit 1
+      fi
+    fi
+  fi
+  if [ "$DUMP_OK" != "1" ]; then
+    # No stored CLI login? The Phase 0 rehearsal's dumps of the same project
+    # are still valid as the migration source (same SOURCE_PROJECT_REF).
     if [ -s "$GEN_DIR/staging-full.sql" ] && [ -s "$GEN_DIR/staging-public-data.sql" ]; then
-      echo "  ⚠ supabase CLI not logged in — reusing the Phase 0 dumps of the same project:"
+      echo "  ⚠ supabase CLI dump unavailable — reusing the Phase 0 dumps of the same project:"
       echo "      $(ls -lh "$GEN_DIR/staging-full.sql" | awk '{print $9, $5}')"
       SCHEMA_SQL="$GEN_DIR/staging-full.sql"
       DATA_SQL="$GEN_DIR/staging-public-data.sql"
+      [ -s "$ROLES_SQL" ] || { [ -s "$GEN_DIR/db/staging-roles.sql" ] && ROLES_SQL="$GEN_DIR/db/staging-roles.sql" || : > "$ROLES_SQL"; }
       : > "$GEN_DIR/db/schema.err"
     else
       echo "✗ schema dump failed and no rehearsal dumps exist: $(head -3 "$GEN_DIR/db/schema.err")"
       exit 1
     fi
-  else
-    supabase db dump --project-ref "$REF" --data-only --use-copy --file "$DATA_SQL" 2>"$GEN_DIR/db/data.err" || \
-      { echo "✗ data dump failed: $(head -3 "$GEN_DIR/db/data.err")"; exit 1; }
   fi
 fi
 echo "   sizes: roles $(wc -c < "$ROLES_SQL" | tr -d ' ')B, schema $(wc -c < "$SCHEMA_SQL" | tr -d ' ')B, data $(wc -c < "$DATA_SQL" | tr -d ' ')B"
@@ -137,8 +158,62 @@ psql_q "create schema if not exists extensions;
         create extension if not exists \"uuid-ossp\" with schema extensions;
         create extension if not exists pg_trgm;
         grant usage on schema extensions to anon, authenticated, service_role, ${DB_APP_USER};" || true
-echo "→ data"
-psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -q -f "$DATA_SQL" 2>"$GEN_DIR/db/data-restore.err" || true
+
+echo "→ data (FK constraints parked for the load, re-added after — Cloud SQL has"
+echo "   no superuser, so SET session_replication_role is not an option)"
+FK_DEFS="$GEN_DIR/db/${ENV_NAME}-fk-defs.sql"
+FK_DROPS="$GEN_DIR/db/${ENV_NAME}-fk-drops.sql"
+# 1. capture FK definitions, then drop them (table-owner privileges suffice).
+#    ALL non-system schemas: the SOURCE_DB_URL path carries auth-schema FKs too.
+FK_FILTER="n.nspname not in ('pg_catalog','information_schema') and n.nspname not like 'pg_%'"
+psql "$ADMIN_URL" -tAc "select format('ALTER TABLE %I.%I ADD CONSTRAINT %I %s;', n.nspname, c.relname, con.conname, pg_get_constraintdef(con.oid)) from pg_constraint con join pg_class c on c.oid = con.conrelid join pg_namespace n on n.oid = c.relnamespace where con.contype = 'f' and $FK_FILTER order by c.relname, con.conname;" > "$FK_DEFS"
+psql "$ADMIN_URL" -tAc "select format('ALTER TABLE %I.%I DROP CONSTRAINT %I;', n.nspname, c.relname, con.conname) from pg_constraint con join pg_class c on c.oid = con.conrelid join pg_namespace n on n.oid = c.relnamespace where con.contype = 'f' and $FK_FILTER order by c.relname, con.conname;" > "$FK_DROPS"
+if [ -s "$FK_DROPS" ]; then
+  psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -f "$FK_DROPS"
+  echo "   $(grep -c . "$FK_DROPS") FK constraints parked"
+fi
+# 2. defensive strip of superuser-only bypass lines (CLI dumps may add them)
+sed '/session_replication_role/d' "$DATA_SQL" > "${DATA_SQL}.nfk" && mv "${DATA_SQL}.nfk" "$DATA_SQL"
+# 2b. re-run detection: with existing rows the COPY stream would hit duplicate
+#     PKs — after FKs are parked a TRUNCATE is safe and makes the rehearsal
+#     repeatable (fresh instances skip this: no rows, nothing to truncate).
+EXISTING_ROWS=$(psql "$ADMIN_URL" -tAc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_stat_user_tables s on s.relid=c.oid where n.nspname='public' and c.relkind='r' and s.n_live_tup > 0 limit 1" 2>/dev/null || echo 0)
+if [ "${EXISTING_ROWS:-0}" != "0" ]; then
+  echo "→ re-run: truncating public tables (FKs parked) before the fresh COPY load"
+  psql "$ADMIN_URL" -tAc "select format('TRUNCATE TABLE %I.%I;', n.nspname, c.relname) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' order by c.relname;" > "$GEN_DIR/db/truncate.sql"
+  psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -f "$GEN_DIR/db/truncate.sql" || echo "  ⚠ truncate skipped (no rows after all)"
+fi
+# 3. restore data — ON_ERROR_STOP=1: a failing row FAILS the script instead of
+#    being swallowed into data-restore.err (the silent-data-loss bug).
+psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -f "$DATA_SQL" 2>"$GEN_DIR/db/data-restore.err"
+# 4. re-add FKs. Collect-all (ON_ERROR_STOP=0) so one failing constraint does
+#    not skip the rest; failures are counted afterwards. On the FULL path
+#    (SOURCE_DB_URL — the production-cutover recipe) any failure is FATAL. On
+#    the CLI rehearsal path auth-schema rows are absent by design, so the
+#    user_id → auth.users constraints legitimately cannot re-add: they are
+#    REPORTED (never silent) and left dropped for the rehearsal.
+if [ -s "$FK_DEFS" ]; then
+  echo "→ re-adding FK constraints"
+  psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -q -f "$FK_DEFS" 2>"$GEN_DIR/db/fk-restore.err" || true
+  fk_errors=$(grep -c 'ERROR' "$GEN_DIR/db/fk-restore.err" 2>/dev/null || echo 0)
+  fk_total=$(grep -c . "$FK_DEFS")
+  if [ "$fk_errors" != "0" ]; then
+    if [ -n "$SOURCE_DB_URL" ]; then
+      echo "✗ ${fk_errors} FK constraint(s) could not be re-added on the FULL cutover path —"
+      echo "   genuine referential violations; fix the source data before the cutover:"
+      grep 'ERROR' "$GEN_DIR/db/fk-restore.err" | head -10
+      exit 1
+    fi
+    echo "  ⚠ ${fk_errors}/${fk_total} FK constraints could NOT be re-added (CLI rehearsal:"
+    echo "    they reference auth.users, absent in the public-only dump). They stay"
+    echo "    DROPPED for this rehearsal — data rows themselves are intact. The"
+    echo "    production cutover (SOURCE_DB_URL path) restores the auth schema and"
+    echo "    re-adds every FK."
+    grep -oE 'constraint "[a-z_]+' "$GEN_DIR/db/fk-restore.err" | sort -u | head -20 | sed 's/^/      /'
+  else
+    echo "   ${fk_total} FK constraints restored"
+  fi
+fi
 
 echo "→ app role grants + passwords"
 SUPABASE_AUTH_PW="$(gen_token)"; AUTHENTICATOR_PW="$(gen_token)"
@@ -177,7 +252,7 @@ echo "→ verification"
 tables=$(psql "$ADMIN_URL" -tAc "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'")
 rls=$(psql "$ADMIN_URL" -tAc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relrowsecurity")
 ext_count=$(psql "$ADMIN_URL" -tAc "select count(*) from pg_extension where extname not in ('plpgsql')")
-for t in extractions schedules watchlists workflow_events; do
+for t in extractions schedules watchlists workflow_events audits audit_events; do
   c=$(psql "$ADMIN_URL" -tAc "select count(*) from public.${t}" 2>/dev/null || echo "n/a")
   echo "   ${t}: ${c}"
 done

@@ -13,15 +13,27 @@ ENV_NAME="${1:?usage: bootstrap-secrets.sh <staging|prod>}"
 load_gcp_env "$ENV_NAME"
 
 RUNTIME_ENV_FILE="${RUNTIME_ENV_FILE:-$REPO_DIR/scripts/env/$ENV_NAME.env}"
-[ -f "$RUNTIME_ENV_FILE" ] || { echo "✗ operator env file not found: $RUNTIME_ENV_FILE"; exit 1; }
+# The operator file (scripts/env/<env>.env, gitignored) is the primary secret
+# source; when it is absent (CI, fresh checkout) values resolve from the deploy
+# env file that the caller already loaded — set REQUIRE_OPERATOR_ENV_FILE=1 to
+# restore the hard failure for operator runs.
+if [ -n "$RUNTIME_ENV_FILE" ] && [ ! -f "$RUNTIME_ENV_FILE" ]; then
+  if [ "${REQUIRE_OPERATOR_ENV_FILE:-0}" = "1" ]; then
+    echo "✗ operator env file not found: $RUNTIME_ENV_FILE"; exit 1
+  fi
+  echo "  ⚠ $RUNTIME_ENV_FILE not found — secret values resolve from the deploy env file only"
+  RUNTIME_ENV_FILE=""
+fi
 MANIFEST="$DEPLOY_DIR/gcp/secrets.manifest"
 [ -f "$MANIFEST" ] || { echo "✗ manifest not found: $MANIFEST"; exit 1; }
 
 # get_val <KEY> — read a value from the operator file in a throwaway shell
 # (unset -u/-e so sparse files source cleanly); falls back to the deploy env.
 get_val() {
-  local v
-  v="$( { set +euo pipefail; . "$RUNTIME_ENV_FILE" >/dev/null 2>&1 || true; printf '%s' "${!1:-}"; } )"
+  local v=""
+  if [ -n "$RUNTIME_ENV_FILE" ] && [ -f "$RUNTIME_ENV_FILE" ]; then
+    v="$( { set +euo pipefail; . "$RUNTIME_ENV_FILE" >/dev/null 2>&1 || true; printf '%s' "${!1:-}"; } )"
+  fi
   [ -z "$v" ] && v="${!1:-}"
   printf '%s' "$v"
 }
