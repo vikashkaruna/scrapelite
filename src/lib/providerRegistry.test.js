@@ -157,7 +157,7 @@ describe("key + model resolution", () => {
     }
     expect(isRetiredGeminiModel("gemini-2.0-flash")).toBe(true);
     expect(isRetiredGeminiModel("gemini-2.5-pro")).toBe(true);
-    expect(isRetiredGeminiModel("gemini-1.5-flash")).toBe(true);
+    expect(isRetiredGeminiModel("gemini-1.5-flash")).toBe(false);
     expect(isRetiredGeminiModel("gemini-3.8-flash")).toBe(false);
     expect(isRetiredGeminiModel("gemini-pro-latest")).toBe(false);
     expect(isRetiredGeminiModel("gemini-flash-latest")).toBe(false);

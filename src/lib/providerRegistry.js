@@ -328,9 +328,8 @@ export function defaultModel(providerKey, tier = MODEL_TIER.DEEP, env = {}) {
   return p.models[tier] || p.models.deep || "";
 }
 
-/** Known-retired Gemini model IDs that Google returns 404 for. */
+/** Known-retired Gemini model IDs that Google returns 404 for (2.x preview/experimental and early retired). */
 export const RETIRED_GEMINI_MODELS = new Set([
-  "gemini-1.5-flash", "gemini-1.5-pro",
   "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash-exp",
   "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro",
 ]);
@@ -338,5 +337,5 @@ export const RETIRED_GEMINI_MODELS = new Set([
 /** Check whether a model id is a retired Gemini model. */
 export function isRetiredGeminiModel(name) {
   if (!name || typeof name !== "string") return false;
-  return RETIRED_GEMINI_MODELS.has(name) || /^gemini-2\.[05]-/.test(name) || /^gemini-1\.5-/.test(name);
+  return RETIRED_GEMINI_MODELS.has(name) || /^gemini-2\.[05]-/.test(name);
 }
