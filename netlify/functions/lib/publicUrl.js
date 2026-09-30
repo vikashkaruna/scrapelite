@@ -191,11 +191,19 @@ async function checkHostAsync(host) {
   const h = host.replace(/^\[|\]$/g, "");
   if (isIP(h) === 4) return checkHostSync(h);
   if (isIP(h) === 6) return checkHostSync(h);
-  // Hostname — DNS lookup. Reject if ANY resolved IP is private.
-  let addrs;
-  try {
-    addrs = await lookup(h, { all: true });
-  } catch {
+  // Hostname — DNS lookup. Reject if ANY resolved IP is private. One retry:
+  // a single transient resolver hiccup (observed under load on the local
+  // stack) must not reject a perfectly valid domain; two failures are the
+  // honest answer.
+  let addrs = null;
+  for (let attempt = 0; attempt < 2 && !addrs; attempt++) {
+    try {
+      addrs = await lookup(h, { all: true });
+    } catch {
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+  if (!addrs) {
     // A domain that does not resolve (typo, expired, NXDOMAIN) is a
     // validation answer — `false` — not a server fault. The test/dev bypass
     // stays: offline environments use fake hostnames on purpose, and a

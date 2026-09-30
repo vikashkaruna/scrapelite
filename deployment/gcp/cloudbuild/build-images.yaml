@@ -85,10 +85,17 @@ steps:
       - -c
       - |
         set -euo pipefail
-        for kind in api admin trackers; do
-          case ",$_UNITS," in *",$kind,"*) ;;
-          *) continue ;; esac
-          var="_IMG_$(printf '%s' "$kind" | tr '[:lower:]' '[:upper:]')"
-          img="$(eval "printf '%s' \"\${$var}\"")"
-          echo "DIGEST $img @ $(docker inspect --format='{{index .RepoDigests 0}}' "$img" 2>/dev/null || echo "$img")"
-        done
+        # Cloud Build substitutes $_IMG_* TEXTUALLY in args (as the build
+        # steps above use them) — it does NOT export substitutions as env
+        # vars, so an indirect eval like \${_IMG_API} died with "_IMG_API:
+        # unbound variable" under set -u (the 2026-09-30 build failure).
+        # Every reference here is a direct textual one, same as steps 2-4.
+        case ",$_UNITS," in
+          *,api,*) echo "DIGEST api $_IMG_API @ $(docker inspect --format='{{index .RepoDigests 0}}' "$_IMG_API" 2>/dev/null || echo "$_IMG_API")" ;;
+        esac
+        case ",$_UNITS," in
+          *,admin,*) echo "DIGEST admin $_IMG_ADMIN @ $(docker inspect --format='{{index .RepoDigests 0}}' "$_IMG_ADMIN" 2>/dev/null || echo "$_IMG_ADMIN")" ;;
+        esac
+        case ",$_UNITS," in
+          *,trackers,*) echo "DIGEST trackers $_IMG_TRACKERS @ $(docker inspect --format='{{index .RepoDigests 0}}' "$_IMG_TRACKERS" 2>/dev/null || echo "$_IMG_TRACKERS")" ;;
+        esac
