@@ -72,6 +72,9 @@ env_vars_file() { # env_vars_file <name> K=V... → path of a JSON env-vars file
 }
 # Platform-env emulation: Netlify injects these into every function; on Cloud
 # Run the adapter/functions read them from process.env.
+# AI_BUDGET_MS / EXTRACT_BUDGET_MS: the 8000 defaults are tuned for Netlify's
+# 10s function cap; Cloud Run runs --timeout=300, so .env.<env> may raise them
+# for heavy template runs (deep synthesis, subpage gathering).
 APP_ENV_VARS=(env_vars_file app \
   "NODE_ENV=production" \
   "URL=$APP_BASE_URL" "SITE_URL=$APP_BASE_URL" "DEPLOY_URL=$APP_BASE_URL" \
@@ -88,6 +91,8 @@ APP_ENV_VARS=(env_vars_file app \
   "PERPLEXITY_MODEL_FAST=${PERPLEXITY_MODEL_FAST:-}" \
   "PERPLEXITY_MODEL_DEEP=${PERPLEXITY_MODEL_DEEP:-}" \
   "AI_PROVIDER_ORDER=${AI_PROVIDER_ORDER:-}" \
+  "AI_BUDGET_MS=${AI_BUDGET_MS:-8000}" \
+  "EXTRACT_BUDGET_MS=${EXTRACT_BUDGET_MS:-8000}" \
   "SCRAPE_PROVIDER_ORDER=${SCRAPE_PROVIDER_ORDER:-direct,spider,jina}" \
   "ENGAGEMENT_ENABLED=${ENGAGEMENT_ENABLED:-0}" \
   "OPS_JOBS_DISABLED=${OPS_JOBS_DISABLED:-1}" \
