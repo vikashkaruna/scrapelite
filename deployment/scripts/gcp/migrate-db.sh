@@ -116,7 +116,13 @@ else
     supabase db dump --project-ref "$REF" --role-only > "$ROLES_SQL" 2>"$GEN_DIR/db/roles.err" || \
       echo "  ⚠ role dump failed ($(head -1 "$GEN_DIR/db/roles.err")) — roles created manually below"
     if supabase db dump --project-ref "$REF" --file "$SCHEMA_SQL" 2>"$GEN_DIR/db/schema.err"; then
-      if supabase db dump --project-ref "$REF" --data-only --use-copy --file "$DATA_SQL" 2>"$GEN_DIR/db/data.err"; then
+      # Data is dumped for the PUBLIC schema only: the CLI's all-schemas data
+      # dump now also emits auth.* / storage.* sections, but this rehearsal
+      # restores public structure only, so those COPYs fail with "relation
+      # does not exist" (auth.mfa_recovery_code_sets, 2026-10-01). Auth lives
+      # in the hosted project anyway (hybrid setup); the FULL cutover path
+      # (SOURCE_DB_URL above) dumps the operator's chosen scope explicitly.
+      if supabase db dump --project-ref "$REF" --schema public --data-only --use-copy --file "$DATA_SQL" 2>"$GEN_DIR/db/data.err"; then
         DUMP_OK=1
       else
         echo "✗ data dump failed: $(head -3 "$GEN_DIR/db/data.err")"; exit 1
@@ -172,8 +178,12 @@ if [ -s "$FK_DROPS" ]; then
   psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -f "$FK_DROPS"
   echo "   $(grep -c . "$FK_DROPS") FK constraints parked"
 fi
-# 2. defensive strip of superuser-only bypass lines (CLI dumps may add them)
-sed '/session_replication_role/d' "$DATA_SQL" > "${DATA_SQL}.nfk" && mv "${DATA_SQL}.nfk" "$DATA_SQL"
+# 2. defensive strip of lines the target Postgres may not accept (CLI dumps
+#    may add them): session_replication_role needs superuser, and
+#    transaction_timeout is a newer-Postgres GUC that Cloud SQL rejects with
+#    "unrecognized configuration parameter" — which ON_ERROR_STOP turns into
+#    a failed restore.
+sed -e '/session_replication_role/d' -e '/transaction_timeout/d' "$DATA_SQL" > "${DATA_SQL}.nfk" && mv "${DATA_SQL}.nfk" "$DATA_SQL"
 # 2b. re-run detection: with existing rows the COPY stream would hit duplicate
 #     PKs — after FKs are parked a TRUNCATE is safe and makes the rehearsal
 #     repeatable (fresh instances skip this: no rows, nothing to truncate).
