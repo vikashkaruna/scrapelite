@@ -25,10 +25,19 @@ done
 [ -n "${SELECTED:-}" ] && UNITS="$(printf '%s' "${SELECTED%,}" | tr ' ' ',')"
 
 echo "→ Cloud Build: units=[$UNITS] (tag ${IMG_TAG})"
+# gcloud parses --substitutions as a comma-delimited dict (ArgDict): any comma
+# INSIDE a value ends the pair, so `_UNITS=api,admin,trackers` becomes the pair
+# `_UNITS=api` followed by bare tokens and gcloud dies with "Bad syntax for
+# dict arg: [admin]". Compose the dict with gcloud's alternate-delimiter
+# syntax `^<delim>^...` (gcloud topic escaping) so the whole dict is ONE flag
+# argument whose values may contain commas. ';' is the delimiter because ':'
+# already appears in image refs (docker tag separator) and ',' in _UNITS.
+# bash-3.2 safe: plain scalar assignment, no arrays.
+SUBSTITUTIONS="^;^_IMG_API=${IMG_API};_IMG_ADMIN=${IMG_ADMIN};_IMG_TRACKERS=${IMG_TRACKERS};_VITE_RAZORPAY_KEY_ID=${VITE_RAZORPAY_KEY_ID:-};_UNITS=${UNITS}"
 gcloud builds submit "$REPO_DIR" \
   --project="$GCP_PROJECT_ID" \
   --config="$DEPLOY_DIR/gcp/cloudbuild/build-images.yaml" \
-  --substitutions="_IMG_API=${IMG_API},_IMG_ADMIN=${IMG_ADMIN},_IMG_TRACKERS=${IMG_TRACKERS},_VITE_RAZORPAY_KEY_ID=${VITE_RAZORPAY_KEY_ID:-},_UNITS=${UNITS}" \
+  --substitutions="$SUBSTITUTIONS" \
   --timeout=30m
 
 echo "✓ images in ${IMG_BASE}"
