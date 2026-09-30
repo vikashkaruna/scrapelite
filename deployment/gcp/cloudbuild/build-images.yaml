@@ -39,6 +39,15 @@ steps:
         npm ci --no-audit --no-fund
         npm run build
         echo "dist/ built: $(du -sh dist | cut -f1)"
+        case ",$_UNITS," in
+          *,admin,*)
+            # Admin mounts at /admin — its payload must carry base /admin/ so
+            # its asset URLs resolve through the /admin/** hosting rewrite to
+            # THIS container, never to the hosting dist (blank-white admin).
+            ./node_modules/.bin/vite build --base=/admin/ --outDir=dist-admin
+            echo "dist-admin/ built: $(du -sh dist-admin | cut -f1)" ;;
+          *) echo "skip dist-admin (admin not in units)" ;;
+        esac
 
   - id: build-api-image
     name: gcr.io/cloud-builders/docker

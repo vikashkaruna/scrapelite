@@ -156,6 +156,17 @@ try {
   // Same second half as `npm run build` — the prerendered/help assets are
   // synced into dist/ by their own step, not by vite.
   run(process.execPath, [join(ROOT, "scripts", "sync-prerender-assets.mjs")]);
+  // The admin surface mounts at /admin (hosting rewrite /admin/** → the admin
+  // container). A root-absolute /assets/… reference in its HTML would be
+  // answered from HOSTING's dist — a different build whose entry hash need not
+  // match — so the browser got SPA-fallback HTML for a JS file and /admin
+  // rendered blank white (the 2026-09-30 stg incident). base=/admin/ keeps
+  // every admin asset URL under the /admin/** rewrite, so the admin container
+  // serves its own always-consistent bundle. Pure SPA — no prerender pass.
+  run(VITE_BIN, [
+    "build", "--config", join(STAGE, "vite.docker.config.mjs"),
+    "--base=/admin/", "--outDir=dist-admin", ...passthrough,
+  ]);
 } finally {
   // The staged env holds publishable values, but it is derived from a file that
   // holds live credentials — do not leave a copy lying around in the tree.
