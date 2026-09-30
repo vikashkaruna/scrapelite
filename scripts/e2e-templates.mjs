@@ -116,6 +116,19 @@ for (const template of templates) {
       name: `quick @ ${domain}`,
       input: { [domainField.name]: target, ai_depth: "quick" },
     });
+    // The maximal stack a real user can configure: every customization input
+    // at once plus the deepest synthesis. This is the combination that
+    // deadline-cut on staging (deep + subpages + custom fields + prompt).
+    variants.push({
+      name: `deep-subpages @ ${domain}`,
+      input: {
+        [domainField.name]: target,
+        ai_depth: "deep",
+        extra_subpages: 2,
+        custom_fields: "funding_stage, security_certifications",
+        custom_prompt: "Prioritise compliance and enterprise-readiness signals.",
+      },
+    });
   }
 
   console.log(`\n── ${key} (${variants.length} variants)`);

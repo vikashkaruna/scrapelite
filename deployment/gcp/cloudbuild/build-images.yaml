@@ -85,11 +85,15 @@ steps:
       - -c
       - |
         set -euo pipefail
-        # Cloud Build substitutes $_IMG_* TEXTUALLY in args (as the build
-        # steps above use them) — it does NOT export substitutions as env
-        # vars, so an indirect eval like \${_IMG_API} died with "_IMG_API:
-        # unbound variable" under set -u (the 2026-09-30 build failure).
+        # Cloud Build substitutes the image-name substitutions TEXTUALLY in
+        # args (as the build steps above use them) — it does NOT export them
+        # as env vars, so an indirect eval of the image name died with an
+        # "unbound variable" under set -u (the 2026-09-30 build failure).
         # Every reference here is a direct textual one, same as steps 2-4.
+        # NB: write this comment without any dollar signs — Cloud Build
+        # templates even inside comments, and a stray glob-style reference
+        # becomes an unmatched substitution key that fails the whole build
+        # (INVALID_ARGUMENT: key in the template is not matched).
         case ",$_UNITS," in
           *,api,*) echo "DIGEST api $_IMG_API @ $(docker inspect --format='{{index .RepoDigests 0}}' "$_IMG_API" 2>/dev/null || echo "$_IMG_API")" ;;
         esac
