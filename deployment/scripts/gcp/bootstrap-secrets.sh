@@ -27,6 +27,11 @@ fi
 MANIFEST="$DEPLOY_DIR/gcp/secrets.manifest"
 [ -f "$MANIFEST" ] || { echo "✗ manifest not found: $MANIFEST"; exit 1; }
 
+# Pushing a rotated-out key into Secret Manager is how dead credentials
+# outlive their rotation. Verify the URL/anon pair first (offline ref match +
+# live probe) — SKIP_SUPABASE_CHECK=1 to bypass deliberately.
+"$HERE/../check-supabase-pair.sh" "$ENV_NAME"
+
 # get_val <KEY> — read a value from the operator file in a throwaway shell
 # (unset -u/-e so sparse files source cleanly); falls back to the deploy env.
 get_val() {

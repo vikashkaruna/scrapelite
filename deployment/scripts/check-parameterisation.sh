@@ -27,6 +27,11 @@ ALLOW_GLOBS=(
   "*/tests/*"
   "*/README*"
   "*/docs/*"
+  # check-supabase-pair.sh matches the GENERIC public host suffix
+  # (*.supabase.co|in|red) for its ref comparison — the same public constant
+  # netlify/functions/lib/supabaseServerClient.js uses. It carries no project
+  # ids, regions, or key material.
+  "*/scripts/check-supabase-pair.sh"
 )
 
 # Build find args: deployment/{scripts,compose,gcp,docker,adapter,migrator}

@@ -55,7 +55,8 @@
     "verify:rls": "node scripts/verify-workflow-rls.mjs",
     "verify:engagement-p0": "node scripts/verify-engagement-p0.mjs",
     "verify:discoverability": "node scripts/verify-discoverability-e2e.mjs",
-    "verify:workflows": "node scripts/verify-workflows-e2e.mjs"
+    "verify:workflows": "node scripts/verify-workflows-e2e.mjs",
+    "verify:supabase": "bash deployment/scripts/check-supabase-pair.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

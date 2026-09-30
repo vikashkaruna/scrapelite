@@ -27,12 +27,21 @@ while IFS='|' read -r name cron; do
   echo "→ scheduler ${job_id} (${cron} → ${target})"
   if gcloud scheduler jobs describe "$job_id" --location="$GCP_REGION" \
       --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+    # update takes --update-headers (create takes --headers — NOT accepted here).
     gcloud scheduler jobs update http "$job_id" --location="$GCP_REGION" --project="$GCP_PROJECT_ID" \
       --schedule="$cron" --uri="$target" --http-method=POST \
       --oidc-service-account-email="$SA_SCHEDULER_EMAIL" \
       --oidc-token-audience="$JOBS_URL" \
-      --headers="x-datiq-cron-token=${JOBS_TOKEN}" \
-      --time-zone="Etc/UTC" --quiet >/dev/null
+      --update-headers="x-datiq-cron-token=${JOBS_TOKEN}" \
+      --time-zone="Etc/UTC" --quiet >/dev/null 2>&1 || {
+      # Older gcloud builds only know --headers on update; retry once.
+      gcloud scheduler jobs update http "$job_id" --location="$GCP_REGION" --project="$GCP_PROJECT_ID" \
+        --schedule="$cron" --uri="$target" --http-method=POST \
+        --oidc-service-account-email="$SA_SCHEDULER_EMAIL" \
+        --oidc-token-audience="$JOBS_URL" \
+        --headers="x-datiq-cron-token=${JOBS_TOKEN}" \
+        --time-zone="Etc/UTC" --quiet >/dev/null
+    }
   else
     gcloud scheduler jobs create http "$job_id" --location="$GCP_REGION" --project="$GCP_PROJECT_ID" \
       --schedule="$cron" --uri="$target" --http-method=POST \

@@ -1,0 +1,117 @@
+# .github/workflows/gcp-prod.yml — GCP production deploy (doc 05 §3b/§3c).
+#
+# HOW AND WHEN PROD DEPLOYS TRIGGER (the direction):
+#   - NEVER on push. There is no push trigger here by design — production moves
+#     only when a human clicks "Run workflow".
+#   - Only after staging has gone green (gcp-staging.yml) AND the soak checklist
+#     passed (doc 08 §3b): OAuth round-trips, extraction chain, payments
+#     test-mode, Resend test email, n8n round-trip, admin, monitoring.
+#   - Default mode is DIGEST PROMOTION from staging (promote-prod.sh, no
+#     rebuild): what staging validated byte-for-byte is what prod gets.
+#
+# BEFORE FIRST USE (one-time, owner):
+#   1. GitHub repo → Settings → Environments → create `gcp-prod`.
+#      Add the same secrets gcp-staging uses, PLUS the prod-only ones
+#      (see deployment/env/.env.prod.example): GCP_SA_KEY (a prod deploy SA),
+#      SUPABASE_URL/ANON/SERVICE_KEY (prod hosted Supabase until cutover),
+#      JOBS_TOKEN, DB_APP_PASSWORD, VITE_RAZORPAY_KEY_ID, and as VARIABLES:
+#      STAGING_GCP_PROJECT_ID / STAGING_AR_REPO / STAGING_IMG_TAG for digest
+#      promotion.
+#   2. Enable "Required reviewers" on the `gcp-prod` environment — the approval
+#      IS the prod gate (replaces phase-gate.yml's manual-approval job).
+#   3. Fill deployment/env/.env.prod (operator side) so local prod operations
+#      and CI agree on the contract.
+#
+# SAFETY RAILS BELOW:
+#   - `confirm_env` input must be typed as "prod" (typo = no-op).
+#   - concurrency group serializes prod runs; a run waits instead of racing.
+#   - The prod DB is NEVER touched: SKIP_DB is not even an input — the Cloud SQL
+#     cutover lives in cutover-db.sh (doc 09), run by a human in the window.
+name: gcp-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_env:
+        description: 'Type "prod" to confirm (must match exactly)'
+        required: true
+        default: ""
+      promote_from_staging:
+        description: "Promote staging digests (false = build fresh prod images)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: gcp-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: gcp-prod
+    steps:
+      - name: Verify confirmation
+        run: |
+          if [ "${{ inputs.confirm_env }}" != "prod" ]; then
+            echo "::error::confirm_env must be exactly 'prod' — refusing to deploy."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install CLIs
+        run: npm i -g firebase-tools
+
+      - name: Parameterisation gate (doc 06 §9)
+        run: bash deployment/scripts/check-parameterisation.sh
+
+      - name: Write the deploy env file (secrets + the shipped env contract)
+        run: |
+          mkdir -p deployment/env
+          cat > deployment/env/.env.prod <<'ENV'
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION=${{ secrets.GCP_REGION }}
+          DATIQ_PROJECT_CODE=${{ secrets.DATIQ_PROJECT_CODE }}
+          DATIQ_ENV=prod
+          GCP_BILLING_ACCOUNT_ID=${{ secrets.GCP_BILLING_ACCOUNT_ID }}
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
+          JOBS_TOKEN=${{ secrets.JOBS_TOKEN }}
+          DB_APP_PASSWORD=${{ secrets.DB_APP_PASSWORD }}
+          VITE_RAZORPAY_KEY_ID=${{ secrets.VITE_RAZORPAY_KEY_ID }}
+          STAGING_GCP_PROJECT_ID=${{ vars.STAGING_GCP_PROJECT_ID }}
+          STAGING_AR_REPO=${{ vars.STAGING_AR_REPO }}
+          STAGING_IMG_TAG=${{ vars.STAGING_IMG_TAG }}
+          ENV
+          # Non-secret contract values from the example (LAST — later lines win,
+          # so an accidental duplicate above cannot override the contract).
+          grep -E '^(DATIQ_ENV_SUFFIX|DATIQ_OWNER_LABEL|CLOUD_RUN_|AR_REPO|SQL_INSTANCE|SA_|FHS_SITE_ID|FB_WEB_APP_DISPLAY|ARTIFACTS_BUCKET|DATA_MODE|GOTRUE_MAILER_AUTOCONFIRM|AUTH_IMAGE|REST_IMAGE|APP_CONTEXT|GIT_BRANCH|OPS_JOBS_DISABLED|ENGAGEMENT_ENABLED|DAILY_HOUR_UTC|SITE_NAME|SCRAPE_PROVIDER_ORDER|VITE_AI_MODEL|VITE_WEBHOOK_URL|N8N_PUBLIC_WEBHOOK_URL|API_BASE_URL|SHADOW_BASE_URL|PW_BASE_URL|SMOKE_TARGET|GA_MEASUREMENT_ID|POSTHOG_HOST|CONSENT_POLICY_VERSION|DB_NAME|DB_APP_USER|CLOUD_SQL_TIER|CLOUD_SQL_EDITION|CLOUD_SQL_HA|CLOUD_SQL_BACKUP_PITR|CLOUD_SQL_CONNECTIVITY|CLOUD_SQL_PROXY_PORT|PURGE_ENABLED|CLOUD_SQL_BACKUP_START)=' \
+            deployment/env/.env.prod.example >> deployment/env/.env.prod
+          # Derived from the example's FHS_SITE_ID (appended last → wins).
+          echo "APP_BASE_URL=https://$(grep -E '^FHS_SITE_ID=' deployment/env/.env.prod.example | cut -d= -f2-).web.app" >> deployment/env/.env.prod
+
+      - name: Deploy prod shadow (digest promotion, OPS_JOBS_DISABLED honored from the contract)
+        env:
+          RUNTIME_ENV_FILE: deployment/env/.env.prod
+        run: |
+          chmod +x deployment/scripts/gcp/*.sh
+          if [ "${{ inputs.promote_from_staging }}" = "true" ]; then
+            ./deployment/scripts/gcp/up.sh prod
+          else
+            ./deployment/scripts/gcp/up.sh prod --build
+          fi
+
+      - name: Smoke the deployed URL
+        run: ./deployment/scripts/gcp/smoke.sh prod

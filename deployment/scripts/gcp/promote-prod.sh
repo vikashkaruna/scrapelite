@@ -17,7 +17,11 @@ load_gcp_env "$ENV_NAME"
 shift || true
 
 if [ $# -eq 3 ]; then
-  export IMG_API="$1" IMG_ADMIN="$2" IMG_TRACKERS="$3"
+  # Ride the override channel, NOT IMG_API: the env file is sourced with set -a
+  # inside deploy-run.sh → load_gcp_env, which recomposes IMG_API from IMG_TAG
+  # and would silently DISCARD a plain IMG_API export (the digests never
+  # reached the deploy before this channel existed).
+  export DATIQ_IMG_API_OVERRIDE="$1" DATIQ_IMG_ADMIN_OVERRIDE="$2" DATIQ_IMG_TRACKERS_OVERRIDE="$3"
 elif [ "${DIGESTS_FROM:-staging}" = "staging" ]; then
   echo "→ resolving image digests from the staging deploy (digest promotion — no rebuild)"
   # The staging repo lives in the STAGING project's registry — IMG_BASE here is
@@ -37,7 +41,7 @@ elif [ "${DIGESTS_FROM:-staging}" = "staging" ]; then
       "${staging_base}/datiq-${DATIQ_PROJECT_CODE}-ctr-${kind}:${staging_tag}" \
       --project="$staging_project" --format='value(fullyQualifiedDigest)' 2>/dev/null || true)"
     [ -n "$digest" ] || { echo "✗ no staging digest for ctr-${kind}:${staging_tag} in ${staging_base} — run build-images.sh staging first"; exit 1; }
-    export "$var=$digest"
+    export "DATIQ_IMG_${var#IMG_}_OVERRIDE=$digest"
   done
 else
   echo "usage: promote-prod.sh prod [digest digest digest] (or DIGESTS_FROM=staging)"; exit 1

@@ -2,95 +2,55 @@
   "_comment": [
     "No active vulnerability bypasses. Format and rules: see README.md here.",
     "",
-    "\u2500\u2500 HISTORY: react-router (removed 2026-08-23) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+    "━━━ HISTORY: react-router (removed 2026-08-23) ━━━━━━━━━━━━━━━━━━━━━━━━━━━",
     "Two entries bypassed GHSA-qwww-vcr4-c8h2 as 'no patched version exists for",
-    "React 18'. Correct when written; already false when removed \u2014 the advisory",
+    "React 18'. Correct when written; already false when removed — the advisory",
     "had been re-scoped, making the pinned react-router 7.18.2 the 7.x patch.",
     "The gate had been passing on its own merits, not on the bypass.",
     "",
     "Lesson recorded then: a bypass records a judgement about the world at a",
     "point in time. Re-read before renewing.",
     "",
-    "\u2500\u2500 2026-09-03: five entries drafted, then NOT needed \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+    "━━━ 2026-09-03: five entries drafted, then NOT needed ━━━━━━━━━━━━━━━━━━━━",
     "A sharp -> libvips chain (5 high) was found in tools/netlify-cli after the",
-    "gate was widened to audit that lockfile too \u2014 it had only ever audited the",
+    "gate was widened to audit that lockfile too — it had only ever audited the",
     "repo root, a blind spot on the one tree that runs with production deploy",
     "credentials. Bypass entries were drafted on the reasoning 'no forward fix",
     "exists; npm's only remedy is a major DOWNGRADE to netlify-cli 23.13.5'.",
     "",
     "That reasoning was WRONG, and the same lesson caught it a third time. The",
     "advisory patches at sharp >=0.35.0; sharp 0.35.4 was published. The tree",
-    "sat on 0.34.5 only because ipx@3.1.1 declares sharp@^0.34.3 \u2014 a range, not",
+    "sat on 0.34.5 only because ipx@3.1.1 declares sharp@^0.34.3 — a range, not",
     "an incompatibility. An npm `overrides` entry forces it forward without",
     "touching the netlify-cli pin, and resolved all five. `qs` went the same",
     "way. Both lockfiles now audit clean with NO bypasses.",
     "",
     "The generalisable point: 'npm audit fix offers only a downgrade' means the",
-    "top-level package has no newer release \u2014 NOT that the vulnerable",
+    "top-level package has no newer release — NOT that the vulnerable",
     "transitive dependency has no patch. Check the advisory's own patched range",
     "against the registry before concluding a fix does not exist.",
     "",
     "Why the override is safe here, and the residual risk, are documented in",
-    "tools/netlify-cli/README.md."
+    "tools/netlify-cli/README.md.",
+    "",
+    "━━━ 2026-09-30: eight toml entries EXPIRED, removed unneeded ━━━━━━━━━━━━━",
+    "The 2026-09-05 batch (toml / GHSA-82x6-q7mm-w9cf / GHSA-v5mp-jgw5-2x6j and",
+    "six @netlify/* package entries) all expired 2026-09-30. By then they were",
+    "double-stale: the `toml: ^4.2.0` override added on 2026-09-03 already",
+    "fixed the advisory, so the audit had stopped reporting toml entirely and",
+    "the bypasses were dead weight with a live expiry date. Removed, not",
+    "renewed — same rule as react-router: if the gate passes without the",
+    "bypass, the bypass goes.",
+    "",
+    "━━━ 2026-09-30: fast-uri fixed by override, bypass NOT needed ━━━━━━━━━━━━",
+    "GHSA-qw65-cvwx-89v3 / GHSA-58mr-gqgx-xq4g (fast-uri 3.0.0–3.1.6 and",
+    "4.0.0–4.1.3, authority injection via unvalidated port) appeared in",
+    "tools/netlify-cli. No bypass was ever filed: the advisory patches at",
+    "3.1.7 (3.x line) and 4.2.0 (4.x line), both published, and the tree sat",
+    "on 3.1.6 / nested 4.1.3 only because of declared ranges. The",
+    "`fast-uri: ^3.1.7 || ^4.2.0` override lets each dependent resolve a",
+    "patched version in its own major. Fourth time the same lesson held: the",
+    "patch existed; only the pin was behind."
   ],
-  "bypasses": [
-    {
-      "id": "GHSA-82x6-q7mm-w9cf",
-      "package": "toml",
-      "reason": "transitive dependency of netlify-cli in deploy toolchain",
-      "todo": "TODO: await upstream netlify-cli toml patch",
-      "expires": "2026-09-30",
-      "approvedBy": "vikashkaruna"
-    },
-    {
-      "id": "GHSA-v5mp-jgw5-2x6j",
-      "package": "toml",
-      "reason": "transitive dependency of netlify-cli in deploy toolchain",
-      "todo": "TODO: await upstream netlify-cli toml patch",
-      "expires": "2026-09-30",
-      "approvedBy": "vikashkaruna"
-    },
-    {
-      "package": "@netlify/build",
-      "reason": "transitive toml dependency in deploy toolchain",
-      "todo": "TODO: await upstream netlify-cli toml patch",
-      "expires": "2026-09-30",
-      "approvedBy": "vikashkaruna"
-    },
-    {
-      "package": "@netlify/dev",
-      "reason": "transitive toml dependency in deploy toolchain",
-      "todo": "TODO: await upstream netlify-cli toml patch",
-      "expires": "2026-09-30",
-      "approvedBy": "vikashkaruna"
-    },
-    {
-      "package": "@netlify/functions-dev",
-      "reason": "transitive toml dependency in deploy toolchain",
-      "todo": "TODO: await upstream netlify-cli toml patch",
-      "expires": "2026-09-30",
-      "approvedBy": "vikashkaruna"
-    },
-    {
-      "package": "@netlify/functions-utils",
-      "reason": "transitive toml dependency in deploy toolchain",
-      "todo": "TODO: await upstream netlify-cli toml patch",
-      "expires": "2026-09-30",
-      "approvedBy": "vikashkaruna"
-    },
-    {
-      "package": "@netlify/zip-it-and-ship-it",
-      "reason": "transitive toml dependency in deploy toolchain",
-      "todo": "TODO: await upstream netlify-cli toml patch",
-      "expires": "2026-09-30",
-      "approvedBy": "vikashkaruna"
-    },
-    {
-      "package": "netlify-cli",
-      "reason": "transitive toml dependency in deploy toolchain",
-      "todo": "TODO: await upstream netlify-cli toml patch",
-      "expires": "2026-09-30",
-      "approvedBy": "vikashkaruna"
-    }
-  ]
+  "bypasses": []
 }

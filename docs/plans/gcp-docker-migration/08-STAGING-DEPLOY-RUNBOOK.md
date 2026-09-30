@@ -74,11 +74,47 @@ Env/secret changes: edit `deployment/env/.env.staging` (plain vars) — secrets 
 through `deployment/gcp/secrets.manifest` + `bootstrap-secrets.sh`. Then redeploy
 the affected services (`--env-vars-file`/`--set-secrets` are applied at deploy).
 
+```bash
+# env-only change, no rebuild (the 2026-09-29 rotated-key fix path):
+./deployment/scripts/gcp/update-env.sh staging                # api + jobs
+./deployment/scripts/gcp/update-env.sh staging --with-secrets # also re-push secrets
+
+# verify the SUPABASE_URL/anon-key pair BEFORE any deploy (offline + live):
+npm run verify:supabase -- staging        # ← also runs automatically inside
+                                          #   deploy-run.sh / bootstrap-secrets.sh
+
+# cron ownership control (doc 05 §3b):
+./deployment/scripts/gcp/crons.sh staging status    # table: job | state | schedule
+./deployment/scripts/gcp/crons.sh staging pause     # freeze (GCP half)
+./deployment/scripts/gcp/crons.sh staging resume    # guarded: refuses while OPS_JOBS_DISABLED=1
+
+# whole-stack up / down:
+./deployment/scripts/gcp/up.sh staging      # full deploy (SKIP_* passthrough)
+./deployment/scripts/gcp/down.sh staging --yes   # guarded teardown (plan prints without --yes)
+```
+
+`deploy-run.sh` fails fast with the remedy when nothing was built at the current
+git sha (build-images.sh / update-env.sh / DATIQ_IMG_TAG_OVERRIDE). Image builds
+accept unit args: `build-images.sh staging api` builds only the api image.
+
 DB re-migration: `migrate-db.sh` is now a **repeatable rehearsal**: on re-run it
 parks FK constraints, TRUNCATES public tables and reloads the dump with
 `ON_ERROR_STOP=1` (no silently swallowed row failures). Treat it as a rehearsal
 tool, not a sync mechanism — re-running it discards Cloud SQL data created after
 the last dump.
+
+### 2.1 Incident note — 2026-09-29 rotated anon key (resolved)
+
+`stg.datiq.app` served 503s ("Supabase rejected this server's API key… 207
+chars") on every authenticated call: the api/jobs services carried a REVOKED
+anon key. The offline ref check passed (the dead key still decoded to the right
+project), which is why the old diagnostics were blind — only a LIVE
+`/auth/v1/health` probe sees rotation. That probe is now `verify:supabase` and
+runs inside `deploy-run.sh`/`bootstrap-secrets.sh` (skip with
+`SKIP_SUPABASE_CHECK=1`); the env-only fix path is `update-env.sh staging`.
+Two UI lies it exposed were also fixed: `workflow-graph.js` no longer turns a
+503 fault into "Sign in to view your workflow", and the team tab no longer
+claims "Your plan doesn't include a workspace" when the list failed to load.
 
 ---
 

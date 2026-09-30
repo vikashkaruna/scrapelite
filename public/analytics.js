@@ -53,7 +53,11 @@
   // third-party report. Same reasoning as the noindex rules in netlify.toml.
   var host = (location.hostname || "").toLowerCase();
   var isLocal = host === "localhost" || host === "127.0.0.1" || host === "[::1]";
-  var isAdmin = (location.pathname || "").indexOf("/admin") === 0;
+  function isAdminPath(pathname) {
+    var p = typeof pathname === "string" ? pathname : (location.pathname || "");
+    return p === "/admin" || p.indexOf("/admin/") === 0;
+  }
+  var isAdmin = isAdminPath(location.pathname);
   // Escape hatch for verifying the consent flow against a dev server, where the
   // localhost skip would otherwise mean gtag.js never loads and there is nothing
   // to observe. Off unless explicitly set in runtime-config.js; it can never
@@ -71,8 +75,33 @@
   // Defined even when disabled, so callers (consentService, usePageView) never
   // have to null-check and a disabled build stays a silent no-op.
   window.dataLayer = window.dataLayer || [];
-  function gtag() { window.dataLayer.push(arguments); }
+  var origDataLayerPush = window.dataLayer.push ? window.dataLayer.push.bind(window.dataLayer) : null;
+  function isSuppressedCall(args) {
+    if (isAdminPath(location.pathname)) return true;
+    for (var i = 0; i < args.length; i++) {
+      var arg = args[i];
+      if (typeof arg === "string") {
+        var s = arg.toLowerCase();
+        if (s.indexOf("/admin") !== -1 || s.indexOf("admin_") === 0 || s === "admin" || s.indexOf("_admin") !== -1) return true;
+      }
+      if (arg && typeof arg === "object") {
+        if (typeof arg.page_location === "string" && arg.page_location.indexOf("/admin") !== -1) return true;
+        if (typeof arg.page_path === "string" && arg.page_path.indexOf("/admin") !== -1) return true;
+      }
+    }
+    return false;
+  }
+  function gtag() {
+    if (isSuppressedCall(arguments)) return;
+    window.dataLayer.push(arguments);
+  }
   window.gtag = window.gtag || gtag;
+  if (origDataLayerPush) {
+    window.dataLayer.push = function() {
+      if (isSuppressedCall(arguments)) return window.dataLayer.length;
+      return origDataLayerPush.apply(window.dataLayer, arguments);
+    };
+  }
 
   function readStored() {
     try {
@@ -155,6 +184,17 @@
         defaults: "2026-05-30",
         person_profiles: "identified_only",
       });
+      if (window.posthog && typeof window.posthog.capture === "function") {
+        var origPhCapture = window.posthog.capture.bind(window.posthog);
+        window.posthog.capture = function(eventName, properties, options) {
+          if (isAdminPath(location.pathname)) return;
+          if (properties && typeof properties === "object") {
+            if (typeof properties.$current_url === "string" && properties.$current_url.indexOf("/admin") !== -1) return;
+            if (typeof properties.path === "string" && properties.path.indexOf("/admin") !== -1) return;
+          }
+          return origPhCapture(eventName, properties, options);
+        };
+      }
       phLoaded = true;
       return true;
     } catch (e) { return false; }
@@ -182,6 +222,38 @@
     } catch (e) { /* ignore */ }
   }
 
+  // Suppress all background / third-party trackers when entering /admin
+  function suppressAdminTrackers() {
+    try {
+      if (window.posthog) {
+        if (typeof window.posthog.stopSessionRecording === "function") {
+          window.posthog.stopSessionRecording();
+        }
+        if (typeof window.posthog.opt_out_capturing === "function") {
+          window.posthog.opt_out_capturing();
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Resume allowed tracking when navigating away from /admin back to a public page
+  function resumeTrackers() {
+    try {
+      if (isAdminPath(location.pathname)) return;
+      if (readStored()?.analytics === "granted" && window.posthog) {
+        if (typeof window.posthog.opt_in_capturing === "function") {
+          window.posthog.opt_in_capturing();
+        }
+        if (typeof window.posthog.startSessionRecording === "function") {
+          window.posthog.startSessionRecording();
+        }
+      }
+    } catch (e) {}
+  }
+
+  window.__datiqSuppressAdminTrackers = suppressAdminTrackers;
+  window.__datiqResumeTrackers = resumeTrackers;
+
   // A previously granted choice can activate immediately. No choice and a
   // stored denial deliberately leave gtag.js AND PostHog unloaded.
   loadTag();
@@ -193,8 +265,10 @@
   window.__datiqConsent = {
     measurementId: MEASUREMENT_ID,
     enabled: !disabled,
-    active: function () { return tagLoaded; },
-    posthogActive: function () { return phLoaded; },
+    active: function () { return tagLoaded && !isAdminPath(location.pathname); },
+    posthogActive: function () { return phLoaded && !isAdminPath(location.pathname); },
+    suppressAdminTrackers: suppressAdminTrackers,
+    resumeTrackers: resumeTrackers,
     get: function () { return readStored(); },
     set: function (choice) {
       if (choice !== "granted" && choice !== "denied") return;

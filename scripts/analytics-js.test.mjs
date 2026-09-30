@@ -352,3 +352,132 @@ describe("analytics.js — PostHog is gated on the same consent as gtag.js", () 
     expect(INDEX).not.toMatch(/posthog\.init/i);
   });
 });
+
+describe("analytics.js — /admin module tracker suppression", () => {
+  it("gtag drops events when called while on /admin", () => {
+    const r = run({ pathname: "/admin/revenue" });
+    const initialLen = r.dataLayer.length;
+    r.sandbox.gtag("event", "page_view", { page_path: "/admin/revenue" });
+    expect(r.dataLayer.length).toBe(initialLen);
+  });
+
+  it("gtag drops events that carry /admin in arguments or page_path even on public paths", () => {
+    const r = run({ pathname: "/" });
+    const initialLen = r.dataLayer.length;
+    r.sandbox.gtag("event", "page_view", { page_path: "/admin/ai" });
+    expect(r.dataLayer.length).toBe(initialLen);
+    r.sandbox.gtag("event", "admin_click");
+    expect(r.dataLayer.length).toBe(initialLen);
+  });
+
+  it("dataLayer.push drops events when called on /admin", () => {
+    const r = run({ pathname: "/admin/pricing" });
+    const initialLen = r.dataLayer.length;
+    r.sandbox.dataLayer.push(["event", "test"]);
+    expect(r.dataLayer.length).toBe(initialLen);
+  });
+
+  it("api.active() and api.posthogActive() report false on /admin even with granted consent", () => {
+    const r = run({ pathname: "/admin/revenue", stored: { analytics: "granted" } });
+    expect(r.api.active()).toBe(false);
+    expect(r.api.posthogActive()).toBe(false);
+  });
+
+  it("suppressAdminTrackers stops PostHog session recording and opts out capturing", () => {
+    const r = run({ pathname: "/", stored: { analytics: "granted" } });
+    let recordingStopped = false;
+    let optedOut = false;
+    r.sandbox.posthog.stopSessionRecording = () => { recordingStopped = true; };
+    r.sandbox.posthog.opt_out_capturing = () => { optedOut = true; };
+    r.api.suppressAdminTrackers();
+    expect(recordingStopped).toBe(true);
+    expect(optedOut).toBe(true);
+  });
+
+  it("PostHog capture is wrapped and drops events when on /admin", () => {
+    const r = run({ pathname: "/admin/health", stored: { analytics: "granted" } });
+    // PostHog should not have loaded on /admin
+    expect(r.posthogLoaded).toBe(false);
+  });
+
+  it("index.html contains universal tracker network shield blocking analytics domains on /admin", () => {
+    expect(INDEX).toContain("isTrackerTarget");
+    expect(INDEX).toContain("TRACKER_HOSTS");
+    expect(INDEX).toContain("sendBeacon");
+    expect(INDEX).toContain("window.plausible");
+  });
+});
+
+describe("/admin — edge noindex header parity (netlify edge, admin nginx, local gateway)", () => {
+  // The X-Robots-Tag HTTP header is the ONLY defence that works without JS and
+  // before robots.txt is even consulted. It must exist on every surface that
+  // can serve /admin: the Netlify edge (netlify.toml — also the source the
+  // Firebase Hosting config generator renders from), the admin container
+  // (deployment/docker/admin/nginx.conf) and the local gateway template
+  // (deployment/gateway/gen-gateway-conf.mjs). A surface losing the header is
+  // silent — nothing else fails — so it is locked here.
+  const NETLIFY = readFileSync(join(ROOT, "netlify.toml"), "utf8");
+  const ADMIN_NGINX = readFileSync(join(ROOT, "deployment/docker/admin/nginx.conf"), "utf8");
+  const GATEWAY_GEN = readFileSync(join(ROOT, "deployment/gateway/gen-gateway-conf.mjs"), "utf8");
+  const ROBOTS = readFileSync(join(ROOT, "public/robots.txt"), "utf8");
+
+  const headerBlocksFor = (toml, path) => {
+    const blocks = toml.split("[[headers]]").slice(1);
+    return blocks.filter((b) => new RegExp(`for\\s*=\\s*"${path}"`).test(b));
+  };
+
+  it("netlify.toml sets X-Robots-Tag noindex on both /admin and /admin/*", () => {
+    for (const path of ["/admin", "/admin/\\*"]) {
+      const blocks = headerBlocksFor(NETLIFY, path);
+      expect(blocks.length, `header block for ${path}`).toBeGreaterThanOrEqual(1);
+      const tag = blocks[0].match(/X-Robots-Tag\s*=\s*"([^"]+)"/);
+      expect(tag, `X-Robots-Tag for ${path}`).toBeTruthy();
+      expect(tag[1]).toContain("noindex");
+      expect(tag[1]).toContain("nofollow");
+      expect(tag[1]).toContain("noarchive");
+    }
+  });
+
+  it("netlify.toml /admin headers forbid caching (no-store)", () => {
+    for (const path of ["/admin", "/admin/\\*"]) {
+      const block = headerBlocksFor(NETLIFY, path)[0];
+      const cc = block.match(/Cache-Control\s*=\s*"([^"]+)"/);
+      expect(cc, `Cache-Control for ${path}`).toBeTruthy();
+      expect(cc[1]).toContain("no-store");
+    }
+  });
+
+  it("admin container nginx.conf sends the X-Robots-Tag noindex header on every response", () => {
+    expect(ADMIN_NGINX).toMatch(/add_header\s+X-Robots-Tag\s+"[^"]*noindex[^"]*"\s+always/);
+    expect(ADMIN_NGINX).toMatch(/add_header\s+Cache-Control\s+"[^"]*no-store[^"]*"\s+always/);
+  });
+
+  it("local gateway template emits the admin noindex header when /admin is private", () => {
+    // The generated nginx block escapes its quotes (\"), so match loosely:
+    // the adminNoindex template literal must carry both directives.
+    expect(GATEWAY_GEN).toMatch(/adminNoindex[\s\S]{0,600}X-Robots-Tag/);
+    expect(GATEWAY_GEN).toMatch(/adminNoindex[\s\S]{0,600}noindex/);
+  });
+
+  it("robots.txt disallows /admin for the catch-all and every named crawler section", () => {
+    // Strip comment lines first: the header prose mentions "User-agent:" and
+    // would otherwise split into a phantom section.
+    const effective = ROBOTS.replace(/^#.*$/gm, "");
+    const sections = effective.split(/(?=User-agent:)/).slice(1);
+    expect(sections.length).toBeGreaterThan(3);
+    for (const section of sections) {
+      expect(section, `robots.txt section: ${section.split("\n")[0]}`).toMatch(/Disallow:\s*\/admin(\s|$|\/)/m);
+    }
+  });
+
+  it("the sitemap can never list an /admin URL", () => {
+    const SITE_ROUTES = readFileSync(join(ROOT, "scripts/site-routes.mjs"), "utf8");
+    // /admin lives in PRIVATE_PREFIXES — the never-prerendered, never-sitemap'd set.
+    expect(SITE_ROUTES).toMatch(/PRIVATE_PREFIXES\s*=\s*\[[\s\S]*?"\/admin"/);
+    // The sitemap builder's ONLY route sources are the public lists — PRIVATE
+    // prefixes are unreachable by construction.
+    const BUILDER = readFileSync(join(ROOT, "scripts/build-sitemap.mjs"), "utf8");
+    expect(BUILDER).toMatch(/import\s*{[\s\S]*?REACT_OWNED[\s\S]*?STATIC_OWNED[\s\S]*?}\s*from\s*"\.\/site-routes\.mjs"/);
+    expect(BUILDER).not.toMatch(/PRIVATE_PREFIXES/);
+  });
+});

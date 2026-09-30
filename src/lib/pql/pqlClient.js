@@ -47,6 +47,16 @@ function scheduleFlush() {
 export function recordActivationEvent(name, properties = {}) {
   try {
     if (!name) return { ok: false };
+    if (typeof window !== "undefined" && window.location) {
+      const cur = window.location.pathname || "";
+      if (cur === "/admin" || cur.indexOf("/admin/") === 0) return { ok: true, suppressed: true };
+    }
+    if (properties && typeof properties === "object") {
+      const p = properties.path || properties.url || properties.target;
+      if (typeof p === "string" && (p === "/admin" || p.indexOf("/admin/") === 0 || p.indexOf("/admin") !== -1)) {
+        return { ok: true, suppressed: true };
+      }
+    }
     _buffer.push({ name, properties, occurredAt: new Date().toISOString() });
     // Drop the OLDEST on overflow. The newest events are the ones that change
     // a score — an old duplicate of a signal that already saturated is the

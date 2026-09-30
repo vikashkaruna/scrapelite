@@ -21,17 +21,25 @@ load_gcp_env() {
     APP_BASE_URL DATA_MODE APP_CONTEXT GIT_BRANCH
 
   export DATIQ_ENV_SUFFIX="${DATIQ_ENV_SUFFIX:--stg}"
-  local img_tag="${IMG_TAG:-}"
+  # Caller override channel: the .env file is sourced with set -a AFTER the
+  # caller's environment is inherited, so a caller-supplied IMG_TAG/IMG_API is
+  # ALWAYS clobbered by the file (it carries `IMG_TAG=REPLACE_ME_git_sha` plus
+  # composed IMG_* lines). These DATIQ_IMG_*_OVERRIDE names are absent from
+  # every env file, so sourcing cannot clobber them. update-env.sh rides the
+  # live tag through DATIQ_IMG_TAG_OVERRIDE; promote-prod.sh rides digests
+  # through DATIQ_IMG_{API,ADMIN,TRACKERS}_OVERRIDE.
+  local img_tag="${DATIQ_IMG_TAG_OVERRIDE:-${IMG_TAG:-}}"
   if [ -z "$img_tag" ] || [ "$img_tag" = "REPLACE_ME_git_sha" ]; then
     img_tag="$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M)"
-    export IMG_TAG="$img_tag"
   fi
+  export IMG_TAG="$img_tag"
   # Derived names are ALWAYS recomposed here (never trusted from the env file,
-  # where ${IMG_TAG} may have been empty at source time).
+  # where ${IMG_TAG} may have been empty at source time) — unless the caller
+  # pinned the exact reference via the override channel above.
   export IMG_BASE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO}"
-  export IMG_API="${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-api:${IMG_TAG}"
-  export IMG_ADMIN="${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-admin:${IMG_TAG}"
-  export IMG_TRACKERS="${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-trackers:${IMG_TAG}"
+  export IMG_API="${DATIQ_IMG_API_OVERRIDE:-${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-api:${IMG_TAG}}"
+  export IMG_ADMIN="${DATIQ_IMG_ADMIN_OVERRIDE:-${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-admin:${IMG_TAG}}"
+  export IMG_TRACKERS="${DATIQ_IMG_TRACKERS_OVERRIDE:-${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-trackers:${IMG_TAG}}"
   export IMG_STUDIO="${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-studio:staged"
   export IMG_PG_META="${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-pg-meta:staged"
   export SA_API_EMAIL="${SA_API_EMAIL:-${SA_API}@${GCP_PROJECT_ID}.iam.gserviceaccount.com}"

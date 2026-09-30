@@ -10,6 +10,18 @@
 - `event-adapter.mjs` / `response-adapter.mjs` / `routes.manifest.json` (plan §0) were consolidated into a single `deployment/adapter/server.mjs` (d14dff1d).
 - `compose.shared-db.yaml` (plan §0) was replaced by the `DATA_MODE=shared-db` switch inside `compose.yaml`/`compose.local.yaml` (doc 06 env contract).
 - **Post-review remediation (2026-09-29)**: the deployment tree passed a full code review (5 passes + confidence scoring); fixes include the DB-restore silent-data-loss bug (FK-safe restore, staging re-restored complete), the CI workflow that could never run, smoke SIGPIPE false negative, `promote-prod.sh` digest promotion, `down.sh -v`, shared-db smoke, jobs-mode fail-closed token gate, and fully documented env files. Details in `08-STAGING-DEPLOY-RUNBOOK.md` §7.
+- **Ops hardening + incident fixes (2026-09-30, on `docker-desktop-build`)**:
+  - `update-env.sh` — env-ONLY redeploy path (rides the image that is already serving, via the new `DATIQ_IMG_TAG_OVERRIDE` channel in `lib-gcp.sh`; env files are sourced `set -a` and would clobber a plain `IMG_TAG` export). Built for, and first used by, the 2026-09-29 rotated-anon-key incident on stg.
+  - `crons.sh` — pause/resume/status over the 13 DatIQ Scheduler jobs (the doc 09 §1 freeze step, previously only embedded in `cutover-db.sh`); `resume` refuses while `OPS_JOBS_DISABLED=1`.
+  - `gcp/up.sh` + `gcp/down.sh` — whole-stack bring-up/teardown per env. Prod down carries six guardrails (typed env, `ALLOW_PROD_TEARDOWN=1`, `--yes`, typed project id, DB survives without `--delete-data`, 8s countdown).
+  - `check-supabase-pair.sh` (`npm run verify:supabase`) — offline JWT-ref match **plus a LIVE `/auth/v1/health` probe** (rotation is invisible offline — the incident's lesson), wired into `deploy-run.sh` and `bootstrap-secrets.sh` so a dead key fails the deploy instead of shipping 503s. `SKIP_SUPABASE_CHECK=1` bypasses with a printed SKIP.
+  - `deploy-scheduler.sh` — the UPDATE path now uses `--update-headers` (gcloud only accepts `--headers` on create); unit-tested live against the 13 staging jobs.
+  - `promote-prod.sh` — latent bug fixed: its digest exports were silently recomposed away by `load_gcp_env`; digests now ride `DATIQ_IMG_*_OVERRIDE`.
+  - `deploy-run.sh` — fails fast with the remedy (build / update-env / override) when nothing was built at the current git sha, instead of gcloud's late "Image not found".
+  - `build-images.sh` + `build-images.yaml` — `_UNITS` selector for incremental image builds (`build-images.sh staging api`).
+  - `.github/workflows/gcp-prod.yml` — dispatch-only prod deploy (GitHub Environment `gcp-prod` + required reviewers = the gate; `confirm_env: prod` typed confirmation; digest-promotion default; never on push; never touches the DB).
+  - Env examples gained §13 (runtime secret sources from `secrets.manifest`) after FIRECRAWL/OPENAI/JINA/SPIDER/RESEND/ADMIN_* /N8N_*/… keys were found missing from the shipped skeleton; live `.env.staging` populated and `.env.prod` created.
+  - New runbooks: `10-LOCAL-DEPLOY-RUNBOOK.md`, `11-PROD-DEPLOY-RUNBOOK.md` (pre/post validations + incremental matrix + GitHub-trigger direction).
 - Phase 0 checklist status: all boxes verified except the optional contract-test-runner profile (handler contract tests already cover the 75 functions; adapter is validated live by stack-smoke) and the full `local-db` qualification (deferred per doc 07).
 
 **Date:** 2026-09-28 · **Branch:** `docker-desktop-build` · **Status:** draft — **do not implement until owner confirms**

@@ -111,17 +111,27 @@ export default function AdminLayout() {
     if (authed && pathname === "/admin") navigate("/admin/revenue", { replace: true });
   }, [authed, pathname]);
 
-  // SEO: the /admin section must never be indexed. Apply the noindex signal
-  // on mount (and on every pathname change inside /admin, in case the user
-  // has navigated from a public page that left stale tags in the head),
-  // and restore the public default when the layout unmounts. The
-  // Netlify edge sets X-Robots-Tag too, but the meta tag is the in-page
-  // signal for crawlers that don't read headers (e.g. some social
-  // embedders), and the neutralised OG/title/description close the
-  // snippet-leak path if any crawler ignores both.
+  // SEO & Trackers: the /admin section must never be indexed, crawled, or tracked.
+  // Apply noindex and aggressive crawler blocks on mount (and on every pathname change),
+  // suppress all third-party and first-party trackers, and restore public defaults on unmount.
   useEffect(() => {
     setNoIndex();
-    return () => setPublicDefaultMeta();
+    try {
+      if (typeof window !== "undefined") {
+        window.__datiqSuppressAdminTrackers?.();
+        window.posthog?.stopSessionRecording?.();
+        window.posthog?.opt_out_capturing?.();
+      }
+    } catch { /* ignore */ }
+
+    return () => {
+      setPublicDefaultMeta();
+      try {
+        if (typeof window !== "undefined") {
+          window.__datiqResumeTrackers?.();
+        }
+      } catch { /* ignore */ }
+    };
   }, [pathname]);
 
   const toggleCollapse = () => {
