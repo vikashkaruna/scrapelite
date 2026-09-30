@@ -48,7 +48,12 @@ echo "→ API rewrite (through Firebase Hosting → Cloud Run ${CLOUD_RUN_API})"
 #   - Bearer ADMIN_TOKEN_SECRET must return pong (full path incl. Supabase)
 check "workflow-orchestrator ping unauthenticated → 401 (auth gate)" \
   "401" "$(curl -s -o /dev/null -m 30 -w '%{http_code}' -X POST "$BASE/api/workflow-orchestrator/ping")"
-ADMIN_TOKEN="$(gcloud secrets versions access latest --project="$GCP_PROJECT_ID" --secret="$(sm_name ADMIN_TOKEN_SECRET)" 2>/dev/null || true)"
+# The handler authorizes WORKFLOW_ORCHESTRATOR_TOKEN || ADMIN_TOKEN_SECRET ||
+# ADMIN_PIN_HASH (workflow-orchestrator.js env()) — staging mounts a dedicated
+# orchestrator token that differs from the admin secret, so try that FIRST or
+# the ping 401s against a healthy service.
+ADMIN_TOKEN="$(gcloud secrets versions access latest --project="$GCP_PROJECT_ID" --secret="$(sm_name WORKFLOW_ORCHESTRATOR_TOKEN)" 2>/dev/null \
+  || gcloud secrets versions access latest --project="$GCP_PROJECT_ID" --secret="$(sm_name ADMIN_TOKEN_SECRET)" 2>/dev/null || true)"
 if [ -n "$ADMIN_TOKEN" ]; then
   check "workflow-orchestrator ping (POST + Bearer admin token)" \
     "pong" "$(curl -s -m 30 -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
