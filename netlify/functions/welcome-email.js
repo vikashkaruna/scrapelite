@@ -1,7 +1,8 @@
 // netlify/functions/welcome-email.js — F49 (welcome email trigger).
 //
 // Fires once per user on first sign-in. Sends a one-shot welcome email
-// via Resend, marks the user metadata so we never email them again.
+// via the configured mail transport (mailTransport.js), marks the user
+// metadata so we never email them again.
 //
 // Called from the browser after AuthProvider detects a new sign-in.
 // The function is idempotent: if the user already has the
@@ -10,6 +11,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { noRealtimeOptions } from "./lib/supabaseServerClient.js";
+import { mailReady, sendMail } from "./lib/mailTransport.js";
 import { wrapEmail } from "../../src/lib/emailBranding.js";
 
 export const handler = async (event) => {
@@ -19,15 +21,14 @@ export const handler = async (event) => {
 
   const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-  const RESEND_KEY = process.env.RESEND_API_KEY;
   const FROM = process.env.CONTACT_EMAIL_FROM || "DatIQ <hello@datiq.app>";
   const SITE_URL = process.env.URL || process.env.SITE_URL || "https://datiq.app";
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     return { statusCode: 200, body: "skipped (no supabase service key)" };
   }
-  if (!RESEND_KEY) {
-    return { statusCode: 200, body: "skipped (no Resend key)" };
+  if (!mailReady()) {
+    return { statusCode: 200, body: "skipped (no mail transport configured)" };
   }
 
   const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
@@ -71,22 +72,18 @@ export const handler = async (event) => {
   const greeting = name || email.split("@")[0];
   const html = welcomeHtml({ greeting, planLabel, siteUrl: SITE_URL });
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: FROM,
-        to: [email],
-        subject: "Welcome to DatIQ — let's set up your first extraction",
-        html,
-      }),
+    const r = await sendMail({
+      from: FROM,
+      to: [email],
+      subject: "Welcome to DatIQ — let's set up your first extraction",
+      html,
     });
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      return { statusCode: 502, body: `resend ${res.status}: ${t}` };
+    if (!r.ok) {
+      return { statusCode: 502, body: `mail transport ${r.status}: ${r.error}` };
     }
   } catch (err) {
-    return { statusCode: 502, body: `resend error: ${err.message}` };
+    // Defensive: sendMail maps transport failures to its result, never throws.
+    return { statusCode: 502, body: `mail error: ${err.message}` };
   }
 
   // Mark the flag in user metadata so we don't send again.

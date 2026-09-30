@@ -11,8 +11,8 @@ import { buildInvoiceDoc } from "../../../src/lib/invoiceModel.js";
 import { invoiceFilename, invoicePdfBuffer } from "../../../src/lib/invoicePdf.js";
 import { claimInvoiceEmail } from "./invoiceService.js";
 import { wrapEmail, textSignature } from "../../../src/lib/emailBranding.js";
+import { mailReady, sendMail } from "./mailTransport.js";
 
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const REPLY_TO = "hello@datiq.app";
 
 function escapeHtml(s) {
@@ -117,10 +117,9 @@ export function invoiceEmailText(model) {
  * invoice exists and is downloadable regardless.
  */
 export async function sendInvoiceEmail(invoice, { kind = "issued" } = {}) {
-  const key = process.env.RESEND_API_KEY;
   const to = invoice?.email;
-  if (!key) {
-    console.warn("[invoiceEmail] skipped — no RESEND_API_KEY");
+  if (!mailReady()) {
+    console.warn("[invoiceEmail] skipped — no mail transport configured");
     return { sent: false, reason: "no_key" };
   }
   if (!to) {
@@ -139,27 +138,23 @@ export async function sendInvoiceEmail(invoice, { kind = "issued" } = {}) {
     const model = buildInvoiceDoc(invoice, lines);
     const bytes = Buffer.from(invoicePdfBuffer(invoice, lines));
 
-    const res = await fetch(RESEND_ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        reply_to: REPLY_TO,
-        subject: `${model.title} ${model.invoiceNo} — DatIQ`,
-        // Links to /account, where the invoice list lives. There is deliberately
-        // no /account/invoices/:id route — the list and viewer are a section +
-        // modal on the Account page — so linking there would 404 the customer.
-        html: invoiceEmailHtml(model, { downloadUrl: `${siteUrl}/account` }),
-        text: invoiceEmailText(model),
-        attachments: [{ filename: invoiceFilename(invoice.invoice_no), content: bytes.toString("base64") }],
-        tags: [{ name: "stream", value: "billing" }],
-      }),
+    const r = await sendMail({
+      from,
+      to: [to],
+      reply_to: REPLY_TO,
+      subject: `${model.title} ${model.invoiceNo} — DatIQ`,
+      // Links to /account, where the invoice list lives. There is deliberately
+      // no /account/invoices/:id route — the list and viewer are a section +
+      // modal on the Account page — so linking there would 404 the customer.
+      html: invoiceEmailHtml(model, { downloadUrl: `${siteUrl}/account` }),
+      text: invoiceEmailText(model),
+      attachments: [{ filename: invoiceFilename(invoice.invoice_no), content: bytes.toString("base64") }],
+      tags: [{ name: "stream", value: "billing" }],
     });
 
-    if (!res.ok) {
+    if (!r.ok) {
       // Deliberately do NOT echo the response body — it can contain the key.
-      console.error(`[invoiceEmail] Resend HTTP ${res.status} for ${invoice.invoice_no}`);
+      console.error(`[invoiceEmail] Resend HTTP ${r.status} for ${invoice.invoice_no}`);
       return { sent: false, reason: "resend_error" };
     }
     return { sent: true };

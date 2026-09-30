@@ -132,6 +132,11 @@ async function readCompany(domain, promptExtra) {
       customPrompt: promptExtra,
       enrichKey: COMPARISON_CAPABILITY,
     });
+    if (scraped?.mock) {
+      // Same rule as executeRun: the visibility brief bills per company read;
+      // mock "facts" must never be compared, synthesised, or ledgered.
+      return { domain, target, ok: false, error: "Extraction is not configured on this deployment (VITE_ENABLE_EXTRACT).", pagesRead: [] };
+    }
     return {
       domain, target, ok: true,
       facts: scraped?.custom_extraction ?? null,
@@ -351,6 +356,18 @@ export async function executeRun({ template, input, onProgress }) {
   } catch (e) {
     events.push({ unit: "page", credits: 1, failed: true });
     throw e;
+  }
+
+  // 🔴 A paid template run must never be built on demo data. When this
+  // deployment runs the browser-side mock scraper (VITE_ENABLE_EXTRACT
+  // unset), the "facts" below would be the placeholder from mockData.js —
+  // billed, persisted, and rendered as if they were real. Abort BEFORE
+  // startRun so no credits are consumed and nothing is ledgered.
+  if (scraped?.mock) {
+    throw new Error(
+      "Extraction is not configured on this deployment, so this run would produce demo data. " +
+      "Set VITE_ENABLE_EXTRACT=1 and rebuild (locally: up.sh local web) before running templates."
+    );
   }
 
   const pagesRead = Array.isArray(scraped?.related_pages_scanned)

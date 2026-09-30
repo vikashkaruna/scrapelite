@@ -31,8 +31,8 @@ import { buildBrandingContext, brandingEmailHtml, brandingEmailText } from "../.
 import { validateBrandKit } from "../../src/lib/brandKitValidation.js";
 import { authenticateBearer } from "./lib/supabaseServerClient.js";
 import { requireCapabilityForUser, denyBody, DENY_STATUS } from "./lib/requireEntitlement.js";
+import { mailReady, sendMail } from "./lib/mailTransport.js";
 
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const REPLY_TO = "hello@datiq.app";
 const MAX_ITEMS = 200; // matches the largest batch tier (Agency, 500) with headroom trimmed for mail size
 const MAX_RECIPIENTS = 10;
@@ -189,8 +189,7 @@ export const handler = async (event) => {
     }
   }
 
-  const key = process.env.RESEND_API_KEY;
-  if (!key) return respond(503, { error: "Email is not configured (RESEND_API_KEY missing)." });
+  if (!mailReady()) return respond(503, { error: "Email is not configured (RESEND_API_KEY missing)." });
 
   let attachment;
   try {
@@ -218,41 +217,38 @@ export const handler = async (event) => {
   const heading = `${items.length} extraction${items.length === 1 ? "" : "s"}, as ${meta.label}`;
 
   try {
-    const res = await fetch(RESEND_ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to,
-        reply_to: REPLY_TO,
-        subject: `${ctx.brand} — ${heading}`,
-        html: brandingEmailHtml(ctx, {
-          heading,
-          bodyHtml: itemListHtml(items),
-          attachmentLabel: attachment.filename,
-        }),
-        text: brandingEmailText(ctx, { heading, bodyText: itemListText(items), attachmentLabel: attachment.filename }),
-        attachments: [{ filename: attachment.filename, content }],
-        tags: [{ name: "stream", value: "export" }],
+    const r = await sendMail({
+      from,
+      to,
+      reply_to: REPLY_TO,
+      subject: `${ctx.brand} — ${heading}`,
+      html: brandingEmailHtml(ctx, {
+        heading,
+        bodyHtml: itemListHtml(items),
+        attachmentLabel: attachment.filename,
       }),
+      text: brandingEmailText(ctx, { heading, bodyText: itemListText(items), attachmentLabel: attachment.filename }),
+      attachments: [{ filename: attachment.filename, content }],
+      tags: [{ name: "stream", value: "export" }],
     });
-    if (!res.ok) {
+    if (!r.ok) {
+      // r.error is the raw error body; only a JSON `.message` hint from it is
+      // ever surfaced. Deliberately do NOT echo the full response body — it can
+      // contain secrets.
       let resendMsg = "";
       try {
-        if (typeof res.json === "function") {
-          const errJson = await res.json();
-          if (errJson?.message && typeof errJson.message === "string") {
-            resendMsg = errJson.message.replace(/[\r\n]+/g, " ").slice(0, 200);
-          }
+        const errJson = JSON.parse(r.error || "");
+        if (errJson?.message && typeof errJson.message === "string") {
+          resendMsg = errJson.message.replace(/[\r\n]+/g, " ").slice(0, 200);
         }
       } catch { /* ignore */ }
-      // Deliberately do NOT echo the full response body — it can contain secrets.
-      console.error(`[export-email] Resend HTTP ${res.status}${resendMsg ? `: ${resendMsg}` : ""}`);
+      console.error(`[export-email] Resend HTTP ${r.status}${resendMsg ? `: ${resendMsg}` : ""}`);
       return respond(502, {
-        error: `Email delivery failed (Resend HTTP ${res.status}${resendMsg ? `: ${resendMsg}` : ""}).`,
+        error: `Email delivery failed (Resend HTTP ${r.status}${resendMsg ? `: ${resendMsg}` : ""}).`,
       });
     }
   } catch (err) {
+    // Defensive: sendMail maps transport failures to its result, never throws.
     console.error("[export-email] threw:", err?.message);
     return respond(502, { error: "Email delivery failed. Please try again." });
   }

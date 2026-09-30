@@ -13,8 +13,30 @@ import {
 } from "./lib/pricingSource.js";
 import { computeChargeMinor, grossMajor } from "../../src/lib/chargeMath.js";
 import { buildDraft, buildInvoiceLines, saveInvoiceDraft } from "./lib/invoiceDraft.js";
+import { getUserScopedClient, finalizeBearerAuth, bearerToken } from "./lib/supabaseServerClient.js";
 
 const ALLOWED_CURRENCIES = new Set(["INR", "USD"]);
+
+/**
+ * Resolve the signed-in user's id from the request's bearer JWT, or null.
+ * Payment endpoints must never treat an unverifiable token as a failure —
+ * guests check out too; the result only decides whether the invoice draft
+ * can carry a user_id for server-side activation.
+ */
+async function resolveUserIdFromEvent(event) {
+  const authHeader = event?.headers?.authorization || event?.headers?.Authorization || "";
+  const jwt = bearerToken(authHeader);
+  if (!jwt) return null;
+  try {
+    const { client } = getUserScopedClient(authHeader);
+    if (!client) return null;
+    const auth = await finalizeBearerAuth({ client, jwt, label: "create-checkout", authHeader });
+    return auth.ok && auth.user ? auth.user.id : null;
+  } catch (err) {
+    console.warn("[create-checkout] optional auth resolution failed (treating as guest):", err?.message);
+    return null;
+  }
+}
 
 export const handler = async (event) => {
   const headers = {
@@ -87,6 +109,15 @@ export const handler = async (event) => {
     }
   }
   const serverDiscount = Math.max(couponFrac, globalFraction(pricing)); // [0, 1]
+
+  // ── Link the order to the signed-in user, when there is one ────────────────
+  // The invoice draft carries user_id so activation can grant the
+  // entitlements server-side at verify time (activateFromInvoice no-ops on a
+  // NULL user_id — a guest purchase is activated on claim instead). The
+  // client-sent sessionId is a random localStorage id and is deliberately NOT
+  // the identity; only a verified JWT resolves a user. An invalid/absent
+  // token is a guest checkout, not an error.
+  const resolvedUserId = await resolveUserIdFromEvent(event);
 
   // ── Stripe ──────────────────────────────────────────────────────────────────
   if (provider === "stripe") {
@@ -256,6 +287,7 @@ export const handler = async (event) => {
         planId,
         kind: isBundle ? "bundle" : "plan",
         billingPeriod: period,
+        userId: resolvedUserId || null,
         sessionId: sessionId || null,
         email: email || null,
         priceSnapshot: priceRow,

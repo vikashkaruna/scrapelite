@@ -1,8 +1,9 @@
 // netlify/functions/contact-email.js — POST /api/contact-email
 //
-// Delivers a /contact submission as an email via Resend, the same provider that
-// already sends welcome / re-engagement / schedule-alert mail. One mail vendor
-// for the whole platform.
+// Delivers a /contact submission as an email via the shared mail transport
+// (lib/mailTransport.js — Resend in production, the local Mailpit container
+// when MAIL_TRANSPORT=mailpit), the same pipeline that already sends welcome /
+// re-engagement / schedule-alert mail. One mail pipeline for the whole platform.
 //
 // Why this runs server-side rather than posting from the browser:
 //
@@ -27,8 +28,7 @@ import {
   normalizeContactType,
 } from "../../src/lib/contactRouting.js";
 import { wrapEmail } from "../../src/lib/emailBranding.js";
-
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
+import { mailReady, sendMail } from "./lib/mailTransport.js";
 
 // Guard rails on inbound field sizes. Generous for a human, cheap to enforce.
 const LIMITS = { name: 200, email: 320, subject: 300, message: 20000 };
@@ -77,8 +77,7 @@ export const handler = async (event) => {
   const inbox   = inboxForType(type);
   const routeTo = emailForType(type);
 
-  const RESEND_KEY = process.env.RESEND_API_KEY;
-  if (!RESEND_KEY) {
+  if (!mailReady()) {
     // 503 → the client shows its mailto: fallback rather than losing the message.
     return json(503, { error: "Email delivery is not configured. Please email us directly." });
   }
@@ -108,8 +107,9 @@ export const handler = async (event) => {
     subject: buildSubject(type, subject),
     html: contactHtml({ type, name, email, subject, message }),
     text: contactText({ type, name, email, subject, message }),
-    // Tags make these findable in Resend's dashboard and give the future
-    // delivery-webhook something to filter on without parsing the subject.
+    // Tags make these findable in the mail provider's dashboard and give the
+    // future delivery-webhook something to filter on without parsing the
+    // subject.
     tags: [
       { name: "stream", value: "contact" },
       { name: "inbox", value: inbox },
@@ -117,28 +117,27 @@ export const handler = async (event) => {
     ],
   };
 
-  let res;
+  let r;
   try {
-    res = await fetch(RESEND_ENDPOINT, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+    r = await sendMail(payload);
   } catch (err) {
+    // Defensive: sendMail maps transport failures to its result, never throws.
     return json(502, { error: `Could not reach the mail service: ${err.message}` });
   }
 
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    console.warn(`[DatIQ] contact-email: resend ${res.status}: ${detail}`);
-    return json(502, { error: `The mail service rejected the message (HTTP ${res.status}).` });
+  if (!r.ok) {
+    // status 0 = the transport itself was unreachable (sendMail folds network
+    // failures into its result rather than throwing) — keep the same wording
+    // the old thrown-fetch path used, so a refusal is still distinguishable
+    // from an outage.
+    if (!r.status) {
+      return json(502, { error: `Could not reach the mail service: ${r.error || "unknown error"}` });
+    }
+    console.warn(`[DatIQ] contact-email: resend ${r.status}: ${r.error}`);
+    return json(502, { error: `The mail service rejected the message (HTTP ${r.status}).` });
   }
 
-  const sent = await res.json().catch(() => ({}));
-  return json(200, { ok: true, inbox, routeTo, id: sent?.id || null });
+  return json(200, { ok: true, inbox, routeTo, id: r.id || null });
 };
 
 // Deliberately permissive: reject the obviously-broken, let the mail server be

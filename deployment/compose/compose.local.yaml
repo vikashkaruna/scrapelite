@@ -37,6 +37,15 @@ services:
         # newer GoTrue inserts role='' explicitly (the column default never
         # fires) — a trigger stamps 'authenticated' on every user instead.
         psql -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -c "create or replace function auth.stamp_role() returns trigger language plpgsql as \$\$ begin if new.role is null or new.role = '' then new.role := 'authenticated'; end if; return new; end \$\$; drop trigger if exists stamp_role_on_users on auth.users; create trigger stamp_role_on_users before insert or update on auth.users for each row execute function auth.stamp_role();"
+        # ── Auth-schema ownership + grants (rehearsal-restore repair) ──────
+        # migrate-from-supabase.sh restores hosted dumps whose auth tables are
+        # owned by supabase_admin, with RLS enabled and no policies — GoTrue
+        # (supabase_auth_admin) then 42501s on every query (signup = "Database
+        # error finding/saving user"). The stock layout has GoTrue own its
+        # schema, and an owner bypasses its own RLS. Reassert that here so the
+        # stack self-heals after any restore; skip the linked sequences
+        # (Postgres forbids reassigning a sequence owned by its table).
+        psql -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -c "do \$\$ declare r record; begin for r in select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='auth' and c.relkind='r' loop execute format('alter table auth.%I owner to supabase_auth_admin', r.relname); end loop; end \$\$; alter schema auth owner to supabase_auth_admin; grant usage on schema auth to supabase_auth_admin, postgres, authenticator; grant all on all tables in schema auth to supabase_auth_admin; grant all on all sequences in schema auth to supabase_auth_admin; grant all on all routines in schema auth to supabase_auth_admin;"
     depends_on:
       db:
         condition: service_healthy

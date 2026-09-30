@@ -117,3 +117,26 @@ describe("isPublicHttpUrlAsync — hostname resolution", () => {
     expect(ok).toBe(false);
   });
 });
+
+describe("isPublicHttpUrlAsync — never throws (C-37a)", () => {
+  // The async guard is what request-validation paths await. Every branch
+  // that used to throw turned an invalid user URL into an unhandled 500
+  // ("Unexpected server error.") two layers up — a schedule for a
+  // nonexistent domain being the reported instance.
+  it("answers false for a malformed URL instead of throwing", async () => {
+    await expect(isPublicHttpUrlAsync("http://[bad-ipv6/")).resolves.toBe(false);
+    await expect(isPublicHttpUrlAsync("not-a-url")).resolves.toBe(false);
+  });
+
+  it("answers false for a disallowed scheme instead of throwing", async () => {
+    await expect(isPublicHttpUrlAsync("file:///etc/passwd")).resolves.toBe(false);
+    await expect(isPublicHttpUrlAsync("gopher://example.com/")).resolves.toBe(false);
+  });
+
+  it("answers false for empty, non-string, oversized, or control-char input", async () => {
+    await expect(isPublicHttpUrlAsync("")).resolves.toBe(false);
+    await expect(isPublicHttpUrlAsync(null)).resolves.toBe(false);
+    await expect(isPublicHttpUrlAsync("https://example.com/" + "a".repeat(3000))).resolves.toBe(false);
+    await expect(isPublicHttpUrlAsync("http://exa mple.com/")).resolves.toBe(false);
+  });
+});

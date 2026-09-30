@@ -8,9 +8,22 @@ import {
 } from "./paymentConfig.js";
 import { getEffectivePlanById } from "./pricingOverrides.js";
 import { convertPrice } from "./currencyService.js";
+import { getAuthToken } from "./apiClient.js";
 
 const PENDING_KEY = "datiq.pendingPayment";
 const FUNCTIONS   = "/api";
+
+/**
+ * Authorization header for payment endpoints. The token comes from the same
+ * source as every other /api call (apiClient), so create-checkout and
+ * verify-payment can link the payment to the signed-in user — the server
+ * resolves the user from the JWT and never trusts the client-sent sessionId
+ * for identity. Absent token = guest checkout, which still works.
+ */
+function authHeaders() {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 // ── Payment stage constants (consumed by PaymentProcessingModal via BillingProvider) ─
 export const PAYMENT_STAGE = {
@@ -369,7 +382,7 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
   try {
     orderResp = await fetchSafe(`${FUNCTIONS}/create-checkout`, {
       method:  "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body:    JSON.stringify({
         provider:        "razorpay",
         planId,
@@ -449,7 +462,7 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
         try {
           verifyResp = await fetchSafe(`${FUNCTIONS}/verify-payment`, {
             method:  "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...authHeaders() },
             body:    JSON.stringify({
               provider:      "razorpay",
               orderId:       rzpResponse.razorpay_order_id,
@@ -468,7 +481,25 @@ async function initiateRazorpayCheckout({ planId, currency, rates, billingPeriod
           return;
         }
 
-        const verifyResult = await verifyResp.json();
+        // 🔴 EVERY FAILURE PATH BELOW MUST SETTLE THE PROMISE. A verify
+        // response that is not JSON (gateway 502/504 HTML) used to throw
+        // `.json()` OUTSIDE any catch — the SDK's async handler then died
+        // silently, the outer promise never settled, and the processing
+        // modal spun at "Verifying your payment…" forever while the payment
+        // itself HAD gone through. No path in this handler may leave the
+        // caller hanging.
+        let verifyResult;
+        try {
+          verifyResult = await verifyResp.json();
+        } catch (jsonErr) {
+          let statusText = "";
+          try { statusText = ` (HTTP ${verifyResp.status})`; } catch { /* ignore */ }
+          reject(new Error(
+            `Payment was processed, but verification returned an unexpected response${statusText}. ` +
+            `If your account was charged, please email hello@datiq.app and quote your Payment ID: ${rzpResponse.razorpay_payment_id}`
+          ));
+          return;
+        }
 
         if (verifyResult.verified) {
           onStageChange?.(PAYMENT_STAGE.ACTIVATING, "Activating your plan…");

@@ -34,6 +34,7 @@ import { checkCompliance } from "./lib/complianceEngine.js";
 import { hasScrapeConsent } from "./lib/scrapeConsent.js";
 import { isPublicHttpUrlAsync } from "./lib/publicUrl.js";
 import { meterContext, flush as flushMeter, affords } from "./lib/creditMeter.js";
+import { mailReady, sendMail } from "./lib/mailTransport.js";
 import { discoverabilityCredits } from "../../src/lib/credits/creditWeights.js";
 
 const JOB_ID = "discoverability-monitor";
@@ -109,8 +110,7 @@ export function diffSxoRuns(before, after) {
 /** Alert mail. Never throws — a mail failure must not fail the monitored run. */
 async function sendAlert({ schedule, diff, result, verdict }) {
   const to = schedule.alert_email;
-  const key = process.env.RESEND_API_KEY;
-  if (!to || !key) return { sent: false, reason: !to ? "no recipient" : "no mail key" };
+  if (!to || !mailReady()) return { sent: false, reason: !to ? "no recipient" : "no mail key" };
 
   const from = process.env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>";
   const site = process.env.URL || process.env.SITE_URL || "https://datiq.app";
@@ -146,17 +146,14 @@ async function sendAlert({ schedule, diff, result, verdict }) {
     </div>`;
 
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from, to: [to],
-        subject: `${improved ? "↑" : "↓"} Discoverability ${verdict.kind} — ${hostOf(url)}`,
-        html,
-      }),
+    const r = await sendMail({
+      from, to: [to],
+      subject: `${improved ? "↑" : "↓"} Discoverability ${verdict.kind} — ${hostOf(url)}`,
+      html,
     });
-    return { sent: res.ok, status: res.status };
+    return { sent: r.ok, status: r.status };
   } catch (err) {
+    // Defensive: sendMail maps transport failures to its result, never throws.
     return { sent: false, reason: err?.message || "mail failed" };
   }
 }

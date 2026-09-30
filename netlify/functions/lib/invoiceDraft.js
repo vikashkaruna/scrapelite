@@ -212,3 +212,28 @@ export async function markDraftIssued(orderId, invoiceId) {
     return false;
   }
 }
+
+/**
+ * Stamp the signed-in user onto an existing draft. The browser hands the
+ * gateway a sessionId it minted locally, which the server cannot trust as an
+ * identity; the draft can only be linked to a user id resolved from a real
+ * JWT. Called by verify-payment when the order was created signed-out (guest
+ * checkout on a shared device) but verified signed-in.
+ */
+export async function patchInvoiceDraft(orderId, patch) {
+  const d = db();
+  if (!d || !orderId || !patch) return false;
+  try {
+    const res = await fetch(
+      `${d.base}/invoice_drafts?order_id=eq.${encodeURIComponent(orderId)}`,
+      {
+        method: "PATCH",
+        headers: { ...d.headers, Prefer: "return=minimal" },
+        body: JSON.stringify(patch),
+      },
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
