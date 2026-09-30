@@ -1,6 +1,14 @@
 # deployment/compose/compose.yaml — app services (mode-agnostic base).
 # Paths resolve relative to THIS file. All values come from --env-file
 # deployment/env/.env.<env> (doc 06) — no literals here.
+#
+# Lifecycle: every long-running service below is `restart: unless-stopped` —
+# deliberately, because that policy keeps local stop/pause meaningful. A
+# container you stopped (down.sh / stack.sh stop) or paused (stack.sh pause)
+# STAYS that way across Docker Desktop restarts; only containers that were
+# still RUNNING when the daemon went away come back automatically. One-shots
+# stay one-shots: db-passwords (restart: "no", seeds once) and migrator
+# (profile-gated, run with --rm) declare no always-on policy.
 name: ${COMPOSE_PROJECT_NAME:-datiq-local}
 
 services:

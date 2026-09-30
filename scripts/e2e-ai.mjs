@@ -9,6 +9,7 @@
 // Exits non-zero if any assertion fails.
 
 import { createHmac } from "node:crypto";
+import { defaultModel } from "../src/lib/providerRegistry.js";
 
 // Exact host match — a substring check would also accept "api.example.com.evil.test".
 const hostIs = (url, host) => { try { return new URL(String(url)).hostname === host; } catch { return false; } };
@@ -89,35 +90,36 @@ function signToken(secret, exp = Date.now() + 60000) {
 
 console.log("\n=== /api/ai — provider paths & fallback ===");
 
-// Path 1 — Gemini (primary) succeeds
+// Path 1 — OpenAI (primary) succeeds
 MODE.fail = new Set();
 let r = await callAi();
-ok(r._provider === "gemini" && r.content?.[0]?.text === "GEMINI_OK", "Path 1: Gemini primary succeeds → GEMINI_OK");
+ok(r._provider === "openai" && r.content?.[0]?.text === "OPENAI_OK", "Path 1: OpenAI primary succeeds → OPENAI_OK");
 
-// Path 2 — Gemini fails → Anthropic
-MODE.fail = new Set(["gemini"]);
+// Path 2 — OpenAI fails → Gemini
+MODE.fail = new Set(["openai"]);
 r = await callAi();
-ok(r._provider === "anthropic" && r.content[0].text === "ANTHROPIC_OK", "Path 2: Gemini fails → Anthropic fallback → ANTHROPIC_OK");
+ok(r._provider === "gemini" && r.content[0].text === "GEMINI_OK", "Path 2: OpenAI fails → Gemini fallback → GEMINI_OK");
 
-// Path 3 — Gemini + Anthropic fail → OpenAI
-MODE.fail = new Set(["gemini", "anthropic"]);
+// Path 3 — OpenAI + Gemini fail → Anthropic
+MODE.fail = new Set(["openai", "gemini"]);
 r = await callAi();
-ok(r._provider === "openai" && r.content[0].text === "OPENAI_OK", "Path 3: Gemini+Anthropic fail → OpenAI fallback → OPENAI_OK");
+ok(r._provider === "anthropic" && r.content[0].text === "ANTHROPIC_OK", "Path 3: OpenAI+Gemini fail → Anthropic fallback → ANTHROPIC_OK");
 
-// Path 4 — all fail → 502
+// Path 4 — all fail → 502 with the CODE and nothing else (attempts no longer
+// travel on the body — they go to the log; see ai.test.js C-05 redaction).
 MODE.fail = new Set(["gemini", "anthropic", "openai"]);
 let raw = await aiHandler({ httpMethod: "POST", body: JSON.stringify({ messages: MESSAGES }) });
 let body = JSON.parse(raw.body);
-ok(raw.statusCode === 502 && /providers failed/i.test(body.error), "Path 4: all providers fail → 502 with attempts");
-ok(Array.isArray(body.detail?.attempts) && body.detail.attempts.length === 3, "Path 4: all 3 attempts recorded");
+ok(raw.statusCode === 502 && body.code === "ai_unavailable" && body.detail === undefined,
+  "Path 4: all providers fail → 502 with the ai_unavailable code and no vendor detail");
 
 // Path 5 — no key for primary → skipped, falls to next with a key
 MODE.fail = new Set();
-const savedGem = process.env.GEMINI_API_KEY;
-delete process.env.GEMINI_API_KEY;
+const savedOai = process.env.OPENAI_API_KEY;
+delete process.env.OPENAI_API_KEY;
 r = await callAi();
-ok(r._provider === "anthropic", "Path 5: missing GEMINI_API_KEY → Gemini skipped → Anthropic answers");
-process.env.GEMINI_API_KEY = savedGem;
+ok(r._provider === "gemini", "Path 5: missing OPENAI_API_KEY → OpenAI skipped → Gemini answers");
+process.env.OPENAI_API_KEY = savedOai;
 
 // Path 6 — no keys at all → 503 (lets aiService fall back to local mock)
 const bak = { g: process.env.GEMINI_API_KEY, a: process.env.AI_API_KEY, o: process.env.OPENAI_API_KEY };
@@ -132,18 +134,26 @@ console.log("\n=== adapter request shaping (per provider) ===");
 const gem = [...calls].reverse().find((c) => c.host === "gemini");
 ok(/:generateContent\?key=/.test(gem.url) && gem.body.contents?.[0]?.role === "user", "Gemini: generateContent URL + role-mapped contents");
 ok(gem.body.systemInstruction?.parts?.[0]?.text?.includes("classifier"), "Gemini: system message → systemInstruction");
-const ant = [...calls].reverse().find((c) => c.host === "anthropic");
+const ant = [...calls].reverse().find((c) => c.host === "anthropic" && c.body.max_tokens === 400);
 ok(ant.opts.headers["x-api-key"] === "test-anthropic" && ant.opts.headers["anthropic-version"], "Anthropic: x-api-key + anthropic-version headers");
 ok(ant.body.max_tokens === 400 && Array.isArray(ant.body.messages), "Anthropic: honors client max_tokens (400) + messages");
 const oai = [...calls].reverse().find((c) => c.host === "openai");
-ok(oai.opts.headers.Authorization === "Bearer test-openai" && oai.body.model === "gpt-4o-mini", "OpenAI: Bearer auth + default model gpt-4o-mini");
+// Asserted against the REGISTRY, not a literal — raising the OpenAI default
+// model is a registry pin change, not a test failure (same rule as ai.test.js).
+ok(oai.opts.headers.Authorization === "Bearer test-openai" && oai.body.model === defaultModel("openai", "deep"), "OpenAI: Bearer auth + registry default model (" + defaultModel("openai", "deep") + ")");
 
 console.log("\n=== /api/admin-ai-config — read / write / auth ===");
-// GET (no Supabase) → config + key presence, persisted:false
-let g = JSON.parse((await cfgHandler({ httpMethod: "GET" })).body);
-ok(g.ok && g.config.order.join(",") === "gemini,anthropic,openai", "GET: returns default order Gemini→Claude→OpenAI");
+// GET (no Supabase) → config + key presence, persisted:false. GET requires a
+// signed admin token — same contract the Admin console uses.
+process.env.ADMIN_TOKEN_SECRET = "topsecret";
+let g = JSON.parse((await cfgHandler({ httpMethod: "GET", headers: { Authorization: `Bearer ${signToken("topsecret")}` } })).body);
+ok(g.ok && g.config.order.join(",") === "openai,gemini,anthropic", "GET: returns default order OpenAI→Gemini→Claude");
 ok(g.keyPresence.gemini && g.keyPresence.anthropic && g.keyPresence.openai, "GET: reports all keys present");
 ok(g.persisted === false, "GET: persisted=false when Supabase unconfigured");
+// The classification area's effective Gemini model is the shipped Flash-Lite
+// default until an operator overrides it.
+ok(g.effective?.classification?.resolvedModels?.gemini === "gemini-3.5-flash-lite",
+  "GET: effective classification Gemini model = the per-area default");
 
 // POST without token, non-demo (secret set) → 401
 process.env.ADMIN_TOKEN_SECRET = "topsecret";
@@ -179,7 +189,12 @@ ok(verifyAdminToken(signToken("wrongsecret")).ok === false, "token: wrong secret
 ok(verifyAdminToken(signToken("topsecret", Date.now() - 1000)).ok === false, "token: expired → rejected");
 ok(verifyAdminToken("").ok === false, "token: empty → rejected");
 delete process.env.ADMIN_TOKEN_SECRET; delete process.env.ADMIN_PIN_HASH; delete process.env.ADMIN_PIN;
-ok(verifyAdminToken("anything").demo === true, "token: demo mode (no admin secret) → accepted as demo");
+// Demo acceptance is opt-in now (isDemoAdminAllowed) — plain absence of a
+// secret REJECTS rather than silently accepting.
+process.env.DATIQ_ALLOW_DEMO_ADMIN = "1";
+ok(verifyAdminToken("anything").demo === true, "token: demo mode (no admin secret, demo allowed) → accepted as demo");
+delete process.env.DATIQ_ALLOW_DEMO_ADMIN;
+ok(verifyAdminToken("anything").ok === false, "token: no admin secret and demo not allowed → rejected");
 
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);

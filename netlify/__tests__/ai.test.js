@@ -1,5 +1,5 @@
 // netlify/functions/ai.test.js
-// C-05..07 — Multi-provider chain (gemini → anthropic → openai); per-provider model from
+// C-05..07 — Multi-provider chain (openai → gemini → anthropic); per-provider model from
 // loadAiConfig(); client `model` ignored; 503 when no key is set.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -92,21 +92,21 @@ describe("ai — multi-provider chain (C-05)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("gemini 500 → falls through to anthropic; openai never tried", async () => {
+  it("openai 500 → falls through to gemini; anthropic never tried", async () => {
     process.env.GEMINI_API_KEY = "gem";
     process.env.AI_API_KEY = "ant";
     process.env.OPENAI_API_KEY = "oai";
     fetchMock
       .mockResolvedValueOnce(new Response("oops", { status: 500 }))
-      .mockResolvedValueOnce(anthropicOk("anthropic-ok"));
+      .mockResolvedValueOnce(geminiOk("gemini-after-openai"));
     const h = await loadHandler();
     const r = await h({
       httpMethod: "POST",
       body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
     });
     const body = JSON.parse(r.body);
-    expect(body._provider).toBe("anthropic");
-    expect(body.content[0].text).toBe("anthropic-ok");
+    expect(body._provider).toBe("gemini");
+    expect(body.content[0].text).toBe("gemini-after-openai");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

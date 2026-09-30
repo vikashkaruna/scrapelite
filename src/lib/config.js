@@ -1,6 +1,8 @@
 // config.js — single source of truth for which integrations are live.
 // Each flag flips on automatically when its env var is present.
 
+import { PROVIDERS } from "./providerRegistry.js";
+
 const env =
   (typeof import.meta !== "undefined" && import.meta.env) ||
   (typeof process !== "undefined" && process.env) ||
@@ -80,7 +82,10 @@ export const SUPABASE_ANON_KEY =
 // The key lives server-side in the Netlify Function (AI_API_KEY env var, no VITE_ prefix).
 // In production: set AI_API_KEY in Netlify dashboard (no VITE_ prefix).
 // Local development should use AI_API_KEY in the Netlify environment.
-export const AI_MODEL = env.VITE_AI_MODEL || "claude-haiku-4-5-20251001";
+// The fallback rides the registry's Anthropic fast pin so this file can never
+// drift from the model the server actually resolves. (The server ignores the
+// client-sent model either way — this value is informational only.)
+export const AI_MODEL = env.VITE_AI_MODEL || PROVIDERS.anthropic.models.fast;
 // Scraping fallback provider keys (browser-side presence flags only — actual keys are server-side).
 // Set VITE_SPIDER_API_KEY or VITE_JINA_API_KEY in Netlify env when using these providers.
 // Set VITE_ENABLE_EXTRACT=true to force real extraction when only Jina/Direct is available.

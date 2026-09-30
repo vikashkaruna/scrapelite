@@ -28,6 +28,13 @@ SERVICES="${*:-api jobs admin trackers}"
 require_vars APP_BASE_URL APP_CONTEXT GIT_BRANCH
 [ -n "${SUPABASE_URL:-}" ] || { echo "✗ SUPABASE_URL missing in .env.$ENV_NAME"; exit 1; }
 
+# The anon key rides as a PLAIN env var on these services (not Secret Manager),
+# so a rotated/revoked key in .env.<env> would ship silently and 503 every
+# signed-in call. Verify the pair offline AND against the live project first —
+# the 2026-09-29 staging incident shipped exactly this way. SKIP_SUPABASE_CHECK=1
+# to bypass (prints a SKIP line; smoke still runs after).
+"$HERE/../check-supabase-pair.sh" "$ENV_NAME"
+
 # ── compose the --set-secrets flag from deployment/gcp/secrets.manifest ──────
 secret_flags() { # → "--set-secrets K1=NAME:latest,K2=…" (existing secrets only)
   local pairs=() row var
@@ -74,6 +81,13 @@ APP_ENV_VARS=(env_vars_file app \
   "VITE_AI_MODEL=${VITE_AI_MODEL:-}" \
   "GEMINI_MODEL_FAST=${GEMINI_MODEL_FAST:-}" \
   "GEMINI_MODEL_DEEP=${GEMINI_MODEL_DEEP:-}" \
+  "OPENAI_MODEL_FAST=${OPENAI_MODEL_FAST:-}" \
+  "OPENAI_MODEL_DEEP=${OPENAI_MODEL_DEEP:-}" \
+  "ANTHROPIC_MODEL_FAST=${ANTHROPIC_MODEL_FAST:-}" \
+  "ANTHROPIC_MODEL_DEEP=${ANTHROPIC_MODEL_DEEP:-}" \
+  "PERPLEXITY_MODEL_FAST=${PERPLEXITY_MODEL_FAST:-}" \
+  "PERPLEXITY_MODEL_DEEP=${PERPLEXITY_MODEL_DEEP:-}" \
+  "AI_PROVIDER_ORDER=${AI_PROVIDER_ORDER:-}" \
   "SCRAPE_PROVIDER_ORDER=${SCRAPE_PROVIDER_ORDER:-direct,spider,jina}" \
   "ENGAGEMENT_ENABLED=${ENGAGEMENT_ENABLED:-0}" \
   "OPS_JOBS_DISABLED=${OPS_JOBS_DISABLED:-1}" \
@@ -85,9 +99,33 @@ ENV_VARS_JSON="$("${APP_ENV_VARS[@]}")"
 # PostgREST needs a schemas list containing a comma — env-vars file again.
 REST_ENV_JSON="$(env_vars_file rest "PGRST_DB_SCHEMAS=public,storage" "PGRST_DB_ANON_ROLE=anon" "PGRST_DB_POOL=5")"
 
+# require_image <image-ref> — fail FAST with the remedy when nothing was built
+# at IMG_TAG. deploy-run.sh rides IMG_TAG (default: current git sha); gcloud's
+# own "Image not found" error only appears after a long deploy attempt and
+# names no cure. The remedies, in the order they're usually right:
+#   build-images.sh $ENV_NAME        — build + push the current tree
+#   update-env.sh $ENV_NAME          — env-only change, ride the live image
+#   DATIQ_IMG_TAG_OVERRIDE=<tag> …   — redeploy a known earlier build
+require_image() {
+  local img="$1"
+  if gcloud artifacts docker images describe "$img" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+    return 0
+  fi
+  if gcloud artifacts docker images describe "${img%%@*}" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "✗ image not found: $img"
+  echo "  Nothing was built at IMG_TAG=$(printf '%s' "$img" | sed 's/.*://'). Pick one:"
+  echo "    $HERE/build-images.sh $ENV_NAME          # build + push the current tree"
+  echo "    $HERE/update-env.sh $ENV_NAME            # env-only change, no rebuild"
+  echo "    DATIQ_IMG_TAG_OVERRIDE=<tag> deploy-run.sh $ENV_NAME <units>   # known build"
+  exit 1
+}
+
 for svc in $SERVICES; do
   case "$svc" in
     api)
+      require_image "$IMG_API"
       echo "→ Cloud Run ${CLOUD_RUN_API} (api — public, Netlify parity)"
       gcloud run deploy "$CLOUD_RUN_API" "${GCP_FLAGS[@]}" \
         --image="$IMG_API" --port=8080 --allow-unauthenticated \
@@ -98,6 +136,7 @@ for svc in $SERVICES; do
       grant_run_invoker "$CLOUD_RUN_API" "serviceAccount:${FIREBASE_RUN_INVOKER_SA}" "serviceAccount:${SA_DEPLOY_EMAIL}"
       ;;
     jobs)
+      require_image "$IMG_API"
       echo "→ Cloud Run ${CLOUD_RUN_JOBS} (jobs — Scheduler OIDC only)"
       # $JOBS_SECRETS deliberately UNQUOTED (like the api branch): secret_flags()
       # returns "" on a fresh project, and a quoted expansion would hand gcloud
@@ -135,7 +174,7 @@ for svc in $SERVICES; do
         --ingress=all --min-instances=0 --max-instances=2 --concurrency=80 \
         --memory=512Mi --cpu=1 --timeout=60 --service-account="$SA_JOBS_EMAIL" \
         --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${SQL_INSTANCE:?SQL_INSTANCE missing}" \
-        --set-env-vars="GOTRUE_DB_DRIVER=postgres,GOTRUE_API_HOST=0.0.0.0,GOTRUE_API_PORT=8080,API_EXTERNAL_URL=${APP_BASE_URL},GOTRUE_SITE_URL=${APP_BASE_URL},GOTRUE_JWT_EXP=3600,GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated,GOTRUE_DISABLE_SIGNUP=false,GOTRUE_EXTERNAL_EMAIL_ENABLED=true,GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false},GOTRUE_LOG_LEVEL=warn" \
+        --set-env-vars="GOTRUE_DB_DRIVER=postgres,GOTRUE_API_HOST=0.0.0.0,GOTRUE_API_PORT=8080,API_EXTERNAL_URL=${APP_BASE_URL},GOTRUE_SITE_URL=${APP_BASE_URL},GOTRUE_JWT_EXP=3600,GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated,GOTRUE_DISABLE_SIGNUP=false,GOTRUE_EXTERNAL_EMAIL_ENABLED=true,GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false},GOTRUE_LOG_LEVEL=warn,GOTRUE_URI_ALLOW_LIST=${GOTRUE_URI_ALLOW_LIST:-}" \
         --set-secrets="GOTRUE_DB_DATABASE_URL=$(sm_name GOTRUE_DB_DATABASE_URL):latest,GOTRUE_JWT_SECRET=$(sm_name JWT_SECRET):latest" --quiet
       ;;
     rest)

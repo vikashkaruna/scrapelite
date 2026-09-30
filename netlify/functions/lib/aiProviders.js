@@ -58,11 +58,13 @@ export const DEFAULT_MODELS = Object.fromEntries(
   AI_PROVIDERS.map((p) => [p, PROVIDERS[p].models.deep])
 );
 
-// The GLOBAL fallback chain, used only when a caller names no area. Kept
-// cost-first (Gemini → Anthropic → OpenAI) — the per-area defaults in
-// FUNCTION_AREAS express the quality-vs-cost intent for each feature, and
-// changing this one would silently re-point every caller that predates areas.
-export const DEFAULT_ORDER = ["gemini", "anthropic", "openai"];
+// The GLOBAL fallback chain, used only when a caller names no area. Owner-set
+// priority (2026-09-30): OpenAI (GPT-6 Luna) → Google Gemini → Anthropic
+// Claude. The per-area defaults in FUNCTION_AREAS follow the same order; an
+// unset key or a failing provider is skipped, so this is preference, not
+// dependency. Overridable without a deploy via AI_PROVIDER_ORDER (env) or
+// /admin/ai (stored, wins over env).
+export const DEFAULT_ORDER = ["openai", "gemini", "anthropic"];
 
 /** Areas an override may be stored for. Named PILLAR_KEYS for back-compat. */
 export const PILLAR_KEYS = AI_AREA_KEYS.slice();
@@ -583,10 +585,24 @@ export function resolvePillarChain(cfg, pillar) {
   };
 }
 
-/** Pick the model id for a provider at a tier from an already-resolved chain. */
-export function modelForTier(chain, provider, tier) {
+/**
+ * Pick the model id for a provider at a tier from an already-resolved chain.
+ *
+ * `pillar` (optional) enables the area's SHIPPED default model — see
+ * FUNCTION_AREAS.classification. Precedence: an admin-stored per-provider
+ * model (the chain maps, env already baked in) wins; otherwise the pillar's
+ * defaultModel pass re-walks tier env → generic env → area default → registry
+ * pin. The "differs from the pillar-less default" check separates an explicit
+ * admin pin from a baked-in default: the maps are dense (defaults() fills
+ * every provider), so a bare map-first lookup would make the area default
+ * unreachable, while map-last would let an area default override env vars.
+ */
+export function modelForTier(chain, provider, tier, pillar = "") {
   const map = tier === MODEL_TIER.FAST ? chain.modelsFast : chain.models;
-  return (map && map[provider]) || defaultModel(provider, tier, process.env);
+  const stored = (map && map[provider]) || "";
+  if (!pillar) return stored || defaultModel(provider, tier, process.env);
+  if (stored && stored !== defaultModel(provider, tier, process.env)) return stored;
+  return defaultModel(provider, tier, process.env, pillar);
 }
 
 let _cache = null;
@@ -633,7 +649,7 @@ export async function resolveProvider(provider, pillar, tier) {
   const cfg = await loadAiConfig();
   const chain = resolvePillarChain(cfg, pillar);
   return {
-    model: modelForTier(chain, provider, tier || chain.tier),
+    model: modelForTier(chain, provider, tier || chain.tier, pillar),
     enabled: chain.enabled[provider] !== false,
     apiKey: keyFor(provider),
   };
@@ -896,7 +912,7 @@ export async function runChain(messages, clientMaxTokens, opts = {}) {
     const apiKey = keyFor(provider);
     if (!apiKey) { attempts.push({ provider, skipped: "no-key" }); continue; }
 
-    const model = modelForTier(chain, provider, tier);
+    const model = modelForTier(chain, provider, tier, area);
     // A schema only reaches providers that can honour it natively; the others
     // get the instruction inline so the request still has a chance.
     const supportsSchema = PROVIDER_META[provider]?.structured === true;

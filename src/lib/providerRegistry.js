@@ -74,7 +74,7 @@ export const PROVIDERS = {
       // next time Google rotates a line.
       fast: "gemini-3.8-flash",
       deep: "gemini-pro-latest",
-      catalogue: ["gemini-3.8-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest"],
+      catalogue: ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest"],
     },
   },
   anthropic: {
@@ -96,6 +96,8 @@ export const PROVIDERS = {
     // resolves today — changing the order alone must not be a key rotation.
     keyEnvList: ["ANTHROPIC_API_KEY", "AI_API_KEY"],
     modelEnv: "AI_MODEL",
+    modelFastEnv: "ANTHROPIC_MODEL_FAST",
+    modelDeepEnv: "ANTHROPIC_MODEL_DEEP",
     docsUrl: "https://console.anthropic.com/settings/keys",
     structured: true, // via forced tool use
     models: {
@@ -109,12 +111,20 @@ export const PROVIDERS = {
     label: "OpenAI",
     keyEnv: "OPENAI_API_KEY",
     modelEnv: "OPENAI_MODEL",
+    modelFastEnv: "OPENAI_MODEL_FAST",
+    modelDeepEnv: "OPENAI_MODEL_DEEP",
     docsUrl: "https://platform.openai.com/api-keys",
     structured: true, // native json_schema response_format
     models: {
-      fast: "gpt-4o-mini",
-      deep: "gpt-4o",
-      catalogue: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"],
+      // GPT-6 Luna — the efficient GPT-6 for focused, high-volume work
+      // (extraction, enrichment, classification, the jobs layer). Sol is the
+      // longer-draft sibling; both are in the catalogue. Owner-set priority
+      // (2026-09-30): OpenAI first, then Gemini, then Claude — an unset or
+      // failing OpenAI key simply falls through the chain, so this pin is a
+      // default, not a dependency.
+      fast: "gpt-6-luna",
+      deep: "gpt-6-luna",
+      catalogue: ["gpt-6-luna", "gpt-6-sol", "gpt-5.6-luna", "gpt-4.1"],
     },
   },
   perplexity: {
@@ -122,6 +132,8 @@ export const PROVIDERS = {
     label: "Perplexity",
     keyEnv: "PERPLEXITY_API_KEY",
     modelEnv: "PERPLEXITY_MODEL",
+    modelFastEnv: "PERPLEXITY_MODEL_FAST",
+    modelDeepEnv: "PERPLEXITY_MODEL_DEEP",
     docsUrl: "https://www.perplexity.ai/settings/api",
     structured: false, // prose + citations; parsed loosely on purpose
     models: {
@@ -202,6 +214,18 @@ export const INTEL_PROVIDERS  = PROVIDER_KEYS.filter((k) => PROVIDERS[k].kind ==
 // defaults declared here — which is what makes the console able to SHOW the
 // effective setting even when nothing has ever been configured.
 //
+// Chain priority (owner-set, 2026-09-30): OpenAI (GPT-6 Luna) → Google Gemini
+// (3.8 Flash / Pro) → Anthropic Claude (Haiku 4.5 / Sonnet 5). Every AI area
+// follows it; an unset key or a failing provider is skipped by runChain, so
+// the order is a preference, not a dependency. AI_PROVIDER_ORDER (global) and
+// /admin/ai (global + per-area) can both re-order it without a deploy.
+//
+// `defaultModels` (optional) pins a SHIPPED default for one provider inside
+// one area — a step between env vars and the tier pins, for the jobs whose
+// economics differ from the tier they run at. Only classification uses it
+// today: "lightweight automation" (high-volume link tagging, bulk enrichment)
+// runs the fast tier, but Flash-Lite is the honest price/quality point there.
+//
 // ⚠️ Adding an area here is half the job: the calling site must pass the same
 // id as `area` to runChain(), or the override silently does nothing. The
 // `callsite` field records where that is, so the pair stays checkable.
@@ -211,7 +235,7 @@ export const FUNCTION_AREAS = {
     kind: PROVIDER_KIND.AI,
     blurb: "Contacts, leadership, social links, mission, pricing, and any free-text custom extraction.",
     userVisibleAs: "Enrichment tabs on Preview, Home custom extraction, Batch enrichment",
-    defaultOrder: ["gemini", "anthropic", "openai"],
+    defaultOrder: ["openai", "gemini", "anthropic"],
     defaultTier: MODEL_TIER.DEEP,
     callsite: "netlify/functions/extract.js → extractStructuredWithAI()",
   },
@@ -220,7 +244,7 @@ export const FUNCTION_AREAS = {
     kind: PROVIDER_KIND.AI,
     blurb: "AI page summaries, generated content formats, template synthesis, and intelligence briefs.",
     userVisibleAs: "AI summary, Generate content, template reports, Visibility Brief",
-    defaultOrder: ["anthropic", "gemini", "openai"],
+    defaultOrder: ["openai", "gemini", "anthropic"],
     defaultTier: MODEL_TIER.DEEP,
     callsite: "netlify/functions/ai.js (area=synthesis) ← src/lib/aiService.js",
   },
@@ -229,8 +253,9 @@ export const FUNCTION_AREAS = {
     kind: PROVIDER_KIND.AI,
     blurb: "High-volume, low-judgement work. Runs on the fast tier on purpose — frontier pricing buys nothing here.",
     userVisibleAs: "Link category chips on Preview and Dashboard",
-    defaultOrder: ["gemini", "openai", "anthropic"],
+    defaultOrder: ["openai", "gemini", "anthropic"],
     defaultTier: MODEL_TIER.FAST,
+    defaultModels: { gemini: "gemini-3.5-flash-lite" },
     callsite: "netlify/functions/ai.js (area=classification) ← src/lib/aiService.js",
   },
   discoverability: {
@@ -238,7 +263,7 @@ export const FUNCTION_AREAS = {
     kind: PROVIDER_KIND.AI,
     blurb: "The SEO / AEO / GEO audit's AI evaluator. Runs under a hard deadline, so a slow provider costs coverage.",
     userVisibleAs: "/discoverability audit findings and executive summary",
-    defaultOrder: ["gemini", "anthropic", "openai"],
+    defaultOrder: ["openai", "gemini", "anthropic"],
     defaultTier: MODEL_TIER.FAST,
     callsite: "netlify/functions/lib/audit/aiEvaluator.js",
   },
@@ -310,8 +335,22 @@ export function readKey(providerKey, env = {}) {
   return "";
 }
 
-/** Default model id for a provider at a tier, honouring its model env override. */
-export function defaultModel(providerKey, tier = MODEL_TIER.DEEP, env = {}) {
+/** The shipped per-area model default for one provider ("" when the area declares none). */
+export function areaDefaultModel(pillarKey, providerKey) {
+  const m = FUNCTION_AREAS[pillarKey]?.defaultModels;
+  return (m && m[providerKey]) || "";
+}
+
+/**
+ * Default model id for a provider at a tier. Precedence, most-specific first:
+ *   1. tier-specific env var   (GEMINI_MODEL_FAST / OPENAI_MODEL_DEEP / …)
+ *   2. generic env var         (GEMINI_MODEL / AI_MODEL / OPENAI_MODEL / … —
+ *                              pins BOTH tiers; predates tiering)
+ *   3. the area's shipped default model (defaultModels — only when the caller
+ *      names a pillar; see FUNCTION_AREAS.classification)
+ *   4. the registry's fast/deep pin
+ */
+export function defaultModel(providerKey, tier = MODEL_TIER.DEEP, env = {}, pillarKey = "") {
   const p = PROVIDERS[providerKey];
   if (!p || !p.models) return "";
   // Tier-specific env override takes precedence for that tier
@@ -325,6 +364,8 @@ export function defaultModel(providerKey, tier = MODEL_TIER.DEEP, env = {}) {
   // operator who set it meant "use exactly this", so it wins over the tier defaults.
   const pinned = p.modelEnv ? env[p.modelEnv] : "";
   if (pinned) return String(pinned);
+  const areaModel = pillarKey ? areaDefaultModel(pillarKey, providerKey) : "";
+  if (areaModel) return areaModel;
   return p.models[tier] || p.models.deep || "";
 }
 
