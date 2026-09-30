@@ -10540,6 +10540,24 @@ a.ws-dsc-row:hover { border-color: var(--accent); }
   width: 100%; padding: 10px 12px; border: 1px solid var(--border);
   border-radius: 8px; background: var(--bg); color: var(--text); font: inherit;
 }
+/* ── shared form controls (the "Customize Workflow & Fields" panel) ────────
+   Tailwind preflight sets form controls to `color: inherit; background:
+   transparent`, and this class had NO definition at all — so the panel's
+   text boxes rendered with inherited text on a var(--surface-2) panel, which
+   reads as invisible text in dark mode and follows no brand token. Explicit
+   tokens fix both: same surface/border/text treatment as .tpl-field, plus
+   theme-aware native widgets via color-scheme (design-system.css). */
+.input {
+  width: 100%; padding: 8px 10px; font: inherit; font-size: 0.85rem;
+  color: var(--text); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: 8px;
+}
+.input::placeholder { color: var(--text-3); }
+.input:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+select.input option { color: var(--text); background: var(--surface); }
 .tpl-req { color: var(--danger); }
 .tpl-help { font-size: 12px; color: var(--text-3); margin: 0; }
 .tpl-errors { margin: 0; padding-left: 18px; color: var(--danger); font-size: 13px; }

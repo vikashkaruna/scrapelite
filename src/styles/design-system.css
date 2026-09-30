@@ -64,6 +64,9 @@
 
 /* ── Light theme (slate) ───────────────────────────────────────── */
 [data-theme="light"] {
+  /* Native form widgets (select popups, date pickers) must follow the
+     theme or a dark-mode user gets a blinding native-white control. */
+  color-scheme: light;
   --bg: #f6f8fb;
   --bg-grad-1: color-mix(in srgb, var(--accent) 7%, #f6f8fb);
   --surface: #ffffff;
@@ -84,6 +87,7 @@
 
 /* ── Dark theme (slate) ────────────────────────────────────────── */
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg: #080b14;
   --bg-grad-1: color-mix(in srgb, var(--accent) 13%, #080b14);
   --surface: #111726;
