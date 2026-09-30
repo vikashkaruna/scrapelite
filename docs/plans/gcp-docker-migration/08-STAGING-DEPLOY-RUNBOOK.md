@@ -225,6 +225,19 @@ substitutions rather than digest promotion.
   the generator then emits the `/auth/v1/**` + `/rest/v1/**` Cloud Run rewrites
   (unit-tested), retiring the hosted-Supabase dependency.
 
+### Phase 3a — STAGING DB cutover (added 2026-09-30; prepared, NOT executed)
+The staging twin of Phase 3: migrate the hosted dev Supabase project
+(`aubwooslkkrprdxuiyvj`, staging's DB today) into `datiq-vsp-sql-datiq-stg`
+**including users**, then repoint staging at the self-hosted trio. Owner
+decisions: **fresh JWT secret** (sessions + old keys invalidate — users
+re-login) and **cron handoff to GCP in the same window**. Tools:
+`migrate-staging-db.sh staging <SOURCE_DB_URL>` (safe half — migrates only,
+verifies users/identities/extractions counts + FK restore) and
+`cutover-staging-db.sh staging <SOURCE_DB_URL>` (the flip; `DRY_RUN=1` prints
+everything). Full procedure, rollback and caveats (Storage objects not
+migrated; social OAuth needs GoTrue provider env):
+**`docs/plans/gcp-docker-migration/12-STAGING-DB-CUTOVER.md`**.
+
 ---
 
 ## 6. Troubleshooting quick reference

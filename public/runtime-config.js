@@ -126,8 +126,24 @@ var _isStaging =
   location.hostname === "staging--datiqapp.netlify.app" ||
   (_isGcpHost && !_isGcpProd);
 
+// ── The staging/branch Supabase pair ──────────────────────────────────────────
+// The committed values below are the DEFAULT (hosted dev project
+// aubwooslkkrprdxuiyvj), which is what every non-production host uses until
+// the staging DB cutover. At the cutover, cutover-staging-db.sh swaps these
+// TWO lines for the duration of ONE hosting deploy — supabaseUrl becomes
+// window.location.origin (same-origin /auth/v1 + /rest/v1 through the new
+// Firebase rewrites, doc 12-STAGING-DB-CUTOVER.md) and the anon key becomes
+// a key minted from the fresh JWT secret — then restores the committed form
+// immediately after. The committed form MUST stay the hosted dev pair:
+// runtimeConfigIdentity.test.js fails on a committed flip, because a
+// committed flip would break staging before the rewrites exist.
+var _stagingSupabaseUrl = "https://aubwooslkkrprdxuiyvj.supabase.co";
+var _stagingSupabaseAnonKey = "sb_publishable_NXSVmJA_neFWqLGEiCmkEg_j8I03VLG";
+
 // Supabase project selection: ONLY main → production. Everything else
-// (staging, branch deploys, localhost) → the dev/staging project.
+// (staging, branch deploys, localhost) → the staging/branch pair vars
+// declared above — the hosted dev project by default, and repointed to the
+// self-hosted trio by the staging DB cutover (see those vars' comment).
 window.__DATIQ_RUNTIME__ = {
   webhookUrl: _isLocal
     ? "https://vkaruna.app.n8n.cloud/webhook-test/datiq"
@@ -137,7 +153,7 @@ window.__DATIQ_RUNTIME__ = {
   razorpayKeyId: "",
   supabaseUrl: _isMain
     ? "https://sikkfxysjhirmtwkumpt.supabase.co"
-    : "https://aubwooslkkrprdxuiyvj.supabase.co",
+    : _stagingSupabaseUrl,
   // Supabase anon key (publishable JWT). One per project. These are public
   // by Supabase's own design — they identify the project, RLS enforces
   // authorization. If you ever rotate either project, update the matching
@@ -158,7 +174,7 @@ window.__DATIQ_RUNTIME__ = {
   // to its paired project (publishable-format keys are accepted as-is).
   supabaseAnonKey: _isMain
     ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpa2tmeHlzamhpcm10d2t1bXB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNzAwNzMsImV4cCI6MjA5OTk0NjA3M30.z5XQxnmOqgVpPhUPRkIl5QIz932IRRj-ihkTVMfuqwM"
-    : "sb_publishable_NXSVmJA_neFWqLGEiCmkEg_j8I03VLG",
+    : _stagingSupabaseAnonKey,
   // The OAuth / email-confirmation / password-reset return URL for this
   // branch. The Supabase client passes this as `redirectTo` so the OAuth
   // provider (Google, Microsoft, GitHub) and the Supabase email-link

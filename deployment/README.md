@@ -68,6 +68,11 @@ bash deployment/scripts/gcp/build-images.sh staging api  # one image only
 bash deployment/scripts/gcp/deploy-run.sh staging api jobs  # chosen services
 bash deployment/scripts/gcp/deploy-scheduler.sh staging  # 13 cron jobs (1:1 netlify.toml)
 bash deployment/scripts/gcp/crons.sh staging status|pause|resume  # ownership control
+bash deployment/scripts/gcp/migrate-staging-db.sh staging "<SOURCE_DB_URL>"   # migrate
+                                            # staging Supabase → Cloud SQL (db+users;
+                                            # verifies counts + FKs; doc 12)
+DRY_RUN=1 bash deployment/scripts/gcp/cutover-staging-db.sh staging "<SOURCE_DB_URL>"
+                                            # staging DB cutover dry-run (doc 12)
 bash deployment/scripts/gcp/smoke.sh staging             # parity smoke (fails the deploy)
 deployment/scripts/gcp/down.sh staging --yes             # guarded teardown
 deployment/scripts/gcp/down.sh prod                      # plan only; see runbook 11 §6
@@ -109,11 +114,13 @@ deployment/
 │                       default, -r/-v opt in to removal), check-parameterisation.sh,
 │                       check-supabase-pair.sh, gen-local-config,
 │                       gen-routes-manifest, migrate-from-supabase,
+│                       mint-supabase-keys.mjs (anon/service pair from JWT_SECRET),
 │                       gcp/ (bootstrap, secrets, build-images [unit filter],
 │                       deploy-run, deploy-hosting, deploy-scheduler, update-env,
-│                       up, down [prod-guarded], crons, migrate-db, promote-prod,
-│                       cutover-db, smoke, stage-studio, proxy-studio),
-│                       lib/env-loader.sh
+│                       up, down [prod-guarded], crons, migrate-db,
+│                       migrate-staging-db, cutover-staging-db [doc 12],
+│                       promote-prod, cutover-db, smoke, stage-studio,
+│                       proxy-studio), lib/env-loader.sh
 └── tests/              stack-smoke.sh, signon-e2e.sh, firebase-config.test.mjs,
                         compose-policy.test.mjs (restart policies + lifecycle scripts)
 ```
