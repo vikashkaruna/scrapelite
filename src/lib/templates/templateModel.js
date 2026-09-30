@@ -273,7 +273,36 @@ export function validateInput(template, input) {
     }
   }
 
-  return { ok: errors.length === 0, errors, value };
+  return { ok: errors.length === 0, errors, value: { ...value, ...customization(value, input) } };
+}
+
+/**
+ * The "Customize Workflow & Fields" panel inputs. These are NOT declared in
+ * any template's input_schema (they are the panel every template shares), so
+ * the schema-field loop above would silently drop them — which it did: a
+ * typed custom_fields list never reached the run, and the user's "Products,
+ * Services, Pricing, Credentials" request had zero effect. Whitelisted here,
+ * the same shape estimateCredits() already reads.
+ */
+function customization(declared, input) {
+  const src = isPlainObject(input) ? input : {};
+  const out = {};
+  const cf = src.custom_fields;
+  if (Array.isArray(cf)) {
+    const clean = cf.map((s) => String(s).trim()).filter(Boolean).slice(0, 20);
+    if (clean.length) out.custom_fields = clean;
+  } else if (typeof cf === "string" && cf.trim()) {
+    const clean = cf.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20);
+    if (clean.length) out.custom_fields = clean;
+  }
+  if (typeof src.custom_prompt === "string" && src.custom_prompt.trim()) {
+    out.custom_prompt = src.custom_prompt.trim().slice(0, 600);
+  }
+  const depth = String(src.ai_depth || "standard");
+  if (depth === "quick" || depth === "deep" || depth === "standard") out.ai_depth = depth;
+  const extra = Number(src.extra_subpages || 0);
+  if (Number.isFinite(extra) && extra > 0) out.extra_subpages = Math.min(4, Math.round(extra));
+  return out;
 }
 
 // ── cost ────────────────────────────────────────────────────────────────────

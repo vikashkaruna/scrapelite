@@ -985,19 +985,29 @@ function RunResult({ result, template, onShare, onEditInputs }) {
         <div className="tpl-finding">
           <p>
             <Icon name="info" size={14} />
-            This site doesn’t publish the information this template looks for — that itself is the
-            finding. Everything below was read from the pages listed under Sources.
+            This site doesn’t publish some or all of the information this template looks for — that
+            itself is the finding. Everything below was read from the pages listed under Sources.
           </p>
-          {(template.extraction_schema?.fields || []).length ? (
-            <>
-              <p className="tpl-finding-sub">Searched for, and not stated anywhere we could read:</p>
-              <ul className="tpl-looked-for">
-                {template.extraction_schema.fields.map((f) => (
-                  <li key={f.name}>{humanKey(f.name)}</li>
-                ))}
-              </ul>
-            </>
-          ) : null}
+          {(() => {
+            // The server-side schema extraction names the EXACT fields it could
+            // not verify (including operator-added custom fields); the template's
+            // declared fields are the fallback for runs that predate not_found.
+            const lookedFor =
+              Array.isArray(result.absentFields) && result.absentFields.length
+                ? result.absentFields
+                : (template.extraction_schema?.fields || []).map((f) => f.name);
+            if (!lookedFor.length) return null;
+            return (
+              <>
+                <p className="tpl-finding-sub">Searched for, and not stated anywhere we could read:</p>
+                <ul className="tpl-looked-for">
+                  {lookedFor.map((name) => (
+                    <li key={name}>{humanKey(name)}</li>
+                  ))}
+                </ul>
+              </>
+            );
+          })()}
         </div>
       ) : null}
 

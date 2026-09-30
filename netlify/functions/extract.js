@@ -101,7 +101,7 @@ const RELATED_FETCH_TIMEOUT_MS = 9000;
 // model call rather than only on the ABSENT retry — a homepage that yields a
 // couple of fields is not ABSENT, so the retry never fires and /about is never
 // opened.
-const ENTITY_CAPABILITIES = new Set(["contacts", "leadership", "mission", "pricing", "diligence", "proof"]);
+const ENTITY_CAPABILITIES = new Set(["contacts", "leadership", "mission", "pricing", "diligence", "proof", "talent"]);
 
 // ── Reason vocabulary ───────────────────────────────────────────────────────
 // Split out of the single overloaded "no_match", which used to mean any of:
@@ -837,16 +837,21 @@ export const handler = async (event) => {
       : extractPageContent(result.html || "", { maxChars: BASE_PAGE_TEXT_CHARS });
 
     if (wantsEnrichment && isEmptyExtraction(result.customExtraction)) {
-      const plan = resolveExtractionPlan(options.enrichKey, options.customPrompt);
+      const plan = resolveExtractionPlan(options.enrichKey, options.customPrompt,
+        options.schema && typeof options.schema === "object"
+          ? { schema: options.schema, groups: options.groups, instruction: options.instruction }
+          : null);
 
       // Gather subpages BEFORE the model call for entity capabilities, so the
       // one AI call reasons over the whole company surface. `deep:false` opts
       // out (batch runs at scale, where latency per row dominates).
+      // `extra_pages` (template Customize panel, 0–4) raises the cap.
+      const relatedLimit = Math.min(7, RELATED_PAGE_MAX + Math.max(0, Number(options.extra_pages) || 0));
       let related = [];
       const deepAllowed = options.deep !== false;
       if (deepAllowed && options.enrichKey && ENTITY_CAPABILITIES.has(options.enrichKey)) {
         try {
-          related = await gatherRelatedPages(result.html || "", url, options.enrichKey, deadline);
+          related = await gatherRelatedPages(result.html || "", url, options.enrichKey, deadline, relatedLimit);
         } catch (err) {
           console.warn("[DatIQ] related-page gather failed (continuing):", err?.message);
         }
@@ -891,7 +896,7 @@ export const handler = async (event) => {
           secondReason = ENRICH_REASON.BUDGET_EXHAUSTED;
         } else if (retryWorthTrying) {
           try {
-            const late = await gatherRelatedPages(result.html || "", url, options.enrichKey, deadline);
+            const late = await gatherRelatedPages(result.html || "", url, options.enrichKey, deadline, relatedLimit);
             if (late.length) {
               const c2 = buildCorpus(url, page.text, late);
               const retry = await extractStructuredWithAI({

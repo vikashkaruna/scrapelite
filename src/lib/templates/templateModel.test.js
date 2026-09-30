@@ -207,6 +207,35 @@ describe("validateInput", () => {
     expect(validateInput(t, { deep: "true" }).value.deep).toBe(true);
     expect(validateInput(t, { deep: false }).value.deep).toBe(false);
   });
+
+  describe("the shared Customize panel inputs (regression: they used to be dropped)", () => {
+    it("keeps custom_fields as a cleaned array", () => {
+      const r = validateInput(tpl(), { domain: "x.com", custom_fields: "Products, Services,  pricing , credentials" });
+      expect(r.value.custom_fields).toEqual(["Products", "Services", "pricing", "credentials"]);
+    });
+
+    it("keeps custom_prompt trimmed and capped", () => {
+      const r = validateInput(tpl(), { domain: "x.com", custom_prompt: "  Focus on enterprise compliance.  " });
+      expect(r.value.custom_prompt).toBe("Focus on enterprise compliance.");
+    });
+
+    it("keeps a valid ai_depth and rejects unknown ones", () => {
+      expect(validateInput(tpl(), { domain: "x.com", ai_depth: "deep" }).value.ai_depth).toBe("deep");
+      expect(validateInput(tpl(), { domain: "x.com", ai_depth: "quick" }).value.ai_depth).toBe("quick");
+      expect(validateInput(tpl(), { domain: "x.com", ai_depth: "sideways" }).value.ai_depth).toBeUndefined();
+    });
+
+    it("keeps extra_subpages capped at 4", () => {
+      expect(validateInput(tpl(), { domain: "x.com", extra_subpages: 2 }).value.extra_subpages).toBe(2);
+      expect(validateInput(tpl(), { domain: "x.com", extra_subpages: 9 }).value.extra_subpages).toBe(4);
+    });
+
+    it("drops blank customization values", () => {
+      const r = validateInput(tpl(), { domain: "x.com", custom_fields: " , ", custom_prompt: "  " });
+      expect(r.value.custom_fields).toBeUndefined();
+      expect(r.value.custom_prompt).toBeUndefined();
+    });
+  });
 });
 
 describe("countUnits / estimateCredits", () => {

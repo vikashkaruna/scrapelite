@@ -81,6 +81,9 @@ export const RELATED_PAGE_HINTS = {
   // say so rather than have it inferred from its own prompt prose.
   diligence:  ["about", "team", "company", "leadership", "careers", "jobs", "customers", "story"],
   proof:      ["customers", "case-studies", "case-study", "testimonials", "stories", "success", "clients"],
+  // Talent sourcing reads career + engineering surfaces. Careers/jobs first
+  // (hiring roles, culture), then engineering/team/about for stack + leaders.
+  talent:     ["careers", "jobs", "engineering", "team", "about", "culture", "company", "life"],
 };
 
 // Best-effort guess at which RELATED_PAGE_HINTS bucket a free-text prompt

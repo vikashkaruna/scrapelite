@@ -452,7 +452,7 @@ export const SEED_TEMPLATES = [
 
   {
     template_key: "recruiter_talent_sourcing",
-    related_key: "leadership",
+    related_key: "talent",
     status: TEMPLATE_STATUS.PUBLISHED,
     title: "Talent Sourcing & Culture Signals",
     persona: "recruiter",
