@@ -157,7 +157,9 @@ psql_q "create role anon nologin noinherit; create role authenticated nologin no
 [ -s "$ROLES_SQL" ] && psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -q -f "$ROLES_SQL" || true
 echo "→ schema"
 psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -q -f "$SCHEMA_SQL" 2>"$GEN_DIR/db/schema-restore.err" || true
-echo "   $(grep -c 'ERROR' "$GEN_DIR/db/schema-restore.err" 2>/dev/null || echo 0) tolerated restore errors (extensions/platform objects)"
+# grep -c exits 1 on zero matches: `|| echo 0` would APPEND a second 0 to
+# the captured output; `|| true` keeps grep's own "0" as the only line.
+echo "   $(grep -c 'ERROR' "$GEN_DIR/db/schema-restore.err" 2>/dev/null || true) tolerated restore errors (extensions/platform objects)"
 echo "→ extensions (Supabase puts pgcrypto/uuid-ossp under schema 'extensions')"
 psql_q "create schema if not exists extensions;
         create extension if not exists pgcrypto with schema extensions;
@@ -205,7 +207,7 @@ psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -f "$DATA_SQL" 2>"$GEN_DIR/db/data-resto
 if [ -s "$FK_DEFS" ]; then
   echo "→ re-adding FK constraints"
   psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -q -f "$FK_DEFS" 2>"$GEN_DIR/db/fk-restore.err" || true
-  fk_errors=$(grep -c 'ERROR' "$GEN_DIR/db/fk-restore.err" 2>/dev/null || echo 0)
+  fk_errors=$(grep -c 'ERROR' "$GEN_DIR/db/fk-restore.err" 2>/dev/null || true)
   fk_total=$(grep -c . "$FK_DEFS")
   if [ "$fk_errors" != "0" ]; then
     if [ -n "$SOURCE_DB_URL" ]; then
@@ -219,7 +221,9 @@ if [ -s "$FK_DEFS" ]; then
     echo "    DROPPED for this rehearsal — data rows themselves are intact. The"
     echo "    production cutover (SOURCE_DB_URL path) restores the auth schema and"
     echo "    re-adds every FK."
-    grep -oE 'constraint "[a-z_]+' "$GEN_DIR/db/fk-restore.err" | sort -u | head -20 | sed 's/^/      /'
+    # pipefail: a no-match grep here must not kill the script — the FK
+    # step already decided the outcome via fk_errors.
+    grep -oE 'constraint "[a-z_]+' "$GEN_DIR/db/fk-restore.err" 2>/dev/null | sort -u | head -20 | sed 's/^/      /' || true
   else
     echo "   ${fk_total} FK constraints restored"
   fi
