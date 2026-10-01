@@ -81,10 +81,29 @@ DRY_RUN=1 bash deployment/scripts/gcp/cutover-staging-db.sh staging "<SOURCE_DB_
 bash deployment/scripts/gcp/cutover-db.sh prod "<SOURCE_DB_URL>"   # PROD cutover (doc 09;
                                             # gated cron handoff; DRY_RUN supported)
 bash deployment/scripts/gcp/smoke.sh staging             # parity smoke (fails the deploy)
-deployment/scripts/gcp/down.sh staging --yes             # guarded teardown
+bash deployment/scripts/gcp/stage-third-party.sh staging # re-mirror GoTrue/PostgREST
+                                            # (needed after a teardown — the AR-repo
+                                            # delete takes the mirrors with it;
+                                            # up.sh self-heals when they are missing)
+deployment/scripts/gcp/down.sh staging --yes             # guarded teardown — DATA-SAFE:
+                                                         # Cloud SQL + its 5 access secrets
+                                                         # + the hosting site are KEPT.
+                                                         # --delete-data destroys them
+                                                         # (asks for the instance name FIRST)
+DRY_RUN=1 deployment/scripts/gcp/down.sh staging --yes   # print every action, touch nothing
 deployment/scripts/gcp/down.sh prod                      # plan only; see runbook 11 §6
                                                          # for the prod guardrails
 ```
+
+**`up.sh` ↔ `down.sh` round trip (verified live 2026-10-01, staging):**
+`down.sh staging --yes` removes scheduler jobs, Cloud Run services, rebuildable
+secrets, images, the artifacts bucket and service accounts — the database, its
+access secrets and the hosting site survive. `up.sh staging` rebuilds the stack
+around them (image mirrors self-heal; migrate-db skips itself in cloud-sql
+mode; hosting redeploys into the kept site) with the data untouched. One
+operator step is burned-in by design: **a deleted Firebase hosting site ID can
+never be recreated** — that is why the site is kept by default, and only
+`--delete-data` (full destroy) removes it.
 
 Prod deploys from GitHub: `workflow_dispatch`-only via `.github/workflows/gcp-prod.yml`
 (dormant until the `gcp-prod` GitHub Environment + required reviewers are

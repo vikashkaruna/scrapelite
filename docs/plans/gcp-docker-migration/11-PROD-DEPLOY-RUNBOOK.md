@@ -127,26 +127,45 @@ the `PG_META_DB_URL` / `POSTGRES_PASSWORD` secrets, refreshed by
 
 ## 6. Tear prod down (GUARDED — read before running)
 
-`down.sh prod` destroys live infrastructure. Six guardrails, all required:
+`down.sh prod` destroys live infrastructure. Guardrails, all required:
 
 1. `prod` must be typed explicitly (no default, no alias).
 2. `ALLOW_PROD_TEARDOWN=1` must be exported.
 3. `--yes` must be passed.
 4. The GCP **project id** must be typed to confirm.
-5. The **database survives by default** — add `--delete-data` (and type the
-   SQL instance name) to include Cloud SQL.
-6. An 8-second abortable countdown runs first.
+5. **Data-safe by default** (hardened 2026-10-01 after a live staging
+   round-trip): Cloud SQL, its **five DB-access secrets** (JWT_SECRET,
+   PGRST_DB_URI, GOTRUE_DB_DATABASE_URL, PG_META_DB_URL, POSTGRES_PASSWORD —
+   they hold the only copies of the generated role passwords) and the
+   **Firebase hosting site** all SURVIVE a plain teardown. The site survives
+   because a deleted site ID can never be recreated (firebase-tools: "cannot
+   be reactivated by you or anyone else") — it goes only with `--delete-data`.
+6. `--delete-data` destroys the database + its secrets + the site, and asks
+   you to type the Cloud SQL instance name **BEFORE the first deletion** — a
+   refused confirmation leaves the whole stack untouched.
+7. An 8-second abortable countdown runs first.
+8. `DRY_RUN=1` prints every action without executing any.
 
 ```bash
 # plan only — prints what WOULD be deleted, changes nothing:
 bash deployment/scripts/gcp/down.sh prod
 
-# execute WITHOUT touching the database:
+# rehearse the full action list, touching nothing:
+DRY_RUN=1 bash deployment/scripts/gcp/down.sh prod --yes
+
+# execute WITHOUT touching the database, its secrets or the site:
 ALLOW_PROD_TEARDOWN=1 bash deployment/scripts/gcp/down.sh prod --yes
 
-# FULL teardown including Cloud SQL (owner present, rollback window closed):
+# FULL teardown including Cloud SQL + site (owner present, rollback window closed):
 ALLOW_PROD_TEARDOWN=1 bash deployment/scripts/gcp/down.sh prod --yes --delete-data
 ```
+
+**Rebuild path**: `up.sh prod` recreates what a plain teardown removed —
+bootstrap re-grants the Cloud SQL + operator-token bindings and re-creates the
+AR repo, `build-images.sh`/the mirror scripts refill the images (self-healed
+when missing), `bootstrap-secrets.sh` restores the rebuildable secrets from the
+operator env file, and hosting redeploys into the kept site. The database and
+its five secrets are simply reused; nothing truncates them.
 
 Expected uses before cutover: shadow iteration (the shadow is stateless —
 `up.sh prod` recreates it; keep `--delete-data` OFF while the DB matters).

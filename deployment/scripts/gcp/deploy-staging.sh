@@ -32,6 +32,19 @@ if [ -z "${SKIP_DB:-}" ]; then
   else
     step "cloud sql + supabase dump/restore rehearsal"; "$HERE/migrate-db.sh" "$ENV_NAME"
   fi
+  # ── SELF-HEAL: the mirrored upstream images ────────────────────────────────
+  # The Artifact Registry repo is deleted with the stack (down.sh), and
+  # build-images.sh rebuilds only api/admin/trackers — the GoTrue/PostgREST/
+  # Studio/pg-meta mirrors come from their own Cloud Build configs. Without
+  # this check a teardown→rebuild cycle fails at the auth deploy with
+  # `Image ...gotrue:staged not found` (seen live 2026-10-01). Presence is
+  # probed cheaply; absence triggers the mirror once.
+  auth_img="${AUTH_IMAGE:-}"
+  if [ -n "$auth_img" ] && ! gcloud artifacts docker images describe "$auth_img" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+    step "mirror upstream images (GoTrue/PostgREST + Studio/pg-meta) — missing after teardown"
+    "$HERE/stage-third-party.sh" "$ENV_NAME"
+    "$HERE/stage-studio.sh" "$ENV_NAME"
+  fi
   step "auth/rest + studio services"
   if ! "$HERE/deploy-run.sh" "$ENV_NAME" auth rest studio; then
     if [ "${DATA_MODE:-}" = "cloud-sql" ]; then
@@ -41,6 +54,16 @@ if [ -z "${SKIP_DB:-}" ]; then
       echo "✗ auth/rest redeploy FAILED and they are ON THE SERVING PATH (DATA_MODE=cloud-sql)"; exit 1
     fi
     echo "⚠ auth/rest proof services failed (non-blocking pre-cutover — staging still reads hosted Supabase)"
+  fi
+  # ── WIRE-ORDER FIX: the api service carries the /auth/v1 + /rest/v1 proxy
+  # (AUTH_PROXY_URL/REST_PROXY_URL, resolved from the LIVE auth/rest URLs at
+  # api-deploy time). On a FRESH rebuild the api deploys in the step above —
+  # BEFORE auth/rest exist — so the resolver finds nothing and the proxy ships
+  # UNWIRED (seen live: "proxy is not configured" 503s after a teardown →
+  # rebuild). Once auth/rest are up, refresh the api env so the wiring lands.
+  if [ "${DATA_MODE:-}" = "cloud-sql" ]; then
+    step "rewire api proxy env (auth/rest now live)"
+    "$HERE/update-env.sh" "$ENV_NAME" api || exit 1
   fi
 fi
 if [ -z "${SKIP_SCHEDULER:-}" ]; then

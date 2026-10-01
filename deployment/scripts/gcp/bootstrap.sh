@@ -45,6 +45,13 @@ echo "→ Runtime/deploy role bindings"
 bind() { gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" --member="$1" --role="$2" --quiet >/dev/null; }
 for sa_email in "$SA_API_EMAIL" "$SA_JOBS_EMAIL"; do
   bind "serviceAccount:${sa_email}" roles/secretmanager.secretAccessor
+  # Cloud SQL access for the /cloudsql unix socket (api + jobs + the auth/rest/
+  # studio services, which all run as SA_JOBS). ⚠️ THIS WAS NEVER GRANTED HERE
+  # and only existed as a manual binding — so down.sh (which deletes the
+  # service accounts, taking their bindings with them) left a rebuild that
+  # could not reach Cloud SQL: GoTrue died on boot with
+  # "NOT_AUTHORIZED … missing cloudsql.instances.get" (live, 2026-10-01).
+  bind "serviceAccount:${sa_email}" roles/cloudsql.client
 done
 # The deploy identity reads ADMIN_TOKEN_SECRET during smoke (authed-pong check)
 # — without this the check silently degrades to a skip for CI.
@@ -55,6 +62,23 @@ bind "serviceAccount:${SA_DEPLOY_EMAIL}" roles/run.admin
 bind "serviceAccount:${SA_DEPLOY_EMAIL}" roles/artifactregistry.writer
 bind "serviceAccount:${SA_DEPLOY_EMAIL}" roles/firebasehosting.admin
 bind "serviceAccount:${SA_DEPLOY_EMAIL}" roles/iam.serviceAccountUser
+# ── OPERATOR → DEPLOY-SA token minting ────────────────────────────────────────
+# studio-proxy.sh mints an audience-scoped ID token FROM the deploy SA
+# (roles/iam.serviceAccountTokenCreator on that SA). The binding is stored ON
+# THE SA, so down.sh deleting the SA destroys it — a rebuild then leaves the
+# operator unable to open the private Studio ("IAM_PERMISSION_DENIED",
+# live 2026-10-01). Re-established here; OPERATOR_PRINCIPAL overrides the
+# gcloud account for CI/service-account callers.
+OPS_PRINCIPAL="${OPERATOR_PRINCIPAL:-$(gcloud config get-value account 2>/dev/null || true)}"
+if [ -n "$OPS_PRINCIPAL" ]; then
+  case "$OPS_PRINCIPAL" in
+    *.gserviceaccount.com) ops_member="serviceAccount:${OPS_PRINCIPAL}" ;;
+    *)                     ops_member="user:${OPS_PRINCIPAL}" ;;
+  esac
+  gcloud iam service-accounts add-iam-policy-binding "$SA_DEPLOY_EMAIL" \
+    --project="$GCP_PROJECT_ID" --member="$ops_member" \
+    --role=roles/iam.serviceAccountTokenCreator --quiet >/dev/null
+fi
 
 echo "→ App Engine app (Cloud Scheduler prerequisite, idempotent)"
 if ! gcloud app describe --project="$GCP_PROJECT_ID" --format="value(id)" >/dev/null 2>&1; then

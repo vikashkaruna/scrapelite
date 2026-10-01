@@ -1,5 +1,36 @@
 # Session Handoff — 2026-09-30 (night) — Staging DB Cutover Tooling (migrate db+users → Cloud SQL, repoint staging)
 
+> ## ⚠ NEW 2026-10-01 (later) — DOWN.sh / UP.sh ROUND TRIP VERIFIED; STAGING SITE RENAMED
+>
+> A live teardown→rebuild test (prompted by "will the DB and Studio survive
+> down.sh / up.sh?") found and fixed a set of data-safety and rebuild-path
+> gaps — every one now scripted (docs: deployment/README.md +
+> doc 11 §6):
+>  * `down.sh` is DATA-SAFE BY DEFAULT: Cloud SQL, its **5 DB-access secrets**
+>    and the **hosting site** survive a plain teardown; `--delete-data` (full
+>    destroy) is the only path that removes them, and it asks for the
+>    instance name BEFORE the first deletion. `DRY_RUN=1` rehearses.
+>  * **A deleted Firebase site ID is permanently burned** (firebase-tools:
+>    "cannot be reactivated by you or anyone else"). The live test burned
+>    `datiq-vsp-fhs-stg` — staging now runs on **`datiq-vsp-fhs-staging`**
+>    (`.env.staging` updated; smoke green on the new URL).
+>    ⚠️ **OPERATOR ACTION**: re-point the `stg.datiq.app` CNAME at your DNS
+>    provider from `datiq-vsp-fhs-stg.web.app` → **`datiq-vsp-fhs-staging.web.app`**
+>    (Firebase console → Hosting → datiq-vsp-fhs-staging → custom domains
+>    shows it as OWNERSHIP_MISMATCH until the record moves). Until then the
+>    custom domain 404s; the `.web.app` URL is fully live.
+>  * Rebuild-path gaps fixed: image mirrors now **self-heal** in
+>    deploy-staging (new `stage-third-party.sh`; GoTrue/PostgREST/Studio/
+>    pg-meta), `bootstrap.sh` re-grants `roles/cloudsql.client` on api/jobs SAs
+>    and the operator's `serviceAccountTokenCreator` on the deploy SA (both
+>    died with the deleted SAs and broke the rebuild), and the api's
+>    `/auth/v1`+`/rest/v1` proxy env re-wires after auth/rest come up
+>    (fresh-rebuild ordering).
+>  * Verified post-rebuild: DB row counts unchanged (extractions 29, users 3,
+>    audits 16 — before AND after teardown/rebuild), auth/rest 200 through the
+>    new site, Studio 165 tables via `proxy-studio.sh`, smoke 13/13, 13 GCP
+>    jobs re-paused to the cutover-deferred state.
+>
 > ## ✅ UPDATE 2026-10-01 — THE CUTOVER WAS EXECUTED (steps 0–4 + smoke; cron handoff deferred)
 >
 > Staging now runs on the **self-hosted trio + Cloud SQL**. Verified live:

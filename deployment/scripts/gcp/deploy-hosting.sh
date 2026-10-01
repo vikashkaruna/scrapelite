@@ -45,6 +45,20 @@ node "$DEPLOY_DIR/scripts/gen-firebase-config.mjs" \
   --env  "$DEPLOY_DIR/env/.env.$ENV_NAME" \
   --dist "$REPO_DIR/dist" \
   --out  "$GEN_DIR"
+# The site must EXIST before deploy. It is kept by every teardown short of
+# down.sh --delete-data, and an ID deleted that way is gone for good (firebase
+# reserves it forever), so a missing site is an operator problem to state
+# plainly — never auto-create. If it was deleted, set FHS_SITE_ID in
+# .env.<env> to a NEW id, redeploy, and re-point the custom domain.
+if ! firebase hosting:sites:list --project="$GCP_PROJECT_ID" 2>/dev/null | grep -qF "$FHS_SITE_ID"; then
+  echo "✗ hosting site ${FHS_SITE_ID} does not exist for ${GCP_PROJECT_ID}."
+  echo "  It was either never created (run bootstrap.sh ${ENV_NAME}) or was deleted"
+  echo "  by down.sh --delete-data — a deleted site ID cannot be recreated."
+  echo "  Remedy: choose a NEW site id, set FHS_SITE_ID in .env.${ENV_NAME}, update"
+  echo "  APP_BASE_URL + GOTRUE_URI_ALLOW_LIST to match, run bootstrap.sh, then"
+  echo "  re-point the custom domain (Firebase console → Hosting → Add custom domain)."
+  exit 1
+fi
 echo "→ firebase deploy → site ${FHS_SITE_ID}"
 (cd "$GEN_DIR" && firebase deploy --only hosting \
   --config "$GEN_DIR/firebase.json" \

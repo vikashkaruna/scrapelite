@@ -42,6 +42,8 @@ load_gcp_env() {
   export IMG_TRACKERS="${DATIQ_IMG_TRACKERS_OVERRIDE:-${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-trackers:${IMG_TAG}}"
   export IMG_STUDIO="${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-studio:staged"
   export IMG_PG_META="${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-pg-meta:staged"
+  export IMG_GOTRUE="${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-gotrue:staged"
+  export IMG_POSTGREST="${IMG_BASE}/datiq-${DATIQ_PROJECT_CODE}-ctr-postgrest:staged"
   export SA_API_EMAIL="${SA_API_EMAIL:-${SA_API}@${GCP_PROJECT_ID}.iam.gserviceaccount.com}"
   export SA_JOBS_EMAIL="${SA_JOBS_EMAIL:-${SA_JOBS}@${GCP_PROJECT_ID}.iam.gserviceaccount.com}"
   export SA_SCHEDULER_EMAIL="${SA_SCHEDULER_EMAIL:-${SA_SCHEDULER}@${GCP_PROJECT_ID}.iam.gserviceaccount.com}"
