@@ -139,6 +139,14 @@ describe("buildHosting", () => {
     expect(sources).toContain("/rest/v1/**");
     // and they sit before the SPA catch-all
     expect(sources.indexOf("/auth/v1/**")).toBeLessThan(sources.indexOf("/**"));
+    // 🔴 THEY TARGET THE API SERVICE, NOT AUTH/REST DIRECTLY. Hosting passes
+    // the FULL path through and GoTrue/PostgREST serve at the root — a direct
+    // rewrite answers their own 404 (found live 2026-10-01). The api adapter
+    // strips the prefix and proxies onward, so the target must stay CLOUD_RUN_API.
+    const auth = h.rewrites.find((r) => r.source === "/auth/v1/**");
+    const rest = h.rewrites.find((r) => r.source === "/rest/v1/**");
+    expect(auth.run).toEqual({ serviceId: ENV.CLOUD_RUN_API, region: ENV.GCP_REGION });
+    expect(rest.run).toEqual({ serviceId: ENV.CLOUD_RUN_API, region: ENV.GCP_REGION });
   });
 
   it("keeps 3xx redirects, drops the netlify function 200-rewrites", () => {
