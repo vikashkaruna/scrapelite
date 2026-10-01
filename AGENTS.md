@@ -2,7 +2,7 @@
 
 > This file is read automatically at the start of every new Codex session.
 > It captures the complete state of the project so work can continue seamlessly.
-> **Last updated: 2026-09-30 (credit calibration — template double-billing fixed; see `docs/sessions/SESSION-HANDOFF-2026-09-30-CREDIT-CALIBRATION.md`.)**
+> **Last updated: 2026-10-01 (staging GCP cutover EXECUTED — self-hosted GoTrue/PostgREST + Cloud SQL live on stg.datiq.app; Studio deployed; prod cutover parity; data-safe down.sh; see `docs/sessions/SESSION-HANDOFF-2026-10-01-GCP-STAGING-CUTOVER-STUDIO-OPS-HARDENING.md`.)**
 >
 > **The current source of truth is `CLAUDE.md`** — that file is updated with every release.
 > This `AGENTS.md` is kept as a minimal pointer for tooling that auto-loads it.
@@ -21,7 +21,7 @@
 | **Netlify** | https://app.netlify.com/projects/datiqapp |
 | **Run locally** | `npm run dev` → http://localhost:5173 |
 | **Current branch** | `docker-desktop-build` (GCP migration work; NOT merged to staging/main — owner testing locally) |
-| **Active handoff** | `docs/sessions/SESSION-HANDOFF-2026-09-30-CREDIT-CALIBRATION.md` |
+| **Active handoff** | `docs/sessions/SESSION-HANDOFF-2026-10-01-GCP-STAGING-CUTOVER-STUDIO-OPS-HARDENING.md` |
 | **Session history** | `docs/sessions/SESSIONS-HISTORY.md` (all 70 prior session records consolidated; see `docs/sessions/README.md`) |
 | **Safety tag** | `pre-integration-merge` @ `ebaa4bf` (main's pre-merge HEAD) — in case the staging promotion needs to roll back |
 | **Remaining operator action** | Add `/api/*` to Netlify Edge Access bypass (~2 min UI walkthrough in the late-night handoffs) so the in-browser Connect/Push calls stop hitting the SSO gate on the branch preview |
