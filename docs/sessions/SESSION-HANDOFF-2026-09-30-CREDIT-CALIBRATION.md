@@ -111,6 +111,10 @@ the defect was that the same work was billed twice AND quoted at the wrong tier.
 
 ## Carry-over
 
+- **Reference doc**: `docs/CREDIT-CHARGES-CALCULATION-AND-CALIBRATION.md` — surface-by-surface
+  charge ranges with worked examples, plus three unmetered touch points flagged for a
+  pricing decision (signal-rule email sends, the lazy executive summary, map mode) and the
+  related-page-scan undercharge note.
 - **Shipped to staging**: `deployment/scripts/gcp/up.sh staging` completed with smoke
   13/13; live estimate verified — `POST /api/templates {action:"estimate"}` for
   `account_brief` returns 19 cr itemised as Workflow setup 1 / Pages 3 / AI extraction 5 /
