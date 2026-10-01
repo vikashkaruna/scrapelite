@@ -8,7 +8,10 @@
 #   SKIP_SCHEDULER=1 …  SKIP_HOSTING=1 …
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$HERE/lib-gcp.sh"
 ENV_NAME="${1:?usage: deploy-staging.sh <staging|prod>}"
+load_gcp_env "$ENV_NAME"
 
 step() { echo; echo "━━━ $1 ━━━"; }
 
@@ -21,9 +24,24 @@ else
 fi
 step "cloud run (api/jobs/admin/trackers)"; "$HERE/deploy-run.sh" "$ENV_NAME"
 if [ -z "${SKIP_DB:-}" ]; then
-  step "cloud sql + supabase dump/restore rehearsal"; "$HERE/migrate-db.sh" "$ENV_NAME"
-  step "auth/rest proof services"; "$HERE/deploy-run.sh" "$ENV_NAME" auth rest || \
-    echo "⚠ auth/rest proof services failed (non-blocking on staging)"
+  if [ "${DATA_MODE:-}" = "cloud-sql" ]; then
+    # POST-CUTOVER: Cloud SQL is the LIVE database. The rehearsal truncates
+    # and reloads it — migrate-db.sh itself refuses (see its guard); skipping
+    # here keeps the deploy log honest about why.
+    step "cloud sql (skipped — DATA_MODE=cloud-sql: Cloud SQL is live, nothing to rehearse)"
+  else
+    step "cloud sql + supabase dump/restore rehearsal"; "$HERE/migrate-db.sh" "$ENV_NAME"
+  fi
+  step "auth/rest services"
+  if ! "$HERE/deploy-run.sh" "$ENV_NAME" auth rest; then
+    if [ "${DATA_MODE:-}" = "cloud-sql" ]; then
+      # POST-CUTOVER these ARE the serving auth/data path (/auth/v1 +
+      # /rest/v1 rewrites) — a failed deploy here breaks sign-in. Never
+      # "non-blocking" again.
+      echo "✗ auth/rest redeploy FAILED and they are ON THE SERVING PATH (DATA_MODE=cloud-sql)"; exit 1
+    fi
+    echo "⚠ auth/rest proof services failed (non-blocking pre-cutover — staging still reads hosted Supabase)"
+  fi
 fi
 if [ -z "${SKIP_SCHEDULER:-}" ]; then
   step "cloud scheduler (13 jobs)"; "$HERE/deploy-scheduler.sh" "$ENV_NAME"

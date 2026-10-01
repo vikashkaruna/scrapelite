@@ -140,6 +140,16 @@ var _isStaging =
 var _stagingSupabaseUrl = "https://aubwooslkkrprdxuiyvj.supabase.co";
 var _stagingSupabaseAnonKey = "sb_publishable_NXSVmJA_neFWqLGEiCmkEg_j8I03VLG";
 
+// The production pair, in the SAME patchable shape. Committed values are the
+// hosted production project; the PROD DB cutover (cutover-db.sh, doc 09)
+// swaps them for the duration of ONE hosting deploy to window.location.origin
+// + the prod anon key (signed by the SAME prod JWT secret — no re-mint, no
+// session invalidation) and restores them after, exactly like staging. This
+// seam exists because the prod URL used to be a bare literal inside the
+// _isMain ternary, which left the prod cutover with nothing to patch.
+var _prodSupabaseUrl = "https://sikkfxysjhirmtwkumpt.supabase.co";
+var _prodSupabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpa2tmeHlzamhpcm10d2t1bXB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNzAwNzMsImV4cCI6MjA5OTk0NjA3M30.z5XQxnmOqgVpPhUPRkIl5QIz932IRRj-ihkTVMfuqwM";
+
 // Supabase project selection: ONLY main → production. Everything else
 // (staging, branch deploys, localhost) → the staging/branch pair vars
 // declared above — the hosted dev project by default, and repointed to the
@@ -152,7 +162,7 @@ window.__DATIQ_RUNTIME__ = {
   // Razorpay publishable key override (runtime). Leave empty to use build-time VITE_RAZORPAY_KEY_ID.
   razorpayKeyId: "",
   supabaseUrl: _isMain
-    ? "https://sikkfxysjhirmtwkumpt.supabase.co"
+    ? _prodSupabaseUrl
     : _stagingSupabaseUrl,
   // Supabase anon key (publishable JWT). One per project. These are public
   // by Supabase's own design — they identify the project, RLS enforces
@@ -173,7 +183,7 @@ window.__DATIQ_RUNTIME__ = {
   // `src/lib/runtimeConfigIdentity.test.js` verifies any value here belongs
   // to its paired project (publishable-format keys are accepted as-is).
   supabaseAnonKey: _isMain
-    ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpa2tmeHlzamhpcm10d2t1bXB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNzAwNzMsImV4cCI6MjA5OTk0NjA3M30.z5XQxnmOqgVpPhUPRkIl5QIz932IRRj-ihkTVMfuqwM"
+    ? _prodSupabaseAnonKey
     : _stagingSupabaseAnonKey,
   // The OAuth / email-confirmation / password-reset return URL for this
   // branch. The Supabase client passes this as `redirectTo` so the OAuth

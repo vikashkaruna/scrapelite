@@ -41,20 +41,23 @@ const refFromUrl = (url) => new URL(url).hostname.split(".")[0];
  * needs a DOM and would only ever exercise ONE branch. We want every committed
  * pair checked, including the ones this environment would not select.
  *
- * Shape since the staging-DB-cutover prep (2026-09-30): each setting is
- * `_isMain ? "<production>" : <stagingVar>`, and the staging value lives in a
- * `var _stagingSupabase…` declaration. The pairs are therefore
- * [production-literal, staging-var-value].
+ * Shape since the prod-cutover prep (2026-10-01): each setting is
+ * `_isMain ? <prodVar> : <stagingVar>` and BOTH values live in
+ * `var _prodSupabase…` / `var _stagingSupabase…` declarations — the prod pair
+ * gained the same patchable seam the staging one has, so cutover-db.sh can
+ * swap it for one hosting deploy. The pairs are
+ * [prod-var-value, staging-var-value].
  */
 function ternaryBranches(src, field) {
-  const m = new RegExp(`${field}:\\s*_isMain\\s*\\?\\s*("[^"]*")\\s*:\\s*(\\w+)`).exec(src);
+  const m = new RegExp(`${field}:\\s*_isMain\\s*\\?\\s*([\\w"]+)\\s*:\\s*(\\w+)`).exec(src);
   if (!m) return null;
-  return [JSON.parse(m[1]), m[2]];
+  return [m[1].replace(/"/g, ""), m[2]];
 }
 
-/** Value of `var _stagingSupabaseUrl / _stagingSupabaseAnonKey` in the source. */
-function stagingVar(src, field) {
-  const m = new RegExp(`var _staging${field[0].toUpperCase()}${field.slice(1)}\\s*=\\s*("[^"]*")`).exec(src);
+/** Value of `var <ident> = "…"` in the source (a variable OR a bare literal). */
+function varValue(src, ident) {
+  if (!/^_/.test(ident)) return ident;   // already a literal from the regex
+  const m = new RegExp(`var ${ident}\\s*=\\s*("[^"]*")`).exec(src);
   return m ? JSON.parse(m[1]) : null;
 }
 
@@ -62,10 +65,10 @@ function readPairs() {
   const src = readFileSync(RUNTIME_CONFIG, "utf8");
   const urls = ternaryBranches(src, "supabaseUrl");
   const keys = ternaryBranches(src, "supabaseAnonKey");
-  // Resolve the staging-var identifier into its committed value.
+  // Resolve the identifier branches into their committed values.
   return {
-    urls: urls ? [urls[0], stagingVar(src, "supabaseUrl")] : null,
-    keys: keys ? [keys[0], stagingVar(src, "supabaseAnonKey")] : null,
+    urls: urls ? [varValue(src, urls[0]), varValue(src, urls[1])] : null,
+    keys: keys ? [varValue(src, keys[0]), varValue(src, keys[1])] : null,
     src,
   };
 }

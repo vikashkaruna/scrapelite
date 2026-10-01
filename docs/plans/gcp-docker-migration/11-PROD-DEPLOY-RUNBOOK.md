@@ -80,15 +80,37 @@ Manual: sign-in round-trip on the shadow URL, extract → save → enrich, admin
 ## 5. Cutover (DB + users + domain)
 
 **Do not improvise this.** Follow `09-CUTOVER-RUNBOOK.md` end-to-end —
-freeze (`crons.sh prod pause` + comment the Netlify TOML schedules) →
-`cutover-db.sh prod <SOURCE_DB_URL>` → repoint → smoke → external parties →
-DNS flip → rollback plan rehearsed.
+it was updated 2026-10-01 with everything the staging execution taught
+(doc 12 §"Executed 2026-10-01"):
 
-After cutover succeeds and the rollback window closes: set `DATA_MODE=cloud-sql`
-in `.env.prod` and re-run `deploy-hosting.sh prod` so the generator emits the
-`/auth/v1` + `/rest/v1` Cloud Run rewrites (unit-tested), then flip cron
-ownership: `OPS_JOBS_DISABLED=0` → `update-env.sh prod jobs` → comment Netlify
-schedules → `crons.sh prod resume`.
+```bash
+# rehearse first — prints every command/env edit, touches nothing:
+DRY_RUN=1 deployment/scripts/gcp/cutover-db.sh prod "<SOURCE_DB_URL>"
+# the window (add NETLIFY_CRONS_FROZEN=1 if the Netlify prod freeze is already
+# done; otherwise crons stay deferred and finish later with):
+deployment/scripts/gcp/cutover-db.sh prod "<SOURCE_DB_URL>"
+NETLIFY_CRONS_FROZEN=1 deployment/scripts/gcp/cutover-db.sh prod finish-crons
+```
+
+What the script now guarantees (all of it learned the hard way on staging):
+
+- **Preflight**: `JWT_SECRET` in `.env.prod` must be the prod Supabase secret —
+  HS256-verified against `SUPABASE_ANON_KEY` BEFORE the window. ⚠️ it is unset
+  today; set it first (doc 09 §0).
+- **Count-verified migration** before any repoint: any source↔target mismatch
+  or FK error ABORTS while hosted Supabase still serves.
+- **Env-only flips ride the serving images** (`update-env.sh`), so a moved HEAD
+  cannot strand the window on `image not found`.
+- **Browser repoint**: `runtime-config.js`'s prod pair (`_prodSupabaseUrl`/
+  `_prodSupabaseAnonKey`) is patched for ONE hosting deploy → same-origin
+  `/auth/v1` + `/rest/v1`; the EXIT trap restores the committed hosted pair.
+- **Cron handoff is GATED** on `NETLIFY_CRONS_FROZEN=1` — never two owners.
+- **Interrupted windows resume**: `CUTOVER_RESUME=1 … cutover-db.sh prod`.
+- Then the manual tail: payments test event → n8n round-trip → external-party
+  URLs → DNS flip (LAST) → keep Netlify up for the rollback window.
+
+**Not covered by the script, by design**: the DNS flip, external-party URL
+updates, and the payments/n8n verifications — all in doc 09 §2/§4/§5.
 
 ## 6. Tear prod down (GUARDED — read before running)
 

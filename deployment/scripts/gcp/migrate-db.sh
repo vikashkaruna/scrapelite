@@ -22,6 +22,23 @@ load_gcp_env "$ENV_NAME"
 require_vars DB_NAME DB_APP_USER DB_APP_PASSWORD SQL_INSTANCE CLOUD_SQL_TIER
 SOURCE_DB_URL="${2:-${SOURCE_DB_URL:-}}"
 
+# ── THE POST-CUTOVER GUARD ────────────────────────────────────────────────────
+# Once DATA_MODE=cloud-sql, Cloud SQL IS the serving database for this env —
+# and this script TRUNCATES and reloads it. Post-cutover that destroys real
+# user data (rows created since the flip) in exchange for a stale snapshot of
+# a source the env no longer uses. The rehearsal's whole purpose was to prove
+# the mechanics BEFORE the flip; after it there is nothing safe to rehearse.
+# up.sh staging / deploy-staging.sh call this unconditionally, so the guard
+# lives HERE and skips with exit 0 (the correct post-cutover state is not a
+# deploy failure). A deliberate restore (disaster recovery) overrides with
+# FORCE_DB_RELOAD=1 + an explicit SOURCE_DB_URL.
+if [ "${DATA_MODE:-}" = "cloud-sql" ] && [ "${FORCE_DB_RELOAD:-0}" != "1" ]; then
+  echo "SKIP migrate-db: DATA_MODE=cloud-sql — Cloud SQL is the LIVE database for ${ENV_NAME};"
+  echo "     the dump/restore rehearsal would truncate and reload it. Nothing to rehearse"
+  echo "     post-cutover. (deliberate restore: FORCE_DB_RELOAD=1 migrate-db.sh ${ENV_NAME} <SOURCE_DB_URL>)"
+  exit 0
+fi
+
 have psql || { echo "✗ psql not installed (brew install libpq)"; exit 1; }
 
 CONN_NAME="${GCP_PROJECT_ID}:${GCP_REGION}:${SQL_INSTANCE}"

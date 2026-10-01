@@ -71,8 +71,15 @@ bash deployment/scripts/gcp/crons.sh staging status|pause|resume  # ownership co
 bash deployment/scripts/gcp/migrate-staging-db.sh staging "<SOURCE_DB_URL>"   # migrate
                                             # staging Supabase → Cloud SQL (db+users;
                                             # verifies counts + FKs; doc 12)
+# ⚠ post-cutover: migrate-db refuses when DATA_MODE=cloud-sql — Cloud SQL is
+# then the LIVE database and the rehearsal would truncate+reload it.
+# (staging cut over 2026-10-01; prod at its own window — docs 09/12)
 DRY_RUN=1 bash deployment/scripts/gcp/cutover-staging-db.sh staging "<SOURCE_DB_URL>"
                                             # staging DB cutover dry-run (doc 12)
+# ^ executed for real 2026-10-01: staging runs the self-hosted trio + Cloud SQL.
+#   pending: Netlify staging TOML freeze → cutover-staging-db.sh staging finish-crons
+bash deployment/scripts/gcp/cutover-db.sh prod "<SOURCE_DB_URL>"   # PROD cutover (doc 09;
+                                            # gated cron handoff; DRY_RUN supported)
 bash deployment/scripts/gcp/smoke.sh staging             # parity smoke (fails the deploy)
 deployment/scripts/gcp/down.sh staging --yes             # guarded teardown
 deployment/scripts/gcp/down.sh prod                      # plan only; see runbook 11 §6
