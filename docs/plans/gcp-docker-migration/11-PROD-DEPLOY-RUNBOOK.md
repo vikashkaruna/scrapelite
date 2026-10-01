@@ -112,6 +112,19 @@ What the script now guarantees (all of it learned the hard way on staging):
 **Not covered by the script, by design**: the DNS flip, external-party URL
 updates, and the payments/n8n verifications — all in doc 09 §2/§4/§5.
 
+### Studio (prod)
+
+Supabase Studio + pg-meta deploy WITH the cutover — `cutover-db.sh` step 3
+deploys the `studio` unit alongside auth/rest, and `promote-prod.sh` carries it
+in the shadow flow. Pre-cutover prod deploys skip it cleanly (no Cloud SQL yet;
+`deploy-run.sh` prints `SKIP studio`). It runs **private** (`--no-allow-
+unauthenticated`) against the prod Cloud SQL; operator access is
+`deployment/scripts/gcp/proxy-studio.sh prod` (localhost:54328) — see
+`deployment/README.md` "Operational notes" for why the standard
+`gcloud run services proxy` does not work here. Its DB credentials come from
+the `PG_META_DB_URL` / `POSTGRES_PASSWORD` secrets, refreshed by
+`migrate-db.sh` on every migration run (including the cutover's).
+
 ## 6. Tear prod down (GUARDED — read before running)
 
 `down.sh prod` destroys live infrastructure. Six guardrails, all required:

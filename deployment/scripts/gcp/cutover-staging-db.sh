@@ -239,7 +239,9 @@ echo "── 3/6 REPOINT auth+rest (fresh JWT secret already in Secret Manager)"
 # below, which is the moment existing sessions actually invalidate. Nothing
 # above this line changed what any deployed service reads.
 update_env JWT_SECRET "$FRESH_SECRET"
-run "$HERE/deploy-run.sh" "$ENV_NAME" auth rest
+# studio rides the same step (pg-meta → Cloud SQL via PG_META_DB_URL; its
+# SUPABASE_URL links flip with the env write below).
+run "$HERE/deploy-run.sh" "$ENV_NAME" auth rest studio
 
 # ── 4. REPOINT api/jobs + Hosting ─────────────────────────────────────────────
 echo "── 4/6 REPOINT api/jobs env + Hosting rewrites"

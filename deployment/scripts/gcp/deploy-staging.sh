@@ -32,8 +32,8 @@ if [ -z "${SKIP_DB:-}" ]; then
   else
     step "cloud sql + supabase dump/restore rehearsal"; "$HERE/migrate-db.sh" "$ENV_NAME"
   fi
-  step "auth/rest services"
-  if ! "$HERE/deploy-run.sh" "$ENV_NAME" auth rest; then
+  step "auth/rest + studio services"
+  if ! "$HERE/deploy-run.sh" "$ENV_NAME" auth rest studio; then
     if [ "${DATA_MODE:-}" = "cloud-sql" ]; then
       # POST-CUTOVER these ARE the serving auth/data path (/auth/v1 +
       # /rest/v1 rewrites) — a failed deploy here breaks sign-in. Never

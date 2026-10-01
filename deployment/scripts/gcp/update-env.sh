@@ -62,6 +62,7 @@ image_source_service() { # image_source_service <unit> → service name or ""
     api|jobs)    printf '%s' "$CLOUD_RUN_API" ;;
     admin)       printf '%s' "$CLOUD_RUN_ADMIN" ;;
     trackers)    printf '%s' "$CLOUD_RUN_TRACKERS" ;;
+    studio)      printf '%s' "$CLOUD_RUN_STUDIO" ;;
     *)           printf '' ;;
   esac
 }

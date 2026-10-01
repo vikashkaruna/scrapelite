@@ -127,13 +127,35 @@ deployment/
 │                       up, down [prod-guarded], crons, migrate-db,
 │                       migrate-staging-db, cutover-staging-db [doc 12],
 │                       promote-prod, cutover-db, smoke, stage-studio,
-│                       proxy-studio), lib/env-loader.sh
+│                       studio-proxy.mjs + proxy-studio (private Studio on
+│                       localhost — gcloud run proxy cannot do it, see the
+│                       mjs header)), lib/env-loader.sh
 └── tests/              stack-smoke.sh, signon-e2e.sh, firebase-config.test.mjs,
                         compose-policy.test.mjs (restart policies + lifecycle scripts)
 ```
 
 ## Operational notes
 
+- **Supabase Studio (GCP) — deployed, private, operator-proxied.** Studio +
+  pg-meta run as a two-container Cloud Run service (`CLOUD_RUN_STUDIO`) backed
+  by the same Cloud SQL instance as GoTrue/PostgREST:
+  - **Images**: mirrored once per release by `gcp/stage-studio.sh <env>`
+    (Studio + postgres-meta from public.ecr.aws → Artifact Registry).
+  - **Deploy**: automatic — `deploy-staging.sh` (step "auth/rest + studio"),
+    `promote-prod.sh`, `cutover-db.sh`, `up.sh prod --build` all include the
+    `studio` unit. Pre-cutover prod **skips** it cleanly (no Cloud SQL yet).
+  - **DB wiring**: pg-meta reads the `PG_META_DB_URL` secret, refreshed on
+    every migration by `migrate-db.sh` (unix-socket URI; `@localhost` form —
+    postgres-meta's Node URL parser rejects the empty-host form GoTrue
+    accepts). `POSTGRES_PASSWORD` is refreshed in the same place.
+  - **Links**: Studio's SUPABASE_URL/anon key follow the env — pre-cutover the
+    hosted project, post-cutover `APP_BASE_URL` + `/auth/v1`,`/rest/v1`
+    rewrites through the api proxy. No code change at the cutover.
+  - **Operator access**: `gcp/proxy-studio.sh <env> [--port N]` (default
+    54328). It serves the private service on localhost via an audience-scoped
+    impersonated ID token — `gcloud run services proxy` CANNOT be used here
+    (plain user tokens fail Cloud Run's audience check; `--impersonate-
+    service-account` hard-fails in gcloud 584 — both verified 2026-10-01).
 - **Config flow:** `.env.local` → `gen-local-config.mjs` mints anon/service API
   keys from `JWT_SECRET` and renders `generated/runtime-config.js` (served by
   the `trackers` container) + `generated/api-keys.env` (the api/jobs env_file —

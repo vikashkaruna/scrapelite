@@ -274,7 +274,9 @@ echo "   sessions stay valid; verify sign-in immediately after)"
 ALLOW="${GOTRUE_URI_ALLOW_LIST:-}"
 case "$ALLOW" in *"${FHS_SITE_ID}.web.app"*) ;; *) ALLOW="${ALLOW:+$ALLOW,}https://${FHS_SITE_ID}.web.app/**";; esac
 [ "$ALLOW" = "${GOTRUE_URI_ALLOW_LIST:-}" ] || update_env GOTRUE_URI_ALLOW_LIST "$ALLOW"
-run "$HERE/deploy-run.sh" "$ENV_NAME" auth rest
+# studio rides the same step: its pg-meta reads Cloud SQL through the refreshed
+# PG_META_DB_URL secret, and its SUPABASE_URL links flip with the env below.
+run "$HERE/deploy-run.sh" "$ENV_NAME" auth rest studio
 
 # ── 4. REPOINT api/jobs env + Hosting ─────────────────────────────────────────
 echo "── 4/6 REPOINT api/jobs env + Hosting rewrites"

@@ -48,7 +48,7 @@ else
 fi
 
 echo "→ deploying the prod twin (OPS_JOBS_DISABLED=${OPS_JOBS_DISABLED:-1} — shadow)"
-"$HERE/deploy-run.sh" "$ENV_NAME"
+"$HERE/deploy-run.sh" "$ENV_NAME" api jobs admin trackers studio
 [ -n "${SKIP_SCHEDULER:-}" ] || "$HERE/deploy-scheduler.sh" "$ENV_NAME"
 [ -n "${SKIP_HOSTING:-}" ] || "$HERE/deploy-hosting.sh" "$ENV_NAME"
 "$HERE/smoke.sh" "$ENV_NAME"

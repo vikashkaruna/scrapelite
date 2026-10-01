@@ -46,7 +46,7 @@ if [ "$ENV_NAME" = "prod" ]; then
     step "images (Cloud Build, prod project)"
     "$HERE/build-images.sh" prod
     step "cloud run"
-    "$HERE/deploy-run.sh" prod
+    "$HERE/deploy-run.sh" prod api jobs admin trackers studio
   else
     echo "→ digest promotion from staging (default — no rebuild; pass --build to build in prod)"
     step "promote (cloud run from staging digests)"

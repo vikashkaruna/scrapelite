@@ -239,6 +239,28 @@ for svc in $SERVICES; do
       ;;
     studio)
       require_vars CLOUD_RUN_STUDIO SQL_INSTANCE
+      # Pre-cutover prod has no Cloud SQL instance yet (created at the cutover /
+      # `up.sh prod --with-db`). Deploying Studio then would fail the WHOLE
+      # deploy on --add-cloudsql-instances and leave a pg-meta pointed at
+      # nothing. Skip cleanly instead — Studio is a post-cutover surface.
+      if ! gcloud sql instances describe "$SQL_INSTANCE" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+        echo "SKIP studio: Cloud SQL ${SQL_INSTANCE} does not exist yet (pre-cutover) — Studio deploys with the DB"
+        continue
+      fi
+      # ── WHAT THIS WIRES (both containers ride the SAME Cloud SQL socket) ────
+      # pg-meta  → Cloud SQL via the PG_META_DB_URL secret (full unix-socket
+      #            URI, refreshed by migrate-db.sh: postgres@/${DB_NAME}
+      #            ?host=/cloudsql/<conn>); it answers Studio's metadata +
+      #            SQL-editor calls on localhost:8080.
+      # Studio   → pg-meta on 127.0.0.1:8080; its auth/REST links use
+      #            ${SUPABASE_URL}, which the CUTOVER ITSELF flips from the
+      #            hosted project URL to the self-hosted origin (APP_BASE_URL
+      #            + /auth/v1,/rest/v1 rewrites → api proxy → GoTrue/PostgREST).
+      #            AUTH_JWT_SECRET is the same JWT secret GoTrue verifies with.
+      #            So the same deploy is correct pre-cutover (hosted project)
+      #            AND post-cutover (self-hosted trio) with no code change.
+      # Access    → private service (`--no-allow-unauthenticated`); operator
+      #            entry is `proxy-studio.sh <env>` (gcloud run services proxy).
       studio_img="${STUDIO_IMAGE:-$IMG_STUDIO}"
       pg_meta_img="${PG_META_IMAGE:-$IMG_PG_META}"
       studio_port="${STUDIO_PORT:-3000}"
@@ -270,7 +292,7 @@ for svc in $SERVICES; do
           --port="$studio_port" \
           --memory=1Gi --cpu=1 \
           --depends-on=pg-meta \
-          --set-env-vars="STUDIO_PG_META_URL=http://127.0.0.1:8080,SUPABASE_URL=${APP_BASE_URL},SUPABASE_PUBLIC_URL=${APP_BASE_URL},AUTH_JWT_SECRET=${JWT_SECRET:-},SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}" \
+          --set-env-vars="STUDIO_PG_META_URL=http://127.0.0.1:8080,SUPABASE_URL=${STUDIO_SUPABASE_URL:-$SUPABASE_URL},SUPABASE_PUBLIC_URL=${STUDIO_SUPABASE_URL:-$SUPABASE_URL},AUTH_JWT_SECRET=${JWT_SECRET:-},SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}" \
           $studio_sec_flag \
         --container=pg-meta \
           --image="$pg_meta_img" \

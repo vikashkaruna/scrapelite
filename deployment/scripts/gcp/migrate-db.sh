@@ -355,6 +355,28 @@ push_secret "$(sm_name PGRST_DB_URI)" "postgresql://authenticator:${AUTHENTICATO
 # create in" (SQLSTATE 3F000) trying to CREATE TABLE schema_migrations. The
 # official supabase/docker GoTrue config carries this param in its DB URL too.
 push_secret "$(sm_name GOTRUE_DB_DATABASE_URL)" "postgresql://supabase_auth_admin:${SUPABASE_AUTH_PW}@/${DB_NAME}?host=/cloudsql/${CONN_NAME}&search_path=auth"
+# ── Studio's pg-meta + Studio, refreshed HERE so they can never drift ────────
+# These two were seeded once (2026-09-29) and drifted: the URL pointed at
+# /postgres (the instance's default DB, not ${DB_NAME}) and the password
+# secret no longer matched DB_ADMIN_PASSWORD — so a Studio deploy would have
+# silently failed to reach the app database. Versioned next to the other
+# proof-service URLs, they re-sync on every migration run (the post-cutover
+# guard above skips this file entirely, which is correct: the values only
+# change when the migration runs).
+#   PG_META_DB_URL      → mounted into pg-meta (full socket URI; the v0.96.6
+#                         binary reads PG_META_DB_URL first and only falls
+#                         back to host/port/user/password parts)
+#   POSTGRES_PASSWORD   → mounted into Studio (it uses the raw password for
+#                         its own DB-connection fields)
+# ⚠️ `@localhost`, NOT `@/`. postgres-meta is Node and validates the string
+# with WHATWG `new URL()` — which REJECTS an empty host ("postgresql://user@/db"
+# → "Invalid URL" → its 500 'failed to connect upstream'). GoTrue (Go) accepts
+# the empty-host form, which is why GOTRUE_DB_DATABASE_URL above is fine as-is;
+# pg-meta needs a parseable hostname. `?host=` still wins at connect time
+# (pg-connection-string applies query params over the parsed URL), so the
+# socket path is what actually gets used. Found live 2026-10-01.
+push_secret "$(sm_name PG_META_DB_URL)" "postgresql://postgres:${DB_ADMIN_PASSWORD}@localhost/${DB_NAME}?host=/cloudsql/${CONN_NAME}&sslmode=disable"
+push_secret "$(sm_name POSTGRES_PASSWORD)" "$DB_ADMIN_PASSWORD"
 if [ -n "${JWT_SECRET:-}" ]; then
   push_secret "$(sm_name JWT_SECRET)" "$JWT_SECRET"
 else
