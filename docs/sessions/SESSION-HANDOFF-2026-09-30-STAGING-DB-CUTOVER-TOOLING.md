@@ -32,6 +32,22 @@
 > the fresh JWT secret — by design), and note Supabase **Storage objects were not
 > migrated** (pg_dump covers Postgres only).
 >
+> ### PROD PARITY (2026-10-01, commit `9cfff3f5`)
+>
+> All executed-staging learnings are now in the PROD path too:
+> `cutover-db.sh` rebuilt (6 steps, JWT_SECRET↔anon-key HS256 preflight that
+> currently REFUSES because `.env.prod` has no JWT_SECRET — operator must set
+> the prod Supabase secret first, doc 09 §0; count-verified migration before
+> any repoint; gated cron handoff + `finish-crons`; `CUTOVER_RESUME=1`;
+> `DRY_RUN=1`); `runtime-config.js` gained `_prodSupabaseUrl`/
+> `_prodSupabaseAnonKey` patch seams (identity tests cover both branches);
+> `migrate-db.sh` now REFUSES when `DATA_MODE=cloud-sql` (post-cutover the
+> rehearsal would truncate the live DB — verified live on staging);
+> `deploy-staging.sh` skips the DB step post-cutover and treats auth/rest
+> failures as blocking once they are on the serving path. Docs 09, 11 and
+> `deployment/README.md` updated. Full `up.sh staging` re-run green (smoke
+> 13/13, proxy env rewired).
+>
 > ---
 >
 > The sections below are the original tooling handoff (2026-09-30) — still
