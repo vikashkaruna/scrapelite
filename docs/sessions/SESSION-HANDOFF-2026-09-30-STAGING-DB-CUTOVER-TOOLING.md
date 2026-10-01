@@ -1,5 +1,42 @@
 # Session Handoff — 2026-09-30 (night) — Staging DB Cutover Tooling (migrate db+users → Cloud SQL, repoint staging)
 
+> ## ✅ UPDATE 2026-10-01 — THE CUTOVER WAS EXECUTED (steps 0–4 + smoke; cron handoff deferred)
+>
+> Staging now runs on the **self-hosted trio + Cloud SQL**. Verified live:
+> smoke 13/13; anon REST 200; signup → insert → read-own-row through
+> `stg.datiq.app`; `/api/credits` with a fresh user JWT served from Cloud SQL.
+> `.env.staging`: `DATA_MODE=cloud-sql`, `SUPABASE_URL=https://datiq-vsp-fhs-stg.web.app`,
+> `OPS_JOBS_DISABLED=1` (crons deliberately still paused).
+>
+> Execution surfaced & fixed (all scripted, commit `e12d4c49` + `d32b8ad7`,
+> full detail in doc 12 §"Executed 2026-10-01"):
+> 1. step 0 wrote the env too early (migration pre-flight saw a key/URL project
+>    mismatch) → minting now touches Secret Manager only; env flips at steps 3–4;
+> 2. restore needed re-runnability (FK IF EXISTS, auth+storage truncate,
+>    clean-slate schema, vault/realtime + `\restrict` stripping);
+> 3. GoTrue boot died until the auth schema + relations were owned by
+>    `supabase_auth_admin` (3F000 → 42501) and `anon`/`authenticated` got the
+>    hosted-baseline table grants (PostgREST 42501);
+> 4. Firebase Hosting has no prefix-strip, so `/auth/v1` + `/rest/v1` now route
+>    through the **api adapter** (strip + proxy, `AUTH_PROXY_URL`/`REST_PROXY_URL`,
+>    OIDC via `X-Serverless-Authorization`);
+> 5. env-only flips ride `update-env.sh` (HEAD may be past the last build);
+>    `CUTOVER_RESUME=1` resumes an interrupted flip.
+>
+> **REMAINING (operator, then one command):** comment the staging
+> scheduled-function blocks in `netlify.toml` + redeploy Netlify staging, then
+> `NETLIFY_CRONS_FROZEN=1 deployment/scripts/gcp/cutover-staging-db.sh staging finish-crons`
+> — that flips `OPS_JOBS_DISABLED=0`, redeploys jobs and resumes the 13 GCP
+> scheduler jobs (cron ownership moves; never both owners at once).
+> Also: sign in fresh on stg.datiq.app (all staging sessions were invalidated by
+> the fresh JWT secret — by design), and note Supabase **Storage objects were not
+> migrated** (pg_dump covers Postgres only).
+>
+> ---
+>
+> The sections below are the original tooling handoff (2026-09-30) — still
+> accurate for the design; superseded by the update above for current state.
+
 > **Branch:** `docker-desktop-build` @ `583a4416`  
 > **Target:** feature branch only — **no staging/main changes, no deploys**  
 > **Verification:** gate green ✓ · bash -n ✓ · deployment tests 20/20 ✓ · identity test 11/11 ✓ · unit 9408/9408 ✓ · cutover DRY_RUN end-to-end ✓
