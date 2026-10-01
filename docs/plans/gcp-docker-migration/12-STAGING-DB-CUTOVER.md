@@ -69,7 +69,9 @@ The script does, in order (all steps individually re-runnable):
 4. `DATA_MODE=cloud-sql` + `SUPABASE_URL=$APP_BASE_URL` + the minted
    `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_KEY` persisted **together** (the
    keys land only alongside the URL they were minted for), GoTrue
-   allowlist extended with `datiq-vsp-fhs-stg.web.app/**` +
+   allowlist extended with `${FHS_SITE_ID}.web.app/**` (env-driven; currently
+   `datiq-vsp-fhs-staging.web.app` — renamed from `datiq-vsp-fhs-stg` on
+   2026-10-01, see the Executed section) +
    `stg.datiq.app/**`, runtime-config.js patched (staging pair → same-origin
    + minted anon key) **for this hosting deploy only**, then
    `deploy-run.sh staging api jobs` + `deploy-hosting.sh staging` (emits the
@@ -89,6 +91,33 @@ The script does, in order (all steps individually re-runnable):
   (`deployment/generated/db/`).
 
 ## Executed 2026-10-01 — what it actually took (all scripted now)
+
+### Post-execution updates (2026-10-01, later)
+
+- **Staging Firebase site renamed** `datiq-vsp-fhs-stg` → **`datiq-vsp-fhs-staging`**:
+  the old id was burned by a teardown test run before `down.sh` learned to keep
+  the site (Firebase site ids can never be recreated). `.env.staging`
+  (`FHS_SITE_ID`, `APP_BASE_URL`, `GOTRUE_URI_ALLOW_LIST`) updated; smoke green;
+  `stg.datiq.app` CNAME re-pointed and verified (custom domain OWNERSHIP_ACTIVE
+  + HOST_ACTIVE; auth/rest/api all live through it). Scripts are env-driven —
+  no code referenced the old id.
+- **`down.sh` is now data-safe**: Cloud SQL, its 5 DB-access secrets and the
+  hosting site survive a plain teardown; `--delete-data` removes them (with the
+  instance-name confirm BEFORE the first deletion). `up.sh` was verified to
+  rebuild the whole stack around the preserved database (row counts identical
+  before/after; smoke 13/13). See deployment/README.md and doc 11 §6.
+- **`bootstrap-secrets.sh` no longer clobbers the cutover-minted service key.**
+  The fresh JWT secret mints a new anon+service pair, and the cutover pushes
+  the service key to Secret Manager — but every `up.sh` runs
+  `bootstrap-secrets.sh`, which was re-pushing the operator file's PRE-cutover
+  hosted key over it. The api mounts `SUPABASE_SERVICE_KEY` FROM SECRET
+  MANAGER, so its PostgREST calls then failed auth and `/api/credits` answered
+  the degraded `read_failed` shape (found live 2026-10-01, after the rename).
+  The script now keeps that row untouched whenever `DATA_MODE=cloud-sql`
+  (the cutover owns it; the operator file's value is only meaningful
+  pre-cutover / in hosted-supabase mode). Verified: `/api/credits` returns the
+  real DB-backed shape with no `degraded` flag.
+
 
 The cutover ran for real; each blocker below is fixed in the scripts, and the
 fix is what a future prod execution inherits:

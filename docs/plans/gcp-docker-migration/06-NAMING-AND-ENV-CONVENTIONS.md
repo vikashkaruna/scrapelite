@@ -70,7 +70,7 @@
 | `ARTIFACTS_BUCKET` | `datiq-vsp-gcs-artifacts-stg` | `datiq-vsp-gcs-artifacts-prod` |
 | `CB_TRIGGER_*` (4) | `datiq-vsp-cb-api-stg` … | `-prod` |
 | `FB_WEB_APP_DISPLAY` | `DatIQ-vsp-fb-staging-web` | `DatIQ-vsp-fb-production-web` |
-| `FHS_SITE_ID` | `datiq-vsp-fhs-stg` | `datiq-vsp-fhs-prod` |
+| `FHS_SITE_ID` | `datiq-vsp-fhs-staging` (renamed 2026-10-01 — see note below) | `datiq-vsp-fhs-prod` |
 | `VPC_CONNECTOR` (optional) | `datiq-vsp-vpc-connector-stg` | `-prod` |
 
 Notes: (a) the `web` static surface deploys to Firebase Hosting directly (no Cloud Run web service); the
@@ -101,7 +101,7 @@ contract; only the Secret Manager resource names follow the convention.
 | Env | Env file | Purpose | Edge | Data mode | Public URL (var) |
 |---|---|---|---|---|---|
 | local | `.env.local` | Phase 0 — full stack in Docker Desktop | gateway container on `:8080` | `local-db` (db+auth+rest containers) or `shared-db` (dev Supabase) | `APP_BASE_URL=http://localhost:8080` |
-| staging | `.env.staging` | GCP staging — proves the target model, runs CI E2E | Firebase Hosting site `-stg` + Cloud Run `-stg` services | dev hosted Supabase → later staging Cloud SQL | `APP_BASE_URL=https://datiq-vsp-fhs-stg.web.app` |
+| staging | `.env.staging` | GCP staging — proves the target model, runs CI E2E | Firebase Hosting site `-stg`/`-staging` + Cloud Run `-stg` services | dev hosted Supabase → later staging Cloud SQL | `APP_BASE_URL=https://datiq-vsp-fhs-staging.web.app` |
 | prod | `.env.prod` | GCP production twin ("shadow") → cutover target | Firebase Hosting site `-prod` + Cloud Run `-prod` | prod hosted Supabase (shadow) → prod Cloud SQL (cutover) | `SHADOW_BASE_URL=…web.app`; `APP_BASE_URL=https://datiq.app` post-cutover |
 
 ## 5. Env-file system and loader mechanics
@@ -181,11 +181,15 @@ SA_JOBS=datiq-vsp-sa-jobs-stg
 SA_SCHEDULER=datiq-vsp-sa-scheduler-stg
 TFSTATE_BUCKET=datiq-vsp-gcs-tfstate      # globally unique; override if taken
 ARTIFACTS_BUCKET=datiq-vsp-gcs-artifacts-stg
-FHS_SITE_ID=datiq-vsp-fhs-stg             # globally unique; override if taken
+FHS_SITE_ID=datiq-vsp-fhs-staging         # globally unique; override if taken
+                                          # ⚠️ renamed from datiq-vsp-fhs-stg 2026-10-01:
+                                          # Firebase site ids can NEVER be recreated once
+                                          # deleted (down.sh keeps the site by default
+                                          # for exactly this reason)
 FB_WEB_APP_DISPLAY=DatIQ-vsp-fb-staging-web
 
 # ── 3. URLs ──────────────────────────────────────────────────────────────────
-APP_BASE_URL=https://datiq-vsp-fhs-stg.web.app   # custom domain goes here post-cutover
+APP_BASE_URL=https://datiq-vsp-fhs-staging.web.app   # custom domain goes here post-cutover
 API_BASE_URL=${APP_BASE_URL}                     # same-origin via hosting rewrites
 SHADOW_BASE_URL=                                 # set once the prod twin exists
 

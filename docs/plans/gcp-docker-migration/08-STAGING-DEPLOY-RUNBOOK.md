@@ -13,9 +13,9 @@ not executed** until you finish testing local + staging.
 
 | Piece | Resource | Notes |
 |---|---|---|
-| **Staging site** | https://datiq-vsp-fhs-stg.web.app | Firebase Hosting site `datiq-vsp-fhs-stg`, project `vikash-saas-project` |
+| **Staging site** | https://datiq-vsp-fhs-staging.web.app (custom domain https://stg.datiq.app) | Firebase Hosting site `datiq-vsp-fhs-staging`, project `vikash-saas-project`. ⚠️ Renamed from `datiq-vsp-fhs-stg` on 2026-10-01 — that id was burned by a pre-fix teardown (Firebase site ids can never be recreated); `stg.datiq.app` CNAME re-pointed and verified |
 | Static payload | entire `dist/` | SPA shell, prerendered home + all pages, help site, sitemap/robots, admin+tracker assets |
-| Dynamic API | Cloud Run `datiq-vsp-run-api-stg` | `https://datiq-vsp-fhs-stg.web.app/api/**` rewrite; **public** (Netlify parity) |
+| Dynamic API | Cloud Run `datiq-vsp-run-api-stg` | `https://datiq-vsp-fhs-staging.web.app/api/**` rewrite; **public** (Netlify parity) |
 | Admin surface | Cloud Run `datiq-vsp-run-admin-stg` | `/admin`, `/admin/**` rewrites; **public** (Netlify parity) |
 | Tracker layer | Cloud Run `datiq-vsp-run-trackers-stg` | **public** (Netlify parity) |
 | Jobs | Cloud Run `datiq-vsp-run-jobs-stg` | **NOT public** — Scheduler OIDC only |
@@ -90,7 +90,12 @@ npm run verify:supabase -- staging        # ← also runs automatically inside
 
 # whole-stack up / down:
 ./deployment/scripts/gcp/up.sh staging      # full deploy (SKIP_* passthrough)
-./deployment/scripts/gcp/down.sh staging --yes   # guarded teardown (plan prints without --yes)
+./deployment/scripts/gcp/down.sh staging --yes   # guarded teardown — DATA-SAFE:
+                                                 # Cloud SQL + its 5 access secrets + the
+                                                 # hosting site are KEPT; --delete-data
+                                                 # destroys them (instance-name confirm
+                                                 # runs BEFORE the first delete).
+DRY_RUN=1 ./deployment/scripts/gcp/down.sh staging --yes   # rehearse, touch nothing
 ```
 
 `deploy-run.sh` fails fast with the remedy when nothing was built at the current
@@ -122,8 +127,8 @@ claims "Your plan doesn't include a workspace" when the list failed to load.
 
 ### 3.1 Supabase dev project — allow the Firebase staging host (OAuth) ⚠️ required for sign-in testing
 Dashboard → `aubwooslkkrprdxuiyvj` → Authentication → URL Configuration →
-**Add `https://datiq-vsp-fhs-stg.web.app` to "Additional Redirect URLs"** (and
-optionally `https://datiq-vsp-fhs-stg.firebaseapp.com`). Without it, Google/
+**Add `https://datiq-vsp-fhs-staging.web.app` to "Additional Redirect URLs"** (and
+optionally `https://datiq-vsp-fhs-staging.firebaseapp.com`). Without it, Google/
 Microsoft OAuth on the Firebase staging site fails the redirect allowlist.
 Leave **Site URL** as-is (Netlify staging) while both serve traffic.
 Reference: `docs/SUPABASE-AUTH-REDIRECT-URLS.md` is the master list — add the
@@ -131,7 +136,7 @@ Firebase hosts there too.
 
 ### 3.2 n8n — allowlist the staging host
 If you test workflow callbacks from the GCP staging origin, add
-`https://datiq-vsp-fhs-stg.web.app` wherever n8n validates origins/callbacks
+`https://datiq-vsp-fhs-staging.web.app` (and `https://stg.datiq.app`) wherever n8n validates origins/callbacks
 (the `N8N_BASE_URL` secret stays the same). n8n cloud webhook URLs are
 origin-agnostic; only your own header/origin checks, if any, need updating.
 

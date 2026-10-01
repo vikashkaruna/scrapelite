@@ -1,6 +1,6 @@
 # 05 — Implementation Plan (v2, two phases)
 
-**Date:** 2026-09-28 · **Branch:** `docker-desktop-build` · **Status:** Phase 0 **IMPLEMENTED & VERIFIED locally (2026-09-28, `d14dff1d`)** — smoke 16/16, signon E2E green, staging→local migration rehearsed. Step 0 compat release **shipped to production** (PRs #241/#242). **Phase 1a EXECUTED & GREEN (2026-09-29)** — GCP staging live at https://datiq-vsp-fhs-stg.web.app, edge smoke 13/13, Cloud SQL migrated (127 RLS tables, 29 extractions), 13 scheduler jobs, all artifacts for prod-shadow + cutover committed; **operator checklist in `08-STAGING-DEPLOY-RUNBOOK.md`**. Phase 1b/2/3 (prod shadow, cutover) NOT executed — awaiting owner testing of local + staging.
+**Date:** 2026-09-28 · **Branch:** `docker-desktop-build` · **Status:** Phase 0 **IMPLEMENTED & VERIFIED locally (2026-09-28, `d14dff1d`)** — smoke 16/16, signon E2E green, staging→local migration rehearsed. Step 0 compat release **shipped to production** (PRs #241/#242). **Phase 1a EXECUTED & GREEN (2026-09-29)** — GCP staging live at https://stg.datiq.app (site id `datiq-vsp-fhs-staging`; renamed 2026-10-01), edge smoke 13/13, Cloud SQL migrated (127 RLS tables, 29 extractions), 13 scheduler jobs, all artifacts for prod-shadow + cutover committed; **operator checklist in `08-STAGING-DEPLOY-RUNBOOK.md`**. Phase 1b/2/3 (prod shadow, cutover) NOT executed — awaiting owner testing of local + staging.
 
 **Implementation deviations from this plan (all deliberate, see session handoff):**
 - `db`/`auth`/`rest` use upstream images directly (`supabase/postgres:17.6.1.165`, `supabase/auth`, `postgrest/postgrest`) instead of custom Dockerfiles — better provenance, nothing to maintain.
@@ -149,7 +149,7 @@ and scripts read `TF_VAR_*`/env vars from the loader.
 
 | Item | Choice (default names per doc 06) |
 |---|---|
-| Edge | **Firebase Hosting** site `datiq-vsp-fhs-stg` (redirects + rewrites to Cloud Run + headers) — default; Cloud Run gateway behind a Global LB is the documented alternative |
+| Edge | **Firebase Hosting** site `datiq-vsp-fhs-staging` (renamed 2026-10-01; redirects + rewrites to Cloud Run + headers) — default; Cloud Run gateway behind a Global LB is the documented alternative |
 
 **Static/dynamic split on GCP (the Firebase pattern):** the ENTIRE `dist/` payload — SPA shell, all 35 prerendered pages **including home** (`/` → `/home/index.html` forced rewrite), static `/vs/*`, `/faq`, `/dmca`, the help site, sitemap/robots/llms.txt, and the admin+tracker files — deploys to **Firebase Hosting as static files** (no container; the local `web`/`admin`/`trackers` images are the stand-ins proving the same payload). Only the **dynamic** surfaces get containers: `/api/**` → Cloud Run `datiq-vsp-run-api-stg` and `/run` jobs via Scheduler. **Phase-dependent rewrites:** while the stack talks to hosted Supabase (staging + shadow), the frontend calls the hosted project URL directly (from `runtime-config.js`) — so Firebase needs NO `/auth/v1` or `/rest/v1` rewrites; those are added only at the cutover, pointing at the Cloud Run GoTrue/PostgREST services. `gen-firebase-config.mjs` must therefore emit rewrites conditionally from `DATA_MODE`.
 | API | Cloud Run `datiq-vsp-run-api-stg` (api image, min-instances 0, concurrency 80, ingress: internal+hosting) |

@@ -52,6 +52,19 @@ while read -r runtime_var source_key services; do
     echo "  skip ${secret_name} (no value for ${source_key})"
     skipped=$((skipped+1)); continue
   fi
+  # ── POST-CUTOVER: SUPABASE_SERVICE_KEY is CUTOVER-OWNED ────────────────────
+  # At the staging cutover the fresh JWT secret is minted together with a new
+  # anon+service pair, and those ARE the keys the self-hosted GoTrue/PostgREST
+  # validate against — the cutover pushes the service key to Secret Manager as
+  # part of the flip. The operator file still holds the PRE-cutover hosted key,
+  # so re-pushing it here (every `up.sh` runs this script) silently clobbers
+  # the minted one and the api's REST calls start failing auth
+  # (`/api/credits` → degraded "read_failed"; found live 2026-10-01). Once
+  # DATA_MODE=cloud-sql the cutover owns this row — never overwrite it.
+  if [ "${DATA_MODE:-}" = "cloud-sql" ] && [ "$runtime_var" = "SUPABASE_SERVICE_KEY" ]; then
+    echo "  keep ${secret_name} (cutover-owned — DATA_MODE=cloud-sql)"
+    skipped=$((skipped+1)); continue
+  fi
   if ! gcloud secrets describe "$secret_name" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
     gcloud secrets create "$secret_name" --project="$GCP_PROJECT_ID" \
       --replication-policy=automatic --quiet >/dev/null

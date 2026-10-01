@@ -30,6 +30,14 @@
 >    audits 16 — before AND after teardown/rebuild), auth/rest 200 through the
 >    new site, Studio 165 tables via `proxy-studio.sh`, smoke 13/13, 13 GCP
 >    jobs re-paused to the cutover-deferred state.
+>  * **Secrets clobber fixed**: `bootstrap-secrets.sh` (runs on every `up.sh`)
+>    was re-pushing the operator file's PRE-cutover `SUPABASE_SERVICE_KEY` over
+>    the cutover-minted one in Secret Manager — the api mounts that key FROM
+>    Secret Manager and its PostgREST calls failed auth (`/api/credits` →
+>    degraded `read_failed`). The script now keeps that row when
+>    `DATA_MODE=cloud-sql` (cutover owns it). Restored the minted key in SM,
+>    redeployed api, verified `/api/credits` returns the real DB-backed shape
+>    (no `degraded`), rest 200, smoke 13/13.
 >
 > ## ✅ UPDATE 2026-10-01 — THE CUTOVER WAS EXECUTED (steps 0–4 + smoke; cron handoff deferred)
 >

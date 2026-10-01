@@ -1,6 +1,6 @@
 # GCP + Docker Migration — Plan of Record (v2)
 
-**Status: Phase 1a EXECUTED END-TO-END, ALL GREEN (2026-09-29); GCP staging live at https://datiq-vsp-fhs-stg.web.app (smoke 13/13, Cloud SQL migrated, 13 scheduler jobs). Local Docker Desktop stack + Studio (ports 8080/54328) fully functional.**
+**Status: Phase 1a EXECUTED END-TO-END, ALL GREEN (2026-09-29); GCP staging live at https://stg.datiq.app (site renamed to `datiq-vsp-fhs-staging` 2026-10-01 — see doc 12; staging DB cut over to self-hosted GoTrue/PostgREST + Cloud SQL the same day, cron handoff deferred). Staging smoke 13/13. Local Docker Desktop stack + Studio (ports 8080/54328) fully functional.**
 **Date: 2026-09-29 · Branch: `docker-desktop-build`**
 
 This folder supersedes the earlier two-phase draft (`DatIQ - Docker and GCP/DatIQ - Local Docker and GCP Migration.md`)
@@ -70,11 +70,11 @@ DatIQ uses a decoupled edge-and-microservices topology where Firebase Hosting ac
 
 | Aspect | Staging Environment | Production Environment |
 |---|---|---|
-| **Hosting Target** | `datiq-vsp-fhs-stg` | `datiq-vsp-fhs-prod` |
-| **Primary Domain** | `https://datiq-vsp-fhs-stg.web.app` | `https://datiq.app` (apex) |
-| **Secondary / WWW Domain** | `https://datiq-vsp-fhs-stg.firebaseapp.com` | `https://www.datiq.app` (redirects/serves apex) |
+| **Hosting Target** | `datiq-vsp-fhs-staging` (renamed 2026-10-01) | `datiq-vsp-fhs-prod` |
+| **Primary Domain** | `https://stg.datiq.app` (= `datiq-vsp-fhs-staging.web.app`) | `https://datiq.app` (apex) |
+| **Secondary / WWW Domain** | `https://datiq-vsp-fhs-staging.firebaseapp.com` | `https://www.datiq.app` (redirects/serves apex) |
 | **Pre-Cutover Shadow Domain** | N/A (Direct Staging) | `https://datiq-vsp-fhs-prod.web.app` |
-| **API / Auth Domain** | `https://datiq-vsp-fhs-stg.web.app/api` | `https://datiq.app/api` (and `https://api.datiq.app`) |
+| **API / Auth Domain** | `https://stg.datiq.app/api` | `https://datiq.app/api` (and `https://api.datiq.app`) |
 | **Database Connection** | Hosted Supabase Dev (`aubwooslkkrprdxuiyvj`) during parallel run; Cloud SQL rehearsal | Hosted Supabase Prod (`sikkfxysjhirmtwkumpt`) during parallel run; Cloud SQL prod post-cutover |
 | **SSL Management** | Google-managed automatic SSL on `*.web.app` | Google-managed automatic SSL on custom apex and subdomains |
 | **Crons & Schedulers** | 13 Cloud Scheduler jobs (`OPS_JOBS_DISABLED=1`; Netlify staging owns crons) | 13 Cloud Scheduler jobs (`OPS_JOBS_DISABLED=1` during shadow; Netlify prod owns crons until cutover) |

@@ -95,6 +95,12 @@ deployment/scripts/gcp/down.sh prod                      # plan only; see runboo
                                                          # for the prod guardrails
 ```
 
+**Cutover-owned secrets**: after the staging DB cutover (`DATA_MODE=cloud-sql`)
+the minted `SUPABASE_SERVICE_KEY` is owned by the cutover — `bootstrap-secrets.sh`
+skips that manifest row so a stale pre-cutover operator value can never clobber
+the key the self-hosted PostgREST validates against. (The api mounts it FROM
+Secret Manager; a clobber shows up as `/api/credits` → degraded `read_failed`.)
+
 **`up.sh` ↔ `down.sh` round trip (verified live 2026-10-01, staging):**
 `down.sh staging --yes` removes scheduler jobs, Cloud Run services, rebuildable
 secrets, images, the artifacts bucket and service accounts — the database, its
