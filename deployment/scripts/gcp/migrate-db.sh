@@ -156,6 +156,20 @@ psql_q "create role anon nologin noinherit; create role authenticated nologin no
         create role authenticator login; create role supabase_auth_admin login;" 2>/dev/null || true
 [ -s "$ROLES_SQL" ] && psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -q -f "$ROLES_SQL" || true
 echo "→ schema"
+# 🔴 FULL CUTOVER PATH RESTORES A CLEAN SCHEMA. Earlier rehearsals leave the
+# target's auth/storage/public tables in whatever shape THEIR dump had; when
+# the source project's schema has moved on (e.g. auth.one_time_tokens gained
+# an expires_at column), the re-run's CREATE TABLEs fail as "already exists",
+# the drift hides inside the tolerated-error count, and the DATA COPY then
+# dies on a column the target table lacks. On the SOURCE_DB_URL path the
+# migration therefore drops the three data schemas and restores the schema
+# fresh from today's dump — schema and data can never disagree. The CLI
+# rehearsal path keeps its truncate-and-overwrite behavior (scratch restore).
+if [ -n "$SOURCE_DB_URL" ]; then
+  psql_q "DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS auth CASCADE; DROP SCHEMA IF EXISTS storage CASCADE;
+          CREATE SCHEMA public; CREATE SCHEMA auth; CREATE SCHEMA storage;"
+  echo "   (clean slate: dropped + recreated public/auth/storage for the fresh schema)"
+fi
 psql "$ADMIN_URL" -v ON_ERROR_STOP=0 -q -f "$SCHEMA_SQL" 2>"$GEN_DIR/db/schema-restore.err" || true
 # grep -c exits 1 on zero matches: `|| echo 0` would APPEND a second 0 to
 # the captured output; `|| true` keeps grep's own "0" as the only line.
@@ -175,7 +189,7 @@ FK_DROPS="$GEN_DIR/db/${ENV_NAME}-fk-drops.sql"
 #    ALL non-system schemas: the SOURCE_DB_URL path carries auth-schema FKs too.
 FK_FILTER="n.nspname not in ('pg_catalog','information_schema') and n.nspname not like 'pg_%'"
 psql "$ADMIN_URL" -tAc "select format('ALTER TABLE %I.%I ADD CONSTRAINT %I %s;', n.nspname, c.relname, con.conname, pg_get_constraintdef(con.oid)) from pg_constraint con join pg_class c on c.oid = con.conrelid join pg_namespace n on n.oid = c.relnamespace where con.contype = 'f' and $FK_FILTER order by c.relname, con.conname;" > "$FK_DEFS"
-psql "$ADMIN_URL" -tAc "select format('ALTER TABLE %I.%I DROP CONSTRAINT %I;', n.nspname, c.relname, con.conname) from pg_constraint con join pg_class c on c.oid = con.conrelid join pg_namespace n on n.oid = c.relnamespace where con.contype = 'f' and $FK_FILTER order by c.relname, con.conname;" > "$FK_DROPS"
+psql "$ADMIN_URL" -tAc "select format('ALTER TABLE %I.%I DROP CONSTRAINT IF EXISTS %I;', n.nspname, c.relname, con.conname) from pg_constraint con join pg_class c on c.oid = con.conrelid join pg_namespace n on n.oid = c.relnamespace where con.contype = 'f' and $FK_FILTER order by c.relname, con.conname;" > "$FK_DROPS"
 if [ -s "$FK_DROPS" ]; then
   psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -f "$FK_DROPS"
   echo "   $(grep -c . "$FK_DROPS") FK constraints parked"
@@ -185,14 +199,44 @@ fi
 #    transaction_timeout is a newer-Postgres GUC that Cloud SQL rejects with
 #    "unrecognized configuration parameter" — which ON_ERROR_STOP turns into
 #    a failed restore.
-sed -e '/session_replication_role/d' -e '/transaction_timeout/d' "$DATA_SQL" > "${DATA_SQL}.nfk" && mv "${DATA_SQL}.nfk" "$DATA_SQL"
+sed -e '/session_replication_role/d' -e '/transaction_timeout/d' \
+    -e '/^\\restrict /d' -e '/^\\unrestrict /d' -e '/^\\restrict$/d' -e '/^\\unrestrict$/d' \
+    "$DATA_SQL" > "${DATA_SQL}.nfk" && mv "${DATA_SQL}.nfk" "$DATA_SQL"
+# 2c. keep only PRODUCT data. The full dump carries every schema with rows —
+#     including `vault.secrets` (pgsodium-encrypted with the SOURCE instance's
+#     root key: meaningless on the target, and the target re-mints those keys
+#     anyway) and `realtime` bookkeeping. A COPY for a schema the target
+#     doesn't have is a fatal "relation does not exist" (exit 3, 2026-10-01).
+#     Filter each COPY block by schema; public/auth/storage are the product.
+#     `keep` starts TRUE: the dump's header (SETs) must survive — only COPY
+#     blocks decide.
+awk '
+  BEGIN { keep = 1 }
+  /^COPY [a-zA-Z_]+\./ {
+    split($0, parts, "."); schema = substr(parts[1], 6);
+    keep = (schema == "public" || schema == "auth" || schema == "storage");
+  }
+  keep { print }
+  /^\\\.$/ { keep = 1 }   # end of a COPY block — print again until the next COPY decides
+' "$DATA_SQL" > "${DATA_SQL}.prod" && mv "${DATA_SQL}.prod" "$DATA_SQL"
+#     …and the same for sequence setvals outside the product schemas
+#     (realtime.subscription_id_seq pointed at a schema the target lacks).
+grep -vE "setval\('(realtime|vault)\." "$DATA_SQL" > "${DATA_SQL}.seq" && mv "${DATA_SQL}.seq" "$DATA_SQL"
 # 2b. re-run detection: with existing rows the COPY stream would hit duplicate
 #     PKs — after FKs are parked a TRUNCATE is safe and makes the rehearsal
 #     repeatable (fresh instances skip this: no rows, nothing to truncate).
-EXISTING_ROWS=$(psql "$ADMIN_URL" -tAc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_stat_user_tables s on s.relid=c.oid where n.nspname='public' and c.relkind='r' and s.n_live_tup > 0 limit 1" 2>/dev/null || echo 0)
+#     ⚠️ THE TRUNCATE COVERS EVERY DATA-CARRYING SCHEMA, NOT JUST public. The
+#     SOURCE_DB_URL path (pg_dump --data-only, full cutover) restores auth.*
+#     and storage.* rows too, and the CLI rehearsal's data dump turned out to
+#     carry auth rows as well — a public-only truncate left auth.flow_state
+#     populated and the next COPY died on duplicate keys (exit 3, 2026-10-01).
+#     A re-run after a FAILED restore must also get here even when only the
+#     auth tables hold rows — hence the schemas list in the row check too.
+DATA_SCHEMAS="('public','auth','storage')"
+EXISTING_ROWS=$(psql "$ADMIN_URL" -tAc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_stat_user_tables s on s.relid=c.oid where n.nspname in $DATA_SCHEMAS and c.relkind='r' and s.n_live_tup > 0 limit 1" 2>/dev/null || echo 0)
 if [ "${EXISTING_ROWS:-0}" != "0" ]; then
-  echo "→ re-run: truncating public tables (FKs parked) before the fresh COPY load"
-  psql "$ADMIN_URL" -tAc "select format('TRUNCATE TABLE %I.%I;', n.nspname, c.relname) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' order by c.relname;" > "$GEN_DIR/db/truncate.sql"
+  echo "→ re-run: truncating public/auth/storage tables (FKs parked) before the fresh COPY load"
+  psql "$ADMIN_URL" -tAc "select format('TRUNCATE TABLE %I.%I;', n.nspname, c.relname) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname in $DATA_SCHEMAS and c.relkind='r' order by n.nspname, c.relname;" > "$GEN_DIR/db/truncate.sql"
   psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -f "$GEN_DIR/db/truncate.sql" || echo "  ⚠ truncate skipped (no rows after all)"
 fi
 # 3. restore data — ON_ERROR_STOP=1: a failing row FAILS the script instead of
@@ -239,6 +283,43 @@ psql_q "alter role ${DB_APP_USER} with login password '${DB_APP_PASSWORD}';
         grant usage on schema public, storage to ${DB_APP_USER}, anon, authenticated, service_role, authenticator;
         grant all on all tables in schema public, storage to service_role;
         alter default privileges in schema public grant all on tables to service_role;" || true
+# 🔴 THE anon/authenticated TABLE GRANTS ARE PART OF THE HOSTED BASELINE, and a
+# data dump never carries them (pg_dump --data-only has no GRANT statements).
+# On hosted Supabase every public table is granted to anon/authenticated and
+# RLS is what restricts ROWS; without the grant PostgREST answers
+# `42501 permission denied for table …` before RLS is even consulted, and the
+# whole app reads as broken after the cutover (found live 2026-10-01). RLS
+# remains the row gate — these grants are exactly what the hosted project has.
+psql_q "grant select, insert, update, delete on all tables in schema public to anon, authenticated;
+        grant usage, select on all sequences in schema public to anon, authenticated;
+        grant execute on all functions in schema public to anon, authenticated;
+        alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated;
+        alter default privileges in schema public grant usage, select on sequences to anon, authenticated;
+        alter default privileges in schema public grant execute on functions to anon, authenticated;" || true
+# 🔴 THE AUTH SCHEMA AND ITS TABLES MUST BELONG TO supabase_auth_admin. On
+# hosted Supabase they do, and the local compose stack transfers ownership
+# explicitly (compose.local.yaml runs the same loop after the schema restore).
+# A plain restore leaves everything owned by postgres, so the schema-owner
+# grant alone is not enough: GoTrue's startup migrations then die on
+# "must be owner of table users" (SQLSTATE 42501, an ALTER inside
+# 00_init_auth_schema.up.sql) after first dying on "no schema has been
+# selected to create in" (3F000) — both were the missed step that kept every
+# auth Cloud Run revision unhealthy (2026-10-01).
+psql_q "alter schema auth owner to supabase_auth_admin;
+        grant usage on schema auth to supabase_auth_admin, postgres, authenticator;
+        grant all on all tables in schema auth to supabase_auth_admin;
+        grant all on all sequences in schema auth to supabase_auth_admin;
+        grant all on all routines in schema auth to supabase_auth_admin;
+        do \$\$ declare r record; begin
+          for r in select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace
+                   where n.nspname='auth' and c.relkind in ('r','p','S','v','m','f') loop
+            execute format('alter table auth.%I owner to supabase_auth_admin', r.relname);
+          end loop;
+          for r in select p.proname, pg_get_function_identity_arguments(p.oid) args from pg_proc p
+                   join pg_namespace n on n.oid=p.pronamespace where n.nspname='auth' and p.prokind='f' loop
+            execute format('alter function auth.%I(%s) owner to supabase_auth_admin', r.proname, r.args);
+          end loop;
+        end \$\$;" || true
 
 # ── 7. proof-service secrets (PostgREST/GoTrue URLs + JWT) ────────────────────
 push_secret() { # push_secret <name> <value>
@@ -252,7 +333,11 @@ push_secret() { # push_secret <name> <value>
 # allow-listing. deploy-run.sh passes --add-cloudsql-instances for the socket.
 CONN_NAME="${GCP_PROJECT_ID}:${GCP_REGION}:${SQL_INSTANCE}"
 push_secret "$(sm_name PGRST_DB_URI)" "postgresql://authenticator:${AUTHENTICATOR_PW}@/${DB_NAME}?host=/cloudsql/${CONN_NAME}"
-push_secret "$(sm_name GOTRUE_DB_DATABASE_URL)" "postgresql://supabase_auth_admin:${SUPABASE_AUTH_PW}@/${DB_NAME}?host=/cloudsql/${CONN_NAME}"
+# ⚠️ GoTrue runs its startup migrations against search_path — without
+# `search_path=auth` in the DSN it dies on "no schema has been selected to
+# create in" (SQLSTATE 3F000) trying to CREATE TABLE schema_migrations. The
+# official supabase/docker GoTrue config carries this param in its DB URL too.
+push_secret "$(sm_name GOTRUE_DB_DATABASE_URL)" "postgresql://supabase_auth_admin:${SUPABASE_AUTH_PW}@/${DB_NAME}?host=/cloudsql/${CONN_NAME}&search_path=auth"
 if [ -n "${JWT_SECRET:-}" ]; then
   push_secret "$(sm_name JWT_SECRET)" "$JWT_SECRET"
 else

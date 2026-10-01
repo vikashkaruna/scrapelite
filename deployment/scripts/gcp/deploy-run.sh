@@ -131,14 +131,42 @@ for svc in $SERVICES; do
   case "$svc" in
     api)
       require_image "$IMG_API"
+      # /auth/v1 + /rest/v1 are proxied THROUGH this service (prefix strip —
+      # see gen-firebase-config.mjs + deployment/adapter/server.mjs). Wired
+      # only in cloud-sql mode; pre-cutover deploys are untouched. URLs come
+      # from the services themselves (run_url), never hand-composed.
+      api_env="$ENV_VARS_JSON"
+      if [ "${DATA_MODE:-}" = "cloud-sql" ] && [ -n "${CLOUD_RUN_AUTH:-}" ] && [ -n "${CLOUD_RUN_REST:-}" ]; then
+        auth_url="$(run_url "$CLOUD_RUN_AUTH" 2>/dev/null || true)"
+        rest_url="$(run_url "$CLOUD_RUN_REST" 2>/dev/null || true)"
+        if [ -n "$auth_url" ] && [ -n "$rest_url" ]; then
+          api_env="$DEPLOY_DIR/generated/gcp/env-vars-$ENV_NAME-api.json"
+          node -e '
+            const fs = require("fs");
+            const [base, out, ...kv] = process.argv.slice(1);
+            const env = JSON.parse(fs.readFileSync(base, "utf8"));
+            for (const item of kv) { const i = item.indexOf("="); env[item.slice(0, i)] = item.slice(i + 1); }
+            fs.writeFileSync(out, JSON.stringify(env));
+          ' "$ENV_VARS_JSON" "$api_env" "AUTH_PROXY_URL=$auth_url" "REST_PROXY_URL=$rest_url"
+          echo "   (auth/rest proxied via this service: $auth_url , $rest_url)"
+        else
+          echo "   ⚠ DATA_MODE=cloud-sql but auth/rest URLs unresolved — proxy left UNWIRED"
+        fi
+      fi
       echo "→ Cloud Run ${CLOUD_RUN_API} (api — public, Netlify parity)"
       gcloud run deploy "$CLOUD_RUN_API" "${GCP_FLAGS[@]}" \
         --image="$IMG_API" --port=8080 --allow-unauthenticated \
         --ingress=all --min-instances=0 --max-instances=4 --concurrency=80 \
         --memory=1Gi --cpu=1 --timeout=300 \
         --service-account="$SA_API_EMAIL" \
-        --env-vars-file="$ENV_VARS_JSON" $API_SECRETS --quiet
+        --env-vars-file="$api_env" $API_SECRETS --quiet
       grant_run_invoker "$CLOUD_RUN_API" "serviceAccount:${FIREBASE_RUN_INVOKER_SA}" "serviceAccount:${SA_DEPLOY_EMAIL}"
+      # The proxy's OIDC minting rides SA_API; grant it invoker on the targets
+      # so a future switch to private services does not silently 403.
+      if [ "${DATA_MODE:-}" = "cloud-sql" ]; then
+        if [ -n "${CLOUD_RUN_AUTH:-}" ]; then grant_run_invoker "$CLOUD_RUN_AUTH" "serviceAccount:${SA_API_EMAIL}" >/dev/null 2>&1 || true; fi
+        if [ -n "${CLOUD_RUN_REST:-}" ]; then grant_run_invoker "$CLOUD_RUN_REST" "serviceAccount:${SA_API_EMAIL}" >/dev/null 2>&1 || true; fi
+      fi
       ;;
     jobs)
       require_image "$IMG_API"
@@ -174,24 +202,40 @@ for svc in $SERVICES; do
     auth)
       require_vars CLOUD_RUN_AUTH AUTH_IMAGE JWT_SECRET
       echo "→ Cloud Run ${CLOUD_RUN_AUTH} (GoTrue proof service → staging Cloud SQL)"
+      # --allow-unauthenticated: Netlify/Hosted-Supabase parity, the same rule
+      # api/admin/trackers follow. /auth/v1 is a PUBLIC signup/login surface by
+      # design (the hosted Supabase endpoint it replaces is public too) and the
+      # Firebase-Hosting edge did not carry the run.invoker identity through to
+      # this service — the documented service-<num>@gcp-sa-firebase grant was
+      # applied and still answered 403 after propagation (2026-10-01). GoTrue
+      # enforces auth itself; the IAM wall must not be the gate a user's first
+      # sign-in dies on.
       gcloud run deploy "$CLOUD_RUN_AUTH" "${GCP_FLAGS[@]}" \
-        --image="${AUTH_IMAGE:?AUTH_IMAGE missing in .env}" --port=8080 --no-allow-unauthenticated \
+        --image="${AUTH_IMAGE:?AUTH_IMAGE missing in .env}" --port=8080 --allow-unauthenticated \
         --ingress=all --min-instances=0 --max-instances=2 --concurrency=80 \
         --memory=512Mi --cpu=1 --timeout=60 --service-account="$SA_JOBS_EMAIL" \
         --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${SQL_INSTANCE:?SQL_INSTANCE missing}" \
-        --set-env-vars="^;^GOTRUE_DB_DRIVER=postgres;GOTRUE_API_HOST=0.0.0.0;GOTRUE_API_PORT=8080;API_EXTERNAL_URL=${APP_BASE_URL};GOTRUE_SITE_URL=${APP_BASE_URL};GOTRUE_JWT_EXP=3600;GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated;GOTRUE_DISABLE_SIGNUP=false;GOTRUE_EXTERNAL_EMAIL_ENABLED=true;GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false};GOTRUE_LOG_LEVEL=warn;GOTRUE_URI_ALLOW_LIST=${GOTRUE_URI_ALLOW_LIST:-}" \
+        --set-env-vars="^;^GOTRUE_DB_DRIVER=postgres;GOTRUE_DB_NAMESPACE=auth;GOTRUE_API_HOST=0.0.0.0;GOTRUE_API_PORT=8080;API_EXTERNAL_URL=${APP_BASE_URL};GOTRUE_SITE_URL=${APP_BASE_URL};GOTRUE_JWT_EXP=3600;GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated;GOTRUE_DISABLE_SIGNUP=false;GOTRUE_EXTERNAL_EMAIL_ENABLED=true;GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false};GOTRUE_LOG_LEVEL=warn;GOTRUE_URI_ALLOW_LIST=${GOTRUE_URI_ALLOW_LIST:-}" \
         --set-secrets="GOTRUE_DB_DATABASE_URL=$(sm_name GOTRUE_DB_DATABASE_URL):latest,GOTRUE_JWT_SECRET=$(sm_name JWT_SECRET):latest" --quiet
+      # Kept for a future switch back to a private service; moot while allUsers
+      # can invoke (the --allow-unauthenticated above).
+      grant_run_invoker "$CLOUD_RUN_AUTH" "serviceAccount:${FIREBASE_RUN_INVOKER_SA}" "serviceAccount:${SA_DEPLOY_EMAIL}"
       ;;
     rest)
       require_vars CLOUD_RUN_REST REST_IMAGE
       echo "→ Cloud Run ${CLOUD_RUN_REST} (PostgREST proof service → staging Cloud SQL)"
+      # Public for the same reason as auth — PostgREST is the hosted-REST
+      # replacement and enforces authorization via JWT + RLS, exactly as
+      # hosted Supabase does.
       gcloud run deploy "$CLOUD_RUN_REST" "${GCP_FLAGS[@]}" \
-        --image="${REST_IMAGE:?REST_IMAGE missing in .env}" --port=3000 --no-allow-unauthenticated \
+        --image="${REST_IMAGE:?REST_IMAGE missing in .env}" --port=3000 --allow-unauthenticated \
         --ingress=all --min-instances=0 --max-instances=2 --concurrency=80 \
         --memory=512Mi --cpu=1 --timeout=60 --service-account="$SA_JOBS_EMAIL" \
         --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${SQL_INSTANCE:?SQL_INSTANCE missing}" \
         --env-vars-file="$REST_ENV_JSON" \
         --set-secrets="PGRST_DB_URI=$(sm_name PGRST_DB_URI):latest,PGRST_JWT_SECRET=$(sm_name JWT_SECRET):latest" --quiet
+      # Same edge as auth (kept for completeness — see the note there).
+      grant_run_invoker "$CLOUD_RUN_REST" "serviceAccount:${FIREBASE_RUN_INVOKER_SA}" "serviceAccount:${SA_DEPLOY_EMAIL}"
       ;;
     studio)
       require_vars CLOUD_RUN_STUDIO SQL_INSTANCE

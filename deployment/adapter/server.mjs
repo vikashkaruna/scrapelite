@@ -19,6 +19,7 @@
 // Response: { statusCode, headers, multiValueHeaders, body, isBase64Encoded }.
 
 import http from "node:http";
+import https from "node:https";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, dirname, resolve } from "node:path";
@@ -72,6 +73,68 @@ function toMulti(rawHeaders) {
     (mv[k] = mv[k] || []).push(rawHeaders[i + 1]);
   }
   return mv;
+}
+
+// ── /auth/v1/** and /rest/v1/** — PREFIX-STRIPPING PROXY ─────────────────────
+// On hosted Supabase, Kong strips /auth/v1 and /rest/v1 before the services
+// see the request; the local stack's gateway does the same (gen-gateway-conf
+// rewrites ^/auth/v1(/.*)$ $1). Firebase Hosting has no rewrite-transform, so
+// it forwards the FULL path — and GoTrue/PostgREST serve at the root, so a
+// direct rewrite answers their own 404/401 and sign-in is dead at the edge.
+// The api service is already the public, ingress-fronted surface (the same
+// role the local gateway plays), so it strips the prefix and proxies onward.
+// This is only active when the targets are configured (cloud-sql mode).
+const PROXY_TARGETS = [
+  { prefix: "/auth/v1", target: process.env.AUTH_PROXY_URL || "" },
+  { prefix: "/rest/v1", target: process.env.REST_PROXY_URL || "" },
+];
+
+function proxyTo(target, req, res, pathname, search) {
+  let upstream;
+  try { upstream = new URL(target); } catch { return false; }
+  const stripped = pathname.replace(/^(\/auth\/v1|\/rest\/v1)(?=\/|$)/, "") || "/";
+  const isHttps = upstream.protocol === "https:";
+  const headers = { ...req.headers, host: upstream.host };
+  // ⚠️ THE USER'S Authorization HEADER MUST SURVIVE: it carries their
+  // Supabase access token, which is what GoTrue/PostgREST authorize against.
+  // Cloud Run's platform check reads X-Serverless-Authorization instead, so
+  // the OIDC token rides there and never touches the app-facing header. The
+  // targets are public today (--allow-unauthenticated); the token is minted
+  // best-effort so a future switch to private keeps working. A metadata
+  // failure (local runs) simply proxies without it.
+  const carryOver = (token) => {
+    if (token) headers["x-serverless-authorization"] = `Bearer ${token}`;
+    const outReq = (isHttps ? https : http).request({
+      hostname: upstream.hostname,
+      port: upstream.port || (isHttps ? 443 : 80),
+      path: `${stripped}${search}`,
+      method: req.method,
+      headers,
+    }, (up) => {
+      res.statusCode = up.statusCode || 502;
+      for (const [k, v] of Object.entries(up.headers)) {
+        if (k === "transfer-encoding") continue;   // hop-by-hop
+        res.setHeader(k, v);
+      }
+      up.pipe(res);
+    });
+    outReq.on("error", (err) => {
+      console.error(`[adapter] proxy ${pathname} → ${target}: ${err?.message}`);
+      if (!res.headersSent) {
+        res.statusCode = 502;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: "upstream_unreachable" }));
+      }
+    });
+    req.pipe(outReq);
+  };
+  // Audience = the upstream origin (Cloud Run validates aud against the service URL).
+  fetch(`http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${encodeURIComponent(upstream.origin)}`, {
+    headers: { "Metadata-Flavor": "Google" },
+  }).then((r) => (r.ok ? r.text() : ""))
+    .catch(() => "")
+    .then(carryOver);
+  return true;
 }
 
 // Resolve /api/... (or legacy /.netlify/functions/...) to { fn, fnPath } using
@@ -160,6 +223,22 @@ const server = http.createServer(async (req, res) => {
         res.statusCode = 401;
         res.setHeader("content-type", "application/json");
         return res.end(JSON.stringify({ error: "unauthorized — cron token required" }));
+      }
+    }
+
+    // Auth/PostgREST prefix-stripping proxy (api mode, cloud-sql wiring only —
+    // see PROXY_TARGETS). 503 not 404 when the target env is missing: a
+    // misconfigured cutover must look like an outage, not like a route that
+    // never existed.
+    if (MODE === "api") {
+      const hit = PROXY_TARGETS.find((p) => pathname === p.prefix || pathname.startsWith(`${p.prefix}/`));
+      if (hit) {
+        if (!hit.target) {
+          res.statusCode = 503;
+          res.setHeader("content-type", "application/json");
+          return res.end(JSON.stringify({ error: `${hit.prefix} proxy is not configured (AUTH_PROXY_URL/REST_PROXY_URL unset)` }));
+        }
+        return proxyTo(hit.target, req, res, pathname, url.search);
       }
     }
 

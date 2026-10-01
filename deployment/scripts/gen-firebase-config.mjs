@@ -134,9 +134,17 @@ export function buildHosting({ redirects, headers }, env) {
     // Post-cutover only: the self-hosted trio moves behind the same origin.
     // While DATA_MODE=hosted-supabase the frontend talks to the hosted project
     // URL directly (public/runtime-config.js), so these must NOT exist yet.
+    //
+    // ⚠️ BOTH PREFIXES ROUTE TO THE **API** SERVICE, NOT AUTH/REST DIRECTLY.
+    // Firebase rewrites pass the FULL path through (no transform), but GoTrue
+    // and PostgREST serve at the root — Kong/hosted strips /auth/v1 before
+    // they see it, and the local gateway mirrors that with `rewrite ^/auth/v1`.
+    // A direct rewrite therefore answers GoTrue's own 404 and sign-in dies at
+    // the edge (found live 2026-10-01). The api adapter now performs the
+    // strip-and-proxy, so Hosting only needs one hop it already supports.
     rewrites.push(
-      { source: "/auth/v1/**", ...run(env.CLOUD_RUN_AUTH || "UNSET_CLOUD_RUN_AUTH") },
-      { source: "/rest/v1/**", ...run(env.CLOUD_RUN_REST || "UNSET_CLOUD_RUN_REST") },
+      { source: "/auth/v1/**", ...run(env.CLOUD_RUN_API || "UNSET_CLOUD_RUN_API") },
+      { source: "/rest/v1/**", ...run(env.CLOUD_RUN_API || "UNSET_CLOUD_RUN_API") },
     );
   }
   // ── static pages, extensionless form → their document ─────────────────────

@@ -42,26 +42,42 @@ DRY_RUN=1 bash deployment/scripts/gcp/cutover-staging-db.sh staging "$SOURCE_DB_
 ## Run (cutover window)
 
 ```bash
-# 1. Comment the staging scheduled-function blocks in netlify.toml
-#    (the "Netlify staging" schedule entries) and redeploy Netlify staging.
-# 2. Then, in the same window:
-bash deployment/scripts/gcp/cutover-staging-db.sh staging "$SOURCE_DB_URL"
+# Option A — one window (Netlify freeze already done):
+NETLIFY_CRONS_FROZEN=1 bash deployment/scripts/gcp/cutover-staging-db.sh \
+  staging "$SOURCE_DB_URL"
+
+# Option B — split window (script default): the cutover completes steps 0–4
+# + smoke with GCP jobs left PAUSED; after the Netlify freeze, finish the
+# cron handoff without re-running the destructive steps:
+bash deployment/scripts/gcp/cutover-staging-db.sh staging finish-crons
 ```
 
 The script does, in order (all steps individually re-runnable):
-0. fresh JWT secret → `.env.staging` + Secret Manager; mints + persists a fresh
-   anon/service key pair; prints the session-invalidation consequence.
-1. `crons.sh staging pause` (GCP freeze).
+0. fresh JWT secret + minted anon/service pair pushed to **Secret Manager
+   only** — `.env.staging` is deliberately NOT touched here. Step 2's
+   pre-flight must still see the ORIGINAL hosted-project env (URL ↔ key
+   project match), and an interrupted run must leave a working env. (The
+   2026-10-01 revision fixed exactly this: minting used to write the env at
+   step 0 and the migration pre-flight then failed with a PROJECT MISMATCH.)
+1. `crons.sh staging pause` (GCP freeze; idempotent).
 2. `migrate-staging-db.sh` (dump schema+data+auth users → Cloud SQL; FK
    restore fatal-on-error; row-count + FK verification). `SKIP_MIGRATE=1`
    reuses a previously migrated instance.
-3. `deploy-run.sh staging auth rest` (fresh secret already in Secret Manager).
-4. `DATA_MODE=cloud-sql` + `SUPABASE_URL=$APP_BASE_URL` persisted, GoTrue
-   allowlist extended with `datiq-vsp-fhs-stg.web.app/**` + `stg.datiq.app/**`,
-   runtime-config.js patched (staging pair → same-origin + minted anon key)
-   **for this hosting deploy only**, then `deploy-run.sh staging api jobs` +
-   `deploy-hosting.sh staging` (emits the /auth/v1+/rest/v1 rewrites).
-5. `OPS_JOBS_DISABLED=0` → `deploy-run.sh staging jobs` → `crons.sh staging resume`.
+3. `JWT_SECRET` persisted to `.env.staging` (first env write) +
+   `deploy-run.sh staging auth rest` — this deploy is the moment existing
+   sessions actually invalidate.
+4. `DATA_MODE=cloud-sql` + `SUPABASE_URL=$APP_BASE_URL` + the minted
+   `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_KEY` persisted **together** (the
+   keys land only alongside the URL they were minted for), GoTrue
+   allowlist extended with `datiq-vsp-fhs-stg.web.app/**` +
+   `stg.datiq.app/**`, runtime-config.js patched (staging pair → same-origin
+   + minted anon key) **for this hosting deploy only**, then
+   `deploy-run.sh staging api jobs` + `deploy-hosting.sh staging` (emits the
+   /auth/v1+/rest/v1 rewrites).
+5. Cron handoff — **gated on `NETLIFY_CRONS_FROZEN=1`** (attestation that the
+   Netlify staging TOML schedules are commented + redeployed; never both cron
+   owners). Without it: `OPS_JOBS_DISABLED` stays 1, GCP jobs stay PAUSED,
+   and the handoff is completed later with `staging finish-crons`.
 6. `smoke.sh staging`.
 
 ## Post-window verification (manual)
@@ -71,6 +87,47 @@ The script does, in order (all steps individually re-runnable):
 - Watch Mailpit-independent transactional email (welcome email fires once).
 - `fk-restore.err` has 0 ERRORs; `data-restore.err` empty
   (`deployment/generated/db/`).
+
+## Executed 2026-10-01 — what it actually took (all scripted now)
+
+The cutover ran for real; each blocker below is fixed in the scripts, and the
+fix is what a future prod execution inherits:
+
+1. **Step 0 wrote the env too early.** Minting flipped `SUPABASE_ANON_KEY` in
+   `.env.staging` before step 2's migration pre-flight, which validates the key
+   against `SUPABASE_URL`'s project → `PROJECT MISMATCH`, and an interrupt left
+   the env half-flipped. Minting now touches **Secret Manager only**; the env
+   flips at steps 3–4 (the deploys that consume each value).
+2. **Re-run had to be re-runnable.** FK drops are now `DROP CONSTRAINT IF
+   EXISTS`; the truncate covers `public` **and `auth`/`storage`** (the dump
+   carries auth rows — a public-only truncate left `auth.flow_state` populated
+   and the COPY died on duplicate keys). On the full cutover path the schema
+   restore drops + recreates the three data schemas (a stale auth schema from
+   an earlier rehearsal made the restore die on a column the dump's
+   `one_time_tokens` had and the target lacked). The data import filters out
+   non-product schemas (`vault`, `realtime`) and psql-17 `\restrict` markers.
+3. **GoTrue could not boot** (`no schema has been selected to create in` /
+   `must be owner of table users`) — the restore leaves the auth schema owned
+   by `postgres`; hosted Supabase (and the local compose stack) give it to
+   `supabase_auth_admin`. The migration now transfers schema + all auth
+   relations/sequences/functions and grants. Same class: `anon`/`authenticated`
+   had **no table grants** (dumps carry no GRANTs; hosted grants them and RLS
+   gates rows) → PostgREST `42501` until the migration re-grants
+   select/insert/update/delete + sequence + function privileges.
+4. **`/auth/v1` + `/rest/v1` prefixes.** Firebase Hosting passes the full path;
+   GoTrue/PostgREST serve at the root (Kong/local-gateway strip the prefix, and
+   Hosting has no rewrite-transform). The rewrites now target the **api**
+   service, whose adapter strips the prefix and proxies to auth/rest
+   (`AUTH_PROXY_URL`/`REST_PROXY_URL`, resolved from the live services at
+   deploy; `X-Serverless-Authorization` carries the OIDC token so the user's
+   Authorization JWT is untouched).
+5. **Env-only flips ride the serving image.** Steps 4–5 use `update-env.sh`,
+   not `deploy-run.sh` — HEAD can move past the last build (a docs-only commit
+   made step 4 die on `image not found`). An interrupted cutover resumes with
+   `CUTOVER_RESUME=1` (skips migration, re-runs steps 3–6 idempotently).
+6. **Verified end-to-end**: smoke 13/13; anon REST 200; signup → insert → read
+   own row through `stg.datiq.app`; `/api/credits` with a fresh user JWT
+   returns the ledger shape from Cloud SQL.
 
 ## Rollback
 

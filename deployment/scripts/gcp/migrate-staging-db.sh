@@ -78,7 +78,13 @@ fi
 
 # Belt-and-braces: the FULL path must restore every FK. migrate-db.sh already
 # exits fatally on FK errors for SOURCE_DB_URL; state it in the summary too.
-fk_err="$(grep -c 'ERROR' "$GEN_DIR/db/fk-restore.err" 2>/dev/null || echo 0)"
+GEN_DIR="$DEPLOY_DIR/generated"
+# ⚠️ `grep -c ... || echo 0` captures "0\n0" when grep matches nothing (grep -c
+# prints 0 ITSELF, exits 1, and the || appends a second 0) — the string is then
+# never equal to "0" and this check aborts a perfectly clean migration.
+# `|| true` keeps grep's own "0" as the only line.
+fk_err="$(grep -c 'ERROR' "$GEN_DIR/db/fk-restore.err" 2>/dev/null || true)"
+[ -z "$fk_err" ] && fk_err=0
 echo "   FK restore errors: ${fk_err} (must be 0 on the full path)"
 [ "$fk_err" = "0" ] || { echo "✗ FK restore errors present — abort"; exit 1; }
 
