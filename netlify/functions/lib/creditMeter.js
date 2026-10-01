@@ -64,6 +64,7 @@ export function resetMeterStats() {
  */
 export function meterContext({
   caller, userId = null, workspaceId = null, runId = null, kindMap = null,
+  suppressed = false,
 } = {}) {
   // `kindMap` lets a SURFACE rename what a choke point charges without the
   // choke point knowing the surface exists. A watchlist's page read is still
@@ -75,7 +76,20 @@ export function meterContext({
   //
   // The buffer is what keeps metering off the request's time budget. See
   // record() / flush() below.
-  return { caller: caller || null, userId, workspaceId, runId, kindMap, buffer: [] };
+  //
+  // `suppressed` marks traffic whose spend is ledgered ONCE somewhere else —
+  // today the template runner's own finish events (templates.js). The browser
+  // template flow calls /api/extract and /api/ai like any other surface, and
+  // without this flag those choke points billed the same page fetch and the
+  // same synthesis call a second time, on top of the run's own events: the
+  // ledger showed a single run carrying both `caller: "extract"` rows and
+  // `run_id: trun_*` rows for the same work. The events, not the choke point,
+  // own the template charge because only they carry the run attribution, the
+  // cache/skip/failed semantics and the estimate-vs-actual reconciliation
+  // (creditModel.reconcile). The choke points stay live for every other
+  // surface — Home, Preview, bulk, monitoring, audits — which have no second
+  // writer.
+  return { caller: caller || null, userId, workspaceId, runId, kindMap, buffer: [], suppressed: Boolean(suppressed) };
 }
 
 /** True when this context can be attributed to a surface. */
@@ -107,6 +121,7 @@ export function record(ctx, { kind, quantity = 1, meta = {}, failed = false, cac
   // so warning about it would train the reader to ignore the warning that
   // matters. The parity test is what catches a call site with no meter at all.
   if (failed || cached || skipped) return { charged: 0, reason: failed ? "failed" : cached ? "cached" : "skipped" };
+  if (ctx?.suppressed) return { charged: 0, reason: "suppressed" };
   if (!isAttributed(ctx)) {
     stats.unattributed += 1;
     console.warn(`[DatIQ] creditMeter: UNATTRIBUTED ${kind} call — nobody will be billed for it.`);
@@ -135,6 +150,7 @@ export function pending(ctx) {
  * cannot double-charge.
  */
 export async function flush(ctx, env = process.env) {
+  if (ctx?.suppressed) { ctx.buffer = []; return { ok: true, charged: 0, rows: 0, suppressed: true }; }
   const entries = ctx?.buffer || [];
   if (entries.length === 0) return { ok: true, charged: 0, rows: 0 };
   ctx.buffer = [];

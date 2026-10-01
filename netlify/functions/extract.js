@@ -712,6 +712,13 @@ export const handler = async (event) => {
   // refused on policy grounds before a provider was ever contacted.
   const guestUsage = await consumeGuestCredit(event, "single", { verifiedUserId });
 
+  // `suppressed` when the caller declares this request is part of a template
+  // run: templates.js owns the ledger for template runs via their finish
+  // events (run-attributed, cache/skip/failed-aware, reconciled against the
+  // estimate), so a choke-point charge here would bill the same work twice.
+  // See meterContext's `suppressed` note in lib/creditMeter.js.
+  const meterScope = rawOptions && typeof rawOptions === "object" ? rawOptions.meterScope : null;
+
   // ── ONE METERING CONTEXT PER REQUEST, FLUSHED ON THE WAY OUT ────────────
   // Created HERE, below every gate that can decline without doing work, for
   // the same reason the guest charge is: nothing above this line may bill.
@@ -722,7 +729,7 @@ export const handler = async (event) => {
   // A guest has no user id, and that is recorded rather than skipped: the
   // ledger row carries a null user with the caller attached, so guest spend
   // is countable even though it is not billable to an account.
-  const meter = meterContext({ caller: "extract", userId: verifiedUserId });
+  const meter = meterContext({ caller: "extract", userId: verifiedUserId, suppressed: meterScope === "template_run" });
   const reply = async (statusCode, body) => {
     await flushMeter(meter);
     return respond(
@@ -874,6 +881,10 @@ export const handler = async (event) => {
           groups: plan.groups || undefined,
           provider: aiRes.provider,
           model: aiRes.model,
+          // Priced by the caller: a template run bills this call at the tier
+          // that actually ran (fast vs deep weights). Redacted from the public
+          // body? No — a tier is our pricing vocabulary, not vendor prose.
+          tier: aiRes.tier,
           structured: aiRes.structured,
           facts: aiRes.facts,
           pagesRead: corpus.pagesRead,
@@ -911,7 +922,7 @@ export const handler = async (event) => {
                 enrichmentMeta = {
                   ok: true, capability: plan.key, label: plan.label,
                   groups: plan.groups || undefined, provider: retry.provider,
-                  model: retry.model, structured: retry.structured,
+                  model: retry.model, tier: retry.tier, structured: retry.structured,
                   facts: retry.facts, pagesRead: c2.pagesRead,
                 };
               } else {

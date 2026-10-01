@@ -107,7 +107,9 @@ export function publicProvenance(meta) {
   const out = {};
   // Allowlist, never a denylist. A denylist silently ships every field someone
   // adds later — which is precisely how provider/model survived the first pass.
-  for (const key of ["ok", "capability", "label", "groups", "facts", "reason", "pagesRead"]) {
+  // `tier` is our own fast/deep pricing vocabulary (a template run bills the
+  // extraction call from it), not vendor prose.
+  for (const key of ["ok", "capability", "label", "groups", "facts", "reason", "pagesRead", "tier"]) {
     if (meta[key] !== undefined) out[key] = meta[key];
   }
   return out;
