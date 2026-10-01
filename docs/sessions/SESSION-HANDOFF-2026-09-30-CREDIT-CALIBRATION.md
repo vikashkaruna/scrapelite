@@ -111,7 +111,17 @@ the defect was that the same work was billed twice AND quoted at the wrong tier.
 
 ## Carry-over
 
-- Staging inherits all of this on the next `up.sh staging` (code-level, environment-agnostic).
+- **Shipped to staging**: `deployment/scripts/gcp/up.sh staging` completed with smoke
+  13/13; live estimate verified — `POST /api/templates {action:"estimate"}` for
+  `account_brief` returns 19 cr itemised as Workflow setup 1 / Pages 3 / AI extraction 5 /
+  AI synthesis 10 (exactly the new model; the seed declares 2 synthesis prompts). Prod
+  inherits on its next deploy.
+- ⚠️ Ran the WRONG `up.sh` once (`deployment/scripts/up.sh staging` = the LOCAL compose
+  stack script; it halted harmlessly at `require_vars`). The GCP staging deploy is
+  `deployment/scripts/gcp/up.sh staging`. Note: `.env.staging` was rewritten externally
+  (23:50) and no longer carries the local-stack keys (`COMPOSE_PROJECT_NAME`,
+  `LOCAL_GATEWAY_PORT`, `PUBLIC_BASE_URL`) — a compose-style staging-named local stack
+  will refuse to start until the owner re-adds them; left untouched (operator file).
 - Home/Batch pre-flight quote could add an AI line — optional polish, not a defect.
 - `creditWeights` header still points at "docs/CREDITS-UNIFICATION-PROPOSAL.md step C"
   (calibration against a real provider invoice) as the follow-up for token-weighted pricing.
