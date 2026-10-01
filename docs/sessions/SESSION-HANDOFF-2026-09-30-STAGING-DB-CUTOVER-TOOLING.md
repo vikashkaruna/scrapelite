@@ -48,6 +48,21 @@
 > `deployment/README.md` updated. Full `up.sh staging` re-run green (smoke
 > 13/13, proxy env rewired).
 >
+> **Studio (2026-10-01, commit `b1ebbe27`)**: Supabase Studio + pg-meta now
+> deploy in EVERY flow (deploy-staging "auth/rest + studio", promote-prod,
+> up.sh prod --build, both cutovers, update-env). pg-meta reads Cloud SQL via
+> the `PG_META_DB_URL` secret which `migrate-db.sh` now refreshes on every
+> migration (it must use the `@localhost` host form — postgres-meta's Node URL
+> parser rejects the empty-host form GoTrue accepts; the old seeded secret also
+> pointed at the wrong database with a stale password). Pre-cutover prod skips
+> Studio cleanly (no Cloud SQL yet). Operator access:
+> `deployment/scripts/gcp/proxy-studio.sh <env>` — `gcloud run services proxy`
+> cannot authenticate against the private service with operator credentials
+> (user tokens fail the audience check; --impersonate hard-fails in gcloud
+> 584); the new `studio-proxy.mjs` mints an audience-scoped impersonated ID
+> token and forwards. Verified live: 165 tables incl. public.extractions +
+> auth.users through the proxy; smoke 13/13.
+>
 > ---
 >
 > The sections below are the original tooling handoff (2026-09-30) — still
