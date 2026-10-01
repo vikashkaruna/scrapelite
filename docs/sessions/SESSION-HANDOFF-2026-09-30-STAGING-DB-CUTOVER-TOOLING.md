@@ -14,11 +14,11 @@
 >    "cannot be reactivated by you or anyone else"). The live test burned
 >    `datiq-vsp-fhs-stg` — staging now runs on **`datiq-vsp-fhs-staging`**
 >    (`.env.staging` updated; smoke green on the new URL).
->    ⚠️ **OPERATOR ACTION**: re-point the `stg.datiq.app` CNAME at your DNS
->    provider from `datiq-vsp-fhs-stg.web.app` → **`datiq-vsp-fhs-staging.web.app`**
->    (Firebase console → Hosting → datiq-vsp-fhs-staging → custom domains
->    shows it as OWNERSHIP_MISMATCH until the record moves). Until then the
->    custom domain 404s; the `.web.app` URL is fully live.
+>    ✅ **DONE — verified same day**: `stg.datiq.app` CNAMEs to
+>    `datiq-vsp-fhs-staging.web.app`, Firebase reports the custom domain
+>    OWNERSHIP_ACTIVE + HOST_ACTIVE, and the full chain is live through it —
+>    home 200 (fresh build), `/auth/v1/health` → GoTrue v2.196.0,
+>    `/rest/v1` → 200, `/api` → 401 (auth gate). No operator action remains.
 >  * Rebuild-path gaps fixed: image mirrors now **self-heal** in
 >    deploy-staging (new `stage-third-party.sh`; GoTrue/PostgREST/Studio/
 >    pg-meta), `bootstrap.sh` re-grants `roles/cloudsql.client` on api/jobs SAs
