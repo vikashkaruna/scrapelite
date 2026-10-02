@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deployment/scripts/gcp/bootstrap-secrets.sh — push runtime secret VALUES from
-# the operator env file (scripts/env/<env>.env, gitignored) into Secret Manager.
+# deployment/env/.env.<env> (gitignored) into Secret Manager.
 # Idempotent: a new version is added only when the value changed. No secret
 # value is ever printed or written anywhere.
 #
@@ -12,17 +12,18 @@ source "$HERE/lib-gcp.sh"
 ENV_NAME="${1:?usage: bootstrap-secrets.sh <staging|prod>}"
 load_gcp_env "$ENV_NAME"
 
-RUNTIME_ENV_FILE="${RUNTIME_ENV_FILE:-$REPO_DIR/scripts/env/$ENV_NAME.env}"
-# The operator file (scripts/env/<env>.env, gitignored) is the primary secret
-# source; when it is absent (CI, fresh checkout) values resolve from the deploy
-# env file that the caller already loaded — set REQUIRE_OPERATOR_ENV_FILE=1 to
-# restore the hard failure for operator runs.
+# SINGLE SOURCE OF TRUTH: deployment/env/.env.<env>, already loaded by
+# load_gcp_env above. The legacy scripts/env/<env>.env used to take precedence
+# and silently pushed stale values (staging Razorpay test keys, found
+# 2026-10-02: Secret Manager held a different Razorpay account than the browser
+# bundle, so checkout died with "Something went wrong"). It is now IGNORED
+# unless you opt in explicitly with RUNTIME_ENV_FILE=<path>.
+RUNTIME_ENV_FILE="${RUNTIME_ENV_FILE:-}"
 if [ -n "$RUNTIME_ENV_FILE" ] && [ ! -f "$RUNTIME_ENV_FILE" ]; then
-  if [ "${REQUIRE_OPERATOR_ENV_FILE:-0}" = "1" ]; then
-    echo "✗ operator env file not found: $RUNTIME_ENV_FILE"; exit 1
-  fi
-  echo "  ⚠ $RUNTIME_ENV_FILE not found — secret values resolve from the deploy env file only"
-  RUNTIME_ENV_FILE=""
+  echo "✗ RUNTIME_ENV_FILE not found: $RUNTIME_ENV_FILE"; exit 1
+fi
+if [ -f "$REPO_DIR/scripts/env/$ENV_NAME.env" ] && [ -z "$RUNTIME_ENV_FILE" ]; then
+  echo "  ⚠ ignoring legacy scripts/env/$ENV_NAME.env — secrets come from deployment/env/.env.$ENV_NAME only"
 fi
 MANIFEST="$DEPLOY_DIR/gcp/secrets.manifest"
 [ -f "$MANIFEST" ] || { echo "✗ manifest not found: $MANIFEST"; exit 1; }
