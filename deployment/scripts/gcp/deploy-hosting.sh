@@ -14,6 +14,21 @@ load_gcp_env "$ENV_NAME"
 
 have firebase || { echo "✗ firebase CLI not installed — npm i -g firebase-tools"; exit 1; }
 
+# ── build-time VITE_* come from .env.<env>, never from a developer's local .env ─
+# Vite gives process env priority over .env/.env.local, but only for variables
+# that are SET. Anything .env.<env> leaves unset falls back to the developer's
+# local .env — which baked the old hosted DEV Supabase URL into the staging
+# bundle as its fallback. Pin the pair to this env's own values, and refuse a
+# prod build that would ship a test payment key.
+export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-$SUPABASE_URL}"
+export VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-${SUPABASE_ANON_KEY:-}}"
+if [ "$ENV_NAME" = "prod" ]; then
+  case "${VITE_RAZORPAY_KEY_ID:-}" in
+    rzp_live_*) ;;
+    *) echo "✗ prod build: VITE_RAZORPAY_KEY_ID must be a rzp_live_ key in .env.prod (got '${VITE_RAZORPAY_KEY_ID:0:9}…') — refusing to bake a test/empty payment key"; exit 1;;
+  esac
+fi
+
 echo "→ build dist/ (SKIP_BUILD=1 reuses an existing dist/; otherwise always rebuilt)"
 if [ "${SKIP_BUILD:-0}" = "1" ]; then
   [ -f "$REPO_DIR/dist/index.html" ] || { echo "✗ SKIP_BUILD=1 but dist/ is missing — run npm run build first"; exit 1; }

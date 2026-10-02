@@ -15,6 +15,7 @@ npm run test:all                          # full local gate must be green
 npm run verify:supabase -- prod           # URL/key pair: offline ref match
                                           # + LIVE probe against prod Supabase
 bash deployment/scripts/check-parameterisation.sh
+node deployment/scripts/gcp/env-parity.mjs prod   # config parity vs Netlify: must exit 0 (doc 06 §11)
 ```
 
 Operator checks that cannot be scripted:
@@ -26,6 +27,9 @@ Operator checks that cannot be scripted:
       preflight). A generated JWT_SECRET logs every user out.
 - [ ] `OPS_JOBS_DISABLED=1` still set (cron ownership stays with Netlify until
       the flip — doc 09 §1).
+- [ ] Doc 09 §0.1 (configuration & mapping preflight) complete: secrets filled,
+      engagement secrets, kill-switch decision, `rzp_live_` key, Resend domains
+      verified. `deploy-hosting.sh prod` refuses a non-live Razorpay key.
 
 ## 2. Bring prod up (the shadow)
 
@@ -73,6 +77,10 @@ bash deployment/scripts/gcp/crons.sh prod status  # jobs exist, all ENABLED but
                                                   # owned by Netlify (adapter
                                                   # no-ops while OPS_JOBS_DISABLED=1)
 ```
+
+Config checks (added 2026-10-02): `node deployment/scripts/gcp/env-parity.mjs prod`
+→ exit 0; while `DATA_MODE=hosted-supabase` the shadow's `runtime-config.js` keeps
+the committed hosted prod pair (correct — only the cutover flips it).
 
 Manual: sign-in round-trip on the shadow URL, extract → save → enrich, admin
 (`/admin` — noindex, no trackers), Razorpay test checkout, Resend test mail.

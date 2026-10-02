@@ -71,6 +71,21 @@ the smoke, the external-party updates, the DNS flip, and the rollback.
 - [ ] Rehearse the window itself: `DRY_RUN=1 deployment/scripts/gcp/cutover-db.sh
       prod "<SOURCE_DB_URL>"` prints every command and env edit, touches nothing.
 
+
+### 0.1 Configuration & mapping preflight (added 2026-10-02)
+
+Full mapping and rationale: [doc 06 §11](06-NAMING-AND-ENV-CONVENTIONS.md). Complete before the window:
+
+- [ ] `node deployment/scripts/gcp/env-parity.mjs prod` → **exit 0** (no variable the code reads or Netlify holds is missing on GCP). Review its section 3 (blank-but-carried) and fill what you intend to use.
+- [ ] `.env.prod` secrets filled: `JWT_SECRET` (**prod Supabase's**), `GOTRUE_SMTP_PASS` or `RESEND_API_KEY`, `GUEST_ID_SALT`, `PAGESPEED_API_KEY`, `PERPLEXITY_API_KEY`, and the three OAuth client secrets (secret **value**, one **separate GitHub OAuth app** for prod).
+- [ ] Engagement: `ENGAGEMENT_RESEND_API_KEY`, `ENGAGEMENT_RESEND_WEBHOOK_SECRET`, and `ENGAGEMENT_UNSUBSCRIBE_SECRET` **= Netlify's current value** (rotating it breaks unsubscribe links already sent). `ENGAGEMENT_ALLOWLIST` is already copied.
+- [ ] `bootstrap-secrets.sh prod` shows every intended secret `ok/push` and **no** `⚠ … does not exist` line.
+- [ ] Kill switches reviewed: `DISABLE_AUDIT_AI`, `DISABLE_AI_CITATION_SAMPLING`, `DISABLE_PAGESPEED` are `1` on Netlify prod and mirrored `1` in `.env.prod` — decide whether to keep them off after the flip.
+- [ ] `VITE_RAZORPAY_KEY_ID` in `.env.prod` is `rzp_live_…` (the prod hosting build refuses anything else).
+- [ ] Mail: `hello@datiq.app` (SMTP sender) and `datiq.app` (engagement sender domain) are **verified in Resend**.
+- [ ] Provider consoles prepared (done at the moment the host goes live, not before): Google/Microsoft/GitHub callback `https://datiq.app/auth/v1/callback`; **keep** the old `https://api.datiq.app/auth/v1/callback` registered until the flip is verified (instant rollback).
+- [ ] `https://api.datiq.app` and `https://datiq.app` listed in `GOTRUE_URI_ALLOW_LIST`.
+
 ## 1. Freeze (doc 05 §3d step 1)
 
 ```bash
@@ -107,12 +122,49 @@ What it does NOT automate (manual, in this order):
 2. one n8n round-trip (HMAC-verified callback)
 3. external-party updates (step 4 below)
 
+
+### 1.1 During the window — what the script does and what changes (added 2026-10-02)
+
+| Step | Action | Config effect |
+|---|---|---|
+| 0 | Mint anon/service keys from `JWT_SECRET` (env file untouched) | none yet |
+| 1 | Freeze GCP crons; Netlify prod TOML schedules commented (manual) | one cron owner at a time |
+| 2 | Restore DB into Cloud SQL, **count-verify before any repoint** | `DATA_MODE` still `hosted-supabase` |
+| 3 | Push secrets; `.env.prod` flipped: `DATA_MODE=cloud-sql`, `SUPABASE_URL=${APP_BASE_URL}`, anon/service keys; `deploy-run.sh prod auth rest api jobs` | GoTrue now serves the prod users; SMTP/OAuth/engagement env applied |
+| 4 | `deploy-hosting.sh prod` | **`dist/runtime-config.js` `_prodSupabase*` patched to same-origin + anon key** (§ doc 06 11.3); browser leaves hosted Supabase |
+| 5 | Smoke | edge parity, API gate, `/auth/v1/health` |
+| 6 | Cron handoff (`finish-crons`, needs `NETLIFY_CRONS_FROZEN=1`) | GCP owns all 13 jobs |
+
+Edit `APP_BASE_URL` (and `ENGAGEMENT_PUBLIC_URL` if set) from the shadow host to `https://datiq.app` at the DNS flip, then `deploy-run.sh prod auth` + `update-env.sh prod`: the OAuth callback, email links and unsubscribe links follow `APP_BASE_URL` automatically.
+
 ## 2. Post-flip smoke (script step 5 + manual)
 
 ```bash
 ./deployment/scripts/gcp/smoke.sh prod        # edge parity + API gate
 # manual: sign in (OAuth round-trip), extract, payments, admin, monitoring
 ```
+
+### 2.1 Validation checklist (added 2026-10-02)
+
+Run in this order after the flip; every line is a pass/fail:
+
+- [ ] `node deployment/scripts/gcp/env-parity.mjs prod` → exit 0.
+- [ ] `curl -s https://datiq.app/runtime-config.js | grep '_prodSupabaseUrl'` → `window.location.origin`; the bundle's baked `VITE_SUPABASE_URL` is `https://datiq.app` (not a `*.supabase.co` host).
+- [ ] `curl -s https://api.datiq.app/auth/v1/health` → 200 (after the `api` CNAME moved).
+- [ ] Sign-in round trip for **each** of Google, Microsoft, GitHub → lands signed in (a silent return to home = check the auth service logs for `AADSTS…`/`invalid_client`). New email signup → confirmation mail arrives from `hello@datiq.app`; password reset mail arrives.
+- [ ] `/auth/v1/authorize?provider=<p>` redirects carry `redirect_uri=https://datiq.app/auth/v1/callback` for all three.
+- [ ] Engagement: `POST /api/engagement-webhook?provider=resend` unsigned → **401** (503 = secret not mounted); `POST /api/engagement-unsubscribe?t=x` → 400; a real test message's unsubscribe link verifies.
+- [ ] Payments: Razorpay live webhook delivered 200 at `https://datiq.app/api/payment-webhook?provider=razorpay`; one test invoice issued with the right `SUPPLIER_*` identity and number.
+- [ ] Crons: `crons.sh prod status` → ENABLED, and the Netlify prod schedules are commented out (never both).
+- [ ] `/admin/monitoring` and `/admin/health` read healthy; purge still `PURGE_ENABLED=0`.
+- [ ] Developer API reachable at `https://datiq.app/api/v1/…` (the docs/extension base URL — fixed 2026-10-02).
+
+## 2.2 Post-cutover (first 7 days)
+
+- Watch `gcloud logging read` for the auth service: `invalid_client`, `redirect_uri`, `smtp`, `bad_oauth_state`.
+- Keep Netlify + hosted Supabase intact through the rollback window (§6); do **not** remove the old `api.datiq.app` OAuth callback registrations until the window closes.
+- Re-run the parity audit after any env edit. Rotate nothing that signs links (`ENGAGEMENT_UNSUBSCRIBE_SECRET`) during the window.
+- After the window: remove `SUPABASE_ACCESS_TOKEN` from the Netlify site (no function reads it), then proceed to §8 decommission.
 
 ## 3. Verify the DB restore was complete (post-review hardening)
 

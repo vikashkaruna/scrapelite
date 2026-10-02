@@ -90,7 +90,7 @@ Every `/api/integrations/*` and `/api/v1/*` call lands on `netlify/functions/int
 | `/api/integrations/zapier/*` public | `X-Zapier-Token: zap_...` | Per-Zap secret, SHA-256 hashed in store. Used by Zapier's polling triggers. |
 | `/api/integrations/slack/notify` | Supabase JWT | Internal call from `notify.js` (not a public webhook). |
 
-The browser extension uses a **separate** API path: `https://api.datiq.app/v1/extractions` (the public REST API) with a `dq_live_` key. It does NOT use the Netlify Functions router.
+The browser extension uses a **separate** API path: `https://datiq.app/api/v1/extractions` (the public REST API) with a `dq_live_` key. It does NOT use the Netlify Functions router.
 
 ---
 
@@ -839,7 +839,7 @@ A Manifest V3 browser extension for Chrome, Edge, Firefox, and Brave. Adds a rig
 4. background.js (service worker):
    - chrome.storage.local.get("datiq_api_key") → returns the saved dq_live_ key
    - if no key: opens https://datiq.app/preview?url=... in a new tab
-   - if key: POSTs to https://api.datiq.app/v1/extractions
+   - if key: POSTs to https://datiq.app/api/v1/extractions
 5. DatIQ API: validates the API key, runs the extraction, saves to Supabase
 6. Response: { id, title, url, ... }
 7. background.js: chrome.notifications.create({ type: "basic", title, message })
@@ -907,7 +907,7 @@ node -e "console.log(JSON.parse(require('fs').readFileSync('dist-extension/manif
 #   content_scripts[0].matches === ["<all_urls>"]
 
 # 3. Test the API call manually (the extension makes the same call):
-curl -X POST https://api.datiq.app/v1/extractions \
+curl -X POST https://datiq.app/api/v1/extractions \
   -H "Authorization: Bearer dq_live_XXXXX" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://stripe.com/pricing", "intent": "summary"}'
@@ -960,7 +960,7 @@ This branch ships the **source** and **build script**. Publishing is a one-time 
 - The extension does not collect user data.
 - It does not read browsing history or page content.
 - It only sends the URL the user explicitly right-clicks to DatIQ's API.
-- The API key is stored in `chrome.storage.local` (browser-local, never transmitted except to api.datiq.app).
+- The API key is stored in `chrome.storage.local` (browser-local, never transmitted except to datiq.app).
 
 ---
 

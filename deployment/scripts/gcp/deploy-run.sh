@@ -106,6 +106,23 @@ APP_ENV_VARS=(env_vars_file app \
   "VITE_WEBHOOK_URL=${VITE_WEBHOOK_URL:-}" \
   "N8N_PUBLIC_WEBHOOK_URL=${N8N_PUBLIC_WEBHOOK_URL:-}" \
   "SITE_NAME=${SITE_NAME:-DatIQ}")
+# Optional runtime knobs that exist on Netlify today and are read by the functions.
+# Added ONLY when set in .env.<env>: an empty value is OMITTED so the code's own
+# default applies (several read `Number(env.X)` or `env.X ?? default`, where an
+# empty string is not "unset"). Parity audit: docs/plans/gcp-docker-migration/06 §7.
+#   mail senders · audit/job budgets · kill switches · purge safety · invoice
+#   supplier identity · ops alert recipients · host allow-list
+for _opt in ALERT_EMAIL_FROM BILLING_EMAIL_FROM CONTACT_EMAIL_FROM EXPORT_EMAIL_FROM \
+            FORM_EMAIL_FROM REPORT_EMAIL_FROM \
+            AUDIT_BUDGET_MS AI_MAX_TOKENS WATCHLIST_BUDGET_MS WATCHLIST_NOW_BUDGET_MS \
+            BULK_RUNNER_BUDGET_MS SIGNAL_RETRY_BUDGET_MS \
+            DISABLE_AI_CITATION_SAMPLING DISABLE_AUDIT_AI DISABLE_PAGESPEED \
+            PURGE_DRY_RUN PURGE_MAX_USERS_PER_RUN CREDITS_ENFORCEMENT_DISABLED \
+            SUPPLIER_LEGAL_NAME SUPPLIER_TRADE_NAME SUPPLIER_GSTIN SUPPLIER_ADDRESS \
+            SUPPLIER_STATE SUPPLIER_COUNTRY SUPPLIER_EMAIL SUPPLIER_PAN \
+            PERPLEXITY_MODEL OPS_ALERT_EMAIL PERMITTED_HOSTS; do
+  [ -n "${!_opt:-}" ] && APP_ENV_VARS+=("${_opt}=${!_opt}")
+done
 ENV_VARS_JSON="$("${APP_ENV_VARS[@]}")"
 # PostgREST needs a schemas list containing a comma — env-vars file again.
 REST_ENV_JSON="$(env_vars_file rest "PGRST_DB_SCHEMAS=public,storage" "PGRST_DB_ANON_ROLE=anon" "PGRST_DB_POOL=5")"

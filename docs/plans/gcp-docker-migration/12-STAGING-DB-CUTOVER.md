@@ -185,3 +185,7 @@ committed.
 - `check-supabase-pair.sh` skips its live probe for non-`*.supabase.co` URLs —
   after the flip, verification is the smoke + manual signon above.
 - Prod is unaffected; its cutover remains `cutover-db.sh prod` (doc 09).
+
+## Addendum 2026-10-02 — what the staging cutover first missed
+
+Found after the cutover when Google/Microsoft/GitHub sign-in failed on `stg.datiq.app`: (1) the committed `runtime-config.js` was only patched for the cutover deploy, so a later `deploy-hosting.sh` put the browser back on hosted Supabase — now patched on **every** hosting deploy (`DATA_MODE=cloud-sql`); (2) the OAuth callback was derived from a `*.web.app` `APP_BASE_URL` while users sign in on `stg.datiq.app` — staging `APP_BASE_URL` is now `https://stg.datiq.app`; (3) self-hosted GoTrue had no mail service — Resend SMTP added; (4) ~30 Netlify variables never reached Cloud Run (kill switches, supplier identity, budgets, engagement, PageSpeed/Perplexity). All are tracked, with the prod equivalents, in doc 06 §11 and doc 09 §0.1/§2.1.
