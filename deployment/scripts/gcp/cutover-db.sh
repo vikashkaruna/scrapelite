@@ -241,6 +241,13 @@ else
     PROXY_PID=$!
     trap 'kill $PROXY_PID 2>/dev/null || true' EXIT
     for i in $(seq 1 30); do nc -z 127.0.0.1 "$PROXY_PORT" 2>/dev/null && break; sleep 1; done
+    # migrate-db.sh GENERATES DB_ADMIN_PASSWORD on the first run for an env and
+    # appends it to the env FILE from a child process, so this shell never saw it
+    # ("DB_ADMIN_PASSWORD: unbound variable", first prod cutover 2026-10-02).
+    if [ -z "${DB_ADMIN_PASSWORD:-}" ]; then
+      DB_ADMIN_PASSWORD="$(grep -E '^DB_ADMIN_PASSWORD=' "$DEPLOY_DIR/env/.env.$ENV_NAME" | tail -1 | cut -d= -f2- | sed -e 's/^["'"'"']//' -e 's/["'"'"']$//')"
+      [ -n "$DB_ADMIN_PASSWORD" ] || { echo "✗ DB_ADMIN_PASSWORD not found in .env.$ENV_NAME after migration"; exit 1; }
+    fi
     ADMIN_URL="postgresql://postgres:${DB_ADMIN_PASSWORD}@127.0.0.1:${PROXY_PORT}/${DB_NAME}"
     MISMATCH=0
     for t in "auth.users" "auth.identities" "public.extractions" "public.watchlists" "public.audits"; do

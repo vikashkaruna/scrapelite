@@ -322,6 +322,17 @@ psql_q "grant select, insert, update, delete on all tables in schema public to a
 # 00_init_auth_schema.up.sql) after first dying on "no schema has been
 # selected to create in" (3F000) — both were the missed step that kept every
 # auth Cloud Run revision unhealthy (2026-10-01).
+# 🔴 `alter schema/table … owner to supabase_auth_admin` needs the acting role to
+# be able to SET ROLE to the new owner. On a FRESH Cloud SQL Postgres 16 instance
+# the creator (postgres) only gets ADMIN OPTION on the roles it creates — no SET,
+# no INHERIT — so this whole block raised "must be able to SET ROLE
+# supabase_auth_admin" and (one multi-statement command = one transaction)
+# applied NOTHING: schema + 27 tables stayed owned by postgres and GoTrue would
+# have died on "must be owner of table users" (found live on the first PROD
+# cutover, 2026-10-02; staging had masked it with a pre-existing role). Grant
+# membership first — PG16 syntax, falling back to the pre-16 form.
+psql_q "grant supabase_auth_admin to postgres with inherit true, set true;" 2>/dev/null \
+  || psql_q "grant supabase_auth_admin to postgres;" 2>/dev/null || true
 psql_q "alter schema auth owner to supabase_auth_admin;
         grant usage on schema auth to supabase_auth_admin, postgres, authenticator;
         grant all on all tables in schema auth to supabase_auth_admin;
