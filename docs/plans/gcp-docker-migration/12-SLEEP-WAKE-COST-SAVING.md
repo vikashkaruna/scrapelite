@@ -61,7 +61,7 @@ which cannot target single units. `--sleep` cannot be combined with `-r`/`-v`.
 - Prod is untouched: `power.sh` refuses anything but staging, and no prod
   workflow references it.
 
-## One-time IAM for CI (not yet applied — operator step)
+## One-time IAM for CI (APPLIED 2026-10-03 to the staging CI service account only)
 The CI service account needs a **narrow** custom role, not `cloudsql.admin`
 (which can delete instances). Scheduler pause/resume and the bucket write are
 already covered by `cloudscheduler.admin` and `storage.admin`.
@@ -74,7 +74,8 @@ gcloud projects add-iam-policy-binding $P \
   --member="serviceAccount:<staging-ci-sa>@$P.iam.gserviceaccount.com" \
   --role="projects/$P/roles/datiqSqlPower" --condition=None
 ```
-Without this the wake step in CI fails at the first Cloud SQL call.
+Without this the wake step in CI fails at the first Cloud SQL call. Prod's CI
+account deliberately does NOT get it (`power.sh` refuses prod).
 
 ## Guarantees (pinned by `scripts/power-safety.test.mjs`, run in `test:unit`)
 - No deletion verb anywhere in the sleep/wake code paths (`delete`, `rm`, `--wipe`,
