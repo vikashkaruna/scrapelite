@@ -39,7 +39,7 @@ elif [ "${DIGESTS_FROM:-staging}" = "staging" ]; then
     var="IMG_$(printf '%s' "$kind" | tr '[:lower:]' '[:upper:]')"
     digest="$(gcloud artifacts docker images describe \
       "${staging_base}/datiq-${DATIQ_PROJECT_CODE}-ctr-${kind}:${staging_tag}" \
-      --project="$staging_project" --format='value(fullyQualifiedDigest)' 2>/dev/null || true)"
+      --project="$staging_project" --format='value(image_summary.fully_qualified_digest)' 2>/dev/null || true)"
     [ -n "$digest" ] || { echo "✗ no staging digest for ctr-${kind}:${staging_tag} in ${staging_base} — run build-images.sh staging first"; exit 1; }
     export "DATIQ_IMG_${var#IMG_}_OVERRIDE=$digest"
   done

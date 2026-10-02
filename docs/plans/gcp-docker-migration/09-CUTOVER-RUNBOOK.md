@@ -81,7 +81,7 @@ Full mapping and rationale: [doc 06 §11](06-NAMING-AND-ENV-CONVENTIONS.md). Com
 - [ ] Engagement: `ENGAGEMENT_RESEND_API_KEY`, `ENGAGEMENT_RESEND_WEBHOOK_SECRET`, and `ENGAGEMENT_UNSUBSCRIBE_SECRET` **= Netlify's current value** (rotating it breaks unsubscribe links already sent). `ENGAGEMENT_ALLOWLIST` is already copied.
 - [ ] `bootstrap-secrets.sh prod` shows every intended secret `ok/push` and **no** `⚠ … does not exist` line.
 - [ ] Kill switches reviewed: `DISABLE_AUDIT_AI`, `DISABLE_AI_CITATION_SAMPLING`, `DISABLE_PAGESPEED` are `1` on Netlify prod and mirrored `1` in `.env.prod` — decide whether to keep them off after the flip.
-- [ ] `VITE_RAZORPAY_KEY_ID` in `.env.prod` is `rzp_live_…` (the prod hosting build refuses anything else).
+- [ ] `VITE_RAZORPAY_KEY_ID` in `.env.prod` is the LIVE key id (the prod hosting build refuses an empty or test key).
 - [ ] Mail: `hello@datiq.app` (SMTP sender) and `datiq.app` (engagement sender domain) are **verified in Resend**.
 - [ ] Provider consoles prepared (done at the moment the host goes live, not before): Google/Microsoft/GitHub callback `https://datiq.app/auth/v1/callback`; **keep** the old `https://api.datiq.app/auth/v1/callback` registered until the flip is verified (instant rollback).
 - [ ] `https://api.datiq.app` and `https://datiq.app` listed in `GOTRUE_URI_ALLOW_LIST`.

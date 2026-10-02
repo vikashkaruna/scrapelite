@@ -24,8 +24,7 @@ export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-$SUPABASE_URL}"
 export VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-${SUPABASE_ANON_KEY:-}}"
 if [ "$ENV_NAME" = "prod" ]; then
   case "${VITE_RAZORPAY_KEY_ID:-}" in
-    rzp_live_*) ;;
-    *) echo "✗ prod build: VITE_RAZORPAY_KEY_ID must be a rzp_live_ key in .env.prod (got '${VITE_RAZORPAY_KEY_ID:0:9}…') — refusing to bake a test/empty payment key"; exit 1;;
+    ""|*_test_*) echo "✗ prod build: VITE_RAZORPAY_KEY_ID in .env.prod is empty or a TEST key — refusing to bake it into the prod bundle (set the live key id)"; exit 1;;
   esac
 fi
 

@@ -8,6 +8,62 @@ live in `09-CUTOVER-RUNBOOK.md`), and steady-state operations.
 
 ---
 
+## 0. First production deploy — ordered procedure (added 2026-10-02)
+
+Prod is **greenfield in GCP** (no secrets, Cloud Run, Cloud SQL, registry, scheduler or hosting site exist yet). The first deploy builds the **shadow**: a full prod twin on `https://<FHS_SITE_ID>.web.app` that talks to the **hosted prod Supabase** and owns **no crons**, while `datiq.app` stays on Netlify. Nothing a user sees changes until the cutover (§5, doc 09).
+
+Every stage ends in a verification gate. Do not start a stage until the previous gate is green.
+
+### Stage A — Preflight (read-only, changes nothing)
+
+```bash
+deployment/scripts/gcp/prod-preflight.sh            # shadow readiness; must exit 0
+deployment/scripts/gcp/prod-preflight.sh --cutover  # run now to see what the CUTOVER still needs
+```
+Gate: `✓ prod preflight passed`. It checks `.env.prod` shape (`APP_CONTEXT=production`, `GIT_BRANCH=main`, `DATA_MODE=hosted-supabase`, `OPS_JOBS_DISABLED=1`, `PURGE_ENABLED=0`, shadow `APP_BASE_URL`), the hosted prod Supabase pair (service key role + project, live probe), a live (non-test) Razorpay build key, that the staging images to promote exist, config parity with Netlify, and that no prod Cloud Run exists yet. `⚠` lines are non-blocking.
+
+**Manual, before Stage B:** in the hosted prod Supabase dashboard → Authentication → URL Configuration, add `https://<FHS_SITE_ID>.web.app/**` to the redirect allow-list (otherwise OAuth/email links from the shadow bounce to the Site URL).
+
+### Stage B — Bring up the shadow
+
+```bash
+deployment/scripts/gcp/up.sh prod        # bootstrap -> secrets -> promote staging digests -> scheduler -> hosting -> smoke
+```
+What it does, in order (each is also runnable alone): `bootstrap.sh prod` (APIs, Artifact Registry, service accounts, Firebase site — **a Firebase site id is burned for ever once deleted**), `bootstrap-secrets.sh prod` (Secret Manager; refuses a `REPLACE_ME` value), `promote-prod.sh prod` (resolves the staging `STAGING_IMG_TAG` digests and deploys api, jobs, admin, trackers — no rebuild), `deploy-scheduler.sh prod` (13 jobs), `deploy-hosting.sh prod`, `smoke.sh prod`.
+
+Gate (all must hold):
+```bash
+deployment/scripts/gcp/smoke.sh prod                       # 13/13
+deployment/scripts/gcp/crons.sh prod status                # jobs exist; GCP owns none (OPS_JOBS_DISABLED=1)
+node deployment/scripts/gcp/env-parity.mjs prod            # exit 0
+curl -s https://<FHS_SITE_ID>.web.app/runtime-config.js | grep "_prodSupabaseUrl"   # still the HOSTED prod URL (correct pre-cutover)
+gcloud run services list --project <GCP_PROJECT_ID> --region <GCP_REGION> | grep -- -prod   # api jobs admin trackers
+```
+
+### Stage C — Shadow soak (days, not minutes)
+
+- Manual on the shadow URL: sign in (each provider), extract → save → enrich, a Razorpay **live** order only with a refundable amount, `/admin` PIN gate, `/admin/health`, `/admin/monitoring`.
+- Confirm the two cron owners never overlap: Netlify prod TOML schedules **active**, GCP jobs **no-op/paused**.
+- Compare behaviour against `datiq.app` for the same actions. Anything different is a config gap: re-run `env-parity.mjs prod`.
+
+### Stage D — Prepare the cutover (no user impact yet)
+
+```bash
+deployment/scripts/gcp/prod-preflight.sh --cutover   # must exit 0: JWT_SECRET (PROD Supabase's), OAuth ids+secrets, a SEPARATE prod GitHub app, SMTP, engagement secrets, GUEST_ID_SALT
+DRY_RUN=1 deployment/scripts/gcp/cutover-db.sh prod "<SOURCE_DB_URL>"   # prints every command/env edit, touches nothing
+```
+Then follow **doc 09**: §0/§0.1 preflight, §1/§1.1 the window (what each script step changes), §2/§2.1 validation, §2.2 first seven days, §4 external parties (webhooks, OAuth callbacks), §5 DNS flip (incl. `api.datiq.app`), §7 rollback.
+
+### Where the first deploy usually breaks
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `✗ no staging digest for ctr-api:<tag>` | `STAGING_IMG_TAG` wrong, or an older `promote-prod.sh` asked gcloud for `fullyQualifiedDigest` (empty); fixed to `image_summary.fully_qualified_digest` | `gcloud artifacts docker images list …-stg/datiq-<code>-ctr-api --include-tags` |
+| `✗ … is still a placeholder` from bootstrap-secrets | a `REPLACE_ME` left in `.env.prod` | fill it or empty it |
+| Shadow behaves like staging (demo admin etc.) | `APP_CONTEXT=branch-deploy` copied from staging | must be `production`, `GIT_BRANCH=main` (preflight checks) |
+| Shadow OAuth bounces to the Site URL | shadow host missing from the hosted Supabase redirect allow-list | Stage A manual step |
+| Prod hosting build refused | `VITE_RAZORPAY_KEY_ID` empty or a test key | live key id in `.env.prod` |
+
 ## 1. Pre-validations (before ANY prod deploy)
 
 ```bash
@@ -28,7 +84,7 @@ Operator checks that cannot be scripted:
 - [ ] `OPS_JOBS_DISABLED=1` still set (cron ownership stays with Netlify until
       the flip — doc 09 §1).
 - [ ] Doc 09 §0.1 (configuration & mapping preflight) complete: secrets filled,
-      engagement secrets, kill-switch decision, `rzp_live_` key, Resend domains
+      engagement secrets, kill-switch decision, live Razorpay key, Resend domains
       verified. `deploy-hosting.sh prod` refuses a non-live Razorpay key.
 
 ## 2. Bring prod up (the shadow)

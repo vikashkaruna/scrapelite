@@ -290,7 +290,7 @@ What every kind of configuration used to be on **Netlify + hosted Supabase**, wh
 | Non-secret runtime env (budgets, mail senders, kill switches, purge interlocks, invoice supplier, engagement settings) | Netlify env | Cloud Run env-vars on **api + jobs** | `deploy-run.sh` `APP_ENV_VARS` + an optional block forwarded only when non-empty | **Changed:** ~30 variables added (§11.2) |
 | Platform emulation (`URL`, `SITE_URL`, `DEPLOY_URL`, `CONTEXT`, `BRANCH`) | Injected by Netlify | Set from `APP_BASE_URL`, `APP_CONTEXT`, `GIT_BRANCH` | `deploy-run.sh` | Unchanged mapping |
 | Browser Supabase pair (URL + anon key) | `public/runtime-config.js` hosted pair | `dist/runtime-config.js` patched to **same-origin** + `.env` anon key when `DATA_MODE=cloud-sql` | `deploy-hosting.sh` `patch_dist_runtime_config` | **Changed** — see §11.3 |
-| Build-time `VITE_*` | Netlify build env | `.env.<env>`, exported for `npm run build` | `deploy-hosting.sh` | **Changed:** supabase pair pinned, prod refuses a non-`rzp_live_` key, missing keys added |
+| Build-time `VITE_*` | Netlify build env | `.env.<env>`, exported for `npm run build` | `deploy-hosting.sh` | **Changed:** supabase pair pinned, prod refuses an empty or test (`*_test_*`) Razorpay key, missing keys added |
 | Auth settings (providers, SMTP, site URL, redirect allow-list, JWT expiry, autoconfirm) | Supabase dashboard | `GOTRUE_*` env on the **auth** Cloud Run service | `deploy-run.sh … auth` | **Changed:** see §11.5 |
 | OAuth client secrets | Supabase dashboard | Secret Manager `…-<google\|azure\|github>-oauth-client-secret-…` (auth service only) | `bootstrap-secrets.sh` | New |
 | SMTP password | Supabase-managed mail | Secret Manager `…-gotrue-smtp-pass-…` (auth only) | `bootstrap-secrets.sh` (`GOTRUE_SMTP_PASS`, else `RESEND_API_KEY`) | New |
@@ -319,7 +319,7 @@ All exist on the Netlify site today (identical in the `production` and `staging`
 ### 11.3 Two mapping fixes worth understanding
 
 1. **The browser must call the self-hosted auth, not hosted Supabase.** `public/runtime-config.js` is committed with the hosted pair (a test forbids committing the flip). The cutover scripts patched it for *one* deploy, so every later `deploy-hosting.sh` put the browser back on hosted Supabase — OAuth then used the hosted project's callback and Google/Microsoft/GitHub answered `redirect_uri_mismatch`. `deploy-hosting.sh` now patches `dist/runtime-config.js` (never the committed file) whenever `DATA_MODE=cloud-sql`: staging → `_stagingSupabase*`, prod → `_prodSupabase*`, URL = `window.location.origin`, key = `SUPABASE_ANON_KEY`, signature-checked against `JWT_SECRET`. Prod stays `hosted-supabase` (untouched) until `cutover-db.sh` flips `DATA_MODE`, which it does *before* it calls `deploy-hosting.sh`.
-2. **Build-time fallbacks.** `VITE_SUPABASE_URL/ANON_KEY` are now pinned from `SUPABASE_URL/ANON_KEY`, and a prod build is refused unless `VITE_RAZORPAY_KEY_ID` starts `rzp_live_`.
+2. **Build-time fallbacks.** `VITE_SUPABASE_URL/ANON_KEY` are now pinned from `SUPABASE_URL/ANON_KEY`, and a prod build is refused if `VITE_RAZORPAY_KEY_ID` is empty or a test key.
 
 ### 11.4 Deliberately NOT carried (retired / Netlify-only)
 

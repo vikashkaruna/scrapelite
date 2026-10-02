@@ -52,6 +52,12 @@ while read -r runtime_var source_key services; do
     echo "  skip ${secret_name} (no value for ${source_key})"
     skipped=$((skipped+1)); continue
   fi
+  # A template placeholder is not a value: pushing it would store the literal
+  # text as the secret (e.g. a prod SUPABASE_SERVICE_KEY of "REPLACE_ME") and
+  # fail later, far from the cause.
+  case "$value" in REPLACE_ME*)
+    echo "✗ ${source_key} is still a placeholder (${value:0:24}…) in .env.$ENV_NAME — fill it or leave it empty to skip"; exit 1;;
+  esac
   # ── POST-CUTOVER: SUPABASE_SERVICE_KEY is CUTOVER-OWNED ────────────────────
   # At the staging cutover the fresh JWT secret is minted together with a new
   # anon+service pair, and those ARE the keys the self-hosted GoTrue/PostgREST
