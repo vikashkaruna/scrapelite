@@ -100,6 +100,8 @@ jobs:
       - name: Deploy prod shadow (digest promotion, OPS_JOBS_DISABLED honored from the contract)
         env:
           RUNTIME_ENV_FILE: deployment/env/.env.prod
+          # Infra/IAM is a one-time operator step; CI deploys, it never provisions.
+          SKIP_BOOTSTRAP: "1"
         run: |
           chmod +x deployment/scripts/gcp/*.sh
           if [ "${{ inputs.promote_from_staging }}" = "true" ]; then
