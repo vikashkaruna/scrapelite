@@ -269,7 +269,7 @@ landed these fixes, all committed on `docker-desktop-build`:
   constraints, loads with `ON_ERROR_STOP=1`, re-adds FKs, and fails loudly on the
   production (SOURCE_DB_URL) path. Staging was re-restored: data complete.
 - **CI workflow could never run.** `RUNTIME_ENV_FILE: ""` fell back to a
-  gitignored operator file and aborted at the secrets step; the push trigger
+  gitignored operator file (since removed: bootstrap-secrets now reads deployment/env/.env.<env> only, and ignores the legacy scripts/env/*.env) and aborted at the secrets step; the push trigger
   always failed at the DB step (no Supabase CLI on runners). Both fixed; the
   parameterisation gate is now wired into CI.
 - **Smoke SIGPIPE false negative** (piping the 80KB prerendered home into

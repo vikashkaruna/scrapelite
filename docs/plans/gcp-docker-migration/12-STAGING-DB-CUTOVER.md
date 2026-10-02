@@ -109,12 +109,12 @@ The script does, in order (all steps individually re-runnable):
 - **`bootstrap-secrets.sh` no longer clobbers the cutover-minted service key.**
   The fresh JWT secret mints a new anon+service pair, and the cutover pushes
   the service key to Secret Manager — but every `up.sh` runs
-  `bootstrap-secrets.sh`, which was re-pushing the operator file's PRE-cutover
+  `bootstrap-secrets.sh`, which was re-pushing the env file's PRE-cutover
   hosted key over it. The api mounts `SUPABASE_SERVICE_KEY` FROM SECRET
   MANAGER, so its PostgREST calls then failed auth and `/api/credits` answered
   the degraded `read_failed` shape (found live 2026-10-01, after the rename).
   The script now keeps that row untouched whenever `DATA_MODE=cloud-sql`
-  (the cutover owns it; the operator file's value is only meaningful
+  (the cutover owns it; the env file's value is only meaningful
   pre-cutover / in hosted-supabase mode). Verified: `/api/credits` returns the
   real DB-backed shape with no `degraded` flag.
 
