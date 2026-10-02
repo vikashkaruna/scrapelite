@@ -210,13 +210,38 @@ for svc in $SERVICES; do
       # applied and still answered 403 after propagation (2026-10-01). GoTrue
       # enforces auth itself; the IAM wall must not be the gate a user's first
       # sign-in dies on.
+      # ── Social sign-in (Google / Microsoft / GitHub) ─────────────────────────
+      # Self-hosted GoTrue takes providers from env vars only (Studio's
+      # Auth → Providers panel is read-only here). Per provider, in .env.<env>:
+      #   GOTRUE_EXTERNAL_<P>_ENABLED=true  GOTRUE_EXTERNAL_<P>_CLIENT_ID=…
+      # and the client SECRET in Secret Manager (bootstrap-secrets.sh pushes it
+      # from <P>_OAUTH_CLIENT_SECRET). A provider is wired ONLY when enabled, so
+      # a half-configured one can never break auth for everyone. The callback is
+      # always ${APP_BASE_URL}/auth/v1/callback — register exactly that in the
+      # provider console; a different env gets a different APP_BASE_URL for free.
+      OAUTH_ENV=""; OAUTH_SECRETS=""
+      for spec in GOOGLE:google AZURE:azure GITHUB:github; do
+        P="${spec%%:*}"; sm_key="${spec#*:}"
+        en_var="GOTRUE_EXTERNAL_${P}_ENABLED"; id_var="GOTRUE_EXTERNAL_${P}_CLIENT_ID"
+        if [ "${!en_var:-false}" != "true" ]; then
+          echo "  · oauth ${sm_key}: disabled"; continue
+        fi
+        [ -n "${!id_var:-}" ] || { echo "✗ ${en_var}=true but ${id_var} is empty in .env.$ENV_NAME"; exit 1; }
+        sec="$(sm_name "${P}_OAUTH_CLIENT_SECRET")"
+        gcloud secrets describe "$sec" --project="$GCP_PROJECT_ID" >/dev/null 2>&1 \
+          || { echo "✗ ${en_var}=true but secret ${sec} does not exist — set ${P}_OAUTH_CLIENT_SECRET in .env.$ENV_NAME and run bootstrap-secrets.sh $ENV_NAME"; exit 1; }
+        OAUTH_ENV="${OAUTH_ENV};${en_var}=true;${id_var}=${!id_var};GOTRUE_EXTERNAL_${P}_REDIRECT_URI=${APP_BASE_URL}/auth/v1/callback"
+        [ "$P" = "AZURE" ] && OAUTH_ENV="${OAUTH_ENV};GOTRUE_EXTERNAL_AZURE_URL=${GOTRUE_EXTERNAL_AZURE_URL:-https://login.microsoftonline.com/common}"
+        OAUTH_SECRETS="${OAUTH_SECRETS},GOTRUE_EXTERNAL_${P}_SECRET=${sec}:latest"
+        echo "  ✓ oauth ${sm_key}: enabled (callback ${APP_BASE_URL}/auth/v1/callback)"
+      done
       gcloud run deploy "$CLOUD_RUN_AUTH" "${GCP_FLAGS[@]}" \
         --image="${AUTH_IMAGE:?AUTH_IMAGE missing in .env}" --port=8080 --allow-unauthenticated \
         --ingress=all --min-instances=0 --max-instances=2 --concurrency=80 \
         --memory=512Mi --cpu=1 --timeout=60 --service-account="$SA_JOBS_EMAIL" \
         --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${SQL_INSTANCE:?SQL_INSTANCE missing}" \
-        --set-env-vars="^;^GOTRUE_DB_DRIVER=postgres;GOTRUE_DB_NAMESPACE=auth;GOTRUE_API_HOST=0.0.0.0;GOTRUE_API_PORT=8080;API_EXTERNAL_URL=${APP_BASE_URL};GOTRUE_SITE_URL=${APP_BASE_URL};GOTRUE_JWT_EXP=3600;GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated;GOTRUE_DISABLE_SIGNUP=false;GOTRUE_EXTERNAL_EMAIL_ENABLED=true;GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false};GOTRUE_LOG_LEVEL=warn;GOTRUE_URI_ALLOW_LIST=${GOTRUE_URI_ALLOW_LIST:-}" \
-        --set-secrets="GOTRUE_DB_DATABASE_URL=$(sm_name GOTRUE_DB_DATABASE_URL):latest,GOTRUE_JWT_SECRET=$(sm_name JWT_SECRET):latest" --quiet
+        --set-env-vars="^;^GOTRUE_DB_DRIVER=postgres;GOTRUE_DB_NAMESPACE=auth;GOTRUE_API_HOST=0.0.0.0;GOTRUE_API_PORT=8080;API_EXTERNAL_URL=${APP_BASE_URL};GOTRUE_SITE_URL=${APP_BASE_URL};GOTRUE_JWT_EXP=3600;GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated;GOTRUE_DISABLE_SIGNUP=false;GOTRUE_EXTERNAL_EMAIL_ENABLED=true;GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false};GOTRUE_LOG_LEVEL=warn;GOTRUE_URI_ALLOW_LIST=${GOTRUE_URI_ALLOW_LIST:-}${OAUTH_ENV}" \
+        --set-secrets="GOTRUE_DB_DATABASE_URL=$(sm_name GOTRUE_DB_DATABASE_URL):latest,GOTRUE_JWT_SECRET=$(sm_name JWT_SECRET):latest${OAUTH_SECRETS}" --quiet
       # Kept for a future switch back to a private service; moot while allUsers
       # can invoke (the --allow-unauthenticated above).
       grant_run_invoker "$CLOUD_RUN_AUTH" "serviceAccount:${FIREBASE_RUN_INVOKER_SA}" "serviceAccount:${SA_DEPLOY_EMAIL}"

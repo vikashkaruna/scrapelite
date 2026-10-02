@@ -80,4 +80,25 @@ while read -r runtime_var source_key services; do
   pushed=$((pushed+1))
 done < "$MANIFEST"
 
+# ── OAuth client secrets (GoTrue only) ───────────────────────────────────────
+# Deliberately NOT in secrets.manifest: manifest rows are mounted on api AND
+# jobs, and only the auth service needs these. Resource names:
+#   datiq-<code>-sm-<google|azure|github>-oauth-client-secret-<suffix>
+for P in GOOGLE AZURE GITHUB; do
+  value="$(get_val "${P}_OAUTH_CLIENT_SECRET")"
+  secret_name="$(sm_name "${P}_OAUTH_CLIENT_SECRET")"
+  if [ -z "$value" ]; then
+    echo "  skip ${secret_name} (no value for ${P}_OAUTH_CLIENT_SECRET)"; skipped=$((skipped+1)); continue
+  fi
+  if ! gcloud secrets describe "$secret_name" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+    gcloud secrets create "$secret_name" --project="$GCP_PROJECT_ID" --replication-policy=automatic --quiet >/dev/null
+  fi
+  existing="$(gcloud secrets versions access latest --secret="$secret_name" --project="$GCP_PROJECT_ID" 2>/dev/null || true)"
+  if [ "$existing" = "$value" ]; then
+    echo "  ok   ${secret_name} (unchanged)"; unchanged=$((unchanged+1)); continue
+  fi
+  printf '%s' "$value" | gcloud secrets versions add "$secret_name" --project="$GCP_PROJECT_ID" --data-file=- --quiet >/dev/null
+  echo "  push ${secret_name} → auth"; pushed=$((pushed+1))
+done
+
 echo "✓ secrets: $pushed pushed, $unchanged unchanged, $skipped skipped (empty source) — project $GCP_PROJECT_ID"
