@@ -333,7 +333,16 @@ dispatch `gcp-prod`. For the cutover window itself, run the scripts locally
   openai, with Anthropic out of credit and `gemini-3.8-flash` hanging 20s+, so the
   30s budget was gone before OpenAI ran (`/api/ai` 504; Extract/Enrich failed).
   Fixed on the Cloud SQL copy (OpenAI first, `gpt-6-luna`, Anthropic+Gemini
-  disabled; old value kept in the session scratchpad). **A cutover re-run reloads
+  disabled; old value kept in the session scratchpad) — SUPERSEDED same day by the
+  owner's choice: all providers stay ENABLED, call order reversed (openai → gemini →
+  anthropic; per-area lists reversed), and the **enrichment** area runs gemini →
+  openai → anthropic. Gemini models: `gemini-3.8-flash`/`3.7` hang or 503 ("high
+  demand"), `3.5-flash` 503s on large prompts and `pro-latest` 429s, so the stored
+  `models.gemini` and `modelsFast.gemini` are `gemini-3.5-flash-lite` (the
+  registry's own classification default). OpenAI `gpt-6-luna` is too slow for
+  structured extraction on big pages inside the budget (Hosting cuts Cloud Run
+  requests at 60s), hence Gemini first for enrichment. Verified: stripe.com/pricing
+  enrichment ok in 9s. **A cutover re-run reloads
   the hosted row** — fix `/admin/ai` on the SOURCE too, or re-apply after any
   re-run. Verify with `POST /api/ai` → `_provider`.
 - **Never put the DB password in a command line** (shell history, transcripts):
