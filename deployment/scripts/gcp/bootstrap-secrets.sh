@@ -109,4 +109,27 @@ for P in GOOGLE AZURE GITHUB; do
   echo "  push ${secret_name} → auth"; pushed=$((pushed+1))
 done
 
+# ── GoTrue SMTP password (auth service only) ─────────────────────────────────
+# datiq-<code>-sm-gotrue-smtp-pass-<suffix>. Source: GOTRUE_SMTP_PASS, else
+# RESEND_API_KEY (Resend SMTP authenticates with an API key as the password).
+if [ -n "$(get_val GOTRUE_SMTP_HOST)" ]; then
+  value="$(get_val GOTRUE_SMTP_PASS)"; [ -n "$value" ] || value="$(get_val RESEND_API_KEY)"
+  secret_name="$(sm_name GOTRUE_SMTP_PASS)"
+  if [ -z "$value" ]; then
+    echo "  skip ${secret_name} (no GOTRUE_SMTP_PASS / RESEND_API_KEY)"; skipped=$((skipped+1))
+    gcloud secrets describe "$secret_name" --project="$GCP_PROJECT_ID" >/dev/null 2>&1 \
+      || echo "  ⚠ GOTRUE_SMTP_HOST is set but ${secret_name} does not exist: set GOTRUE_SMTP_PASS or RESEND_API_KEY in .env.$ENV_NAME and re-run"
+  else
+    gcloud secrets describe "$secret_name" --project="$GCP_PROJECT_ID" >/dev/null 2>&1 \
+      || gcloud secrets create "$secret_name" --project="$GCP_PROJECT_ID" --replication-policy=automatic --quiet >/dev/null
+    existing="$(gcloud secrets versions access latest --secret="$secret_name" --project="$GCP_PROJECT_ID" 2>/dev/null || true)"
+    if [ "$existing" = "$value" ]; then
+      echo "  ok   ${secret_name} (unchanged)"; unchanged=$((unchanged+1))
+    else
+      printf '%s' "$value" | gcloud secrets versions add "$secret_name" --project="$GCP_PROJECT_ID" --data-file=- --quiet >/dev/null
+      echo "  push ${secret_name} → auth"; pushed=$((pushed+1))
+    fi
+  fi
+fi
+
 echo "✓ secrets: $pushed pushed, $unchanged unchanged, $skipped skipped (empty source) — project $GCP_PROJECT_ID"

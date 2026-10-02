@@ -237,13 +237,39 @@ for svc in $SERVICES; do
         OAUTH_SECRETS="${OAUTH_SECRETS},GOTRUE_EXTERNAL_${P}_SECRET=${sec}:latest"
         echo "  ✓ oauth ${sm_key}: enabled (callback ${OAUTH_CB}/auth/v1/callback)"
       done
+      # ── Transactional email (signup confirm / recovery / magic link / email change) ─
+      # Hosted Supabase sent these itself; self-hosted GoTrue has NO mail service and
+      # only sends when GOTRUE_SMTP_* is set (Resend SMTP: smtp.resend.com:465, user
+      # "resend", password = a Resend API key). The password is a Secret Manager
+      # secret (bootstrap-secrets.sh pushes it from GOTRUE_SMTP_PASS, falling back
+      # to RESEND_API_KEY). With no SMTP, only autoconfirm keeps signup working —
+      # so AUTOCONFIRM=false without SMTP is refused here: it would deploy an auth
+      # service where every email signup and password reset 500s.
+      SMTP_ENV=""; SMTP_SECRETS=""
+      if [ -n "${GOTRUE_SMTP_HOST:-}" ]; then
+        for v in GOTRUE_SMTP_PORT GOTRUE_SMTP_USER GOTRUE_SMTP_ADMIN_EMAIL; do
+          [ -n "${!v:-}" ] || { echo "✗ GOTRUE_SMTP_HOST is set but ${v} is empty in .env.$ENV_NAME"; exit 1; }
+        done
+        smtp_sec="$(sm_name GOTRUE_SMTP_PASS)"
+        gcloud secrets describe "$smtp_sec" --project="$GCP_PROJECT_ID" >/dev/null 2>&1 \
+          || { echo "✗ GOTRUE_SMTP_HOST is set but secret ${smtp_sec} does not exist — set GOTRUE_SMTP_PASS (or RESEND_API_KEY) in .env.$ENV_NAME and run bootstrap-secrets.sh $ENV_NAME"; exit 1; }
+        SMTP_ENV=";GOTRUE_SMTP_HOST=${GOTRUE_SMTP_HOST};GOTRUE_SMTP_PORT=${GOTRUE_SMTP_PORT};GOTRUE_SMTP_USER=${GOTRUE_SMTP_USER};GOTRUE_SMTP_ADMIN_EMAIL=${GOTRUE_SMTP_ADMIN_EMAIL};GOTRUE_SMTP_SENDER_NAME=${GOTRUE_SMTP_SENDER_NAME:-DatIQ}"
+        SMTP_SECRETS=",GOTRUE_SMTP_PASS=${smtp_sec}:latest"
+        echo "  ✓ smtp: ${GOTRUE_SMTP_HOST}:${GOTRUE_SMTP_PORT} as ${GOTRUE_SMTP_ADMIN_EMAIL}"
+      elif [ "${GOTRUE_MAILER_AUTOCONFIRM:-false}" != "true" ]; then
+        echo "✗ GOTRUE_MAILER_AUTOCONFIRM is not true and GOTRUE_SMTP_HOST is empty in .env.$ENV_NAME —"
+        echo "  GoTrue could not send any confirmation/recovery email. Set the GOTRUE_SMTP_* block."
+        exit 1
+      else
+        echo "  · smtp: not configured (autoconfirm=true — signups confirm instantly, no email is sent)"
+      fi
       gcloud run deploy "$CLOUD_RUN_AUTH" "${GCP_FLAGS[@]}" \
         --image="${AUTH_IMAGE:?AUTH_IMAGE missing in .env}" --port=8080 --allow-unauthenticated \
         --ingress=all --min-instances=0 --max-instances=2 --concurrency=80 \
         --memory=512Mi --cpu=1 --timeout=60 --service-account="$SA_JOBS_EMAIL" \
         --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${SQL_INSTANCE:?SQL_INSTANCE missing}" \
-        --set-env-vars="^;^GOTRUE_DB_DRIVER=postgres;GOTRUE_DB_NAMESPACE=auth;GOTRUE_API_HOST=0.0.0.0;GOTRUE_API_PORT=8080;API_EXTERNAL_URL=${APP_BASE_URL};GOTRUE_SITE_URL=${APP_BASE_URL};GOTRUE_JWT_EXP=3600;GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated;GOTRUE_DISABLE_SIGNUP=false;GOTRUE_EXTERNAL_EMAIL_ENABLED=true;GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false};GOTRUE_LOG_LEVEL=warn;GOTRUE_URI_ALLOW_LIST=${GOTRUE_URI_ALLOW_LIST:-}${OAUTH_ENV}" \
-        --set-secrets="GOTRUE_DB_DATABASE_URL=$(sm_name GOTRUE_DB_DATABASE_URL):latest,GOTRUE_JWT_SECRET=$(sm_name JWT_SECRET):latest${OAUTH_SECRETS}" --quiet
+        --set-env-vars="^;^GOTRUE_DB_DRIVER=postgres;GOTRUE_DB_NAMESPACE=auth;GOTRUE_API_HOST=0.0.0.0;GOTRUE_API_PORT=8080;API_EXTERNAL_URL=${APP_BASE_URL};GOTRUE_SITE_URL=${APP_BASE_URL};GOTRUE_JWT_EXP=3600;GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated;GOTRUE_DISABLE_SIGNUP=false;GOTRUE_EXTERNAL_EMAIL_ENABLED=true;GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false};GOTRUE_LOG_LEVEL=warn;GOTRUE_URI_ALLOW_LIST=${GOTRUE_URI_ALLOW_LIST:-}${OAUTH_ENV}${SMTP_ENV}" \
+        --set-secrets="GOTRUE_DB_DATABASE_URL=$(sm_name GOTRUE_DB_DATABASE_URL):latest,GOTRUE_JWT_SECRET=$(sm_name JWT_SECRET):latest${OAUTH_SECRETS}${SMTP_SECRETS}" --quiet
       # Kept for a future switch back to a private service; moot while allUsers
       # can invoke (the --allow-unauthenticated above).
       grant_run_invoker "$CLOUD_RUN_AUTH" "serviceAccount:${FIREBASE_RUN_INVOKER_SA}" "serviceAccount:${SA_DEPLOY_EMAIL}"
