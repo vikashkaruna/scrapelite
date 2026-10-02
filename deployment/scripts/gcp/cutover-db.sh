@@ -11,9 +11,10 @@
 #   DRY_RUN=1 cutover-db.sh prod SOURCE_DB_URL
 #   CUTOVER_CONFIRM=1 …                     # skip the interactive prompt
 #   CUTOVER_RESUME=1 …                      # env already flipped, resume at repoint
-#   NETLIFY_CRONS_FROZEN=1 …                # attest Netlify prod TOML schedules
-#                                           # are commented + redeployed; REQUIRED
-#                                           # for the cron handoff to resume
+#   NETLIFY_CRONS_FROZEN=1 …                # attest Netlify no longer runs crons
+#                                           # (the Netlify project is shut down /
+#                                           # disabled, or all 13 schedules are
+#                                           # off); REQUIRED for the cron handoff
 #
 # ── PROD DIFFERS FROM STAGING IN TWO WAYS (deliberate, doc 09 §0) ────────────
 #   1. SAME JWT SECRET: .env.prod's JWT_SECRET must be the PROD SUPABASE JWT
@@ -145,10 +146,11 @@ trap restore_runtime_config EXIT
 # scheduled functions keep working against hosted Supabase (still intact for
 # rollback) and would double-send alerts/emails while GCP's jobs work Cloud
 # SQL. The handoff requires an explicit attestation that the Netlify half of
-# the freeze is DONE (prod schedule blocks commented + Netlify prod
-# redeployed). Without it the jobs stay PAUSED — a safe, resumable state.
+# the freeze is DONE: the Netlify project is shut down/disabled (owner decision
+# 2026-10-02, doc 09 §1.0a) or all 13 of its scheduled functions are off.
+# Without it the jobs stay PAUSED — a safe, resumable state.
 hand_crons_to_gcp() {
-  echo "── 5/6 HAND CRON OWNERSHIP TO GCP PROD (Netlify TOML must be commented FIRST)"
+  echo "── 5/6 HAND CRON OWNERSHIP TO GCP PROD (Netlify must no longer run crons FIRST)"
   if [ "${NETLIFY_CRONS_FROZEN:-0}" = "1" ]; then
     update_env OPS_JOBS_DISABLED 0
     run "$HERE/update-env.sh" "$ENV_NAME" jobs
@@ -159,9 +161,8 @@ hand_crons_to_gcp() {
   echo "     Netlify prod schedules are presumably still live, and resuming now"
   echo "     would put both owners to work at once."
   echo
-  echo "     When the Netlify half of the freeze is done (netlify.toml prod"
-  echo "     schedule blocks commented out + Netlify prod redeployed), finish"
-  echo "     the handoff with:"
+  echo "     When Netlify no longer runs crons (project shut down/disabled — all"
+  echo "     13 scheduled functions, not 5), finish the handoff with:"
   echo "       NETLIFY_CRONS_FROZEN=1 $HERE/cutover-db.sh $ENV_NAME finish-crons"
   echo "     (or manually: flip OPS_JOBS_DISABLED=0 in .env.prod,"
   echo "      $HERE/update-env.sh $ENV_NAME jobs, $HERE/crons.sh $ENV_NAME resume)"
@@ -216,11 +217,11 @@ if [ "$DRY_RUN" != "1" ] && [ -n "${SUPABASE_ANON_KEY:-}" ]; then
 fi
 
 # ── 1. FREEZE ─────────────────────────────────────────────────────────────────
-echo "── 1/6 FREEZE GCP prod crons + comment Netlify prod TOML schedules (never both)"
+echo "── 1/6 FREEZE GCP prod crons (Netlify crons keep running until the Netlify project is shut down)"
 run "$HERE/crons.sh" "$ENV_NAME" pause
-echo "   ⚠ NETLIFY PROD SIDE (manual, BEFORE step 5): comment the schedule blocks"
-echo "     in netlify.toml (the production scheduled-function entries) and redeploy"
-echo "     Netlify prod — two cron owners at once double-sends."
+echo "   ⚠ NETLIFY PROD SIDE (manual, BEFORE step 5): Netlify must stop running its"
+echo "     13 scheduled functions — shut down/disable the Netlify project (owner plan)."
+echo "     Two cron owners at once double-sends; step 5 stays deferred until then."
 
 # ── 2. MIGRATE ────────────────────────────────────────────────────────────────
 echo "── 2/6 MIGRATE prod Supabase → Cloud SQL (schema + data + users)"
@@ -305,8 +306,8 @@ if [ "$CRONS_HANDED" = "1" ]; then
 else
   echo "✓ prod cutover steps 1–4 + smoke done — routing and data now on the"
   echo "  self-hosted trio + Cloud SQL. CRON HANDOFF DEFERRED (step 5): GCP prod"
-  echo "  jobs are PAUSED and Netlify prod schedules still own the legacy crons."
-  echo "  Freeze the Netlify half, then run:"
+  echo "  jobs are PAUSED and Netlify still owns the legacy crons (13 of them)."
+  echo "  After the Netlify project is shut down, run:"
   echo "    NETLIFY_CRONS_FROZEN=1 $HERE/cutover-db.sh prod finish-crons"
 fi
 echo "  MANUAL, in order (doc 09): payments test event → n8n round-trip →"
@@ -318,4 +319,4 @@ echo "  2. cp ${PREFLIP} ${DEPLOY_DIR}/env/.env.prod"
 echo "  3. ${HERE}/deploy-run.sh prod auth rest api jobs"
 echo "  4. ${HERE}/deploy-hosting.sh prod"
 echo "  5. ${HERE}/crons.sh prod pause   # GCP stops owning crons"
-echo "  6. un-comment the Netlify prod TOML schedules and redeploy Netlify prod"
+echo "  6. re-enable the Netlify project (its crons return with it) — only possible if it was not deleted"

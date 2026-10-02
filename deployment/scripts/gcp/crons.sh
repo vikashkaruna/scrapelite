@@ -29,7 +29,7 @@ load_gcp_env "$ENV_NAME"
 # path (projects/…/jobs/<id>); consumers strip it with ${job##*/}.
 list_datiq_jobs() {
   gcloud scheduler jobs list --project="$GCP_PROJECT_ID" --location="$GCP_REGION" \
-    --filter="name:datiq-${DATIQ_PROJECT_CODE}-sch-" \
+    --filter="name~datiq-${DATIQ_PROJECT_CODE}-sch-.*${DATIQ_ENV_SUFFIX}\$" \
     --format='value(name,state,schedule)' 2>/dev/null | tr '\t' ' ' || true
 }
 
@@ -56,6 +56,8 @@ case "$ACTION" in
     total="$(printf '%s\n' "$jobs" | grep -c . || true)"
     paused="$(printf '%s\n' "$jobs" | awk '$2=="PAUSED"' | wc -l | tr -d ' ')"
     echo
+    expected="$(grep -c '^\[functions\."' "$REPO_DIR/netlify.toml" 2>/dev/null || echo "?")"
+    [ "$total" = "$expected" ] || echo "  ⚠ ${total} jobs here but netlify.toml declares ${expected} scheduled functions — run deploy-scheduler.sh $ENV_NAME"
     echo "  ${total} jobs, ${paused} paused. Ownership: while OPS_JOBS_DISABLED=1 on the"
     echo "  jobs service these jobs fire but the adapter no-ops (Netlify owns crons)."
     ;;
