@@ -20,6 +20,62 @@
 
 
 
+## 2026-09-29 — GCP migration Phase 1a EXECUTED: GCP staging live, all gates green (branch `docker-desktop-build`)
+
+> **Branch:** `docker-desktop-build`
+> **Scope:** Phase 1a of `docs/plans/gcp-docker-migration/` — the GCP staging deploy run for real (bootstrap → images → Cloud Run ×6 → Cloud SQL migration → 13 scheduler jobs → Firebase Hosting → smoke).
+> **Verification:** edge smoke **13/13** at https://datiq-vsp-fhs-stg.web.app; parameterisation gate green; firebase-config unit tests **11/11**; `npm run test:all` **10/10 suites green**; DB verified 127 tables / 127 RLS / 29 extractions.
+
+### What was executed
+- **Bootstrap + secrets:** AR repo `datiq-vsp-ar-images-stg`, 4 SAs, App Engine app (Scheduler), Firebase web app + Hosting site `datiq-vsp-fhs-stg`, 17 secrets (`datiq-vsp-sm-*-stg`).
+- **Cloud Run ×6:** api/jobs/admin/trackers/auth/rest. api/admin/trackers **`--allow-unauthenticated`** (deliberate Netlify-parity deviation, documented); jobs OIDC-only; auth/rest are IAM-gated proof services on Cloud SQL unix sockets.
+- **DB migration:** Cloud SQL `datiq-vsp-sql-datiq-stg` (POSTGRES_16, `db-custom-1-3840`) ← dev Supabase dump; GoTrue migrated 23 auth tables **from zero** on a clean `auth` schema (`create schema auth authorization supabase_auth_admin` after `grant supabase_auth_admin to postgres`).
+- **Scheduler ×13:** 1:1 with netlify.toml; GCP staging runs `OPS_JOBS_DISABLED=1` — **Netlify staging owns crons**.
+- **Hosting:** full dist payload; `/` serves the **prerendered home** (dist/index.html swapped; SPA shell at `/__shell/index.html`); per-route extensionless rewrites from `scripts/site-routes.mjs`; **`trailingSlash:false`**.
+- **Artifacts ready, NOT run:** `promote-prod.sh`, `cutover-db.sh`, `.github/workflows/gcp-staging.yml`, prod-site routing in runtime-config.
+
+### Root causes fixed this session (non-obvious)
+1. **Firebase's trailing-slash 301 fires BEFORE rewrites** — per-route rewrites cannot prevent `/pricing`→`/pricing/`; `trailingSlash:false` is the only knob (slash form then 301s back; one canonical per page).
+2. **`deploy-run.sh` env-vars JSON collision** — all callers shared one `env-vars-$ENV.json`; rest's PGRST file overwrote the app file → api/jobs deployed with 3 env vars (`supabase not configured`). Filenames now per-caller.
+3. **workflow-orchestrator is POST-only AND Bearer-gated even for `/ping`** — smoke asserts anon 401 (gate) + authed pong (path).
+4. **Shebang breaks Vitest import** of `gen-firebase-config.mjs` (Vite injects `/@vite/client` before `#!` → parse error); removed — script runs via `node` only.
+
+### Operator items (full list: runbook §3)
+- [ ] **Add `https://datiq-vsp-fhs-stg.web.app` to dev Supabase Auth → Additional Redirect URLs** (OAuth is broken on the new host until then).
+- [ ] GitHub Environment `gcp-staging` secrets for CI deploys; Netlify Edge Access bypass (carried over).
+- [ ] Cloud SQL is the main staging cost — `--activation-policy=NEVER` to park it.
+- [ ] At real cutover: JWT_SECRET from prod Supabase; never both sides own crons.
+
+**Detail:** `docs/plans/gcp-docker-migration/08-STAGING-DEPLOY-RUNBOOK.md` · handoff `docs/sessions/SESSION-HANDOFF-2026-09-29-GCP-PHASE-1A-STAGING-DEPLOY-GREEN.md`.
+
+---
+
+## 2026-09-28 — Phase 0: local Docker Desktop stack live + staging→local migration scripts (branch `docker-desktop-build`)
+
+> **Branch:** `docker-desktop-build` (adds `deployment/` on top of the compat release)
+> **Scope:** Phase 0 of `docs/plans/gcp-docker-migration/` — local stack mirroring the staging/GCP topology 1:1.
+> **Verification:** `stack-smoke.sh` 16/16 green; `signon-e2e.sh` green (signup → JWT → /api/extractions → PostgREST under RLS); scripted staging→local migration: 127 tables, 29 extractions, RLS intact, 0 unexpected errors.
+
+### What was built
+- **`deployment/adapter/`** — zero-dependency Node 24 HTTP⇄Netlify-event server; `api` mode mounts all 75 non-scheduled handlers on `/api/*` (Netlify-shaped `event.path`, raw-body preservation, splat routers from a manifest generated from `netlify.toml`), `jobs` mode mounts only the 13 scheduled functions behind a cron token with `POST /run/<name>`; v2-style `export default` handlers (razorpay-sdk) supported; `jobs-cron-sim.mjs` fires the 13 crons on their toml schedules.
+- **`deployment/docker/`** — one image per surface: `gateway` (nginx edge: 34 exact 301s + baseline CSP/headers generated from netlify.toml + site-routes.mjs at build time; docker-DNS runtime resolver; strips `/auth/v1` + `/rest/v1` prefixes for GoTrue/PostgREST), `web` (prerendered-wins + SPA fallback, forced `/`→`/home/index.html`, 404s /admin), `admin` (own container serving /admin*), `trackers` (analytics.js + env-rendered runtime-config.js), `api` (npm ci + functions + src/lib + manifest; same image reused by jobs/scheduler — the GCP pattern).
+- **`deployment/compose/`** — base app services + `compose.local.yaml` supabase-lite profile: supabase/postgres 17.6, supabase/auth (GoTrue) v2.196, PostgREST v14.14, Mailpit, on-demand migrator, and a `db-passwords`/schema-init one-shot (role passwords + `auth.users.role` stamp trigger).
+- **Env contract (doc 06)** — `.env.local.example` + `env-loader.sh` + `gen-local-config.mjs` (mints anon/service API keys from JWT_SECRET, renders runtime-config per data mode) + `gen-routes-manifest.mjs` + `gen-gateway-conf.mjs`. Modes: `local-db` (full supabase-lite) and `shared-db` (hosted dev project).
+- **Migration scripts** — `migrate-from-supabase.sh`: CLI path (supabase db dump via CLI login, no DB password → wipe volume → restore schema + public data with FK-bypass header → mark ledger) and SOURCE_DB_URL path (full pg_dump incl. auth schema — the production-cutover recipe). `migrator/apply-migrations.sh` idempotent ledger.
+- **Tests** — `stack-smoke.sh` (16 checks: prerender precedence, SPA fallback, admin, trackers, auth health, PostgREST OpenAPI, api router 401s, scheduled-function blocking, redirect parity, sitemap/robots, jobs token run) + `signon-e2e.sh`.
+
+### Result (running locally now)
+`http://localhost:8080` serves the full product; `:8025` Mailpit; `:54329` Postgres. Staging data migrated: 127 tables, 29 extractions, RLS policies intact. Signon = fresh signup (autoconfirm); staging users are Google-OAuth-only so they cannot password-login locally (OAuth callbacks point at the hosted auth domain).
+
+### Gotchas hit and fixed (worth remembering)
+1. supabase/postgres images ship `auth.users.role` **without** the `authenticated` default AND newer GoTrue inserts `role=''` — fixed with a stamp trigger + column default in `db-passwords` init (otherwise PostgREST rejects every token with `role "" does not exist`).
+2. Service-role passwords (`supabase_auth_admin`, `authenticator`) are NOT seeded from `POSTGRES_PASSWORD` — init ALTERs them via `supabase_admin` (reserved-role protection means `postgres` cannot).
+3. GoTrue/PostgREST expect root paths — the gateway must strip `/auth/v1` and `/rest/v1` (hosted Kong does this).
+4. nginx exits on unresolvable upstreams at start → use docker-DNS `resolver` + variable `proxy_pass` for restarting siblings.
+5. The api image needs `npm ci --omit=dev` (Netlify's esbuild resolves deps at deploy) and `src/lib` (functions import shared client modules).
+6. netlify.toml `status = 200` is unquoted — TOML parsing must accept bare integers (a 301-from-`/` bug).
+7. Smoke-test SIGPIPE trap: `grep -q` on a huge single-line HTML through `echo` pipes returns 141 — grep a temp file instead.
+
 ## 2026-09-28 — GCP compat release: same-origin function paths + GCP-aware runtime-config (branch `docker-desktop-build`)
 
 > **Branch:** `docker-desktop-build` (cut from `staging` @ `07e88c72`, byte-identical at cut)

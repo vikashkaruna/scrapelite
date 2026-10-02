@@ -4,7 +4,7 @@
 // data changed'). Free D7 lift once accounts + monitoring exist; deep links
 // resume exact context."
 //
-// Three email surfaces, all fire via Resend:
+// Three email surfaces, all fire via the configured mail transport:
 //
 //   1. Welcome:        fired once per user, on first sign-in. Browser
 //                      calls /api/welcome-email separately; this function
@@ -37,6 +37,7 @@
 export const config = { schedule: "@daily" };
 
 import { withJobRun } from "./lib/jobControl.js";
+import { mailReady, sendMail } from "./lib/mailTransport.js";
 import { wrapEmail } from "../../src/lib/emailBranding.js";
 
 // Daily schedule-ran digest fires only at this UTC hour. Default 21:00 UTC
@@ -45,7 +46,6 @@ const DAILY_DIGEST_HOUR_UTC = parseInt(process.env.DAILY_DIGEST_HOUR_UTC || "21"
 
 const SITE_URL = process.env.URL || process.env.SITE_URL || "https://datiq.app";
 const FROM = process.env.CONTACT_EMAIL_FROM || "DatIQ <hello@datiq.app>";
-const RESEND_KEY = process.env.RESEND_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
 
@@ -80,15 +80,12 @@ function isOlderThan(iso, days) {
 }
 
 async function sendEmail({ to, subject, html }) {
-  if (!RESEND_KEY || !to) return false;
+  if (!mailReady() || !to) return false;
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: FROM, to: [to], subject, html }),
-    });
-    return res.ok;
+    const r = await sendMail({ from: FROM, to: [to], subject, html });
+    return r.ok;
   } catch (err) {
+    // Defensive: sendMail maps transport failures to its result, never throws.
     console.warn("[DatIQ reengagement] Resend error:", err.message);
     return false;
   }
@@ -283,8 +280,8 @@ const run = async () => {
   if (!db) {
     return { statusCode: 200, body: "skipped (no supabase service key)" };
   }
-  if (!RESEND_KEY) {
-    return { statusCode: 200, body: "skipped (no Resend key)" };
+  if (!mailReady()) {
+    return { statusCode: 200, body: "skipped (no mail transport configured)" };
   }
 
   const now = new Date();

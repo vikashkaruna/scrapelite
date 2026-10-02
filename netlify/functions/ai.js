@@ -136,7 +136,7 @@ export const handler = async (event) => {
     return respond(400, { error: "Invalid JSON body" });
   }
 
-  const { max_tokens, messages, workspaceId, area: rawArea, tier: rawTier } =
+  const { max_tokens, messages, workspaceId, area: rawArea, tier: rawTier, meterScope } =
     reqBody && typeof reqBody === "object" ? reqBody : {};
   // Unknown area → global chain, never a rejection. A stale client must
   // degrade to the default, not lose AI.
@@ -202,7 +202,13 @@ export const handler = async (event) => {
     });
   }
 
-  const meter = meterContext({ caller: "api-ai", userId: verifiedUserId });
+  // `suppressed` when the caller declares this request is part of a template
+  // run: templates.js owns the ledger for template runs via their finish
+  // events, so a choke-point charge here would bill the same synthesis twice.
+  // See meterContext's `suppressed` note in lib/creditMeter.js.
+  const meter = meterContext({
+    caller: "api-ai", userId: verifiedUserId, suppressed: meterScope === "template_run",
+  });
   // Single exit below this line so no return path can forget the charge.
   // No Set-Cookie here: the peek above never mints an identity, because
   // /api/extract owns that and a second minter would hand the same browser

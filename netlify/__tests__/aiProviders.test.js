@@ -65,16 +65,24 @@ describe("runChain (C-33)", () => {
     );
   }
 
-  it("tries providers in DEFAULT_ORDER (gemini → anthropic → openai)", async () => {
+  it("tries providers in DEFAULT_ORDER (openai → gemini → anthropic)", async () => {
     process.env.GEMINI_API_KEY = "gem-key";
     process.env.AI_API_KEY = "ant-key";
     process.env.OPENAI_API_KEY = "oai-key";
 
-    fetchMock.mockResolvedValue(geminiOk("hello"));
+    // Provider-aware mock: whatever the chain calls first must get a reply in
+    // THAT provider's shape, or the adapter would reject it and fall through.
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("openai")) return openaiOk("hello");
+      if (u.includes("generativelanguage")) return geminiOk("hello");
+      return anthropicOk("hello");
+    });
     const { runChain } = await load();
     const r = await runChain([{ role: "user", content: "hi" }]);
     expect(r.ok).toBe(true);
-    // First provider in the chain is gemini
+    // First provider in the chain is openai (owner-set priority, 2026-09-30)
+    expect(DEFAULT_ORDER[0]).toBe("openai");
     expect(r.provider).toBe(DEFAULT_ORDER[0]);
     expect(r.text).toBe("hello");
   });
@@ -86,10 +94,10 @@ describe("runChain (C-33)", () => {
     const r = await runChain([{ role: "user", content: "hi" }]);
     expect(r.ok).toBe(true);
     expect(r.provider).toBe("anthropic");
-    // gemini is logged as skipped (no key) — it's the first in DEFAULT_ORDER
+    // openai AND gemini are logged as skipped (no key) — they precede
+    // anthropic in DEFAULT_ORDER
+    expect(r.attempts.find((a) => a.provider === "openai")?.skipped).toBe("no-key");
     expect(r.attempts.find((a) => a.provider === "gemini")?.skipped).toBe("no-key");
-    // openai was never tried (chain short-circuits on anthropic success)
-    expect(r.attempts.find((a) => a.provider === "openai")).toBeUndefined();
   });
 
   it("when NO provider has a key, all three are logged as skipped (no early return)", async () => {
@@ -104,7 +112,8 @@ describe("runChain (C-33)", () => {
   it("first success short-circuits the chain", async () => {
     process.env.GEMINI_API_KEY = "gem-key";
     process.env.AI_API_KEY = "ant-key";
-    // Gemini fails (500), Anthropic succeeds — must NOT call openai
+    // openai (first in order) has no key; gemini fails (500), anthropic
+    // succeeds — and nothing is fetched after that.
     fetchMock
       .mockResolvedValueOnce(new Response("oops", { status: 500 }))
       .mockResolvedValueOnce(anthropicOk("anthropic wins"));
@@ -113,8 +122,9 @@ describe("runChain (C-33)", () => {
     const r = await runChain([{ role: "user", content: "hi" }]);
     expect(r.ok).toBe(true);
     expect(r.provider).toBe("anthropic");
-    // openai was never tried
-    expect(r.attempts.find((a) => a.provider === "openai")).toBeUndefined();
+    // openai was skipped without a call; only gemini + anthropic were fetched
+    expect(r.attempts.find((a) => a.provider === "openai")?.skipped).toBe("no-key");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("provider-error continues the chain (does not throw)", async () => {
@@ -227,6 +237,55 @@ describe("loadAiConfig (C-06)", () => {
     const { loadAiConfig } = await load();
     const cfg = await loadAiConfig();
     expect(cfg.order).toEqual(["anthropic", "gemini"]);
+  });
+});
+
+describe("modelForTier — per-area shipped defaults (lightweight automation)", () => {
+  beforeEach(() => {
+    // Earlier specs in this file set model pins and leak them into the shared
+    // process env (GEMINI_MODEL most recently); this describe needs a clean slate.
+    delete process.env.GEMINI_MODEL;
+    delete process.env.GEMINI_MODEL_FAST;
+    delete process.env.GEMINI_MODEL_DEEP;
+    delete process.env.OPENAI_MODEL_FAST;
+    delete process.env.OPENAI_MODEL_DEEP;
+    delete process.env.ANTHROPIC_MODEL_FAST;
+    delete process.env.ANTHROPIC_MODEL_DEEP;
+    delete process.env.PERPLEXITY_MODEL_FAST;
+    delete process.env.PERPLEXITY_MODEL_DEEP;
+  });
+
+  it("classification resolves Gemini to the Flash-Lite area default", async () => {
+    const { loadAiConfig, resolvePillarChain, modelForTier } = await load();
+    const cfg = await loadAiConfig();
+    const chain = resolvePillarChain(cfg, "classification");
+    expect(modelForTier(chain, "gemini", "fast", "classification")).toBe("gemini-3.5-flash-lite");
+    // No area default for openai there — the registry pin answers.
+    expect(modelForTier(chain, "openai", "fast", "classification")).toBe("gpt-6-luna");
+    // Other areas ride the plain fast pin for Gemini.
+    const disc = resolvePillarChain(cfg, "discoverability");
+    expect(modelForTier(disc, "gemini", "fast", "discoverability")).toBe("gemini-3.8-flash");
+  });
+
+  it("an env tier var beats the area default; a stored admin pin beats both", async () => {
+    process.env.GEMINI_MODEL_FAST = "gemini-env-fast";
+    const { loadAiConfig, resolvePillarChain, modelForTier } = await load();
+    const cfg = await loadAiConfig();
+    const chain = resolvePillarChain(cfg, "classification");
+    expect(modelForTier(chain, "gemini", "fast", "classification")).toBe("gemini-env-fast");
+
+    // An admin-set model differs from the pillar-less default → it wins.
+    cfg.modelsFast.gemini = "gemini-admin-pinned";
+    const admin = resolvePillarChain(cfg, "classification");
+    expect(modelForTier(admin, "gemini", "fast", "classification")).toBe("gemini-admin-pinned");
+    delete process.env.GEMINI_MODEL_FAST;
+  });
+
+  it("stays back-compatible: without a pillar the maps answer directly", async () => {
+    const { loadAiConfig, modelForTier } = await load();
+    const cfg = await loadAiConfig();
+    expect(modelForTier(cfg, "gemini", "fast")).toBe("gemini-3.8-flash");
+    expect(modelForTier(cfg, "openai", "deep")).toBe("gpt-6-luna");
   });
 });
 
@@ -457,8 +516,9 @@ describe("Gemini thinking budget", () => {
     const { runChain } = await load();
     const r = await runChain([{ role: "user", content: "hi" }], 16);
     expect(r.ok).toBe(false);
-    expect(r.attempts[0].code).toBe("truncated");
-    expect(r.attempts[0].error).toMatch(/output budget/i);
+    const gemAttempt = r.attempts.find((a) => a.provider === "gemini");
+    expect(gemAttempt.code).toBe("truncated");
+    expect(gemAttempt.error).toMatch(/output budget/i);
   });
 });
 

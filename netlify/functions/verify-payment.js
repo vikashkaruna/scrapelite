@@ -7,6 +7,9 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { activateFromInvoice, finalizeInvoice } from "./lib/invoiceService.js";
 import { sendInvoiceEmail } from "./lib/invoiceEmail.js";
+import { patchInvoiceDraft, getInvoiceDraft } from "./lib/invoiceDraft.js";
+import { getUserScopedClient, finalizeBearerAuth, bearerToken } from "./lib/supabaseServerClient.js";
+import { buildPaymentLedger } from "./lib/paymentLedger.js";
 import { grant as grantCredits } from "./lib/creditMeter.js";
 import { CREDIT_PACK_BY_ID } from "../../src/lib/pricingConfig.js";
 
@@ -16,11 +19,30 @@ function creditsForPack(id) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/**
+ * Resolve the signed-in user's id from the bearer JWT, or null (guest).
+ * Shared shape with create-checkout.js — optional auth, never a failure.
+ */
+async function resolveUserId(event) {
+  const authHeader = event?.headers?.authorization || event?.headers?.Authorization || "";
+  const jwt = bearerToken(authHeader);
+  if (!jwt) return null;
+  try {
+    const { client } = getUserScopedClient(authHeader);
+    if (!client) return null;
+    const auth = await finalizeBearerAuth({ client, jwt, label: "verify-payment", authHeader });
+    return auth.ok && auth.user ? auth.user.id : null;
+  } catch (err) {
+    console.warn("[verify-payment] optional auth resolution failed (treating as guest):", err?.message);
+    return null;
+  }
+}
+
 export const handler = async (event) => {
   const headers = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Cache-Control": "no-store",
   };
 
@@ -223,6 +245,22 @@ export const handler = async (event) => {
       // finalizeInvoice is idempotent: if the webhook already issued this
       // invoice we get the same row back with created:false and no second
       // number, no second email.
+      // ── Link this payment to the signed-in user when the browser carries a
+      // valid JWT ──────────────────────────────────────────────────────────
+      // A draft saved at order creation with user_id NULL (guest checkout on
+      // a shared device, or an order that predates JWT stamping) would
+      // otherwise produce an invoice activateFromInvoice cannot act on —
+      // the payment lands, the plan silently does not. Patch the draft BEFORE
+      // finalizeInvoice so the issued invoice carries the user and activation
+      // fires server-side.
+      const userId = await resolveUserId(event);
+      if (userId) {
+        const draft = await getInvoiceDraft(orderId);
+        if (draft && !draft.user_id) {
+          await patchInvoiceDraft(orderId, { user_id: userId });
+        }
+      }
+
       const { invoice, created, reason } = await finalizeInvoice({
         orderId,
         paymentId,
@@ -232,6 +270,46 @@ export const handler = async (event) => {
 
       if (invoice) {
         await activateFromInvoice(invoice);
+        // ── THE BROWSER-VERIFY SIDE OF THE WEBHOOK'S payment.captured ──────
+        // Parity with payment-webhook.js via the shared ledger: the
+        // subscriptions row (merged into entitlements by the claim path at
+        // sign-in) and the payment_events history. Locally — and anywhere the
+        // webhook cannot reach — this is the ONLY writer, and without it a
+        // paid upgrade exists nowhere server-side: the client's own
+        // subscriptions write is RLS-revoked (0014_billing_rls) and its error
+        // is swallowed, which is exactly the reported "paid, then refresh
+        // shows the old plan". Same idempotency rules as the webhook: the
+        // upsert is merge-duplicates, the event skips on provider_event_id.
+        if (sessionId && invoice.plan_id) {
+          const ledger = buildPaymentLedger();
+          if (ledger) {
+            try {
+              await ledger.upsertSubscription({
+                session_id:               sessionId,
+                plan_id:                  invoice.plan_id,
+                status:                   "active",
+                provider:                 "razorpay",
+                provider_subscription_id: orderId || null,
+                provider_customer_id:     payment?.contact || null,
+                current_period_start:     new Date().toISOString(),
+                current_period_end:       null,
+                updated_at:               new Date().toISOString(),
+              });
+              await ledger.insertPaymentEvent({
+                session_id:        sessionId,
+                event_type:        "payment.captured",
+                provider:          "razorpay",
+                provider_event_id: paymentId,
+                plan_id:           invoice.plan_id,
+                amount_cents:      order.amount,
+                currency:          order.currency,
+                status:            "completed",
+              });
+            } catch (err) {
+              console.error("[verify-payment] ledger write failed (webhook still covers):", err?.message);
+            }
+          }
+        }
         if (created) {
           // Fire-and-forget: a mail failure must never make a paid customer
           // think their payment failed. The invoice exists and is downloadable

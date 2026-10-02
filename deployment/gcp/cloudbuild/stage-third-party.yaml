@@ -1,0 +1,22 @@
+# deployment/gcp/cloudbuild/stage-third-party.yaml — mirror upstream auth/rest
+# images into Artifact Registry so Cloud Run can deploy them (doc 06: names
+# composed from env; the upstream refs arrive as substitutions).
+substitutions:
+  _AUTH_SRC: ""
+  _REST_SRC: ""
+  _IMG_GOTRUE: ""
+  _IMG_POSTGREST: ""
+options:
+  logging: CLOUD_LOGGING_ONLY
+steps:
+  - id: stage-gotrue
+    name: gcr.io/cloud-builders/docker
+    args: [build, -f, deployment/gcp/cloudbuild/third-party/gotrue.Dockerfile, --build-arg, BASE_IMAGE=$_AUTH_SRC, -t, $_IMG_GOTRUE, .]
+  - id: stage-postgrest
+    name: gcr.io/cloud-builders/docker
+    args: [build, -f, deployment/gcp/cloudbuild/third-party/postgrest.Dockerfile, --build-arg, BASE_IMAGE=$_REST_SRC, -t, $_IMG_POSTGREST, .]
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args: [-c, docker push $_IMG_GOTRUE && docker push $_IMG_POSTGREST]
+images: [$_IMG_GOTRUE, $_IMG_POSTGREST]

@@ -5,7 +5,13 @@
 // private IP literals (RFC 1918, loopback, link-local, multicast, CGNAT,
 // IPv6 unique-local) and non-HTTP(S) schemes (file://, gopher://, etc.).
 //
-// Throws a typed Error for invalid input; returns true only for safe URLs.
+// The SYNC guard (isPublicHttpUrl) throws a typed Error for invalid input —
+// it is a fast pre-filter used where the caller wants the reason. The ASYNC
+// guard (isPublicHttpUrlAsync) is the one request-validation paths await,
+// and it NEVER throws: any input that cannot be established as a publicly
+// fetchable URL — malformed, disallowed scheme, oversized, or a hostname
+// DNS cannot resolve — answers `false`. A guard that throws on a user's
+// typo turns "reject this URL" into an unhandled 500 two layers up.
 
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
@@ -138,16 +144,19 @@ export function isPublicHttpUrl(input) {
  * @returns {Promise<boolean>} true if the host resolves to a public IP
  */
 export async function isPublicHttpUrlAsync(input) {
-  if (typeof input !== "string" || !input) throw new Error("URL is required");
-  if (input.length > MAX_URL_LENGTH) throw new Error(`URL exceeds ${MAX_URL_LENGTH} chars`);
-  if (/[\x00-\x1f\x7f\s]/.test(input)) throw new Error("URL contains control characters or whitespace");
+  // Never throws — see the header. Every "cannot establish safe" branch is
+  // an answer of false, so callers can `if (!await ...) return bad(...)`
+  // without a try/catch and a malformed input can never become a 500.
+  if (typeof input !== "string" || !input) return false;
+  if (input.length > MAX_URL_LENGTH) return false;
+  if (/[\x00-\x1f\x7f\s]/.test(input)) return false;
   let parsed;
   try {
     parsed = new URL(input);
   } catch {
-    throw new Error("Malformed URL");
+    return false;
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error(`Disallowed scheme: ${parsed.protocol}`);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
   return checkHostAsync(parsed.hostname);
 }
 
@@ -182,13 +191,25 @@ async function checkHostAsync(host) {
   const h = host.replace(/^\[|\]$/g, "");
   if (isIP(h) === 4) return checkHostSync(h);
   if (isIP(h) === 6) return checkHostSync(h);
-  // Hostname — DNS lookup. Reject if ANY resolved IP is private.
-  let addrs;
-  try {
-    addrs = await lookup(h, { all: true });
-  } catch {
+  // Hostname — DNS lookup. Reject if ANY resolved IP is private. One retry:
+  // a single transient resolver hiccup (observed under load on the local
+  // stack) must not reject a perfectly valid domain; two failures are the
+  // honest answer.
+  let addrs = null;
+  for (let attempt = 0; attempt < 2 && !addrs; attempt++) {
+    try {
+      addrs = await lookup(h, { all: true });
+    } catch {
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+  if (!addrs) {
+    // A domain that does not resolve (typo, expired, NXDOMAIN) is a
+    // validation answer — `false` — not a server fault. The test/dev bypass
+    // stays: offline environments use fake hostnames on purpose, and a
+    // resolver that cannot run at all must not fail-closed every test URL.
     if (process.env.NODE_ENV === "test" || process.env.CONTEXT === "dev") return true;
-    throw new Error(`DNS lookup failed for ${h}`);
+    return false;
   }
   for (const { address } of addrs) {
     if (!checkHostSync(address)) return false;

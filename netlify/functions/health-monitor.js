@@ -27,6 +27,7 @@ import {
   classifyProbe, summarizeHealth, componentById, HEALTH_STATUS, healthStatusMeta,
 } from "../../src/lib/healthModel.js";
 import { wrapEmail } from "../../src/lib/emailBranding.js";
+import { mailReady, sendMail } from "./lib/mailTransport.js";
 
 // NOTE: this `config` export does NOT register the cron — it is only honoured
 // for v2 functions (`export default`), and this is a v1 handler. The real
@@ -165,33 +166,29 @@ export function buildAlertEmail(transitions, summary, siteUrl) {
 
 async function sendAlert(transitions, summary) {
   const to = process.env.OPS_ALERT_EMAIL || "";
-  const key = process.env.RESEND_API_KEY || "";
-  // Disarmed unless BOTH are present.
-  if (!to || !key || !transitions.length) return false;
+  // Disarmed unless a recipient is present and a mail transport is configured.
+  if (!to || !mailReady() || !transitions.length) return false;
 
   const from = process.env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>";
   const siteUrl = process.env.URL || process.env.SITE_URL || "https://datiq.app";
   const worst = transitions.some((t) => !t.recovered);
 
   try {
-    const res = await fetchWithTimeout("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to: to.split(",").map((s) => s.trim()).filter(Boolean),
-        subject: worst
-          ? `DatIQ — ${transitions.filter((t) => !t.recovered).map((t) => t.label).join(", ")} degraded`
-          : `DatIQ — services recovered`,
-        html: buildAlertEmail(transitions, summary, siteUrl),
-      }),
+    const r = await sendMail({
+      from,
+      to: to.split(",").map((s) => s.trim()).filter(Boolean),
+      subject: worst
+        ? `DatIQ — ${transitions.filter((t) => !t.recovered).map((t) => t.label).join(", ")} degraded`
+        : `DatIQ — services recovered`,
+      html: buildAlertEmail(transitions, summary, siteUrl),
     });
-    if (!res.ok) {
-      console.warn(`[health-monitor] alert email failed (${res.status})`);
+    if (!r.ok) {
+      console.warn(`[health-monitor] alert email failed (${r.status})`);
       return false;
     }
     return true;
   } catch (err) {
+    // Defensive: sendMail maps transport failures to its result, never throws.
     console.warn("[health-monitor] alert email error:", err.message);
     return false;
   }

@@ -36,7 +36,19 @@ export const handler = async (event) => {
   // FAILURE into an anonymous request, and the stores' `if (userId)` filters
   // then applied NO filter to a service-key query — the defect that returned
   // every tenant's signal rules, Slack webhook URLs included.
-  if (!auth.ok || !auth.user?.id) return json(401, { error: "Sign in to view your workflow." });
+  //
+  // ⚠️ And NOT one flat `return json(401, …)` either. authenticateBearer uses
+  // 503 for a DEPLOYMENT fault (bad/redacted/mismatched Supabase env) and 401
+  // for a genuine session problem. Collapsing both into "Sign in to view your
+  // workflow." told a signed-in user to re-authenticate for an outage that no
+  // amount of signing in would fix — exactly what happened on stg during the
+  // 2026-09-29 anon-key rotation. 503s forward verbatim (the message names the
+  // misconfigured variable); only real 401s get the friendly sign-in copy.
+  if (!auth.ok) {
+    if (auth.status === 503) return json(auth.status, auth.body);
+    return json(401, { error: "Sign in to view your workflow." });
+  }
+  if (!auth.user?.id) return json(401, { error: "Sign in to view your workflow." });
   const userId = auth.user.id;
 
   try {

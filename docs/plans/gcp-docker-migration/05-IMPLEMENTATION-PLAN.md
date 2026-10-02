@@ -1,5 +1,29 @@
 # 05 — Implementation Plan (v2, two phases)
 
+**Date:** 2026-09-28 · **Branch:** `docker-desktop-build` · **Status:** Phase 0 **IMPLEMENTED & VERIFIED locally (2026-09-28, `d14dff1d`)** — smoke 16/16, signon E2E green, staging→local migration rehearsed. Step 0 compat release **shipped to production** (PRs #241/#242). **Phase 1a EXECUTED & GREEN (2026-09-29)** — GCP staging live at https://stg.datiq.app (site id `datiq-vsp-fhs-staging`; renamed 2026-10-01), edge smoke 13/13, Cloud SQL migrated (127 RLS tables, 29 extractions), 13 scheduler jobs, all artifacts for prod-shadow + cutover committed; **operator checklist in `08-STAGING-DEPLOY-RUNBOOK.md`**. Phase 1b/2/3 (prod shadow, cutover) NOT executed — awaiting owner testing of local + staging.
+
+**Implementation deviations from this plan (all deliberate, see session handoff):**
+- `db`/`auth`/`rest` use upstream images directly (`supabase/postgres:17.6.1.165`, `supabase/auth`, `postgrest/postgrest`) instead of custom Dockerfiles — better provenance, nothing to maintain.
+- `jobs` and `scheduler` reuse the **api image** with different commands/entrypoints — exactly how Cloud Run will reuse the one Artifact Registry image.
+- Added a `db-passwords`/schema-init one-shot (supabase/postgres role-password + `auth.users.role` quirks — see session handoff root causes).
+- **Terraform is NOT implemented** — the plan's §0 `terraform/` tree was deferred; GCP resources are created by `bootstrap.sh` + `deploy-*.sh` (gcloud CLI), which honor the same `.env` contract. Doc 06's Terraform sections are marked NOT IMPLEMENTED. `TFSTATE_BUCKET` remains in the env files as a reserved name for the future tree.
+- `event-adapter.mjs` / `response-adapter.mjs` / `routes.manifest.json` (plan §0) were consolidated into a single `deployment/adapter/server.mjs` (d14dff1d).
+- `compose.shared-db.yaml` (plan §0) was replaced by the `DATA_MODE=shared-db` switch inside `compose.yaml`/`compose.local.yaml` (doc 06 env contract).
+- **Post-review remediation (2026-09-29)**: the deployment tree passed a full code review (5 passes + confidence scoring); fixes include the DB-restore silent-data-loss bug (FK-safe restore, staging re-restored complete), the CI workflow that could never run, smoke SIGPIPE false negative, `promote-prod.sh` digest promotion, `down.sh -v`, shared-db smoke, jobs-mode fail-closed token gate, and fully documented env files. Details in `08-STAGING-DEPLOY-RUNBOOK.md` §7.
+- **Ops hardening + incident fixes (2026-09-30, on `docker-desktop-build`)**:
+  - `update-env.sh` — env-ONLY redeploy path (rides the image that is already serving, via the new `DATIQ_IMG_TAG_OVERRIDE` channel in `lib-gcp.sh`; env files are sourced `set -a` and would clobber a plain `IMG_TAG` export). Built for, and first used by, the 2026-09-29 rotated-anon-key incident on stg.
+  - `crons.sh` — pause/resume/status over the 13 DatIQ Scheduler jobs (the doc 09 §1 freeze step, previously only embedded in `cutover-db.sh`); `resume` refuses while `OPS_JOBS_DISABLED=1`.
+  - `gcp/up.sh` + `gcp/down.sh` — whole-stack bring-up/teardown per env. Prod down carries six guardrails (typed env, `ALLOW_PROD_TEARDOWN=1`, `--yes`, typed project id, DB survives without `--delete-data`, 8s countdown).
+  - `check-supabase-pair.sh` (`npm run verify:supabase`) — offline JWT-ref match **plus a LIVE `/auth/v1/health` probe** (rotation is invisible offline — the incident's lesson), wired into `deploy-run.sh` and `bootstrap-secrets.sh` so a dead key fails the deploy instead of shipping 503s. `SKIP_SUPABASE_CHECK=1` bypasses with a printed SKIP.
+  - `deploy-scheduler.sh` — the UPDATE path now uses `--update-headers` (gcloud only accepts `--headers` on create); unit-tested live against the 13 staging jobs.
+  - `promote-prod.sh` — latent bug fixed: its digest exports were silently recomposed away by `load_gcp_env`; digests now ride `DATIQ_IMG_*_OVERRIDE`.
+  - `deploy-run.sh` — fails fast with the remedy (build / update-env / override) when nothing was built at the current git sha, instead of gcloud's late "Image not found".
+  - `build-images.sh` + `build-images.yaml` — `_UNITS` selector for incremental image builds (`build-images.sh staging api`).
+  - `.github/workflows/gcp-prod.yml` — dispatch-only prod deploy (GitHub Environment `gcp-prod` + required reviewers = the gate; `confirm_env: prod` typed confirmation; digest-promotion default; never on push; never touches the DB).
+  - Env examples gained §13 (runtime secret sources from `secrets.manifest`) after FIRECRAWL/OPENAI/JINA/SPIDER/RESEND/ADMIN_* /N8N_*/… keys were found missing from the shipped skeleton; live `.env.staging` populated and `.env.prod` created.
+  - New runbooks: `10-LOCAL-DEPLOY-RUNBOOK.md`, `11-PROD-DEPLOY-RUNBOOK.md` (pre/post validations + incremental matrix + GitHub-trigger direction).
+- Phase 0 checklist status: all boxes verified except the optional contract-test-runner profile (handler contract tests already cover the 75 functions; adapter is validated live by stack-smoke) and the full `local-db` qualification (deferred per doc 07).
+
 **Date:** 2026-09-28 · **Branch:** `docker-desktop-build` · **Status:** draft — **do not implement until owner confirms**
 
 Two phases only, per owner decision: **Phase 0 = local Docker Desktop run & test**, **Phase 1 = GCP deploy &
@@ -125,12 +149,14 @@ and scripts read `TF_VAR_*`/env vars from the loader.
 
 | Item | Choice (default names per doc 06) |
 |---|---|
-| Edge | **Firebase Hosting** site `datiq-vsp-fhs-stg` (redirects + rewrites to Cloud Run + headers) — default; Cloud Run gateway behind a Global LB is the documented alternative |
+| Edge | **Firebase Hosting** site `datiq-vsp-fhs-staging` (renamed 2026-10-01; redirects + rewrites to Cloud Run + headers) — default; Cloud Run gateway behind a Global LB is the documented alternative |
+
+**Static/dynamic split on GCP (the Firebase pattern):** the ENTIRE `dist/` payload — SPA shell, all 35 prerendered pages **including home** (`/` → `/home/index.html` forced rewrite), static `/vs/*`, `/faq`, `/dmca`, the help site, sitemap/robots/llms.txt, and the admin+tracker files — deploys to **Firebase Hosting as static files** (no container; the local `web`/`admin`/`trackers` images are the stand-ins proving the same payload). Only the **dynamic** surfaces get containers: `/api/**` → Cloud Run `datiq-vsp-run-api-stg` and `/run` jobs via Scheduler. **Phase-dependent rewrites:** while the stack talks to hosted Supabase (staging + shadow), the frontend calls the hosted project URL directly (from `runtime-config.js`) — so Firebase needs NO `/auth/v1` or `/rest/v1` rewrites; those are added only at the cutover, pointing at the Cloud Run GoTrue/PostgREST services. `gen-firebase-config.mjs` must therefore emit rewrites conditionally from `DATA_MODE`.
 | API | Cloud Run `datiq-vsp-run-api-stg` (api image, min-instances 0, concurrency 80, ingress: internal+hosting) |
 | Jobs | Cloud Run `datiq-vsp-run-jobs-stg` (**no public ingress**, Scheduler OIDC only) |
 | Auth/Rest | Cloud Run `datiq-vsp-run-auth-stg` (GoTrue), `datiq-vsp-run-rest-stg` (PostgREST) — proves the target model against staging data |
 | Admin/Trackers | Cloud Run `datiq-vsp-run-admin-stg` + `datiq-vsp-run-trackers-stg` (small nginx images behind hosting rewrites) — keeps the per-surface separation on GCP |
-| DB | Cloud SQL `datiq-vsp-sql-datiq-stg` (Postgres 16; loaded from **dev** Supabase dump to prove dump/restore mechanics early) |
+| DB | Cloud SQL `datiq-vsp-sql-datiq-stg` (Postgres 17 since 2026-10-02, was 16; loaded from **dev** Supabase dump to prove dump/restore mechanics early) |
 | Scheduler | 13 jobs `datiq-vsp-sch-<fn>-stg`, OIDC ID tokens |
 | Secrets | Secret Manager `datiq-vsp-sm-<key>-stg`, bootstrapped from `secrets.manifest` (names only) by `bootstrap-secrets.sh` |
 | Images | Artifact Registry `datiq-vsp-ar-images-stg`, built by Cloud Build triggers `datiq-vsp-cb-<unit>-stg` (substitutions from .env) |

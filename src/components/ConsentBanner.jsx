@@ -64,7 +64,9 @@ export default function ConsentBanner() {
   // of always padding the page (which would waste space for returning
   // visitors who already chose) or reflowing content the moment the app
   // boots (the whole reason this banner is `fixed` rather than in-flow).
-  const visible = !chosen && !autoHidden;
+  const path = typeof window !== "undefined" && window.location ? window.location.pathname || "" : "";
+  const isAdmin = path === "/admin" || path.indexOf("/admin/") === 0;
+  const visible = !chosen && !autoHidden && !isAdmin;
   useEffect(() => {
     document.body.classList.toggle("has-consent-banner", visible);
     return () => document.body.classList.remove("has-consent-banner");

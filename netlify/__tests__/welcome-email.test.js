@@ -72,11 +72,11 @@ describe("welcome-email (F49)", () => {
     expect(r.body).toMatch(/no supabase/);
   });
 
-  it("skips when Resend key is not set", async () => {
+  it("skips when no mail transport is configured", async () => {
     delete process.env.RESEND_API_KEY;
     const r = await handler(makeEvent());
     expect(r.statusCode).toBe(200);
-    expect(r.body).toMatch(/no Resend/);
+    expect(r.body).toMatch(/no mail transport/);
   });
 
   it("returns 200 immediately when welcomeEmailSent is already true", async () => {
@@ -194,7 +194,7 @@ describe("welcome-email (F49)", () => {
     global.fetch.mockResolvedValue({ ok: false, status: 500, text: async () => "Resend error" });
     const r = await handler(makeEvent());
     expect(r.statusCode).toBe(502);
-    expect(r.body).toMatch(/resend 500/);
+    expect(r.body).toMatch(/mail transport 500/);
   });
 
   it("returns 404 when the Supabase user is not found", async () => {

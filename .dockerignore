@@ -1,0 +1,22 @@
+# keep the build context lean for deployment image builds
+node_modules
+.git
+.github
+coverage
+test-results
+e2e-screenshots
+dist-extension
+docs
+n8n
+extensions
+tools
+sdlc
+e2e
+test
+src
+!src/lib
+deployment/generated
+supabase
+netlify/__tests__
+scripts/*.test.mjs
+*.dump

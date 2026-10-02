@@ -121,6 +121,43 @@ describe("seoMeta: /admin noindex signal", () => {
     expect(canon.getAttribute("href")).toBe("https://datiq.app/");
   });
 
+  it("setNoIndex sets bot-specific directives for search engines and AI/GEO/AEO crawlers", () => {
+    setNoIndex();
+    for (const bot of ["googlebot", "bingbot", "slurp", "duckduckbot", "baiduspider", "yandex"]) {
+      const el = document.head.querySelector(`meta[name="${bot}"]`);
+      expect(el, `expected meta[name="${bot}"]`).toBeTruthy();
+      expect(el.getAttribute("content")).toContain("noindex");
+    }
+    for (const bot of ["gptbot", "chatgpt-user", "claudebot", "anthropic-ai", "perplexitybot", "cohere-ai", "ccbot", "applebot", "meta-externalagent", "google-extended"]) {
+      const el = document.head.querySelector(`meta[name="${bot}"]`);
+      expect(el, `expected meta[name="${bot}"]`).toBeTruthy();
+      expect(el.getAttribute("content")).toBe("noindex, nofollow");
+    }
+  });
+
+  it("setNoIndex strips structured data (JSON-LD and breadcrumbs)", () => {
+    const s = document.createElement("script");
+    s.type = "application/ld+json";
+    s.textContent = JSON.stringify({ "@context": "https://schema.org", "@type": "SoftwareApplication" });
+    document.head.appendChild(s);
+
+    const b = document.createElement("script");
+    b.setAttribute("data-datiq-breadcrumb", "1");
+    document.head.appendChild(b);
+
+    setNoIndex();
+    expect(document.head.querySelector('script[type="application/ld+json"]')).toBeNull();
+    expect(document.head.querySelector('script[data-datiq-breadcrumb]')).toBeNull();
+  });
+
+  it("setPublicDefaultMeta removes bot-specific noindex tags", () => {
+    setNoIndex();
+    setPublicDefaultMeta();
+    for (const bot of ["googlebot", "bingbot", "gptbot", "claudebot", "perplexitybot"]) {
+      expect(document.head.querySelector(`meta[name="${bot}"]`)).toBeNull();
+    }
+  });
+
   it("setNoIndex is idempotent — calling twice leaves exactly one robots tag", () => {
     setNoIndex();
     setNoIndex();

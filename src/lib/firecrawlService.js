@@ -34,6 +34,10 @@ async function mockScrape(url, options = {}) {
     hostOf(url) === "lumio.io" ? LUMIO_EXTRACTION : mockExtractionForUrl(url);
   const result = {
     url,
+    // Marker for flows that must never treat demo data as a real result —
+    // template runs bill credits for what a scrape produced, and a paid run
+    // whose "facts" are this mock is worse than an honest error.
+    mock: true,
     page_title: base.page_title,
     headings: base.headings,
     links: base.links,

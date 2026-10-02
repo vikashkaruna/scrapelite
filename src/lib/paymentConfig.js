@@ -1,9 +1,14 @@
 // paymentConfig.js — Layer 1: payment provider configuration (Stripe + Razorpay/UPI).
-// Reads env vars; exposes routing logic. Never import this directly in UI — use
+// Reads env vars + runtime overrides; exposes routing logic. Never import this directly in UI — use
 // paymentService.js (Layer 2) instead.
 
+const runtime = (typeof window !== "undefined" && window.__DATIQ_RUNTIME__) || {};
+
 export const STRIPE_PUBLISHABLE_KEY     = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY     || "";
-export const RAZORPAY_KEY_ID            = import.meta.env.VITE_RAZORPAY_KEY_ID            || "";
+export const RAZORPAY_KEY_ID            =
+  String(runtime.razorpayKeyId || "").trim() ||
+  import.meta.env.VITE_RAZORPAY_KEY_ID ||
+  "";
 export const PAYMENT_PROVIDER_OVERRIDE  = import.meta.env.VITE_PAYMENT_PROVIDER           || "auto";
 
 export const hasStripe   = Boolean(STRIPE_PUBLISHABLE_KEY);

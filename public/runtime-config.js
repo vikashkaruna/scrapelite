@@ -7,18 +7,21 @@
 // endpoint by editing this one file and reloading (dev) or redeploying just this
 // file (prod) — no rebuild required.
 //
-// Precedence — ⚠️ NOT the same for every field, and the difference matters
-// when you are debugging why an updated value "isn't reflecting":
+// Precedence — ⚠️ THIS FILE WINS, FOR EVERY FIELD. It is the only input that
+// can differ per deployment: a VITE_* var is inlined into the artifact at build
+// time and is fixed for its whole life, whereas this file is read at load. A
+// per-deployment input has to outrank a per-build one, or the environment
+// routing below is decoration and editing supabaseUrl here silently does
+// nothing on any deployment where a VITE_SUPABASE_URL is also set.
 //
-//   webhookUrl / emailApiUrl / contactWebhookUrl
-//       → THIS FILE WINS. config.js `endpoint()` reads the runtime value
-//         first and only falls back to the VITE_* build-time value.
-//
-//   supabaseUrl / supabaseAnonKey
-//       → THE VITE_* ENV VAR WINS. config.js only falls back to the value
-//         here when the env var is absent or was redacted by the secret
-//         scanner. So editing supabaseUrl here will NOT override a
-//         VITE_SUPABASE_URL set in Netlify.
+//   ⚠️ supabaseUrl / supabaseAnonKey used to be the EXCEPTION: the baked VITE_*
+//   won, and this file was only consulted when the env var was missing or had
+//   been redacted. That made every host-routing rule below unreachable wherever
+//   a build also carried an env var — which is everywhere. The local Docker
+//   stack shipped a bundle pointed at the hosted DEV project while its
+//   api/jobs containers talked to the local database, so sign-up failed in a
+//   foreign project's broken SMTP and every authenticated call 401'd. The
+//   exception is gone; these two now behave like webhookUrl below.
 //
 // Leave a value as "" to fall back to the build-time .env value.
 //
@@ -123,16 +126,44 @@ var _isStaging =
   location.hostname === "staging--datiqapp.netlify.app" ||
   (_isGcpHost && !_isGcpProd);
 
+// ── The staging/branch Supabase pair ──────────────────────────────────────────
+// The committed values below are the DEFAULT (hosted dev project
+// aubwooslkkrprdxuiyvj), which is what every non-production host uses until
+// the staging DB cutover. At the cutover, cutover-staging-db.sh swaps these
+// TWO lines for the duration of ONE hosting deploy — supabaseUrl becomes
+// window.location.origin (same-origin /auth/v1 + /rest/v1 through the new
+// Firebase rewrites, doc 12-STAGING-DB-CUTOVER.md) and the anon key becomes
+// a key minted from the fresh JWT secret — then restores the committed form
+// immediately after. The committed form MUST stay the hosted dev pair:
+// runtimeConfigIdentity.test.js fails on a committed flip, because a
+// committed flip would break staging before the rewrites exist.
+var _stagingSupabaseUrl = "https://aubwooslkkrprdxuiyvj.supabase.co";
+var _stagingSupabaseAnonKey = "sb_publishable_NXSVmJA_neFWqLGEiCmkEg_j8I03VLG";
+
+// The production pair, in the SAME patchable shape. Committed values are the
+// hosted production project; the PROD DB cutover (cutover-db.sh, doc 09)
+// swaps them for the duration of ONE hosting deploy to window.location.origin
+// + the prod anon key (signed by the SAME prod JWT secret — no re-mint, no
+// session invalidation) and restores them after, exactly like staging. This
+// seam exists because the prod URL used to be a bare literal inside the
+// _isMain ternary, which left the prod cutover with nothing to patch.
+var _prodSupabaseUrl = "https://sikkfxysjhirmtwkumpt.supabase.co";
+var _prodSupabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpa2tmeHlzamhpcm10d2t1bXB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNzAwNzMsImV4cCI6MjA5OTk0NjA3M30.z5XQxnmOqgVpPhUPRkIl5QIz932IRRj-ihkTVMfuqwM";
+
 // Supabase project selection: ONLY main → production. Everything else
-// (staging, branch deploys, localhost) → the dev/staging project.
+// (staging, branch deploys, localhost) → the staging/branch pair vars
+// declared above — the hosted dev project by default, and repointed to the
+// self-hosted trio by the staging DB cutover (see those vars' comment).
 window.__DATIQ_RUNTIME__ = {
   webhookUrl: _isLocal
     ? "https://vkaruna.app.n8n.cloud/webhook-test/datiq"
     : "https://vkaruna.app.n8n.cloud/webhook/datiq",
   emailApiUrl: "",
+  // Razorpay publishable key override (runtime). Leave empty to use build-time VITE_RAZORPAY_KEY_ID.
+  razorpayKeyId: "",
   supabaseUrl: _isMain
-    ? "https://sikkfxysjhirmtwkumpt.supabase.co"
-    : "https://aubwooslkkrprdxuiyvj.supabase.co",
+    ? _prodSupabaseUrl
+    : _stagingSupabaseUrl,
   // Supabase anon key (publishable JWT). One per project. These are public
   // by Supabase's own design — they identify the project, RLS enforces
   // authorization. If you ever rotate either project, update the matching
@@ -152,8 +183,8 @@ window.__DATIQ_RUNTIME__ = {
   // `src/lib/runtimeConfigIdentity.test.js` verifies any value here belongs
   // to its paired project (publishable-format keys are accepted as-is).
   supabaseAnonKey: _isMain
-    ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpa2tmeHlzamhpcm10d2t1bXB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNzAwNzMsImV4cCI6MjA5OTk0NjA3M30.z5XQxnmOqgVpPhUPRkIl5QIz932IRRj-ihkTVMfuqwM"
-    : "sb_publishable_NXSVmJA_neFWqLGEiCmkEg_j8I03VLG",
+    ? _prodSupabaseAnonKey
+    : _stagingSupabaseAnonKey,
   // The OAuth / email-confirmation / password-reset return URL for this
   // branch. The Supabase client passes this as `redirectTo` so the OAuth
   // provider (Google, Microsoft, GitHub) and the Supabase email-link

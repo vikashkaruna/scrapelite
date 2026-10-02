@@ -1,0 +1,359 @@
+# 11 — Production Deploy Runbook (GCP prod twin → cutover → steady state)
+
+**Scope:** the `prod` environment (`deployment/env/.env.prod`, gitignored;
+`.env.prod.example` documents every key). Covers the production **shadow**
+(doc 05 §3b), the **cutover window** (doc 05 §3d — the DB/user/domain steps
+live in `09-CUTOVER-RUNBOOK.md`), and steady-state operations.
+**Status:** shadow artifacts ready; cutover NOT executed (see doc 09).
+
+---
+
+## 0. First production deploy — ordered procedure (added 2026-10-02)
+
+Prod is **greenfield in GCP** (no secrets, Cloud Run, Cloud SQL, registry, scheduler or hosting site exist yet). The first deploy builds the **shadow**: a full prod twin on `https://<FHS_SITE_ID>.web.app` that talks to the **hosted prod Supabase** and owns **no crons**, while `datiq.app` stays on Netlify. Nothing a user sees changes until the cutover (§5, doc 09).
+
+Every stage ends in a verification gate. Do not start a stage until the previous gate is green.
+
+### Stage A — Preflight (read-only, changes nothing)
+
+```bash
+deployment/scripts/gcp/prod-preflight.sh            # shadow readiness; must exit 0
+deployment/scripts/gcp/prod-preflight.sh --cutover  # run now to see what the CUTOVER still needs
+```
+Gate: `✓ prod preflight passed`. It checks `.env.prod` shape (`APP_CONTEXT=production`, `GIT_BRANCH=main`, `DATA_MODE=hosted-supabase`, `OPS_JOBS_DISABLED=1`, `PURGE_ENABLED=0`, shadow `APP_BASE_URL`), the hosted prod Supabase pair (service key role + project, live probe), a live (non-test) Razorpay build key, that the staging images to promote exist, config parity with Netlify, and that no prod Cloud Run exists yet. `⚠` lines are non-blocking.
+
+**Manual, before Stage B:** in the hosted prod Supabase dashboard → Authentication → URL Configuration, add `https://<FHS_SITE_ID>.web.app/**` to the redirect allow-list (otherwise OAuth/email links from the shadow bounce to the Site URL).
+
+### Stage B — Bring up the shadow
+
+```bash
+deployment/scripts/gcp/up.sh prod        # bootstrap -> secrets -> promote staging digests -> scheduler -> hosting -> smoke
+```
+What it does, in order (each is also runnable alone): `bootstrap.sh prod` (APIs, Artifact Registry, service accounts, Firebase site — **a Firebase site id is burned for ever once deleted**), `bootstrap-secrets.sh prod` (Secret Manager; refuses a `REPLACE_ME` value), `promote-prod.sh prod` (resolves the staging `STAGING_IMG_TAG` digests and deploys api, jobs, admin, trackers — no rebuild), `deploy-scheduler.sh prod` (13 jobs), `deploy-hosting.sh prod`, `smoke.sh prod`.
+
+Gate (all must hold):
+```bash
+deployment/scripts/gcp/smoke.sh prod                       # 13/13
+deployment/scripts/gcp/crons.sh prod status                # jobs exist; GCP owns none (OPS_JOBS_DISABLED=1)
+node deployment/scripts/gcp/env-parity.mjs prod            # exit 0
+curl -s https://<FHS_SITE_ID>.web.app/runtime-config.js | grep "_prodSupabaseUrl"   # still the HOSTED prod URL (correct pre-cutover)
+gcloud run services list --project <GCP_PROJECT_ID> --region <GCP_REGION> | grep -- -prod   # api jobs admin trackers
+```
+
+### Stage C — Shadow soak (days, not minutes)
+
+- Manual on the shadow URL: sign in (each provider), extract → save → enrich, a Razorpay **live** order only with a refundable amount, `/admin` PIN gate, `/admin/health`, `/admin/monitoring`.
+- Confirm the two cron owners never overlap: Netlify prod TOML schedules **active**, GCP jobs **no-op/paused**.
+- Compare behaviour against `datiq.app` for the same actions. Anything different is a config gap: re-run `env-parity.mjs prod`.
+
+### Stage D — Prepare the cutover (no user impact yet)
+
+```bash
+deployment/scripts/gcp/prod-preflight.sh --cutover   # must exit 0: JWT_SECRET (PROD Supabase's), OAuth ids+secrets, a SEPARATE prod GitHub app, SMTP, engagement secrets, GUEST_ID_SALT
+DRY_RUN=1 deployment/scripts/gcp/cutover-db.sh prod "<SOURCE_DB_URL>"   # prints every command/env edit, touches nothing
+```
+Then follow **doc 09**: §0/§0.1 preflight, §1/§1.1 the window (what each script step changes), §2/§2.1 validation, §2.2 first seven days, §4 external parties (webhooks, OAuth callbacks), §5 DNS flip (incl. `api.datiq.app`), §7 rollback.
+
+### Where the first deploy usually breaks
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `✗ no staging digest for ctr-api:<tag>` | `STAGING_IMG_TAG` wrong, or an older `promote-prod.sh` asked gcloud for `fullyQualifiedDigest` (empty); fixed to `image_summary.fully_qualified_digest` | `gcloud artifacts docker images list …-stg/datiq-<code>-ctr-api --include-tags` |
+| `✗ … is still a placeholder` from bootstrap-secrets | a `REPLACE_ME` left in `.env.prod` | fill it or empty it |
+| Shadow behaves like staging (demo admin etc.) | `APP_CONTEXT=branch-deploy` copied from staging | must be `production`, `GIT_BRANCH=main` (preflight checks) |
+| Shadow OAuth bounces to the Site URL | shadow host missing from the hosted Supabase redirect allow-list | Stage A manual step |
+| Prod hosting build refused | `VITE_RAZORPAY_KEY_ID` empty or a test key | live key id in `.env.prod` |
+
+## 1. Pre-validations (before ANY prod deploy)
+
+```bash
+npm run test:all                          # full local gate must be green
+npm run verify:supabase -- prod           # URL/key pair: offline ref match
+                                          # + LIVE probe against prod Supabase
+bash deployment/scripts/check-parameterisation.sh
+node deployment/scripts/gcp/env-parity.mjs prod   # config parity vs Netlify: must exit 0 (doc 06 §11)
+```
+
+Operator checks that cannot be scripted:
+
+- [ ] Staging is green (doc 08) and the soak checklist passed (doc 08 §3b).
+- [ ] `.env.prod` is filled — including the **prod** Supabase trio
+      (`SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_KEY`) and, for
+      cutover, `JWT_SECRET` = the **production** Supabase JWT secret (doc 09
+      preflight). A generated JWT_SECRET logs every user out.
+- [ ] `OPS_JOBS_DISABLED=1` still set (cron ownership stays with Netlify until
+      the flip — doc 09 §1).
+- [ ] Doc 09 §0.1 (configuration & mapping preflight) complete: secrets filled,
+      engagement secrets, kill-switch decision, live Razorpay key, Resend domains
+      verified. `deploy-hosting.sh prod` refuses a non-live Razorpay key.
+
+## 2. Bring prod up (the shadow)
+
+```bash
+bash deployment/scripts/gcp/up.sh prod               # bootstrap → secrets →
+                                                     # DIGEST-PROMOTE from
+                                                     # staging → hosting → smoke
+bash deployment/scripts/gcp/up.sh prod --build       # build fresh images in the
+                                                     # prod project instead
+bash deployment/scripts/gcp/up.sh prod --with-db     # ALSO create/restore prod
+                                                     # Cloud SQL — cutover-
+                                                     # adjacent; default OFF
+```
+
+The shadow runs against the PROD hosted Supabase with
+`OPS_JOBS_DISABLED=1` — it serves traffic at
+`https://<FHS_SITE_ID>.web.app` while datiq.app stays on Netlify.
+
+## 3. Incremental deploy variants (no full up)
+
+| Change | Command |
+|---|---|
+| Functions/API code | `bash deployment/scripts/gcp/build-images.sh prod api` then `bash deployment/scripts/gcp/deploy-run.sh prod api jobs` |
+| Static site only | `bash deployment/scripts/gcp/deploy-hosting.sh prod` |
+| Env vars / secrets only | edit `.env.prod` → `bash deployment/scripts/gcp/update-env.sh prod` (redeploys on the live image; `--with-secrets` re-pushes changed secrets) |
+| Admin or trackers image only | `build-images.sh prod admin` → `deploy-run.sh prod admin` |
+| Cron schedules | edit `netlify.toml` → `deploy-scheduler.sh prod` (respects the ownership rule) |
+
+Rules of thumb:
+
+- `update-env.sh` NEVER rebuilds — env-only changes ride the image that is
+  already serving. This is also the tool for the rotated-key class of incident
+  (2026-09-29 staging).
+- `deploy-run.sh` fails fast with the remedy if nothing was built at the
+  current `IMG_TAG`.
+- Deploying a specific earlier build: `DATIQ_IMG_TAG_OVERRIDE=<tag>
+  deploy-run.sh prod api`.
+
+## 4. Post-validations (after any prod deploy)
+
+```bash
+bash deployment/scripts/gcp/smoke.sh prod       # parity smoke; FAILS the deploy
+curl -s https://<FHS_SITE_ID>.web.app/api/healthz
+bash deployment/scripts/gcp/crons.sh prod status  # jobs exist, all ENABLED but
+                                                  # owned by Netlify (adapter
+                                                  # no-ops while OPS_JOBS_DISABLED=1)
+```
+
+Config checks (added 2026-10-02): `node deployment/scripts/gcp/env-parity.mjs prod`
+→ exit 0; while `DATA_MODE=hosted-supabase` the shadow's `runtime-config.js` keeps
+the committed hosted prod pair (correct — only the cutover flips it).
+
+Manual: sign-in round-trip on the shadow URL, extract → save → enrich, admin
+(`/admin` — noindex, no trackers), Razorpay test checkout, Resend test mail.
+
+## 5. Cutover (DB + users + domain)
+
+**Do not improvise this.** Follow `09-CUTOVER-RUNBOOK.md` end-to-end —
+it was updated 2026-10-01 with everything the staging execution taught
+(doc 12 §"Executed 2026-10-01"):
+
+```bash
+# rehearse first — prints every command/env edit, touches nothing:
+DRY_RUN=1 deployment/scripts/gcp/cutover-db.sh prod "<SOURCE_DB_URL>"
+# the window (add NETLIFY_CRONS_FROZEN=1 if the Netlify prod freeze is already
+# done; otherwise crons stay deferred and finish later with):
+deployment/scripts/gcp/cutover-db.sh prod "<SOURCE_DB_URL>"
+NETLIFY_CRONS_FROZEN=1 deployment/scripts/gcp/cutover-db.sh prod finish-crons
+```
+
+What the script now guarantees (all of it learned the hard way on staging):
+
+- **Preflight**: `JWT_SECRET` in `.env.prod` must be the prod Supabase secret —
+  HS256-verified against `SUPABASE_ANON_KEY` BEFORE the window. ⚠️ it is unset
+  today; set it first (doc 09 §0).
+- **Count-verified migration** before any repoint: any source↔target mismatch
+  or FK error ABORTS while hosted Supabase still serves.
+- **Env-only flips ride the serving images** (`update-env.sh`), so a moved HEAD
+  cannot strand the window on `image not found`.
+- **Browser repoint**: `runtime-config.js`'s prod pair (`_prodSupabaseUrl`/
+  `_prodSupabaseAnonKey`) is patched for ONE hosting deploy → same-origin
+  `/auth/v1` + `/rest/v1`; the EXIT trap restores the committed hosted pair.
+- **Cron handoff is GATED** on `NETLIFY_CRONS_FROZEN=1` — never two owners.
+- **Interrupted windows resume**: `CUTOVER_RESUME=1 … cutover-db.sh prod`.
+- Then the manual tail: payments test event → n8n round-trip → external-party
+  URLs → DNS flip (LAST) → keep Netlify up for the rollback window.
+
+**Not covered by the script, by design**: the DNS flip, external-party URL
+updates, and the payments/n8n verifications — all in doc 09 §2/§4/§5.
+
+### Studio (prod)
+
+Supabase Studio + pg-meta deploy WITH the cutover — `cutover-db.sh` step 3
+deploys the `studio` unit alongside auth/rest, and `promote-prod.sh` carries it
+in the shadow flow. Pre-cutover prod deploys skip it cleanly (no Cloud SQL yet;
+`deploy-run.sh` prints `SKIP studio`). It runs **private** (`--no-allow-
+unauthenticated`) against the prod Cloud SQL; operator access is
+`deployment/scripts/gcp/proxy-studio.sh prod` (localhost:54328) — see
+`deployment/README.md` "Operational notes" for why the standard
+`gcloud run services proxy` does not work here. Its DB credentials come from
+the `PG_META_DB_URL` / `POSTGRES_PASSWORD` secrets, refreshed by
+`migrate-db.sh` on every migration run (including the cutover's).
+
+## 6. Tear prod down (GUARDED — read before running)
+
+`down.sh prod` destroys live infrastructure. Guardrails, all required:
+
+1. `prod` must be typed explicitly (no default, no alias).
+2. `ALLOW_PROD_TEARDOWN=1` must be exported.
+3. `--yes` must be passed.
+4. The GCP **project id** must be typed to confirm.
+5. **Data-safe by default** (hardened 2026-10-01 after a live staging
+   round-trip): Cloud SQL, its **five DB-access secrets** (JWT_SECRET,
+   PGRST_DB_URI, GOTRUE_DB_DATABASE_URL, PG_META_DB_URL, POSTGRES_PASSWORD —
+   they hold the only copies of the generated role passwords) and the
+   **Firebase hosting site** all SURVIVE a plain teardown. The site survives
+   because a deleted site ID can never be recreated (firebase-tools: "cannot
+   be reactivated by you or anyone else") — it goes only with `--delete-data`.
+6. `--delete-data` destroys the database + its secrets + the site, and asks
+   you to type the Cloud SQL instance name **BEFORE the first deletion** — a
+   refused confirmation leaves the whole stack untouched.
+7. An 8-second abortable countdown runs first.
+8. `DRY_RUN=1` prints every action without executing any.
+
+```bash
+# plan only — prints what WOULD be deleted, changes nothing:
+bash deployment/scripts/gcp/down.sh prod
+
+# rehearse the full action list, touching nothing:
+DRY_RUN=1 bash deployment/scripts/gcp/down.sh prod --yes
+
+# execute WITHOUT touching the database, its secrets or the site:
+ALLOW_PROD_TEARDOWN=1 bash deployment/scripts/gcp/down.sh prod --yes
+
+# FULL teardown including Cloud SQL + site (owner present, rollback window closed):
+ALLOW_PROD_TEARDOWN=1 bash deployment/scripts/gcp/down.sh prod --yes --delete-data
+```
+
+**Rebuild path**: `up.sh prod` recreates what a plain teardown removed —
+bootstrap re-grants the Cloud SQL + operator-token bindings and re-creates the
+AR repo, `build-images.sh`/the mirror scripts refill the images (self-healed
+when missing), `bootstrap-secrets.sh` restores the rebuildable secrets from the
+operator env file, and hosting redeploys into the kept site. The database and
+its five secrets are simply reused; nothing truncates them.
+
+Expected uses before cutover: shadow iteration (the shadow is stateless —
+`up.sh prod` recreates it; keep `--delete-data` OFF while the DB matters).
+
+## 7. Deploying to prod from GitHub (the direction)
+
+`/.github/workflows/gcp-prod.yml` exists and is **dormant until you configure
+it** — it is `workflow_dispatch`-only (never on push):
+
+1. GitHub → Settings → Environments → create **`gcp-prod`**; add the prod
+   secrets (+ `STAGING_*` variables for digest promotion) and turn on
+   **Required reviewers** — the review IS the gate.
+2. Run workflow → type `confirm_env: prod` → choose
+   `promote_from_staging` (default true = digest promotion, no rebuild).
+3. The workflow runs the SAME scripts you run locally (`up.sh prod` +
+   `smoke.sh prod`) against the same env contract, with the prod DB
+   unreachable by design.
+
+Recommended rhythm: staging merge → `gcp-staging.yml` green → soak checklist →
+dispatch `gcp-prod`. For the cutover window itself, run the scripts locally
+(the window needs `SOURCE_DB_URL` pasted interactively anyway).
+
+### 7.1 Deploy model after the cutover (added 2026-10-02)
+
+- **GCP is the only target you deploy to.** `gcp-staging.yml` runs on push to
+  `staging` (paths: `deployment/**`, `netlify/functions/**`, `src/**`,
+  `public/**`, `netlify.toml`, `package-lock.json`; Cloud SQL step skipped by
+  default). `gcp-prod.yml` is `workflow_dispatch` only, behind the `gcp-prod`
+  environment's required reviewers — never on push. GitHub keeps deploying to
+  GCP; nothing about the cutover disables them.
+- **Netlify keeps deploying until you stop it.** Pushes to `staging`/`main` still
+  run `staging-gate.yml`/`phase-gate.yml` (Netlify staging smoke, manual
+  unlock + `approved`, Netlify prod deploy). Per doc 09 §6 leave Netlify
+  deployed and frozen (crons off) through the rollback window — it IS the
+  rollback. To stop it afterwards: disable `phase-gate.yml`'s deploy job (or the
+  workflow), stop Netlify builds for `main`, then follow doc 09 §8 decommission.
+  Do both only after the window; stopping Netlify early removes the rollback.
+- **Merge timing for the feature branch (`docker-desktop-build`).** Not needed to
+  run the cutover (scripts run locally; promoted images are already built).
+  Merge to `staging` after the cutover soak passes — it triggers `gcp-staging`
+  (redeploys GCP staging) and the Netlify staging gate — then to `main` via
+  phase-gate, which needs the Netlify unlock. The branch carries user-visible
+  doc/API-base changes (`/api/v1`), so it is not docs-only.
+
+### 7.2 Lessons recorded 2026-10-02 (so they are not re-learned)
+
+- **Secret source = `deployment/env/.env.<env>` only.** `bootstrap-secrets.sh`
+  used to prefer the legacy `scripts/env/<env>.env` and re-pushed stale staging
+  Razorpay test keys, so Secret Manager held a different Razorpay account than
+  the browser bundle (checkout: "Something went wrong"; Razorpay answers "The id
+  provided does not exist"). `scripts/env/*.env` are old Netlify-era files and are
+  now ignored (a warning prints if present; `RUNTIME_ENV_FILE=<path>` opts in).
+- **Changing a secret:** edit `.env.<env>` → `bootstrap-secrets.sh <env>` →
+  `update-env.sh <env>` (or `update-env.sh <env> --with-secrets`). A NEW secret
+  also needs a line in `deployment/gcp/secrets.manifest`; a NEW plain variable
+  needs adding to `deploy-run.sh` (`APP_ENV_VARS` / the `_opt` list). Nothing
+  edits the manifest for you. Run `node deployment/scripts/gcp/env-parity.mjs
+  <env>` after adding variables.
+- **A 404/missing-header smoke right after `firebase deploy` is propagation**,
+  not a bug: re-run `smoke.sh` after ~30s.
+- **Live Razorpay on the shadow host is not a valid test** (website allow-list):
+  use `rzp_test_` keys on the shadow; real UPI is validated on `datiq.app`.
+- **Cloud SQL is POSTGRES_17 on both envs (2026-10-02).** New instances default
+  to `CLOUD_SQL_DB_VERSION=POSTGRES_17` (`migrate-db.sh`). Machine size/edition/
+  HA/version are applied ONLY at creation: editing `CLOUD_SQL_TIER` in `.env.<env>`
+  later changes nothing (staging sat on `db-custom-1-3840` while the file said
+  `db-f1-micro`); `migrate-db.sh` now prints a drift warning with the fix.
+  In-place changes: `gcloud sql instances patch <inst> --database-version=
+  POSTGRES_17` (minutes of downtime) and, as a SEPARATE call, `--tier=<tier>` —
+  Cloud SQL refuses a version upgrade together with other changes. Take a backup
+  first (`gcloud sql backups create --instance=<inst>`). Never delete/recreate to
+  change either: a deleted instance name cannot be reused for about a week. Sizes:
+  staging `db-f1-micro`, prod `db-g1-small` (both shared-core, no Cloud SQL SLA —
+  move prod to a `db-custom-*` tier before real traffic).
+- **Fresh PG16+ instance: `postgres` cannot `SET ROLE` to roles it creates**
+  (ADMIN option only), so `alter … owner to supabase_auth_admin` failed as one
+  aborted block and left the auth schema + 27 tables owned by `postgres` (GoTrue
+  would die on "must be owner of table users"). `migrate-db.sh` now grants
+  membership first. First prod cutover also showed `DB_ADMIN_PASSWORD` is
+  generated by `migrate-db.sh` into the env FILE, so `cutover-db.sh` now re-reads
+  it. Symptom check: `select pg_get_userbyid(nspowner) from pg_namespace where
+  nspname='auth'` must return `supabase_auth_admin`.
+- **`crons.sh` is scoped to the env suffix** (`-stg`/`-prod`); before 2026-10-02
+  `crons.sh prod pause|resume` also touched staging's 13 jobs.
+- **Existing sessions do NOT survive the prod flip (found 2026-10-02).** Hosted
+  Supabase prod signs USER access tokens with **ES256** (asymmetric signing keys);
+  the self-hosted GoTrue validates **HS256** with `JWT_SECRET`. The anon/service
+  keys are legacy HS256, which is why the preflight signature check passes — but a
+  signed-in browser's token is rejected (`signing method ES256 is invalid`, GoTrue
+  403 `bad_jwt`, api 401 on every `getUser`). Expect every user to sign in again;
+  with no customers that is fine. Test sign-in from a signed-out browser/clear
+  site data.
+- **OAuth on the shadow host needs its own callback.** The self-hosted GoTrue's
+  callback is `${APP_BASE_URL}/auth/v1/callback`; while `APP_BASE_URL` is the
+  `*.web.app` shadow host, Google/Microsoft/GitHub must also have
+  `https://datiq-vsp-fhs-prod.web.app/auth/v1/callback` registered (or test after
+  the DNS flip with `datiq.app`). Registering only `datiq.app` fails the shadow
+  with redirect_uri_mismatch.
+- **Stored AI config overrides `.env`.** The `app_config` row `ai` (operator config,
+  copied from hosted prod) beat `AI_PROVIDER_ORDER`: order anthropic → gemini →
+  openai, with Anthropic out of credit and `gemini-3.8-flash` hanging 20s+, so the
+  30s budget was gone before OpenAI ran (`/api/ai` 504; Extract/Enrich failed).
+  Fixed on the Cloud SQL copy (OpenAI first, `gpt-6-luna`, Anthropic+Gemini
+  disabled; old value kept in the session scratchpad) — SUPERSEDED same day by the
+  owner's choice: all providers stay ENABLED, call order reversed (openai → gemini →
+  anthropic; per-area lists reversed), and the **enrichment** area runs gemini →
+  openai → anthropic. Gemini models: `gemini-3.8-flash`/`3.7` hang or 503 ("high
+  demand"), `3.5-flash` 503s on large prompts and `pro-latest` 429s, so the stored
+  `models.gemini` and `modelsFast.gemini` are `gemini-3.5-flash-lite` (the
+  registry's own classification default). OpenAI `gpt-6-luna` is too slow for
+  structured extraction on big pages inside the budget (Hosting cuts Cloud Run
+  requests at 60s), hence Gemini first for enrichment. Verified: stripe.com/pricing
+  enrichment ok in 9s. **A cutover re-run reloads
+  the hosted row** — fix `/admin/ai` on the SOURCE too, or re-apply after any
+  re-run. Verify with `POST /api/ai` → `_provider`.
+- **Never put the DB password in a command line** (shell history, transcripts):
+  `read -rs DB_URL </dev/tty` then pass `"$DB_URL"`. Rotate if it was exposed.
+
+## 8. Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `deploy-run.sh`: "image not found … pick one" | nothing built at this git sha — `build-images.sh prod`, `update-env.sh prod`, or `DATIQ_IMG_TAG_OVERRIDE` |
+| `update-env.sh` refuses ("no tag resolves to the serving digest") | the running revision is digest-only and untagged — deploy once via `build-images.sh prod` |
+| Smoke fails on `/pricing` 301 | stale generated firebase.json — re-run `deploy-hosting.sh prod` |
+| Scheduler jobs fire but nothing happens | expected pre-cutover: adapter no-ops while `OPS_JOBS_DISABLED=1` |
+| GoTrue 500 | check `datiq-vsp-sm-gotrue-db-database-url-prod` (unix-socket form) + `--add-cloudsql-instances` on the service |

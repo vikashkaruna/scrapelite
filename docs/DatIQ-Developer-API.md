@@ -91,7 +91,7 @@ POST /v1/extractions
 | `render_js` | boolean | no | Render JavaScript before reading the page. Default `false`. |
 
 ```bash
-curl https://api.datiq.app/v1/extractions \
+curl https://datiq.app/api/v1/extractions \
   -H "Authorization: Bearer $DATIQ_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -167,7 +167,7 @@ POST /v1/batches
 | `prompt` | string | when `intent=custom` | Plain-English field description. |
 
 ```bash
-curl https://api.datiq.app/v1/batches \
+curl https://datiq.app/api/v1/batches \
   -H "Authorization: Bearer $DATIQ_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -592,7 +592,7 @@ Errors use standard HTTP status codes and a consistent JSON envelope:
 ## Example: end-to-end (Node.js)
 
 ```js
-const API = "https://api.datiq.app/v1";
+const API = "https://datiq.app/api/v1";
 const key = process.env.DATIQ_API_KEY;
 const headers = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
 

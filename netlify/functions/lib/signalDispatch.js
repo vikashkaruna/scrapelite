@@ -54,6 +54,7 @@ import { filterRulesByScope, sourcesForRules } from "./ruleSources.js";
 import { recordExecution, validateActionConfig, serviceDb } from "./ruleStore.js";
 import { isPublicHttpUrlAsync } from "./publicUrl.js";
 import { getConnection } from "./integrationConnectionStore.js";
+import { mailReady, sendMail } from "./mailTransport.js";
 import { EXECUTION_STATUS, MAX_ATTEMPTS } from "../../../src/lib/rules/retryModel.js";
 
 /**
@@ -132,7 +133,6 @@ export const MAX_ACTIONS_PER_EVENT = 10;
 const ACTION_TIMEOUT_MS = 6000;
 
 const SLACK_WEBHOOK_HOST = "hooks.slack.com";
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const HUBSPOT_COMPANIES = "https://api.hubapi.com/crm/v3/objects/companies";
 
 async function fetchWithTimeout(url, init = {}, timeoutMs = ACTION_TIMEOUT_MS) {
@@ -288,25 +288,19 @@ export async function performAction(rule, event, env = process.env) {
     }
 
     if (dest.type === ACTION_TYPES.EMAIL) {
-      const apiKey = env.RESEND_API_KEY;
       // An unconfigured mailer is an operator problem, not a rule failure. It is
       // recorded as `skipped` so it never looks like the user's rule is broken.
-      if (!apiKey) return { ok: false, status: "skipped", error: "RESEND_API_KEY is not set", response: null };
+      if (!mailReady(env)) return { ok: false, status: "skipped", error: "no mail transport configured", response: null };
       const from = env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>";
-      const res = await fetchWithTimeout(RESEND_ENDPOINT, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from,
-          to: [dest.to],
-          subject: title,
-          text: `${title}\n\n${JSON.stringify(payload, null, 2)}\n\n— DatIQ`,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      return res.ok
-        ? { ok: true, status: "success", response: { id: body?.id || null } }
-        : { ok: false, status: "failed", httpStatus: res.status, error: `resend responded ${res.status}`, response: { code: res.status } };
+      const r = await sendMail({
+        from,
+        to: [dest.to],
+        subject: title,
+        text: `${title}\n\n${JSON.stringify(payload, null, 2)}\n\n— DatIQ`,
+      }, env);
+      return r.ok
+        ? { ok: true, status: "success", response: { id: r.id || null } }
+        : { ok: false, status: "failed", httpStatus: r.status, error: `resend responded ${r.status}`, response: { code: r.status } };
     }
 
     if (dest.type === ACTION_TYPES.HUBSPOT) {

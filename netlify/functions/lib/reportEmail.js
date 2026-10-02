@@ -15,8 +15,8 @@ import { extractionsToCsv, extractionsToMarkdown, extractionsToJson } from "../.
 import { auditPdfBuffer, auditPdfFilename } from "../../../src/lib/discoverability/auditPdf.js";
 import { buildMarkdownReport, brandCsv, toJsonPayload, bundleToCsv } from "../../../src/lib/discoverability/auditReport.js";
 import { buildBrandingContext, brandingEmailHtml, brandingEmailText } from "../../../src/lib/exportBranding.js";
+import { mailReady, sendMail } from "./mailTransport.js";
 
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const REPLY_TO = "hello@datiq.app";
 
 function b64(str) {
@@ -88,9 +88,8 @@ function buildAuditAttachment(format, audit, opts) {
 export async function sendReportEmail({
   kind, recipient, format = "pdf", items = null, audit = null, generatedAt = null, brandKit = null, ctaUrl = null,
 } = {}) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key) {
-    console.warn("[reportEmail] skipped — no RESEND_API_KEY");
+  if (!mailReady()) {
+    console.warn("[reportEmail] skipped — no mail transport configured");
     return { sent: false, reason: "no_key" };
   }
   if (!recipient) {
@@ -127,23 +126,19 @@ export async function sendReportEmail({
 
     const ctx = buildBrandingContext({ kind: brandingKind, sourceUrls, generatedAt: genAt, brandKit });
 
-    const res = await fetch(RESEND_ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to: [recipient],
-        reply_to: REPLY_TO,
-        subject: `${heading} — ${ctx.brand}`,
-        html: brandingEmailHtml(ctx, { heading, bodyHtml, attachmentLabel: attachment.filename, ctaUrl }),
-        text: brandingEmailText(ctx, { heading, bodyText, attachmentLabel: attachment.filename }),
-        attachments: [attachment],
-        tags: [{ name: "stream", value: "reports" }],
-      }),
+    const r = await sendMail({
+      from,
+      to: [recipient],
+      reply_to: REPLY_TO,
+      subject: `${heading} — ${ctx.brand}`,
+      html: brandingEmailHtml(ctx, { heading, bodyHtml, attachmentLabel: attachment.filename, ctaUrl }),
+      text: brandingEmailText(ctx, { heading, bodyText, attachmentLabel: attachment.filename }),
+      attachments: [attachment],
+      tags: [{ name: "stream", value: "reports" }],
     });
 
-    if (!res.ok) {
-      console.error(`[reportEmail] Resend HTTP ${res.status} for kind=${kind}`);
+    if (!r.ok) {
+      console.error(`[reportEmail] Resend HTTP ${r.status} for kind=${kind}`);
       return { sent: false, reason: "resend_error" };
     }
     return { sent: true };

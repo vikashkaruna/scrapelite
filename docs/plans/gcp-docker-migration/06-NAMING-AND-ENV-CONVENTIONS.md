@@ -70,7 +70,7 @@
 | `ARTIFACTS_BUCKET` | `datiq-vsp-gcs-artifacts-stg` | `datiq-vsp-gcs-artifacts-prod` |
 | `CB_TRIGGER_*` (4) | `datiq-vsp-cb-api-stg` … | `-prod` |
 | `FB_WEB_APP_DISPLAY` | `DatIQ-vsp-fb-staging-web` | `DatIQ-vsp-fb-production-web` |
-| `FHS_SITE_ID` | `datiq-vsp-fhs-stg` | `datiq-vsp-fhs-prod` |
+| `FHS_SITE_ID` | `datiq-vsp-fhs-staging` (renamed 2026-10-01 — see note below) | `datiq-vsp-fhs-prod` |
 | `VPC_CONNECTOR` (optional) | `datiq-vsp-vpc-connector-stg` | `-prod` |
 
 Notes: (a) the `web` static surface deploys to Firebase Hosting directly (no Cloud Run web service); the
@@ -101,7 +101,7 @@ contract; only the Secret Manager resource names follow the convention.
 | Env | Env file | Purpose | Edge | Data mode | Public URL (var) |
 |---|---|---|---|---|---|
 | local | `.env.local` | Phase 0 — full stack in Docker Desktop | gateway container on `:8080` | `local-db` (db+auth+rest containers) or `shared-db` (dev Supabase) | `APP_BASE_URL=http://localhost:8080` |
-| staging | `.env.staging` | GCP staging — proves the target model, runs CI E2E | Firebase Hosting site `-stg` + Cloud Run `-stg` services | dev hosted Supabase → later staging Cloud SQL | `APP_BASE_URL=https://datiq-vsp-fhs-stg.web.app` |
+| staging | `.env.staging` | GCP staging — proves the target model, runs CI E2E | Firebase Hosting site `-stg`/`-staging` + Cloud Run `-stg` services | dev hosted Supabase → later staging Cloud SQL | `APP_BASE_URL=https://datiq-vsp-fhs-staging.web.app` |
 | prod | `.env.prod` | GCP production twin ("shadow") → cutover target | Firebase Hosting site `-prod` + Cloud Run `-prod` | prod hosted Supabase (shadow) → prod Cloud SQL (cutover) | `SHADOW_BASE_URL=…web.app`; `APP_BASE_URL=https://datiq.app` post-cutover |
 
 ## 5. Env-file system and loader mechanics
@@ -125,7 +125,10 @@ load_env() {                       # usage: load_env staging
   set -a; source "$file"; set +a   # export everything defined
   require_vars "$REQUIRED_VARS"    # fail fast with the missing-key list
   derive_defaults                  # compose unset name vars via ${VAR:-…} chains
-  export_tf_vars                   # GCP_PROJECT_ID→TF_VAR_gcp_project_id, SQL_*→TF_VAR_*, …
+  export_tf_vars                    # ⚠ NOT IMPLEMENTED — Terraform is deferred (see plan doc 05 deviations):
+                                  #   GCP resources are created by bootstrap.sh + deploy-*.sh via gcloud.
+                                  #   All Terraform examples in this doc are the CONTRACT for a future
+                                  #   terraform/ tree; TFSTATE_BUCKET is reserved for it. No .tf files exist.                   # GCP_PROJECT_ID→TF_VAR_gcp_project_id, SQL_*→TF_VAR_*, …
 }
 ```
 
@@ -178,11 +181,15 @@ SA_JOBS=datiq-vsp-sa-jobs-stg
 SA_SCHEDULER=datiq-vsp-sa-scheduler-stg
 TFSTATE_BUCKET=datiq-vsp-gcs-tfstate      # globally unique; override if taken
 ARTIFACTS_BUCKET=datiq-vsp-gcs-artifacts-stg
-FHS_SITE_ID=datiq-vsp-fhs-stg             # globally unique; override if taken
+FHS_SITE_ID=datiq-vsp-fhs-staging         # globally unique; override if taken
+                                          # ⚠️ renamed from datiq-vsp-fhs-stg 2026-10-01:
+                                          # Firebase site ids can NEVER be recreated once
+                                          # deleted (down.sh keeps the site by default
+                                          # for exactly this reason)
 FB_WEB_APP_DISPLAY=DatIQ-vsp-fb-staging-web
 
 # ── 3. URLs ──────────────────────────────────────────────────────────────────
-APP_BASE_URL=https://datiq-vsp-fhs-stg.web.app   # custom domain goes here post-cutover
+APP_BASE_URL=https://datiq-vsp-fhs-staging.web.app   # custom domain goes here post-cutover
 API_BASE_URL=${APP_BASE_URL}                     # same-origin via hosting rewrites
 SHADOW_BASE_URL=                                 # set once the prod twin exists
 
@@ -251,7 +258,7 @@ SMOKE_TARGET=${APP_BASE_URL}
 
 ## 9. Parameterisation acceptance criteria (enforced, not aspirational)
 
-- [ ] `scripts/check-parameterisation.sh` greps `deployment/{scripts,compose,gcp,terraform,docker}` for
+- [ ] `scripts/check-parameterisation.sh` greps `deployment/{scripts,compose,gcp,docker}   # (terraform/ does not exist yet — added back when it lands)` for
       forbidden literals (`vikash-saas-project`, `asia-south1`, `datiq.app`, resource names, emails, keys) —
       hits are allowed **only** in `env/*.example`, docs and test fixtures. Wired into CI and the pre-push gate.
 - [ ] Loader fails fast listing every missing required variable; unset optional variables derive the
@@ -270,3 +277,71 @@ SMOKE_TARGET=${APP_BASE_URL}
   `bootstrap-secrets.sh`, `gen-tfvars.sh`, `gen-firebase-config.mjs`, grep gate wired into `gcp-staging.yml`.
 - **Cutover:** only `.env.prod` values change (Supabase→Cloud SQL block, JWT secret, base URLs) — scripts
   untouched.
+
+## 11. Configuration & mapping report card (audited 2026-10-02)
+
+What every kind of configuration used to be on **Netlify + hosted Supabase**, where it lives on **GCP**, and what changed. Audited three independent ways (code → deploy, live Netlify site → deploy, `.env.<env>` completeness) by the repeatable script `deployment/scripts/gcp/env-parity.mjs` (§11.6).
+
+### 11.1 Where each class of configuration went
+
+| Class | Was (Netlify / hosted Supabase) | Now (GCP) | Mechanism | Status |
+|---|---|---|---|---|
+| Server secrets (service key, AI/scrape keys, Razorpay/Stripe, Resend, n8n, engagement, PageSpeed, Perplexity, admin PIN) | Netlify env (Functions scope) | Secret Manager `datiq-vsp-sm-<name>-<suffix>`, mounted on **api + jobs** | `deployment/gcp/secrets.manifest` → `bootstrap-secrets.sh` (values from `.env.<env>`) | **Changed:** +`ENGAGEMENT_RESEND_API_KEY`, `ENGAGEMENT_UNSUBSCRIBE_SECRET`, `PAGESPEED_API_KEY`, `PERPLEXITY_API_KEY` (were missing) |
+| Non-secret runtime env (budgets, mail senders, kill switches, purge interlocks, invoice supplier, engagement settings) | Netlify env | Cloud Run env-vars on **api + jobs** | `deploy-run.sh` `APP_ENV_VARS` + an optional block forwarded only when non-empty | **Changed:** ~30 variables added (§11.2) |
+| Platform emulation (`URL`, `SITE_URL`, `DEPLOY_URL`, `CONTEXT`, `BRANCH`) | Injected by Netlify | Set from `APP_BASE_URL`, `APP_CONTEXT`, `GIT_BRANCH` | `deploy-run.sh` | Unchanged mapping |
+| Browser Supabase pair (URL + anon key) | `public/runtime-config.js` hosted pair | `dist/runtime-config.js` patched to **same-origin** + `.env` anon key when `DATA_MODE=cloud-sql` | `deploy-hosting.sh` `patch_dist_runtime_config` | **Changed** — see §11.3 |
+| Build-time `VITE_*` | Netlify build env | `.env.<env>`, exported for `npm run build` | `deploy-hosting.sh` | **Changed:** supabase pair pinned, prod refuses an empty or test (`*_test_*`) Razorpay key, missing keys added |
+| Auth settings (providers, SMTP, site URL, redirect allow-list, JWT expiry, autoconfirm) | Supabase dashboard | `GOTRUE_*` env on the **auth** Cloud Run service | `deploy-run.sh … auth` | **Changed:** see §11.5 |
+| OAuth client secrets | Supabase dashboard | Secret Manager `…-<google\|azure\|github>-oauth-client-secret-…` (auth service only) | `bootstrap-secrets.sh` | New |
+| SMTP password | Supabase-managed mail | Secret Manager `…-gotrue-smtp-pass-…` (auth only) | `bootstrap-secrets.sh` (`GOTRUE_SMTP_PASS`, else `RESEND_API_KEY`) | New |
+| Database | Hosted Postgres | Cloud SQL `datiq-vsp-sql-datiq-<env>` | `cutover-*db.sh` | Staging done; prod pending |
+| PostgREST / REST API | Hosted PostgREST behind Kong | PostgREST Cloud Run, proxied at `/rest/v1` | `deploy-run.sh … rest` | Staging done |
+| Crons | `netlify.toml` schedules | Cloud Scheduler (13 jobs, OIDC) | `crons.sh` | Staging **paused** until `finish-crons`; prod pending |
+| Webhooks in (Razorpay, Stripe, Resend/engagement, n8n) | Pointed at Netlify host | Must point at the GCP host | Provider consoles (manual) | Prod pending (doc 09 §4) |
+| Domains | `datiq.app`→Netlify; `api.datiq.app`→Supabase custom auth domain | Firebase Hosting custom domains | Firebase console + registrar | Staging `stg.datiq.app` done; prod pending |
+
+### 11.2 Variables that were missing and are now carried
+
+All exist on the Netlify site today (identical in the `production` and `staging` contexts) and were **not** reaching Cloud Run before 2026-10-02:
+
+| Variable(s) | Netlify value | Why it mattered |
+|---|---|---|
+| `DISABLE_AUDIT_AI`, `DISABLE_AI_CITATION_SAMPLING`, `DISABLE_PAGESPEED` | all `1` | **Behaviour change risk:** these are kill switches that are ON in production. Omitted on GCP they would silently turn three paid features on. Now carried as `1`. |
+| `PURGE_DRY_RUN`, `PURGE_MAX_USERS_PER_RUN` | `1`, `1` | Safety interlocks for the only destructive job. `PURGE_ENABLED` stays `0`; if ever armed, dry-run and a cap of 1 apply. |
+| `SUPPLIER_LEGAL_NAME`, `SUPPLIER_GSTIN`, `SUPPLIER_ADDRESS`, `SUPPLIER_STATE` (+ optional `…_TRADE_NAME`, `…_COUNTRY`, `…_EMAIL`, `…_PAN`) | name set; GSTIN/address/state blank | Decides invoice type: GSTIN set → "Tax Invoice"; unset → "Payment Receipt". Legal name was missing from every GCP invoice. |
+| `AUDIT_BUDGET_MS` | `20000` | Discoverability audits ran with the 8 s default (thinner evidence) on GCP. |
+| `ALERT_/BILLING_/CONTACT_/EXPORT_/FORM_EMAIL_FROM` | the code defaults | Equal to the in-code defaults today, but a future sender change would have been ignored on GCP. |
+| `PERPLEXITY_MODEL`, secrets `PERPLEXITY_API_KEY`, `PAGESPEED_API_KEY` | `sonar`, masked | Citation sampling and Core Web Vitals had no key on GCP. (Both features are switched off by the kill switches above; the keys are staged for when they are re-enabled.) |
+| `OPS_ALERT_EMAIL`, `PERMITTED_HOSTS`, `*_BUDGET_MS` tuning | optional | Forwarded when set. |
+| `ENGAGEMENT_*` (public URL, sender domains, allow-list, mock-send, budgets; secrets API key, webhook secret, unsubscribe secret) | set on Netlify | Engagement is **enabled** on GCP staging and prod. Webhook secret and API key still need values (§11.5). |
+| `VITE_PAYMENT_PROVIDER`, `VITE_LINK_ABOUT/BLOG/PRICING`, `VITE_RAZORPAY_PLAN_*` | `auto`, `https://datiq.app/…`, plan ids | Build-time; previously fell back to a developer's local `.env`. |
+
+### 11.3 Two mapping fixes worth understanding
+
+1. **The browser must call the self-hosted auth, not hosted Supabase.** `public/runtime-config.js` is committed with the hosted pair (a test forbids committing the flip). The cutover scripts patched it for *one* deploy, so every later `deploy-hosting.sh` put the browser back on hosted Supabase — OAuth then used the hosted project's callback and Google/Microsoft/GitHub answered `redirect_uri_mismatch`. `deploy-hosting.sh` now patches `dist/runtime-config.js` (never the committed file) whenever `DATA_MODE=cloud-sql`: staging → `_stagingSupabase*`, prod → `_prodSupabase*`, URL = `window.location.origin`, key = `SUPABASE_ANON_KEY`, signature-checked against `JWT_SECRET`. Prod stays `hosted-supabase` (untouched) until `cutover-db.sh` flips `DATA_MODE`, which it does *before* it calls `deploy-hosting.sh`.
+2. **Build-time fallbacks.** `VITE_SUPABASE_URL/ANON_KEY` are now pinned from `SUPABASE_URL/ANON_KEY`, and a prod build is refused if `VITE_RAZORPAY_KEY_ID` is empty or a test key.
+
+### 11.4 Deliberately NOT carried (retired / Netlify-only)
+
+`AWS_LAMBDA_JS_RUNTIME`, `NODE_VERSION`, `SECRETS_SCAN_OMIT_KEYS`, `SECRETS_SCAN_OMIT_PATHS` (Netlify build/runtime plumbing) · `SCHEDULE_ALERT_WEBHOOK` (retired by the v2 workflow pipeline) · `SCRAPE_PROVIDER_ORDER1` (typo duplicate, read by nothing) · `SUPABASE_PROJECT_NAME` (label) · **`SUPABASE_ACCESS_TOKEN`** (Management API token; no function reads it — it should also be removed from the Netlify site) · `DEPLOY_PRIME_URL`. Each is listed with its reason in `env-parity.mjs`.
+
+### 11.5 Authentication & email — what changed and what is still open
+
+| Item | State |
+|---|---|
+| OAuth callback | Always `${APP_BASE_URL}/auth/v1/callback` (staging `https://stg.datiq.app/…`; prod = shadow host until the flip, then `https://datiq.app/…`). One GitHub OAuth app per environment (GitHub allows one callback). |
+| OAuth client secrets | Must be the secret **value**, not the secret ID (Azure rejects the ID with `AADSTS7000215`). |
+| SMTP | Resend SMTP (`smtp.resend.com:465`, user `resend`, sender `hello@datiq.app`). `deploy-run.sh` refuses `GOTRUE_MAILER_AUTOCONFIRM≠true` without SMTP. Hosted dashboard email templates were **not** migrated (GoTrue defaults apply). |
+| Engagement webhook | Resend `whsec_…` is per endpoint host: staging needs a **new** Resend webhook for `https://stg.datiq.app/api/engagement-webhook?provider=resend`; prod keeps the existing endpoint (same URL after the flip). |
+| Engagement unsubscribe | Signed with `ENGAGEMENT_UNSUBSCRIBE_SECRET`; prod must reuse Netlify's value or links already sent stop verifying. |
+| `api.datiq.app` | Today a CNAME to the prod Supabase project (custom auth domain). After the flip it must be a Firebase Hosting custom domain answering `/auth/v1/**` + `/rest/v1/**` (doc 09 §5). The public REST API was always `https://datiq.app/api/v1` — the docs, operator playbook and browser extension said `api.datiq.app/v1`, which 404s; corrected 2026-10-02. |
+
+**Owner to-do before enabling the related features:** engagement webhook secret + `ENGAGEMENT_RESEND_API_KEY` (staging and prod) · prod `ENGAGEMENT_UNSUBSCRIBE_SECRET` (= Netlify's) · `PAGESPEED_API_KEY`, `PERPLEXITY_API_KEY` · `GUEST_ID_SALT` (empty in `.env.prod`) · `SUPPLIER_GSTIN/ADDRESS/STATE` once registered · replace the Azure secret ID with its value · GitHub client secret for staging.
+
+### 11.6 Re-run the audit
+
+```bash
+node deployment/scripts/gcp/env-parity.mjs prod      # or: staging
+# 1. code reads  vs what GCP supplies      2. live Netlify site vs GCP (+ VITE_*)      3. blank-but-carried
+# exit 1 = a parity gap; run it before AND after the prod cutover
+```

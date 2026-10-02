@@ -30,6 +30,20 @@ describe("record — what is charged and what is not", () => {
     expect(meter.pending(ctx)).toBe(0);
   });
 
+  // Template runs are ledgered ONCE — by their own finish events in
+  // templates.js — so a template-scoped request must silence the choke point
+  // entirely. Before this existed, the same page fetch and the same synthesis
+  // were billed twice: once here and once by the run's events.
+  it("a suppressed context (template_run scope) buffers nothing and flushes nothing", async () => {
+    const ctx = meter.meterContext({ caller: "extract", userId: "u1", suppressed: true });
+    meter.record(ctx, { kind: "page_fetch", quantity: 4 });
+    meter.record(ctx, { kind: "ai_deep" });
+    expect(meter.pending(ctx)).toBe(0);
+    const res = await meter.flush(ctx);
+    expect(res).toMatchObject({ ok: true, charged: 0, rows: 0, suppressed: true });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("does not warn about attribution for a failed call", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     meter.record(null, { kind: "ai_fast", failed: true });

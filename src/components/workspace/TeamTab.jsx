@@ -42,6 +42,12 @@ export default function TeamTab() {
 
   const [workspaces, setWorkspaces] = useState([]);
   const [canCreate, setCanCreate] = useState({ allowed: false, remaining: 0 });
+  // True when the workspaces list failed to load (API down, 503 deployment
+  // fault, network). `canCreate` defaults to {allowed:false} in that case, but
+  // that default must never be shown as "Your plan doesn't include a
+  // workspace" — for a plan that DOES include one (e.g. Agency), that message
+  // is a lie caused by the outage, not by the plan (2026-09-29 stg incident).
+  const [loadFailed, setLoadFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState({ myRole: null, members: [], invites: [] });
   const [detailLoading, setDetailLoading] = useState(false);
@@ -64,6 +70,7 @@ export default function TeamTab() {
     const r = await fetchMyWorkspaces();
     setWorkspaces(r.workspaces);
     setCanCreate(r.canCreate);
+    setLoadFailed(r.degraded === true);
     setLoading(false);
     if (r.degraded && r.error) showToast(r.error, "alert-triangle");
   }, [showToast]);
@@ -263,7 +270,9 @@ export default function TeamTab() {
         </p>
       )}
 
-      {workspaces.length === 0 && !canCreate.allowed && (
+      {/* Only claim the PLAN is the blocker when the list actually loaded —
+          after a failed load the toast above already carries the real error. */}
+      {workspaces.length === 0 && !loadFailed && !canCreate.allowed && (
         <p className="ws-team-error">Your plan doesn't include a workspace to create yet.</p>
       )}
 

@@ -7,8 +7,8 @@ describe("Templates Customization & Dynamic Credits", () => {
 
   it("calculates base credits accurately without customization", () => {
     const est = estimateCredits(accountBrief, { domain: "stripe.com" });
-    // base: 1, 3 pages * 1 = 3, 2 ai_calls * 2 = 4 -> total: 8
-    expect(est.credits).toBe(8);
+    // base: 1, 3 pages * 1 = 3, AI extraction 1 x 5 + synthesis 2 x 5 = 15 -> total: 19
+    expect(est.credits).toBe(19);
   });
 
   it("dynamically increases credits when extra subpages are added", () => {
@@ -23,15 +23,16 @@ describe("Templates Customization & Dynamic Credits", () => {
     expect(customizedEst.breakdown.some((b) => b.label.includes("custom"))).toBe(true);
   });
 
-  it("dynamically increases credits when custom fields are added", () => {
+  it("custom fields ride inside the extraction call and add no charge", () => {
     const baseEst = estimateCredits(accountBrief, { domain: "stripe.com" });
     const customizedEst = estimateCredits(accountBrief, {
       domain: "stripe.com",
       custom_fields: "tech_stack, certifications, funding",
     });
 
-    expect(customizedEst.credits).toBeGreaterThan(baseEst.credits);
-    expect(customizedEst.breakdown.some((b) => b.label.includes("custom fields"))).toBe(true);
+    // The weights count provider CALLS, not tokens: the custom fields grow the
+    // extraction schema, not the call count, so the quote is unchanged.
+    expect(customizedEst.credits).toBe(baseEst.credits);
   });
 
   it("includes all required personas and workflows in seed templates", () => {

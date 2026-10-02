@@ -148,15 +148,35 @@ function checkConfidentialLeakage() {
     ...CONFIG.externalGlobs.flatMap((g) => walk(g, [".html", ".md", ".txt"])),
     ...CONFIG.externalPages.map(abs).filter(existsSync),
   ];
+  // The inlined analytics tracker names "/admin" in its own admin-route
+  // suppression guard (analyticsService's isAdmin). That code never renders,
+  // so inside an inline <script> the generic UI-path term is not leakage.
+  // Secret tokens (ADMIN_PIN, SUPABASE_SERVICE, service_role, …) stay scanned
+  // everywhere — a script is exactly where those would hide.
+  const UI_PATH_TERMS = new Set(["/admin"]);
   const hits = [];
   const lowerTerms = CONFIG.confidentialTerms.map((t) => t.toLowerCase());
   for (const f of files) {
     const text = readFileSync(f, "utf8");
     const lines = text.split("\n");
+    // Line indices strictly inside an inline (src-less) <script> block. The
+    // counter clamps at zero: a same-line <script src=…></script> pair nets
+    // to zero and must not push the counter negative (which would make the
+    // NEXT real inline block's interior look like top level).
+    const inScript = new Set();
+    let depth = 0;
+    lines.forEach((line, idx) => {
+      if (depth > 0) inScript.add(idx);
+      const low = line.toLowerCase();
+      const delta = (low.match(/<script(?![^>]*\bsrc=)[^>]*>/g) || []).length
+                  - (low.match(/<\/script>/g) || []).length;
+      depth = Math.max(0, depth + delta);
+    });
     lines.forEach((line, i) => {
       const low = line.toLowerCase();
       for (let t = 0; t < lowerTerms.length; t++) {
         if (low.includes(lowerTerms[t])) {
+          if (inScript.has(i) && UI_PATH_TERMS.has(CONFIG.confidentialTerms[t])) continue;
           hits.push(`${rel(f)}:${i + 1}  →  "${CONFIG.confidentialTerms[t]}"`);
         }
       }

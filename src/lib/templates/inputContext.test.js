@@ -154,7 +154,12 @@ describe("a finding is not an incomplete run", () => {
 
   it("the module implements this split, not just the test", () => {
     expect(SRC).toMatch(/const operatorFault = \/\^ai_\//);
-    expect(SRC).toMatch(/informationAbsent = !facts && !operatorFault && Boolean\(summary\)/);
+    // The split now has three legs — the third is the schema-driven not_found
+    // (absentFields), which lets a partially-populated run name its missing
+    // fields instead of being called incomplete.
+    expect(SRC).toMatch(/absentFields = Array\.isArray\(facts\?\.not_found\)/);
+    expect(SRC).toMatch(/informationAbsent =\s*$/m);
+    expect(SRC).toMatch(/\(!facts && !operatorFault && Boolean\(summary\)\) \|\| \(Boolean\(facts\) && absentFields\.length > 0\)/);
     expect(SRC).toMatch(/partial = \(!facts && !informationAbsent\)/);
   });
 });

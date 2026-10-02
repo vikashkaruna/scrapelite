@@ -14,6 +14,18 @@
 import { extractStructure } from "../firecrawlService.js";
 import { getAuthToken, apiClient } from "../apiClient.js";
 import { CAPABILITY_SCHEMAS } from "../extractionSchemas.js";
+import { buildTemplateSchema } from "./templateSchema.js";
+import { aiCredits } from "../credits/creditWeights.js";
+
+/**
+ * Every /api/extract and /api/ai call a template run makes carries this scope:
+ * the choke points suppress their charge for it, because templates.js owns the
+ * ledger for template runs via the finish events this module pushes. Without
+ * the flag the same page fetch and the same synthesis were billed twice —
+ * once here and once by the choke point. See creditMeter.meterContext's
+ * `suppressed` note.
+ */
+const METER_SCOPE = { meterScope: "template_run" };
 
 const BASE = "/api/templates";
 
@@ -79,7 +91,7 @@ export function startRun(templateKey, input, workspaceId = null) {
  * `summary` block and a `talking_points` list that could never be populated,
  * and an "Intelligence Workflow" was in practice one scrape plus a JSON dump.
  */
-async function synthesise(prompt, { facts, target, title, pageText, label }) {
+async function synthesise(prompt, { facts, target, title, pageText, label, maxTokens = 2048 }) {
   if (!prompt) return null;
   const body =
     `${prompt}\n\n` +
@@ -91,13 +103,20 @@ async function synthesise(prompt, { facts, target, title, pageText, label }) {
     `EXTRACTED FACTS (schema-validated, evidence-backed):\n${JSON.stringify(facts ?? {}, null, 2).slice(0, 12000)}\n` +
     (pageText ? `\nSOURCE PAGE CONTENT:\n${String(pageText).slice(0, 20000)}\n` : "");
   try {
+    // meterScope declares this call as part of a template run: templates.js
+    // owns the ledger for template runs via their finish events, so the /api/ai
+    // choke point must not ALSO charge it (it did — the same synthesis was
+    // billed twice). The response's _tier prices the event below at what
+    // actually ran, so an operator moving the synthesis area to the fast tier
+    // moves the price with it.
     const res = await apiClient.ai({
       messages: [{ role: "user", content: body }],
-      max_tokens: 2048,
+      max_tokens: maxTokens,
       area: "synthesis",
+      meterScope: "template_run",
     });
     const text = (res?.content || []).map((b) => b.text).filter(Boolean).join("\n").trim();
-    return text || null;
+    return text ? { text, tier: res?._tier || "deep" } : null;
   } catch (err) {
     // A failed synthesis must not fail the RUN — the extracted facts are still
     // worth persisting and the user is still charged only for what happened.
@@ -131,7 +150,13 @@ async function readCompany(domain, promptExtra) {
     const scraped = await extractStructure(target, {
       customPrompt: promptExtra,
       enrichKey: COMPARISON_CAPABILITY,
+      ...METER_SCOPE,
     });
+    if (scraped?.mock) {
+      // Same rule as executeRun: the visibility brief bills per company read;
+      // mock "facts" must never be compared, synthesised, or ledgered.
+      return { domain, target, ok: false, error: "Extraction is not configured on this deployment (VITE_ENABLE_EXTRACT).", pagesRead: [] };
+    }
     return {
       domain, target, ok: true,
       facts: scraped?.custom_extraction ?? null,
@@ -173,6 +198,13 @@ async function executeVisibilityBrief({ template, input, onProgress }) {
 
   for (const c of companies) {
     events.push({ unit: "page", credits: Math.max(1, c.pagesRead.length), quantity: Math.max(1, c.pagesRead.length), failed: !c.ok });
+    // The structured extraction's own AI call, priced at the tier that ran it
+    // (the enrichment area ships on the deep tier). Charged only when one
+    // actually landed: `meta.ok === true`. A Firecrawl-native extraction folds
+    // into the page fetch, and a failed AI call is free.
+    if (c.ok && c.meta?.ok === true) {
+      events.push({ unit: "ai_call", credits: aiCredits(c.meta?.tier || "deep"), quantity: 1 });
+    }
     for (const url of c.pagesRead) {
       sources.push({ url, canonical_url: c.domain, fetched_at: new Date().toISOString(), http_status: 200 });
     }
@@ -212,14 +244,27 @@ async function executeVisibilityBrief({ template, input, onProgress }) {
     pageText: `Written for ${audienceLine}.${inputContext(template, input)}\n\nCOMPANY FACTS:\n${factsBlock}${unreadNote}`,
   };
 
-  const [summary, points, comparisonRaw] = await Promise.all([
-    synthesise(bundle.summarize, { ...synthCtx, label: "summarize" }),
-    synthesise(bundle.talking_points, { ...synthCtx, label: "talking_points" }),
-    // The comparison is asked for as JSON so it renders as a real grid rather
-    // than prose that happens to mention several companies.
-    synthesiseJson(bundle.comparison, synthCtx),
-  ]);
-  for (const r of [summary, points, comparisonRaw]) if (r) events.push({ unit: "ai_call", credits: 2, quantity: 1 });
+  // ai_depth applies here too (the same Customize panel promise): quick runs
+  // extraction-only, so a missing synthesis must never flag the brief as
+  // incomplete; deep gives the comparison a bigger budget.
+  const depth = input?.ai_depth === "deep" || input?.ai_depth === "quick" ? input.ai_depth : "standard";
+  const synthesisTokens = depth === "deep" ? 4096 : 2048;
+  const runSynthesis = depth !== "quick";
+  const [summary, points, comparisonRaw] = runSynthesis
+    ? await Promise.all([
+        synthesise(bundle.summarize, { ...synthCtx, label: "summarize", maxTokens: synthesisTokens }),
+        synthesise(bundle.talking_points, { ...synthCtx, label: "talking_points", maxTokens: synthesisTokens }),
+        // The comparison is asked for as JSON so it renders as a real grid rather
+        // than prose that happens to mention several companies.
+        synthesiseJson(bundle.comparison, synthCtx),
+      ])
+    : [null, null, null];
+  // Priced at the tier that actually ran (from the /api/ai response), so an
+  // operator moving the synthesis area between tiers moves the price with it.
+  // A synthesis that did not land charges nothing.
+  for (const r of [summary, points, comparisonRaw]) {
+    if (r) events.push({ unit: "ai_call", credits: aiCredits(r.tier || "deep"), quantity: 1 });
+  }
 
   say("Done", 100);
 
@@ -229,41 +274,46 @@ async function executeVisibilityBrief({ template, input, onProgress }) {
     fields: self.facts,
     evidence: Array.isArray(self.facts?.evidence) ? self.facts.evidence : null,
     extraction: self.meta,
-    comparison: comparisonRaw || null,
+    comparison: comparisonRaw?.data || null,
     companies: companies.map((c) => ({
       domain: c.domain, ok: c.ok, pagesRead: c.pagesRead,
       reason: c.reason || (c.ok ? null : c.error),
     })),
     unread,
   };
-  if (points) output.talking_points = splitPoints(points);
+  if (points) output.talking_points = splitPoints(points.text);
 
   return {
-    output, summary,
+    output, summary: summary?.text ?? null,
     talking_points: output.talking_points || null,
     events, sources,
     // Honest about a competitor we could not read: the brief is real, but it
     // is not the brief the user asked for if a competitor is missing from it.
-    partial: !summary || unread.length > 0,
+    // Quick mode deliberately forgoes the summary — its absence must not flag
+    // the brief as incomplete for a choice the user made themselves.
+    partial: (runSynthesis && !summary) || unread.length > 0,
     needsReview: unread.length > 0,
+    informationAbsent: false,
   };
 }
 
 /** Synthesis that must come back as JSON (the comparison grid). */
 async function synthesiseJson(prompt, ctx) {
-  const text = await synthesise(
+  const res = await synthesise(
     prompt
       ? `${prompt}\n\nReturn ONLY a JSON object: {"axes": string[], "rows": [{"company": string, "values": {"<axis>": string|null}}]}. No prose, no markdown fences.`
       : null,
     { ...ctx, label: "comparison" },
   );
-  if (!text) return null;
+  if (!res?.text) return null;
   try {
+    const text = res.text;
     const start = text.indexOf("{");
     const end = text.lastIndexOf("}");
     if (start === -1 || end <= start) return null;
     const parsed = JSON.parse(text.slice(start, end + 1));
-    return Array.isArray(parsed?.rows) && parsed.rows.length ? parsed : null;
+    if (!(Array.isArray(parsed?.rows) && parsed.rows.length)) return null;
+    return { data: parsed, tier: res.tier };
   } catch {
     // A comparison we cannot parse is dropped, not shown as broken JSON — the
     // rest of the brief is still worth reading.
@@ -328,6 +378,18 @@ export async function executeRun({ template, input, onProgress }) {
 
   let scraped;
   try {
+    // ── THE TEMPLATE'S OWN SCHEMA DRIVES THE EXTRACTION ─────────────────────
+    // Two inputs the user can see and change must actually DO something:
+    //   • custom_fields (Customize → Additional Custom Extraction Fields) were
+    //     validated and then thrown away — the model never heard about them.
+    //   • the template's extraction_schema (the fields the template PROMISES
+    //     on its gallery card) were never used server-side at all; templates
+    //     whose related_key is not a capability fell back to the loose custom
+    //     shape. buildTemplateSchema turns both into a real JSON schema the
+    //     server enforces, with per-field not_found reporting.
+    const { schema, groups, instruction } = buildTemplateSchema(
+      template, Array.isArray(input?.custom_fields) ? input.custom_fields : [],
+    );
     scraped = await extractStructure(target, {
       customPrompt: template.prompt_bundle?.extract,
       // A template whose key matches a first-class capability gets that
@@ -347,16 +409,57 @@ export async function executeRun({ template, input, onProgress }) {
       enrichKey: CAPABILITY_SCHEMAS[template.template_key]
         ? template.template_key
         : (template.related_key || undefined),
+      // The template's schema + instruction: the fields it promises, plus the
+      // operator's free-text addendum and their declared choices (e.g. the
+      // recruiter template's target department) — the choices are the reason
+      // they ran the template and the extraction must hear them, not only the
+      // synthesis.
+      schema,
+      groups,
+      instruction: [
+        instruction,
+        input?.custom_prompt?.trim() ? `Also honour this specific request: ${input.custom_prompt.trim()}` : null,
+        inputContext(template, input) || null,
+      ].filter(Boolean).join("\n\n"),
+      // The Customize panel's "Additional Subpages to Inspect" (0–4 extra).
+      extra_pages: Number(input?.extra_subpages) > 0 ? Math.min(4, Number(input.extra_subpages)) : undefined,
+      // Declares this scrape as part of a template run: the /api/extract
+      // choke point suppresses its charge (the run's own events bill it once).
+      ...METER_SCOPE,
     });
   } catch (e) {
     events.push({ unit: "page", credits: 1, failed: true });
     throw e;
   }
 
+  // 🔴 A paid template run must never be built on demo data. When this
+  // deployment runs the browser-side mock scraper (VITE_ENABLE_EXTRACT
+  // unset), the "facts" below would be the placeholder from mockData.js —
+  // billed, persisted, and rendered as if they were real. Abort BEFORE
+  // startRun so no credits are consumed and nothing is ledgered.
+  if (scraped?.mock) {
+    throw new Error(
+      "Extraction is not configured on this deployment, so this run would produce demo data. " +
+      "Set VITE_ENABLE_EXTRACT=1 and rebuild (locally: up.sh local web) before running templates."
+    );
+  }
+
   const pagesRead = Array.isArray(scraped?.related_pages_scanned)
     ? 1 + scraped.related_pages_scanned.length
     : 1;
   events.push({ unit: "page", credits: pagesRead, quantity: pagesRead, cached: !!scraped?._cached });
+  // The structured extraction's own AI call — the one that turned the page
+  // corpus into the template's fields — priced at the tier that ran it (the
+  // enrichment area ships on the deep tier). Charged only when it landed:
+  // `ok === true`. A Firecrawl-native extraction folds into the page fetch,
+  // and a failed AI call is free.
+  if (scraped?.enrichment_meta?.ok === true) {
+    events.push({
+      unit: "ai_call",
+      credits: aiCredits(scraped.enrichment_meta?.tier || "deep"),
+      quantity: 1,
+    });
+  }
   sources.push({
     url: target,
     canonical_url: input.domain || null,
@@ -395,6 +498,12 @@ export async function executeRun({ template, input, onProgress }) {
     // they are the instruction, the page is the evidence.
     pageText: `${inputContext(template, input)}${scraped?.page_text || ""}`,
   };
+  // ai_depth (the Customize panel) decides synthesis: "quick" is extraction
+  // only — no summary is wanted, so a missing one can never flag the run as
+  // incomplete. "deep" gives the synthesis a bigger budget for rigorous
+  // cross-checking; "standard" is the shipped default.
+  const depth = input?.ai_depth === "deep" || input?.ai_depth === "quick" ? input.ai_depth : "standard";
+  const synthesisTokens = depth === "deep" ? 4096 : 2048;
   // Concurrent: they read the same facts and none depends on the others.
   //
   // ⚠️ `questions` USED TO BE DECLARED AND NEVER RUN. The Due Diligence Brief
@@ -404,19 +513,24 @@ export async function executeRun({ template, input, onProgress }) {
   // file already fixed once for `summarize`/`talking_points`; `questions` was
   // missed because only that template declares it. A prompt in a seed is a
   // promise on a screen — if it is not run, do not ship it in the bundle.
-  const [summary, talkingPoints, questions] = await Promise.all([
-    synthesise(bundle.summarize, { ...ctx, label: "summarize" }),
-    synthesise(bundle.talking_points, { ...ctx, label: "talking_points" }),
-    synthesise(bundle.questions, { ...ctx, label: "questions" }),
-  ]);
+  const runSynthesis = depth !== "quick";
+  const [summary, talkingPoints, questions] = runSynthesis
+    ? await Promise.all([
+        synthesise(bundle.summarize, { ...ctx, label: "summarize", maxTokens: synthesisTokens }),
+        synthesise(bundle.talking_points, { ...ctx, label: "talking_points", maxTokens: synthesisTokens }),
+        synthesise(bundle.questions, { ...ctx, label: "questions", maxTokens: synthesisTokens }),
+      ])
+    : [null, null, null];
 
-  // Charge per AI call that actually LANDED. A failed synthesis is free.
-  if (summary) events.push({ unit: "ai_call", credits: 2, quantity: 1 });
-  if (talkingPoints) events.push({ unit: "ai_call", credits: 2, quantity: 1 });
-  if (questions) events.push({ unit: "ai_call", credits: 2, quantity: 1 });
+  // Charge per AI call that actually LANDED, at the tier that ran it (from the
+  // /api/ai response — the synthesis area ships on the deep tier, so that is
+  // the honest default). A failed synthesis is free.
+  if (summary) events.push({ unit: "ai_call", credits: aiCredits(summary.tier || "deep"), quantity: 1 });
+  if (talkingPoints) events.push({ unit: "ai_call", credits: aiCredits(talkingPoints.tier || "deep"), quantity: 1 });
+  if (questions) events.push({ unit: "ai_call", credits: aiCredits(questions.tier || "deep"), quantity: 1 });
 
-  if (talkingPoints) output.talking_points = splitPoints(talkingPoints);
-  if (questions) output.questions = splitPoints(questions);
+  if (talkingPoints) output.talking_points = splitPoints(talkingPoints.text);
+  if (questions) output.questions = splitPoints(questions.text);
 
   // 🔴 "WE FAILED" AND "THIS SITE DOES NOT PUBLISH THAT" ARE DIFFERENT
   // ANSWERS, AND ONLY ONE OF THEM IS OUR FAULT.
@@ -439,7 +553,7 @@ export async function executeRun({ template, input, onProgress }) {
   // Everything else is either a stated finding (`no_match`) or no reason at all.
   const operatorFault = /^ai_/.test(reason || "") || reason === "page_no_content";
   //
-  // TWO INDEPENDENT SIGNALS THAT THE INFORMATION SIMPLY IS NOT PUBLISHED:
+  // THREE INDEPENDENT SIGNALS THAT THE INFORMATION SIMPLY IS NOT PUBLISHED:
   //
   //   1. The server said so outright (`no_match`).
   //   2. The SYNTHESIS SUCCEEDED. This one matters because the server does not
@@ -450,17 +564,28 @@ export async function executeRun({ template, input, onProgress }) {
   //      Without this, a Customer Proof Extractor run against a company with
   //      no published case studies produced an accurate summary saying exactly
   //      that, directly above a banner claiming we had fallen short.
-  const informationAbsent = !facts && !operatorFault && Boolean(summary);
-  const wantedSummary = Boolean(bundle.summarize);
+  //   3. The schema-driven extraction ANSWERED and named the specific fields
+  //      it could not verify in `not_found` (the templateSchema contract).
+  //      A partially-populated run whose missing fields are NAMED is a
+  //      finding about the site, not an incomplete run.
+  const absentFields = Array.isArray(facts?.not_found)
+    ? facts.not_found.map((s) => String(s)).filter(Boolean)
+    : [];
+  const informationAbsent =
+    (!facts && !operatorFault && Boolean(summary)) || (Boolean(facts) && absentFields.length > 0);
+  const wantedSummary = runSynthesis && Boolean(bundle.summarize);
   const partial = (!facts && !informationAbsent) || (wantedSummary && !summary);
   const needsReview = Boolean(
-    (reason && !informationAbsent) || (facts && Array.isArray(facts.not_found) && facts.not_found.length)
+    (reason && !informationAbsent) || absentFields.length
   );
 
   say("Done", 100);
   // Surfaced separately from `partial` so the UI can say the true thing:
   // "this site does not publish that" instead of "we could not produce it".
-  return { output, summary, events, sources, partial, needsReview, informationAbsent };
+  // `absentFields` lets the UI name the EXACT fields the schema-driven
+  // extraction could not verify (including operator-added custom fields),
+  // instead of re-deriving a list from the template's declared fields.
+  return { output, summary: summary?.text ?? null, events, sources, partial, needsReview, informationAbsent, absentFields };
 }
 
 /**

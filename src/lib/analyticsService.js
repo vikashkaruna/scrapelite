@@ -61,6 +61,18 @@ function safeSessionId() {
   try { return getSessionId(); } catch { return "anon"; }
 }
 
+export function isAdminContext(properties) {
+  if (typeof window !== "undefined" && window.location) {
+    const cur = window.location.pathname || "";
+    if (cur === "/admin" || cur.indexOf("/admin/") === 0) return true;
+  }
+  if (properties && typeof properties === "object") {
+    if (typeof properties.path === "string" && (properties.path === "/admin" || properties.path.indexOf("/admin/") === 0)) return true;
+    if (typeof properties.url === "string" && properties.url.indexOf("/admin") !== -1) return true;
+  }
+  return false;
+}
+
 /**
  * Track a single event. Pushes onto the in-memory buffer and tries to flush.
  * Safe to call from any UI code — never throws.
@@ -71,6 +83,9 @@ function safeSessionId() {
  */
 export async function track(name, properties = {}, opts = {}) {
   try {
+    if (isAdminContext(properties)) {
+      return { ok: true, suppressed: true };
+    }
     const event = makeEvent({ name, properties, userId: opts.userId });
     _pending.push(event);
     if (opts.flushNow) {
@@ -304,6 +319,9 @@ export function computeFunnel(events, opts = {}) {
 // how a name drifts. Add a helper here instead, and the drift guard in
 // activationEvents.test.js will hold you to the vocabulary.
 function emitActivation(name, properties) {
+  if (isAdminContext(properties)) {
+    return { ok: true, suppressed: true };
+  }
   // NOT track(). track() writes to `analytics_events`, which 0005 made
   // world-readable (`USING (true)`) as "non-PII, no user content" — true of a
   // page view, false of an event carrying `domain`, `templateKey` or `count`,

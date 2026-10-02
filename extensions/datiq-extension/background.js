@@ -11,11 +11,11 @@
 //     resulting API key is stored in chrome.storage.local, and every
 //     subsequent right-click is one click away from a saved extraction.
 //
-// All API calls go through the public DatIQ API (api.datiq.app/v1).
+// All API calls go through the public DatIQ API (datiq.app/api/v1).
 // See docs/DatIQ-Developer-API.md for the contract.
 
 const DATIQ_BASE = "https://datiq.app";
-const DATIQ_API_BASE = "https://api.datiq.app/v1";
+const DATIQ_API_BASE = "https://datiq.app/api/v1";
 const STORAGE_KEY = "datiq_api_key";
 
 async function getApiKey() {
@@ -147,7 +147,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // keep the channel open for async response
 });
 
-// ── Public REST API call (api.datiq.app/v1/extractions) ──────────────────
+// ── Public REST API call (datiq.app/api/v1/extractions) ──────────────────
 async function callExtract(url, apiKey) {
   try {
     const res = await fetch(`${DATIQ_API_BASE}/extractions`, {

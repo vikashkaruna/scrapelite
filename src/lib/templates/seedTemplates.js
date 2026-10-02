@@ -47,7 +47,7 @@ function handoff({ template_key, title, persona, summary, fields }) {
     extraction_schema: { fields: [] },
     output_schema: { blocks: [] },
     prompt_bundle: { delegate: "module" },
-    credit_cost: { base: 0, per_page: 0, per_ai_call: 0, pages_per_unit: 0, ai_calls_per_unit: 0 },
+    credit_cost: { base: 0, per_page: 0, extraction_ai_per_unit: 0, pages_per_unit: 0 },
     plan_entitlement: "template.run",
     min_plan: "free",
   };
@@ -114,7 +114,7 @@ export const SEED_TEMPLATES = [
         "Given these facts, list three specific conversation openers referencing something concrete from their " +
         "site. Each must cite the fact it rests on. No generic flattery.",
     },
-    credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 2 },
+    credit_cost: { base: 1, per_page: 1, pages_per_unit: 3 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },
@@ -165,7 +165,7 @@ export const SEED_TEMPLATES = [
         "In three sentences, describe what this pricing structure suggests about who they are trying to win. " +
         "Separate what the page STATES from what you INFER, and label the inference as such.",
     },
-    credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 2, ai_calls_per_unit: 2 },
+    credit_cost: { base: 1, per_page: 1, pages_per_unit: 2 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },
@@ -207,7 +207,7 @@ export const SEED_TEMPLATES = [
     },
     // Delegates to the existing discoverability engine rather than re-prompting.
     prompt_bundle: { delegate: "discoverability" },
-    credit_cost: { base: 0, per_page: 0, per_ai_call: 0, pages_per_unit: 0, ai_calls_per_unit: 0 },
+    credit_cost: { base: 0, per_page: 0, extraction_ai_per_unit: 0, pages_per_unit: 0 },
     // Audits carry their OWN monthly budget (see entitlementModel's `audit`
     // case) — charging credits here as well would bill the same work twice.
     plan_entitlement: "audit",
@@ -268,7 +268,7 @@ export const SEED_TEMPLATES = [
         "List four specific questions this research raises — each tied to a concrete observation, each one the " +
         "company could actually answer in a first call.",
     },
-    credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 4, ai_calls_per_unit: 2 },
+    credit_cost: { base: 1, per_page: 1, pages_per_unit: 4 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },
@@ -316,7 +316,7 @@ export const SEED_TEMPLATES = [
         "In three sentences, describe the segment this company's proof actually targets — company sizes, " +
         "industries, and the outcome they lead with.",
     },
-    credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 1 },
+    credit_cost: { base: 1, per_page: 1, pages_per_unit: 3 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },
@@ -400,7 +400,9 @@ export const SEED_TEMPLATES = [
     // Per-competitor: each one is its own page read plus its share of the
     // synthesis. `pages_per_unit` covers the related-page gathering that
     // positioning extraction does (/about, /pricing) on each domain.
-    credit_cost: { base: 2, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 1 },
+    // units_extra: the run reads YOUR domain in addition to the competitor list —
+    // quoting the list alone under-counted every page and AI call by one company.
+    credit_cost: { base: 2, per_page: 1, pages_per_unit: 3, units_extra: 1 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },
@@ -445,14 +447,14 @@ export const SEED_TEMPLATES = [
         "Never invent or guess values — return null for any field that cannot be verified from the source text. " +
         "Identify whether pricing is published and extract verifiable employee counts.",
     },
-    credit_cost: { base: 2, per_page: 1, per_ai_call: 2, pages_per_unit: 2, ai_calls_per_unit: 1 },
+    credit_cost: { base: 2, per_page: 1, pages_per_unit: 2 },
     plan_entitlement: "extract.batch",
     min_plan: "go",
   },
 
   {
     template_key: "recruiter_talent_sourcing",
-    related_key: "leadership",
+    related_key: "talent",
     status: TEMPLATE_STATUS.PUBLISHED,
     title: "Talent Sourcing & Culture Signals",
     persona: "recruiter",
@@ -508,7 +510,7 @@ export const SEED_TEMPLATES = [
       summarize:
         "Write a concise talent intelligence brief detailing hiring momentum, executive leaders, and key culture values.",
     },
-    credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 2, ai_calls_per_unit: 1 },
+    credit_cost: { base: 1, per_page: 1, pages_per_unit: 2 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },
@@ -568,7 +570,7 @@ export const SEED_TEMPLATES = [
       summarize:
         "Provide an objective market research teardown of the company's positioning and technical moat.",
     },
-    credit_cost: { base: 2, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 2 },
+    credit_cost: { base: 2, per_page: 1, pages_per_unit: 3 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },
@@ -629,7 +631,7 @@ export const SEED_TEMPLATES = [
       summarize:
         "Provide a comprehensive client onboarding teardown highlighting strengths, positioning gaps, and immediate opportunities.",
     },
-    credit_cost: { base: 2, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 2 },
+    credit_cost: { base: 2, per_page: 1, pages_per_unit: 3 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },
@@ -690,7 +692,7 @@ export const SEED_TEMPLATES = [
       summarize:
         "Summarize detected account movements and recommend signal rule routing criteria.",
     },
-    credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 2, ai_calls_per_unit: 1 },
+    credit_cost: { base: 1, per_page: 1, pages_per_unit: 2 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },
@@ -811,7 +813,7 @@ export const SEED_TEMPLATES = [
       talking_points:
         "Write a content brief that would out-cover this page: a recommended H1, an H2 outline, and the reader questions this page leaves unanswered. Base every point on the extracted outline and claims.",
     },
-    credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 2, ai_calls_per_unit: 2 },
+    credit_cost: { base: 1, per_page: 1, pages_per_unit: 2 },
     plan_entitlement: "template.run",
     min_plan: "free",
   },

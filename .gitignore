@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-ssr
+dist-admin
 dist-extension
 *.local
 .DS_Store
@@ -11,6 +12,9 @@ dist-extension
 env.*
 scripts/env/
 !.env.example
+!deployment/env/.env.local.example
+!deployment/env/.env.staging.example
+!deployment/env/.env.prod.example
 
 # Operator-only env files: real Supabase service keys + admin PIN hashes.
 # Created locally by the pre-cutover Netlify-env workflow, never committed.
@@ -85,3 +89,17 @@ ds-bundle/
 # Source BRD/PRD documents — kept locally, never committed (this repo is public)
 /DatIQ *.md
 /DatIQ *.pdf
+
+# Local deployment stack (doc 06): generated config + real env files + dumps
+deployment/generated/
+deployment/env/.env.local
+deployment/env/.env.staging
+deployment/env/.env.prod
+deployment/generated/*.dump
+
+# generated GCP hosting configs (by deploy-hosting.sh)
+/firebase.json
+/.firebaserc
+
+# Firebase CLI local state
+.firebase/

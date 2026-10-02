@@ -1,6 +1,8 @@
 // config.js — single source of truth for which integrations are live.
 // Each flag flips on automatically when its env var is present.
 
+import { PROVIDERS } from "./providerRegistry.js";
+
 const env =
   (typeof import.meta !== "undefined" && import.meta.env) ||
   (typeof process !== "undefined" && process.env) ||
@@ -27,8 +29,9 @@ function endpoint(runtimeValue, envValue) {
 // The Netlify secret scanner's "smart detection" replaces JWT-shaped
 // values with `****************<last4>` even when those values are
 // supposed to be public (the Supabase anon key is the documented
-// publishable key). Detect that redaction and prefer the runtime-config
-// value (which the scanner never touches) so a stripped build still works.
+// publishable key). This recognises that redaction so a stripped build
+// still works. It is a LAST RESORT now, not the primary precedence rule —
+// see the note below on the order the two inputs are consulted in.
 // The check is purely structural — no real key ever matches the pattern.
 function looksStrippedByNetlify(value) {
   if (typeof value !== "string") return false;
@@ -38,27 +41,51 @@ function looksStrippedByNetlify(value) {
   return /^\*{16,}[A-Za-z0-9]{2,6}$/.test(value);
 }
 
-// Supabase project. Runtime config wins when the build-time value is the
-// scanner's redaction pattern (defense in depth — the primary fix is in
-// netlify.toml `SECRETS_SCAN_OMIT_KEYS`).
+// ── THE PRECEDENCE INVERSION, AND WHY IT MATTERS ────────────────────────────
+//
+// `runtime-config.js` is read AT LOAD, from the network, and is the one input
+// that can differ per deployment. The `VITE_*` value is inlined INTO THE BUNDLE
+// at build time, so it is fixed for the life of the artifact. A per-deployment
+// input must therefore outrank a per-build one — that is the entire reason
+// public/runtime-config.js exists, and its own comment in index.html says so.
+//
+// This used to be the other way round: the baked value won, and the runtime
+// override was consulted only when the baked value was missing or carried
+// Netlify's redaction pattern. On every deployment where the two disagreed the
+// override was read and then thrown away, silently. It cost a real afternoon:
+// the local Docker stack serves runtime-config.js pointing at http://localhost:8080
+// and bakes `dist/` with the developer's repo-root .env, so the browser
+// authenticated against the DEV CLOUD SUPABASE PROJECT while the api/jobs
+// containers talked to the local one. Sign-up died in a foreign project's
+// broken SMTP (HTTP 500, "Error sending confirmation email"), and every
+// authenticated call to the local PostgREST 401'd because the JWTs were signed
+// by a different secret.
+//
+// The Netlify-redaction fallback is KEPT below, but only as a last resort: it
+// is the "the baked value is garbage" path, not the "the baked value is
+// authoritative" path. Two mechanisms, two jobs, and they were previously
+// sharing one.
 const _runtimeSupabaseUrl = String(runtime.supabaseUrl || "").trim();
 const _envSupabaseUrl = String(env.VITE_SUPABASE_URL || "").trim();
 export const SUPABASE_URL =
-  (_envSupabaseUrl && !looksStrippedByNetlify(_envSupabaseUrl) ? _envSupabaseUrl : "") ||
   _runtimeSupabaseUrl ||
+  (_envSupabaseUrl && !looksStrippedByNetlify(_envSupabaseUrl) ? _envSupabaseUrl : "") ||
   "";
 
 const _runtimeSupabaseAnon = String(runtime.supabaseAnonKey || "").trim();
 const _envSupabaseAnon = String(env.VITE_SUPABASE_ANON_KEY || "").trim();
 export const SUPABASE_ANON_KEY =
-  (_envSupabaseAnon && !looksStrippedByNetlify(_envSupabaseAnon) ? _envSupabaseAnon : "") ||
   _runtimeSupabaseAnon ||
+  (_envSupabaseAnon && !looksStrippedByNetlify(_envSupabaseAnon) ? _envSupabaseAnon : "") ||
   "";
 // AI_API_KEY intentionally NOT exported from the browser bundle.
 // The key lives server-side in the Netlify Function (AI_API_KEY env var, no VITE_ prefix).
 // In production: set AI_API_KEY in Netlify dashboard (no VITE_ prefix).
 // Local development should use AI_API_KEY in the Netlify environment.
-export const AI_MODEL = env.VITE_AI_MODEL || "claude-haiku-4-5-20251001";
+// The fallback rides the registry's Anthropic fast pin so this file can never
+// drift from the model the server actually resolves. (The server ignores the
+// client-sent model either way — this value is informational only.)
+export const AI_MODEL = env.VITE_AI_MODEL || PROVIDERS.anthropic.models.fast;
 // Scraping fallback provider keys (browser-side presence flags only — actual keys are server-side).
 // Set VITE_SPIDER_API_KEY or VITE_JINA_API_KEY in Netlify env when using these providers.
 // Set VITE_ENABLE_EXTRACT=true to force real extraction when only Jina/Direct is available.

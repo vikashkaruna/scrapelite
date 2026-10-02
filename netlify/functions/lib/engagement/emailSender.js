@@ -21,6 +21,14 @@
 // mail (invoices, password resets, alerts) and customer outreach must be able
 // to live on different accounts/domains; sharing the variable would make that
 // impossible without a code change (review F-8).
+//
+// MAIL_TRANSPORT=mailpit is the one carve-out: the local stack has no
+// engagement credential, so when the shared transport (lib/mailTransport.js)
+// is Mailpit, sends bypass BOTH the mock branch and the ENGAGEMENT key check
+// and go out through sendMail() — that is what makes local outreach visible
+// in the Mailpit inbox at all.
+
+import { mailTransportName, sendMail } from "../mailTransport.js";
 
 export const ENGAGEMENT_EMAIL_PROVIDER = "resend";
 
@@ -65,6 +73,34 @@ export async function sendOutreachEmail({
   if (!unsubscribeUrl) return { ok: false, code: "unsubscribe_not_configured", retryable: false };
 
   const { text, html } = withUnsubscribe({ text: message.body, html: message.body_html }, unsubscribeUrl);
+
+  // Mailpit transport (MAIL_TRANSPORT=mailpit) — decided BEFORE the mock branch
+  // and the ENGAGEMENT key check, so a local run's outreach lands in the
+  // Mailpit inbox instead of being silently mocked or refused for a key the
+  // local stack does not have.
+  if (mailTransportName(env) === "mailpit") {
+    const r = await sendMail({
+      from: formatFrom(sender),
+      to: [to],
+      ...(sender.reply_to ? { reply_to: sender.reply_to } : {}),
+      subject: message.subject || "",
+      text,
+      ...(html ? { html } : {}),
+      // Mailpit's send API derives tags from X-Tags (lib/mailTransport.js).
+      headers: {
+        "List-Unsubscribe": `<${unsubscribeUrl}>`,
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
+      tags: [{ name: "engagement_message", value: String(message.id).replace(/[^A-Za-z0-9_-]/g, "") }],
+    }, env);
+    if (r.ok) {
+      return { ok: true, provider: ENGAGEMENT_EMAIL_PROVIDER, externalId: r.id || `mailpit-${message.id}` };
+    }
+    // Same failure vocabulary as the Resend path below.
+    if (!r.status) return { ok: false, code: "network_error", retryable: true };
+    const retryable = r.status === 429 || r.status >= 500;
+    return { ok: false, code: retryable ? "provider_unavailable" : "provider_rejected", status: r.status, retryable };
+  }
 
   if (mockSendingEnabled(env)) {
     return { ok: true, provider: ENGAGEMENT_EMAIL_PROVIDER, externalId: `mock_${message.id}`, mock: true };

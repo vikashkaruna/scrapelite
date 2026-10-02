@@ -84,9 +84,11 @@ describe("every mail-sending function uses the shared branding", () => {
   // Detect SENDERS, not markup. The first version of this keyed off the
   // hand-rolled header shape — and once every builder was converted it matched
   // nothing and passed vacuously, which is the failure mode its own first
-  // assertion exists to catch. A file that posts an `html:` body to Resend is
-  // a mail builder no matter what that HTML looks like.
-  const senders = files.filter((f) => /resend\.com\/emails/.test(f.src) && /\bhtml:/.test(f.src));
+  // assertion exists to catch. Senders used to be the files that posted an
+  // `html:` body to api.resend.com; they now all go through the shared
+  // lib/mailTransport.js choke point, so a file that calls sendMail() with an
+  // `html:` body is a mail builder no matter what that HTML looks like.
+  const senders = files.filter((f) => /\bsendMail\(/.test(f.src) && /\bhtml:/.test(f.src));
 
   it("finds the mail builders at all (a sweep that matches nothing proves nothing)", () => {
     expect(senders.length).toBeGreaterThanOrEqual(5);

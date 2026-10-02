@@ -30,6 +30,18 @@ import PaymentConfirmModal from "./PaymentConfirmModal.jsx";
 const CURRENCY_KEY = "datiq.currency";
 function readCurrency() { try { return localStorage.getItem(CURRENCY_KEY) || detectCurrency(); } catch { return detectCurrency(); } }
 
+/**
+ * Run `work`, but never longer than `ms`. On timeout the fallback runs (e.g.
+ * a console warning) and the promise resolves — used for post-payment
+ * housekeeping that must never strand the processing modal.
+ */
+function withTimeout(work, ms, onTimeout = () => {}) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { onTimeout(); resolve(); }, ms);
+    Promise.resolve(work).then(() => { clearTimeout(timer); resolve(); }).catch(() => { clearTimeout(timer); resolve(); });
+  });
+}
+
 const BillingContext = createContext(null);
 
 export function BillingProvider({ children }) {
@@ -342,20 +354,32 @@ export function BillingProvider({ children }) {
       } else if (result.status === "success") {
         // Razorpay modal completed — paymentStage is already ACTIVATING from the callback
         upgradePlan(confirmedPlanId);
-        await syncSubscriptionToDb(confirmedPlanId, result.provider, {
-          subscriptionId: result.subscriptionId,
-          customerId:     result.customerId,
-          orderId:        result.orderId,   // razorpay_order_id — persisted on subscription
-        });
-        await logPaymentEvent({
-          type:        "payment.captured",
-          provider:    result.provider,
-          providerId:  result.paymentId || result.orderId, // razorpay_payment_id
-          planId:      confirmedPlanId,
-          amountCents: result.amount,
-          currency:    result.currency,
-        });
-        setPaymentHistory(await fetchPaymentHistory());
+        // 🔴 The server now owns the authoritative writes (verify-payment
+        // stamps the invoice user, activates entitlements and upserts the
+        // subscriptions row). These client-side mirrors are best-effort and
+        // RLS-revoked for signed-in users anyway — so a stall here must never
+        // strand the modal on "Activating your plan…" forever. Bound each
+        // await; the stage ALWAYS resolves below.
+        await withTimeout(
+          (async () => {
+            await syncSubscriptionToDb(confirmedPlanId, result.provider, {
+              subscriptionId: result.subscriptionId,
+              customerId:     result.customerId,
+              orderId:        result.orderId,   // razorpay_order_id — persisted on subscription
+            });
+            await logPaymentEvent({
+              type:        "payment.captured",
+              provider:    result.provider,
+              providerId:  result.paymentId || result.orderId, // razorpay_payment_id
+              planId:      confirmedPlanId,
+              amountCents: result.amount,
+              currency:    result.currency,
+            });
+            setPaymentHistory(await fetchPaymentHistory());
+          })(),
+          8000,
+          () => console.warn("[Billing] post-payment housekeeping timed out (server-side records are authoritative)"),
+        );
         setPaymentStage(PAYMENT_STAGE.IDLE); // clear modal — page will navigate to /account
 
       } else if (result.status === "cancelled") {

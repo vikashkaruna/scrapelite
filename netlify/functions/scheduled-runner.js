@@ -27,6 +27,7 @@ import { cronMatchesHour } from "../../src/lib/monitoringModel.js";
 import { withJobRun } from "./lib/jobControl.js";
 import { wrapEmail } from "../../src/lib/emailBranding.js";
 import { meterContext, flush as flushMeter } from "./lib/creditMeter.js";
+import { mailReady, sendMail } from "./lib/mailTransport.js";
 
 // NOTE: this `config` export does NOT register the cron — it is only honoured
 // for v2 functions (`export default`), and this is a v1 handler. The real
@@ -195,27 +196,20 @@ async function enqueueChange(client, schedule, changedSummary) {
   if (!result.ok) {
     console.warn(`[DatIQ] scheduled-runner: enqueue failed for ${schedule.id}: ${result.error} — attempting direct fallback`);
     try {
-      if (schedule.alertEmail && process.env.RESEND_API_KEY) {
-        await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: process.env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>",
-            to: [schedule.alertEmail],
-            subject: `DatIQ — content changed: ${schedule.label || "Monitored URL"}`,
-            // The schedule change-alert. This was three bare tags with no
-            // brand of any kind — the least branded mail DatIQ sends, and one
-            // of the most frequently received.
-            html: wrapEmail(
-              `<h1 style="margin:0 0 10px;font-size:19px;font-weight:800;color:#1f2330">Content changed</h1>` +
-              `<p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.6">Your schedule <strong>${escapeHtml(schedule.label || "Monitored URL")}</strong> detected a change.</p>` +
-              `<a href="${SITE_URL}/schedules" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">View in DatIQ →</a>`,
-              { preheader: `Change detected on ${schedule.label || "a monitored URL"}` },
-            ),
-          }),
+      if (schedule.alertEmail && mailReady()) {
+        await sendMail({
+          from: process.env.ALERT_EMAIL_FROM || "DatIQ Alerts <alerts@datiq.app>",
+          to: [schedule.alertEmail],
+          subject: `DatIQ — content changed: ${schedule.label || "Monitored URL"}`,
+          // The schedule change-alert. This was three bare tags with no
+          // brand of any kind — the least branded mail DatIQ sends, and one
+          // of the most frequently received.
+          html: wrapEmail(
+            `<h1 style="margin:0 0 10px;font-size:19px;font-weight:800;color:#1f2330">Content changed</h1>` +
+            `<p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.6">Your schedule <strong>${escapeHtml(schedule.label || "Monitored URL")}</strong> detected a change.</p>` +
+            `<a href="${SITE_URL}/schedules" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:9px">View in DatIQ →</a>`,
+            { preheader: `Change detected on ${schedule.label || "a monitored URL"}` },
+          ),
         });
       }
     } catch (fallbackErr) {

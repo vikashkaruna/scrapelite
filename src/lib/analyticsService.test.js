@@ -61,6 +61,28 @@ describe("Q11 — analyticsService: track + flush", () => {
     const r = await track();
     expect(r).toHaveProperty("ok");
   });
+
+  it("track() completely suppresses events on /admin", async () => {
+    const r1 = await track("admin_action", { path: "/admin/revenue" });
+    expect(r1).toEqual({ ok: true, suppressed: true });
+    expect(await flush()).toBe(0);
+
+    const r2 = await track("page_view", { url: "https://datiq.app/admin/ai" });
+    expect(r2).toEqual({ ok: true, suppressed: true });
+    expect(await flush()).toBe(0);
+
+    // Simulate window.location on /admin
+    const origLoc = window.location;
+    delete window.location;
+    window.location = { pathname: "/admin/monitoring" };
+    try {
+      const r3 = await track("some_event", { foo: "bar" });
+      expect(r3).toEqual({ ok: true, suppressed: true });
+      expect(await flush()).toBe(0);
+    } finally {
+      window.location = origLoc;
+    }
+  });
 });
 
 describe("Q11 — analyticsService: lifecycle helpers", () => {
