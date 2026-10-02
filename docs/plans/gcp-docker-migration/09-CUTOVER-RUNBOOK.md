@@ -86,6 +86,26 @@ Full mapping and rationale: [doc 06 §11](06-NAMING-AND-ENV-CONVENTIONS.md). Com
 - [ ] Provider consoles prepared (done at the moment the host goes live, not before): Google/Microsoft/GitHub callback `https://datiq.app/auth/v1/callback`; **keep** the old `https://api.datiq.app/auth/v1/callback` registered until the flip is verified (instant rollback).
 - [ ] `https://api.datiq.app` and `https://datiq.app` listed in `GOTRUE_URI_ALLOW_LIST`.
 
+### 1.0a DECISION (owner, 2026-10-02): no Netlify freeze — shut Netlify down instead
+
+Neither mechanism below is used. The owner will disable/shut down the Netlify
+project after the full migration and cutover, so nothing runs there afterwards.
+Consequences for the order of operations:
+
+1. Run `cutover-db.sh prod` steps 1–4 as usual. GCP prod crons stay **PAUSED**
+   (`OPS_JOBS_DISABLED=1`, step 5 deferred). Netlify's thirteen crons keep
+   running against hosted Supabase meanwhile — a single owner, so no double
+   sends, but on stale data: keep this window short.
+2. Payments test event, n8n round-trip, external-party URLs, then the DNS flip.
+3. Disable/shut down the Netlify project (after the rollback window you choose —
+   doc §6/§7: Netlify is the rollback, so shutting it down ends rollback).
+4. Only THEN run `NETLIFY_CRONS_FROZEN=1 deployment/scripts/gcp/cutover-db.sh
+   prod finish-crons` — the variable now means "Netlify is shut down / no longer
+   runs crons", not "TOML edited". Never run it while the Netlify project is live.
+
+The two freeze mechanisms below are kept as the fallback if Netlify must stay
+up with crons off.
+
 ### 1.0 Freezing the Netlify crons — what, how, and WHEN (added 2026-10-02)
 
 **When: BEFORE `cutover-db.sh prod` (before step 2), not merely before step 5.**
