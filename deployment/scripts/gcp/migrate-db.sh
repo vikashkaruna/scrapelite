@@ -50,13 +50,13 @@ mkdir -p "$GEN_DIR/bin" "$GEN_DIR/db"
 
 # ── 1. instance ───────────────────────────────────────────────────────────────
 if ! gcloud sql instances describe "$SQL_INSTANCE" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
-  echo "→ Cloud SQL ${SQL_INSTANCE} (Postgres 16, ${CLOUD_SQL_TIER}, ${GCP_REGION}, HA=${CLOUD_SQL_HA:-ZONAL})"
+  echo "→ Cloud SQL ${SQL_INSTANCE} (${CLOUD_SQL_DB_VERSION:-POSTGRES_17}, ${CLOUD_SQL_TIER}, ${GCP_REGION}, HA=${CLOUD_SQL_HA:-ZONAL})"
   case "${CLOUD_SQL_CONNECTIVITY:-public}" in
     private) echo "  ⚠ CLOUD_SQL_CONNECTIVITY=private is NOT automated — configure private IP +"
              echo "    private services access BEFORE relying on it (proxy path below needs public IP or PSC)";;
   esac
   gcloud sql instances create "$SQL_INSTANCE" \
-    --project="$GCP_PROJECT_ID" --database-version=POSTGRES_16 \
+    --project="$GCP_PROJECT_ID" --database-version="${CLOUD_SQL_DB_VERSION:-POSTGRES_17}" \
     --edition="${CLOUD_SQL_EDITION:-ENTERPRISE}" \
     --tier="${CLOUD_SQL_TIER}" --region="$GCP_REGION" \
     --storage-auto-increase --backup-start-time="${CLOUD_SQL_BACKUP_START:-09:00}" \
@@ -65,6 +65,16 @@ if ! gcloud sql instances describe "$SQL_INSTANCE" --project="$GCP_PROJECT_ID" >
     --quiet >/dev/null
 else
   echo "→ Cloud SQL ${SQL_INSTANCE} exists"
+  # CLOUD_SQL_TIER / EDITION / HA / version are applied ONLY at creation. An
+  # edit in .env.<env> afterwards changes nothing — say so instead of letting the
+  # file and the instance silently disagree (staging sat on db-custom-1-3840
+  # while .env.staging said db-f1-micro, found 2026-10-02).
+  live_tier="$(gcloud sql instances describe "$SQL_INSTANCE" --project="$GCP_PROJECT_ID" --format='value(settings.tier)' 2>/dev/null || true)"
+  live_ver="$(gcloud sql instances describe "$SQL_INSTANCE" --project="$GCP_PROJECT_ID" --format='value(databaseVersion)' 2>/dev/null || true)"
+  [ -z "$live_tier" ] || [ "$live_tier" = "${CLOUD_SQL_TIER:-}" ] || \
+    echo "  ⚠ tier drift: instance is ${live_tier}, .env says ${CLOUD_SQL_TIER:-unset} — apply with: gcloud sql instances patch ${SQL_INSTANCE} --tier=${CLOUD_SQL_TIER:-<tier>} --project=${GCP_PROJECT_ID} (restarts the instance)"
+  [ -z "$live_ver" ] || [ "$live_ver" = "${CLOUD_SQL_DB_VERSION:-POSTGRES_17}" ] || \
+    echo "  ⚠ version drift: instance is ${live_ver}, wanted ${CLOUD_SQL_DB_VERSION:-POSTGRES_17} — in-place: gcloud sql instances patch ${SQL_INSTANCE} --database-version=${CLOUD_SQL_DB_VERSION:-POSTGRES_17}"
 fi
 while [ "$(gcloud sql instances describe "$SQL_INSTANCE" --project="$GCP_PROJECT_ID" --format='value(state)')" != "RUNNABLE" ]; do
   echo "   waiting for RUNNABLE…"; sleep 15
@@ -323,7 +333,7 @@ psql_q "grant select, insert, update, delete on all tables in schema public to a
 # selected to create in" (3F000) — both were the missed step that kept every
 # auth Cloud Run revision unhealthy (2026-10-01).
 # 🔴 `alter schema/table … owner to supabase_auth_admin` needs the acting role to
-# be able to SET ROLE to the new owner. On a FRESH Cloud SQL Postgres 16 instance
+# be able to SET ROLE to the new owner. On a FRESH Cloud SQL Postgres 16+ instance
 # the creator (postgres) only gets ADMIN OPTION on the roles it creates — no SET,
 # no INHERIT — so this whole block raised "must be able to SET ROLE
 # supabase_auth_admin" and (one multi-statement command = one transaction)

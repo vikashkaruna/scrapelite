@@ -156,7 +156,7 @@ and scripts read `TF_VAR_*`/env vars from the loader.
 | Jobs | Cloud Run `datiq-vsp-run-jobs-stg` (**no public ingress**, Scheduler OIDC only) |
 | Auth/Rest | Cloud Run `datiq-vsp-run-auth-stg` (GoTrue), `datiq-vsp-run-rest-stg` (PostgREST) — proves the target model against staging data |
 | Admin/Trackers | Cloud Run `datiq-vsp-run-admin-stg` + `datiq-vsp-run-trackers-stg` (small nginx images behind hosting rewrites) — keeps the per-surface separation on GCP |
-| DB | Cloud SQL `datiq-vsp-sql-datiq-stg` (Postgres 16; loaded from **dev** Supabase dump to prove dump/restore mechanics early) |
+| DB | Cloud SQL `datiq-vsp-sql-datiq-stg` (Postgres 17 since 2026-10-02, was 16; loaded from **dev** Supabase dump to prove dump/restore mechanics early) |
 | Scheduler | 13 jobs `datiq-vsp-sch-<fn>-stg`, OIDC ID tokens |
 | Secrets | Secret Manager `datiq-vsp-sm-<key>-stg`, bootstrapped from `secrets.manifest` (names only) by `bootstrap-secrets.sh` |
 | Images | Artifact Registry `datiq-vsp-ar-images-stg`, built by Cloud Build triggers `datiq-vsp-cb-<unit>-stg` (substitutions from .env) |
