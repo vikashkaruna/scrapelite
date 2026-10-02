@@ -36,6 +36,54 @@ else
   exit 1
 fi
 
+# ── runtime-config: point the browser at THIS env's self-hosted auth/rest ────
+# public/runtime-config.js is committed with the HOSTED Supabase pair (a
+# committed flip is forbidden by runtimeConfigIdentity.test.js). So a plain
+# hosting deploy ships a browser that signs in through the hosted project —
+# GoTrue then sends OAuth providers the hosted project's callback, never the
+# self-hosted one (the stg.datiq.app redirect_uri_mismatch). The cutover scripts
+# only patched ONE deploy; every later deploy silently undid it. So whenever
+# .env says the env's data lives in Cloud SQL (DATA_MODE=cloud-sql), the
+# deployed dist/runtime-config.js — never the committed file — gets the
+# self-hosted pair: URL = window.location.origin (same-origin /auth/v1 +
+# /rest/v1 through the Hosting rewrites) and SUPABASE_ANON_KEY from .env.
+#   staging → _stagingSupabase*    prod → _prodSupabase*
+# prod stays DATA_MODE=hosted-supabase until its cutover, so it is untouched.
+# Idempotent: a pair already flipped by a cutover script is left alone (the
+# cutover mints the key before .env learns it).
+patch_dist_runtime_config() {
+  local rc="$REPO_DIR/dist/runtime-config.js" pfx
+  [ "${DATA_MODE:-}" = "cloud-sql" ] || {
+    echo "→ runtime-config: DATA_MODE=${DATA_MODE:-unset} — browser keeps the committed hosted Supabase pair"; return 0; }
+  [ -f "$rc" ] || { echo "✗ dist/runtime-config.js missing"; exit 1; }
+  case "$ENV_NAME" in staging) pfx=_staging;; prod) pfx=_prod;; *) echo "✗ unknown env $ENV_NAME"; exit 1;; esac
+  if grep -q "^var ${pfx}SupabaseUrl = window.location.origin;" "$rc"; then
+    echo "→ runtime-config: ${pfx}Supabase pair already self-hosted — leaving as is"; return 0
+  fi
+  local key="${SUPABASE_ANON_KEY:-}"
+  [ -n "$key" ] || { echo "✗ DATA_MODE=cloud-sql but SUPABASE_ANON_KEY is empty in .env.$ENV_NAME"; exit 1; }
+  # A key not signed by this env's JWT_SECRET would 401 every call and log
+  # everyone out; refuse before shipping it (publishable-format keys carry no
+  # signature to check).
+  case "$key" in
+    sb_publishable_*) ;;
+    *) node -e '
+         const c=require("crypto"); const [,secret,tok]=process.argv; const [h,p,sig]=String(tok).split(".");
+         if(!h||!p||!sig||!secret){console.error("✗ anon key / JWT_SECRET missing or malformed");process.exit(1)}
+         const e=c.createHmac("sha256",secret).update(h+"."+p).digest("base64url");
+         if(e!==sig){console.error("✗ SUPABASE_ANON_KEY is not signed by this env JWT_SECRET — refusing to ship it");process.exit(1)}
+       ' "${JWT_SECRET:-}" "$key" ;;
+  esac
+  sed -e "s|^var ${pfx}SupabaseUrl = .*|var ${pfx}SupabaseUrl = window.location.origin;|" \
+      -e "s|^var ${pfx}SupabaseAnonKey = .*|var ${pfx}SupabaseAnonKey = \"${key}\";|" \
+      "$rc" > "$rc.tmp" && mv "$rc.tmp" "$rc"
+  grep -q "^var ${pfx}SupabaseUrl = window.location.origin;" "$rc" \
+    && grep -q "^var ${pfx}SupabaseAnonKey = \"${key}\";" "$rc" \
+    || { echo "✗ runtime-config patch did not land — aborting before deploy"; exit 1; }
+  echo "→ runtime-config: ${pfx}Supabase pair → origin + .env anon key (dist only; committed file untouched)"
+}
+patch_dist_runtime_config
+
 echo "→ render firebase.json + .firebaserc from netlify.toml + .env.$ENV_NAME"
 # firebase.json must sit at the repo root: Firebase requires the public dir
 # to live INSIDE the project directory. Both files are generated (gitignored).

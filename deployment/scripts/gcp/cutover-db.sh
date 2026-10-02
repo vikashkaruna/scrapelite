@@ -197,7 +197,7 @@ if [ "$DRY_RUN" != "1" ] && [ -n "${SUPABASE_ANON_KEY:-}" ]; then
     *)
       node -e '
         const crypto = require("crypto");
-        const [, , secret, token] = process.argv;
+        const [, secret, token] = process.argv;
         const [h, p, sig] = String(token).split(".");
         if (!h || !p || !sig) { console.error("✗ SUPABASE_ANON_KEY is neither a JWT nor a publishable-format key — cannot verify"); process.exit(1); }
         const expected = crypto.createHmac("sha256", secret).update(`${h}.${p}`).digest("base64url");
