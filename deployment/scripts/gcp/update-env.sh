@@ -138,12 +138,32 @@ for unit in $UNITS; do
     fi
   fi
 
-  live_tag="$(tag_for_serving_image "$src_svc")"
-  if [ -z "$live_tag" ]; then
+  # 🔴 PROMOTED (digest-pinned) IMAGES. promote-prod.sh deploys prod from the
+  # STAGING registry by digest, so prod's own AR repo holds NO matching tag:
+  # resolving a tag and recomposing <prod repo>:<tag> died "image not found" in
+  # the first prod cutover (step 4, 2026-10-02). When the service serves an
+  # `@sha256:` reference, redeploy on that EXACT reference through the same
+  # DATIQ_IMG_*_OVERRIDE channel promote-prod.sh uses — same bytes, any repo.
+  serving_ref="$(serving_image_of "$src_svc")"
+  if [ -z "$serving_ref" ]; then
     echo "✗ service ${src_svc} not found — nothing live to update; run build-images.sh + deploy-run.sh first"
     exit 1
   fi
-
+  case "$serving_ref" in
+    *@sha256:*)
+      case "$unit" in
+        api|jobs) ovr="DATIQ_IMG_API_OVERRIDE" ;;
+        admin)    ovr="DATIQ_IMG_ADMIN_OVERRIDE" ;;
+        trackers) ovr="DATIQ_IMG_TRACKERS_OVERRIDE" ;;
+        *)        ovr="" ;;
+      esac
+      if [ -n "$ovr" ]; then
+        echo "→ ${unit}: redeploying on ${src_svc}'s serving image (digest ${serving_ref##*@}) with the current .env.${ENV_NAME}"
+        env "${ovr}=${serving_ref}" "$HERE/deploy-run.sh" "$ENV_NAME" "$unit"
+        continue
+      fi ;;
+  esac
+  live_tag="$(tag_for_serving_image "$src_svc")"
   echo "→ ${unit}: redeploying on ${src_svc}'s serving image (tag ${live_tag}) with the current .env.${ENV_NAME}"
   DATIQ_IMG_TAG_OVERRIDE="$live_tag" "$HERE/deploy-run.sh" "$ENV_NAME" "$unit"
 done
