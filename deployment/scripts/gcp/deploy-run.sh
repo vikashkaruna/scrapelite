@@ -291,7 +291,7 @@ for svc in $SERVICES; do
         --ingress=all --min-instances=0 --max-instances=2 --concurrency=80 \
         --memory=512Mi --cpu=1 --timeout=60 --service-account="$SA_JOBS_EMAIL" \
         --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${SQL_INSTANCE:?SQL_INSTANCE missing}" \
-        --set-env-vars="^;^GOTRUE_DB_DRIVER=postgres;GOTRUE_DB_NAMESPACE=auth;GOTRUE_API_HOST=0.0.0.0;GOTRUE_API_PORT=8080;API_EXTERNAL_URL=${APP_BASE_URL};GOTRUE_SITE_URL=${APP_BASE_URL};GOTRUE_JWT_EXP=3600;GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated;GOTRUE_DISABLE_SIGNUP=false;GOTRUE_EXTERNAL_EMAIL_ENABLED=true;GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false};GOTRUE_LOG_LEVEL=warn;GOTRUE_URI_ALLOW_LIST=${GOTRUE_URI_ALLOW_LIST:-}${OAUTH_ENV}${SMTP_ENV}" \
+        --set-env-vars="^;^GOTRUE_DB_DRIVER=postgres;GOTRUE_DB_NAMESPACE=auth;GOTRUE_API_HOST=0.0.0.0;GOTRUE_API_PORT=8080;API_EXTERNAL_URL=${APP_BASE_URL};GOTRUE_SITE_URL=${APP_BASE_URL};GOTRUE_JWT_EXP=3600;GOTRUE_JWT_AUD=authenticated;GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated;GOTRUE_DISABLE_SIGNUP=false;GOTRUE_EXTERNAL_EMAIL_ENABLED=true;GOTRUE_MAILER_AUTOCONFIRM=${GOTRUE_MAILER_AUTOCONFIRM:-false};GOTRUE_LOG_LEVEL=warn;GOTRUE_URI_ALLOW_LIST=${GOTRUE_URI_ALLOW_LIST:-}${OAUTH_ENV}${SMTP_ENV}" \
         --set-secrets="GOTRUE_DB_DATABASE_URL=$(sm_name GOTRUE_DB_DATABASE_URL):latest,GOTRUE_JWT_SECRET=$(sm_name JWT_SECRET):latest${OAUTH_SECRETS}${SMTP_SECRETS}" --quiet
       # Kept for a future switch back to a private service; moot while allUsers
       # can invoke (the --allow-unauthenticated above).
