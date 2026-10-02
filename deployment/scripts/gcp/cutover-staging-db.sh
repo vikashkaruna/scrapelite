@@ -249,7 +249,7 @@ update_env DATA_MODE cloud-sql
 update_env SUPABASE_URL "$APP_BASE_URL"
 # The minted pair lands here, together with the URL that matches it — writing
 # them any earlier is how step 2's pre-flight saw a key "issued for project
-# datiq-vsp-sql-datiq-stg" while SUPABASE_URL still named the hosted project.
+# <sql-instance>" while SUPABASE_URL still named the hosted project.
 update_env SUPABASE_ANON_KEY "$ANON_KEY"
 update_env SUPABASE_SERVICE_KEY "$SERVICE_KEY"
 # The self-hosted GoTrue allowlist must include every origin that will call it.

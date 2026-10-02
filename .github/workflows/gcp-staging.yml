@@ -5,11 +5,10 @@
 # grep step appends verbatim — change the deployment by editing the env files,
 # never this workflow).
 #
-# Required repo Environment secrets: GCP_PROJECT_ID, GCP_REGION,
-# DATIQ_PROJECT_CODE, GCP_BILLING_ACCOUNT_ID, SUPABASE_URL, SUPABASE_ANON_KEY,
-# SUPABASE_SERVICE_KEY, JOBS_TOKEN, DB_APP_PASSWORD, VITE_RAZORPAY_KEY_ID,
-# GCP_SA_KEY (deploy SA JSON), FHS_SITE_ID (optional var — else the example
-# default is used).
+# Required Environment secrets (gcp-staging): GCP_SA_KEY (deploy SA JSON) and
+# ENV_FILE (the whole contents of deployment/env/.env.staging). Nothing else —
+# the env file is the single source of truth, identical to what the operator
+# scripts read locally. Treat ENV_FILE as the most sensitive secret in the repo.
 #
 # NOTE: the push trigger skips the Cloud SQL step by default (SKIP_DB=1): the
 # runner has no Supabase CLI login and the rehearsal dumps are gitignored. Run
@@ -66,36 +65,25 @@ jobs:
       - name: Parameterisation gate (doc 06 §9 — no literals outside env/*.example)
         run: bash deployment/scripts/check-parameterisation.sh
 
-      - name: Write the deploy env file (secrets + the shipped env contract)
+      - name: Write the deploy env file from the ENV_FILE secret
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
         run: |
           mkdir -p deployment/env
-          # Quoted delimiter: GitHub substitutes ${{ secrets.* }} BEFORE the
-          # shell runs, so quoting is safe — and any $ or backtick inside a
-          # secret value is written verbatim instead of being expanded.
-          cat > deployment/env/.env.staging <<'ENV'
-          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION=${{ secrets.GCP_REGION }}
-          DATIQ_PROJECT_CODE=${{ secrets.DATIQ_PROJECT_CODE }}
-          DATIQ_ENV=staging
-          GCP_BILLING_ACCOUNT_ID=${{ secrets.GCP_BILLING_ACCOUNT_ID }}
-          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
-          JOBS_TOKEN=${{ secrets.JOBS_TOKEN }}
-          DB_APP_PASSWORD=${{ secrets.DB_APP_PASSWORD }}
-          VITE_RAZORPAY_KEY_ID=${{ secrets.VITE_RAZORPAY_KEY_ID }}
-          IMG_TAG=${{ github.sha }}
-          ENV
-          # Optional GitHub Environment override, else the shipped default below.
-          if [ -n "${{ vars.FHS_SITE_ID }}" ]; then
-            echo "FHS_SITE_ID=${{ vars.FHS_SITE_ID }}" >> deployment/env/.env.staging
+          if [ -z "${ENV_FILE}" ]; then
+            echo "::error::Environment secret ENV_FILE is empty — paste deployment/env/.env.staging into it."
+            exit 1
           fi
-          APP_BASE_URL="https://$(grep -E '^FHS_SITE_ID=' deployment/env/.env.staging | tail -1 | cut -d= -f2- || true).web.app"
-          echo "APP_BASE_URL=${APP_BASE_URL}" >> deployment/env/.env.staging
-          # Non-secret contract values from the example (LAST — later lines win,
-          # so an accidental duplicate above cannot override the contract).
-          grep -E '^(DATIQ_ENV_SUFFIX|DATIQ_OWNER_LABEL|CLOUD_RUN_|AR_REPO|SQL_INSTANCE|SA_|FHS_SITE_ID|FB_WEB_APP_DISPLAY|ARTIFACTS_BUCKET|DATA_MODE|SOURCE_PROJECT_REF|AUTH_IMAGE|REST_IMAGE|APP_CONTEXT|GIT_BRANCH|OPS_JOBS_DISABLED|ENGAGEMENT_ENABLED|DAILY_HOUR_UTC|SITE_NAME|SCRAPE_PROVIDER_ORDER|VITE_AI_MODEL|VITE_WEBHOOK_URL|N8N_PUBLIC_WEBHOOK_URL|API_BASE_URL|SHADOW_BASE_URL|PW_BASE_URL|SMOKE_TARGET|GA_MEASUREMENT_ID|POSTHOG_HOST|CONSENT_POLICY_VERSION|DB_NAME|DB_APP_USER|CLOUD_SQL_TIER|CLOUD_SQL_EDITION|CLOUD_SQL_HA|CLOUD_SQL_BACKUP_PITR|CLOUD_SQL_CONNECTIVITY|CLOUD_SQL_PROXY_PORT|PURGE_ENABLED|CLOUD_SQL_BACKUP_START)=' \
-            deployment/env/.env.staging.example >> deployment/env/.env.staging
+          # Passed through env (never interpolated into the script) so $ and
+          # backticks inside values are written verbatim.
+          printf '%s\n' "${ENV_FILE}" > deployment/env/.env.staging
+          # Guard against pasting the wrong environment's file.
+          if ! grep -qE '^DATIQ_ENV=staging[[:space:]]*$' deployment/env/.env.staging; then
+            echo "::error::ENV_FILE does not declare DATIQ_ENV=staging — wrong file pasted?"
+            exit 1
+          fi
+          # Per-run values appended LAST (later lines win).
+          echo "IMG_TAG=${{ github.sha }}" >> deployment/env/.env.staging
 
       - name: Deploy everything (skips per inputs)
         env:

@@ -19,8 +19,8 @@
 // localhost — the same shape `gcloud run services proxy` was supposed to give.
 //
 //   node deployment/scripts/studio-proxy.mjs \
-//     --service datiq-vsp-run-studio-stg --project vikash-saas-project \
-//     --region asia-south1 --sa datiq-vsp-sa-deploy@vikash-saas-project.iam.gserviceaccount.com \
+//     --service <studio-service> --project <gcp-project> \
+//     --region <region> --sa <deploy-sa>@<gcp-project>.iam.gserviceaccount.com \
 //     --port 54328
 //
 // The token is minted once and refreshed 5 min before its 1h expiry. The

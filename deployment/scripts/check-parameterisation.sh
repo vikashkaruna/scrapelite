@@ -32,6 +32,10 @@ ALLOW_GLOBS=(
   # netlify/functions/lib/supabaseServerClient.js uses. It carries no project
   # ids, regions, or key material.
   "*/scripts/check-supabase-pair.sh"
+  # Generic key-FORMAT / public host-suffix matchers (sb_secret_ prefix test,
+  # *.supabase.co suffix test) — validation patterns, no project ids or keys.
+  "*/scripts/gcp/cutover-db.sh"
+  "*/scripts/gcp/prod-preflight.sh"
 )
 
 # Build find args: deployment/{scripts,compose,gcp,docker,adapter,migrator}

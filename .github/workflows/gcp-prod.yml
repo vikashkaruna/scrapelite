@@ -11,10 +11,8 @@
 #
 # BEFORE FIRST USE (one-time, owner):
 #   1. GitHub repo → Settings → Environments → create `gcp-prod`.
-#      Add the same secrets gcp-staging uses, PLUS the prod-only ones
-#      (see deployment/env/.env.prod.example): GCP_SA_KEY (a prod deploy SA),
-#      SUPABASE_URL/ANON/SERVICE_KEY (prod hosted Supabase until cutover),
-#      JOBS_TOKEN, DB_APP_PASSWORD, VITE_RAZORPAY_KEY_ID, and as VARIABLES:
+#      Secrets: GCP_SA_KEY (a SEPARATE prod deploy SA key) and ENV_FILE (the
+#      whole contents of deployment/env/.env.prod). Variables:
 #      STAGING_GCP_PROJECT_ID / STAGING_AR_REPO / STAGING_IMG_TAG for digest
 #      promotion.
 #   2. Enable "Required reviewers" on the `gcp-prod` environment — the approval
@@ -76,31 +74,26 @@ jobs:
       - name: Parameterisation gate (doc 06 §9)
         run: bash deployment/scripts/check-parameterisation.sh
 
-      - name: Write the deploy env file (secrets + the shipped env contract)
+      - name: Write the deploy env file from the ENV_FILE secret
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
         run: |
           mkdir -p deployment/env
-          cat > deployment/env/.env.prod <<'ENV'
-          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION=${{ secrets.GCP_REGION }}
-          DATIQ_PROJECT_CODE=${{ secrets.DATIQ_PROJECT_CODE }}
-          DATIQ_ENV=prod
-          GCP_BILLING_ACCOUNT_ID=${{ secrets.GCP_BILLING_ACCOUNT_ID }}
-          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
-          JOBS_TOKEN=${{ secrets.JOBS_TOKEN }}
-          DB_APP_PASSWORD=${{ secrets.DB_APP_PASSWORD }}
-          VITE_RAZORPAY_KEY_ID=${{ secrets.VITE_RAZORPAY_KEY_ID }}
-          STAGING_GCP_PROJECT_ID=${{ vars.STAGING_GCP_PROJECT_ID }}
-          STAGING_AR_REPO=${{ vars.STAGING_AR_REPO }}
-          STAGING_IMG_TAG=${{ vars.STAGING_IMG_TAG }}
-          ENV
-          # Non-secret contract values from the example (LAST — later lines win,
-          # so an accidental duplicate above cannot override the contract).
-          grep -E '^(DATIQ_ENV_SUFFIX|DATIQ_OWNER_LABEL|CLOUD_RUN_|AR_REPO|SQL_INSTANCE|SA_|FHS_SITE_ID|FB_WEB_APP_DISPLAY|ARTIFACTS_BUCKET|DATA_MODE|GOTRUE_MAILER_AUTOCONFIRM|AUTH_IMAGE|REST_IMAGE|APP_CONTEXT|GIT_BRANCH|OPS_JOBS_DISABLED|ENGAGEMENT_ENABLED|DAILY_HOUR_UTC|SITE_NAME|SCRAPE_PROVIDER_ORDER|VITE_AI_MODEL|VITE_WEBHOOK_URL|N8N_PUBLIC_WEBHOOK_URL|API_BASE_URL|SHADOW_BASE_URL|PW_BASE_URL|SMOKE_TARGET|GA_MEASUREMENT_ID|POSTHOG_HOST|CONSENT_POLICY_VERSION|DB_NAME|DB_APP_USER|CLOUD_SQL_TIER|CLOUD_SQL_EDITION|CLOUD_SQL_HA|CLOUD_SQL_BACKUP_PITR|CLOUD_SQL_CONNECTIVITY|CLOUD_SQL_PROXY_PORT|PURGE_ENABLED|CLOUD_SQL_BACKUP_START)=' \
-            deployment/env/.env.prod.example >> deployment/env/.env.prod
-          # Derived from the example's FHS_SITE_ID (appended last → wins).
-          echo "APP_BASE_URL=https://$(grep -E '^FHS_SITE_ID=' deployment/env/.env.prod.example | cut -d= -f2-).web.app" >> deployment/env/.env.prod
+          if [ -z "${ENV_FILE}" ]; then
+            echo "::error::Environment secret ENV_FILE is empty — paste deployment/env/.env.prod into it."
+            exit 1
+          fi
+          printf '%s\n' "${ENV_FILE}" > deployment/env/.env.prod
+          if ! grep -qE '^DATIQ_ENV=prod[[:space:]]*$' deployment/env/.env.prod; then
+            echo "::error::ENV_FILE does not declare DATIQ_ENV=prod — wrong file pasted?"
+            exit 1
+          fi
+          # Digest-promotion source (variables, not secrets), appended LAST.
+          {
+            echo "STAGING_GCP_PROJECT_ID=${{ vars.STAGING_GCP_PROJECT_ID }}"
+            echo "STAGING_AR_REPO=${{ vars.STAGING_AR_REPO }}"
+            echo "STAGING_IMG_TAG=${{ vars.STAGING_IMG_TAG }}"
+          } >> deployment/env/.env.prod
 
       - name: Deploy prod shadow (digest promotion, OPS_JOBS_DISABLED honored from the contract)
         env:

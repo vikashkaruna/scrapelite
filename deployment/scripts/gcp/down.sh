@@ -23,7 +23,7 @@
 #     the site ID can never be recreated (firebase-tools: "cannot be
 #     reactivated by you or anyone else"), and its custom domain comes off
 #     with it. Only --delete-data removes it. (Learned live on staging
-#     2026-10-01 — datiq-vsp-fhs-stg had to be replaced by a new site ID.)
+#     2026-10-01 — the old staging site id had to be replaced by a new site ID.)
 #   * Studio (the Supabase dashboard) is STATELESS — nothing to preserve; its
 #     content IS Cloud SQL. `up.sh <env>` recreates the service.
 #   * Everything else (scheduler jobs, Cloud Run services, images, artifacts
@@ -217,7 +217,7 @@ fi
 # forever. A plain teardown therefore KEEPS the site (up.sh redeploys content
 # into it); --delete-data — the full-destroy switch — is the only path that
 # removes it, alongside the database. Learned the hard way on staging
-# 2026-10-01: a plain teardown deleted datiq-vsp-fhs-stg and the rebuild could
+# 2026-10-01: a plain teardown deleted the old staging site id and the rebuild could
 # not recreate it, which also tore off the stg.datiq.app custom domain.
 if [ "$DELETE_DATA" != "1" ]; then
   echo "→ hosting site ${FHS_SITE_ID}: kept (site deletion is permanent — only --delete-data removes it)"
