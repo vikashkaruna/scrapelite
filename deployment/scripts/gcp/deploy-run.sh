@@ -217,8 +217,10 @@ for svc in $SERVICES; do
       # and the client SECRET in Secret Manager (bootstrap-secrets.sh pushes it
       # from <P>_OAUTH_CLIENT_SECRET). A provider is wired ONLY when enabled, so
       # a half-configured one can never break auth for everyone. The callback is
-      # always ${APP_BASE_URL}/auth/v1/callback — register exactly that in the
-      # provider console; a different env gets a different APP_BASE_URL for free.
+      # always ${APP_BASE_URL}/auth/v1/callback (APP_BASE_URL from .env.<env>) —
+      # register exactly that in the provider console. APP_BASE_URL must be the
+      # host users actually sign in on, or the provider answers redirect_uri_mismatch.
+      OAUTH_CB="${APP_BASE_URL%/}"
       OAUTH_ENV=""; OAUTH_SECRETS=""
       for spec in GOOGLE:google AZURE:azure GITHUB:github; do
         P="${spec%%:*}"; sm_key="${spec#*:}"
@@ -230,10 +232,10 @@ for svc in $SERVICES; do
         sec="$(sm_name "${P}_OAUTH_CLIENT_SECRET")"
         gcloud secrets describe "$sec" --project="$GCP_PROJECT_ID" >/dev/null 2>&1 \
           || { echo "✗ ${en_var}=true but secret ${sec} does not exist — set ${P}_OAUTH_CLIENT_SECRET in .env.$ENV_NAME and run bootstrap-secrets.sh $ENV_NAME"; exit 1; }
-        OAUTH_ENV="${OAUTH_ENV};${en_var}=true;${id_var}=${!id_var};GOTRUE_EXTERNAL_${P}_REDIRECT_URI=${APP_BASE_URL}/auth/v1/callback"
+        OAUTH_ENV="${OAUTH_ENV};${en_var}=true;${id_var}=${!id_var};GOTRUE_EXTERNAL_${P}_REDIRECT_URI=${OAUTH_CB}/auth/v1/callback"
         [ "$P" = "AZURE" ] && OAUTH_ENV="${OAUTH_ENV};GOTRUE_EXTERNAL_AZURE_URL=${GOTRUE_EXTERNAL_AZURE_URL:-https://login.microsoftonline.com/common}"
         OAUTH_SECRETS="${OAUTH_SECRETS},GOTRUE_EXTERNAL_${P}_SECRET=${sec}:latest"
-        echo "  ✓ oauth ${sm_key}: enabled (callback ${APP_BASE_URL}/auth/v1/callback)"
+        echo "  ✓ oauth ${sm_key}: enabled (callback ${OAUTH_CB}/auth/v1/callback)"
       done
       gcloud run deploy "$CLOUD_RUN_AUTH" "${GCP_FLAGS[@]}" \
         --image="${AUTH_IMAGE:?AUTH_IMAGE missing in .env}" --port=8080 --allow-unauthenticated \

@@ -88,7 +88,15 @@ for P in GOOGLE AZURE GITHUB; do
   value="$(get_val "${P}_OAUTH_CLIENT_SECRET")"
   secret_name="$(sm_name "${P}_OAUTH_CLIENT_SECRET")"
   if [ -z "$value" ]; then
-    echo "  skip ${secret_name} (no value for ${P}_OAUTH_CLIENT_SECRET)"; skipped=$((skipped+1)); continue
+    echo "  skip ${secret_name} (no value for ${P}_OAUTH_CLIENT_SECRET)"; skipped=$((skipped+1))
+    # Enabled with no secret anywhere = deploy-run.sh will refuse. Say so now,
+    # not at deploy time. (A secret already in Secret Manager is fine.)
+    en_var="GOTRUE_EXTERNAL_${P}_ENABLED"
+    if [ "$(get_val "$en_var")" = "true" ] \
+       && ! gcloud secrets describe "$secret_name" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+      echo "  ⚠ ${en_var}=true but ${secret_name} does not exist: set ${P}_OAUTH_CLIENT_SECRET in .env.$ENV_NAME and re-run"
+    fi
+    continue
   fi
   if ! gcloud secrets describe "$secret_name" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
     gcloud secrets create "$secret_name" --project="$GCP_PROJECT_ID" --replication-policy=automatic --quiet >/dev/null
