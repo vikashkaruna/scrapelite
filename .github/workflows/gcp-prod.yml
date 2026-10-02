@@ -88,12 +88,14 @@ jobs:
             echo "::error::ENV_FILE does not declare DATIQ_ENV=prod — wrong file pasted?"
             exit 1
           fi
-          # Digest-promotion source (variables, not secrets), appended LAST.
-          {
-            echo "STAGING_GCP_PROJECT_ID=${{ vars.STAGING_GCP_PROJECT_ID }}"
-            echo "STAGING_AR_REPO=${{ vars.STAGING_AR_REPO }}"
-            echo "STAGING_IMG_TAG=${{ vars.STAGING_IMG_TAG }}"
-          } >> deployment/env/.env.prod
+          # Optional overrides for the digest-promotion source (variables win
+          # over the file, but ONLY when set — an unset variable must never
+          # blank a value the file already carries).
+          for pair in "STAGING_GCP_PROJECT_ID=${{ vars.STAGING_GCP_PROJECT_ID }}" \
+                      "STAGING_AR_REPO=${{ vars.STAGING_AR_REPO }}" \
+                      "STAGING_IMG_TAG=${{ vars.STAGING_IMG_TAG }}"; do
+            [ -n "${pair#*=}" ] && echo "$pair" >> deployment/env/.env.prod
+          done
 
       - name: Deploy prod shadow (digest promotion, OPS_JOBS_DISABLED honored from the contract)
         env:
