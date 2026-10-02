@@ -71,7 +71,7 @@ run() { if [ "$DRY_RUN" = "1" ]; then printf '  [dry-run] %s\n' "$*"; else "$@";
 if [ "$MODE" != "finish-crons" ]; then
   echo "⚠ PROD CUTOVER EFFECTS — read all four before confirming:"
   echo "   1. Cloud SQL ${SQL_INSTANCE} public/auth/storage tables are truncated and reloaded."
-  echo "   2. Sessions stay valid ONLY because JWT_SECRET is the prod Supabase secret."
+  echo "   2. Anon/service keys stay valid (JWT_SECRET = prod Supabase secret); signed-in USER sessions do NOT (hosted signs ES256) — everyone signs in again."
   echo "   3. Routing flips: hosted Supabase → self-hosted GoTrue/PostgREST/Cloud SQL."
   echo "   4. Cron ownership hands to GCP prod ONLY with NETLIFY_CRONS_FROZEN=1;"
   echo "      otherwise the cutover completes with GCP jobs left PAUSED."
@@ -210,7 +210,7 @@ if [ "$DRY_RUN" != "1" ] && [ -n "${SUPABASE_ANON_KEY:-}" ]; then
           console.error("  PROD Supabase JWT secret (dashboard → Settings → API), then re-run.");
           process.exit(1);
         }
-        console.log("✓ preflight: anon key signature matches .env.prod JWT_SECRET (sessions survive the flip)");
+        console.log("✓ preflight: anon key signature matches .env.prod JWT_SECRET (anon/service keys stay valid; NOTE user sessions do NOT survive — hosted prod signs user tokens ES256, GoTrue validates HS256 — users sign in again)");
       ' "$JWT_SECRET" "$SUPABASE_ANON_KEY"
       ;;
   esac

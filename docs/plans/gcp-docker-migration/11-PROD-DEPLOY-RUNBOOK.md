@@ -314,6 +314,28 @@ dispatch `gcp-prod`. For the cutover window itself, run the scripts locally
   nspname='auth'` must return `supabase_auth_admin`.
 - **`crons.sh` is scoped to the env suffix** (`-stg`/`-prod`); before 2026-10-02
   `crons.sh prod pause|resume` also touched staging's 13 jobs.
+- **Existing sessions do NOT survive the prod flip (found 2026-10-02).** Hosted
+  Supabase prod signs USER access tokens with **ES256** (asymmetric signing keys);
+  the self-hosted GoTrue validates **HS256** with `JWT_SECRET`. The anon/service
+  keys are legacy HS256, which is why the preflight signature check passes — but a
+  signed-in browser's token is rejected (`signing method ES256 is invalid`, GoTrue
+  403 `bad_jwt`, api 401 on every `getUser`). Expect every user to sign in again;
+  with no customers that is fine. Test sign-in from a signed-out browser/clear
+  site data.
+- **OAuth on the shadow host needs its own callback.** The self-hosted GoTrue's
+  callback is `${APP_BASE_URL}/auth/v1/callback`; while `APP_BASE_URL` is the
+  `*.web.app` shadow host, Google/Microsoft/GitHub must also have
+  `https://datiq-vsp-fhs-prod.web.app/auth/v1/callback` registered (or test after
+  the DNS flip with `datiq.app`). Registering only `datiq.app` fails the shadow
+  with redirect_uri_mismatch.
+- **Stored AI config overrides `.env`.** The `app_config` row `ai` (operator config,
+  copied from hosted prod) beat `AI_PROVIDER_ORDER`: order anthropic → gemini →
+  openai, with Anthropic out of credit and `gemini-3.8-flash` hanging 20s+, so the
+  30s budget was gone before OpenAI ran (`/api/ai` 504; Extract/Enrich failed).
+  Fixed on the Cloud SQL copy (OpenAI first, `gpt-6-luna`, Anthropic+Gemini
+  disabled; old value kept in the session scratchpad). **A cutover re-run reloads
+  the hosted row** — fix `/admin/ai` on the SOURCE too, or re-apply after any
+  re-run. Verify with `POST /api/ai` → `_provider`.
 - **Never put the DB password in a command line** (shell history, transcripts):
   `read -rs DB_URL </dev/tty` then pass `"$DB_URL"`. Rotate if it was exposed.
 
