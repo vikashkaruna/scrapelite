@@ -50,7 +50,16 @@
     "on 3.1.6 / nested 4.1.3 only because of declared ranges. The",
     "`fast-uri: ^3.1.7 || ^4.2.0` override lets each dependent resolve a",
     "patched version in its own major. Fourth time the same lesson held: the",
-    "patch existed; only the pin was behind."
+    "patch existed; only the pin was behind.",
+    "",
+    "━━━ 2026-10-03: tools/netlify-cli DELETED, not bypassed ━━━━━━━━━━━━━━━━━━━",
+    "Netlify stopped being a deploy target (staging and prod deploy to GCP via",
+    "gcp-staging.yml / gcp-prod.yml), so the committed netlify-cli toolchain and",
+    "its audit root were removed. This cleared node-forge (GHSA-86w9-cpqp-85rv,",
+    "NO patched release exists) and the five packages that merely inherited its",
+    "flag. Deleting the unused tree was the fix; a bypass would only have hidden",
+    "it. brace-expansion/fastify had patches and were overridden first, then",
+    "went with the tree."
   ],
   "bypasses": []
 }

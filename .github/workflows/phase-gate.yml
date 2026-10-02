@@ -2,7 +2,8 @@
 #
 # Phase-Gate Production Deploy
 # ─────────────────────────────
-# Runs on every push to main. Enforces the production release policy:
+# Runs on every push to main. Production is GCP (Cloud Run + Firebase Hosting);
+# Netlify is no longer a deploy target and nothing here touches it.
 #
 #   1. Production Gate: Test Suites         → functional, regression, security,
 #                                             integration and e2e suites green
@@ -10,50 +11,28 @@
 #                                             bypassed with a TODO + expiry
 #   3. Production Gate: Open Issues/Defects → no open defects unless labeled
 #                                             gate-bypass with a TODO
-#   4. Staging Released & Tested            → the staging deploy is live, healthy,
-#                                             and its commit is CONTAINED in this
-#                                             main commit (staging was released,
-#                                             deployed and tested first)
-#   5. Await Manual Approval                → ⏸ the run PAUSES here. An approval
-#                                             issue is opened and the deploy waits
-#                                             until an authorized approver comments
-#                                             `approved`. This works on a PRIVATE
-#                                             repo on the GitHub FREE plan (it uses
-#                                             Issues, not the Pro-only Environment
-#                                             "required reviewers" feature, which
-#                                             returns HTTP 422 on Free).
-#   6. Deploy to Production                 → Netlify deploy, only after approval.
-#                                             The CLI comes from a COMMITTED
-#                                             LOCKFILE (tools/netlify-cli/), never
-#                                             `npx --yes netlify-cli` — see the
-#                                             comment on that step for the release
-#                                             an upstream publish killed.
-#   7. Smoke Test — Production              → verify the deploy; on failure restore
-#                                             the last good deploy via the Netlify
-#                                             REST API (the CLI has no `rollback`)
+#   4. Staging Released & Tested            → a SUCCESSFUL Staging Gate run (which
+#                                             includes the GCP staging deploy and
+#                                             smoke) exists for a staging commit
+#                                             whose TREE is identical to this main
+#                                             commit. Identical trees are what let
+#                                             step 5 promote staging's images
+#                                             byte-for-byte: prod runs exactly what
+#                                             staging validated. Route: staging
+#                                             first, then main.
+#   5. Deploy to Production                 → calls gcp-prod.yml (digest promotion
+#                                             of that staging commit's images, then
+#                                             Cloud Run, Hosting, Scheduler, smoke).
+#                                             The `gcp-prod` GitHub Environment has
+#                                             REQUIRED REVIEWERS, so the run PAUSES
+#                                             for a human approval before any prod
+#                                             step executes. That approval replaces
+#                                             the old approval-issue mechanism.
 #
-# ⚠️  FREE-PLAN ENFORCEMENT NOTE
-# Branch protection + Environment required-reviewers are Pro/public-only. To
-# make this gate actually binding on a Free private repo you MUST ALSO turn OFF
-# Netlify "Auto publishing" for production (Netlify → Site → Build & deploy →
-# Continuous deployment → Production branch → Stop auto publishing). Otherwise
-# Netlify auto-deploys every push to `main` and bypasses this entire workflow.
-# See docs/PHASE-GATE.md §"Free plan alternative".
-#
-# "Stop auto publishing" LOCKS the published production deploy, and a lock
-# blocks every publish path — including this workflow's own `netlify deploy
-# --prod`, which fails with:
-#   Error: Deployments are "locked" for production context of this project
-# That is not a misconfiguration to undo; it is the protection working.
-#
-# RELEASING PRODUCTION THEREFORE TAKES TWO HUMAN ACTS, on purpose:
-#   (a) unlock production in the Netlify UI, and
-#   (b) comment `approved` on the approval issue.
-# The workflow will NOT unlock for you. `deploy-production` only verifies the
-# unlock and fails fast with instructions if it is missing, so an approval alone
-# can never change what datiq.app serves. `relock-production` (job 8, always())
-# re-locks once smoke + any rollback are done, so each release needs a fresh
-# unlock. Leave production locked between releases — that is the steady state.
+# Not here, deliberately: the production database. Cloud SQL changes are an
+# operator action (cutover-db.sh), never CI. A bad deploy is rolled back by
+# re-running the promotion for the previous good staging commit (see
+# docs/plans/gcp-docker-migration/11-PROD-DEPLOY-RUNBOOK.md).
 #
 # Concurrency group `prod-deploy` with cancel-in-progress: false, so an
 # in-flight prod deploy is never killed mid-deploy. The second push queues.
@@ -78,13 +57,14 @@ on:
   workflow_dispatch:
     inputs:
       bypass_staging_check:
-        description: "Skip staging released/tested check (hotfixes only — leave a TODO in the release notes)"
+        description: "Hotfix only: skip the staging proof and BUILD fresh prod images instead of promoting staging's (still needs the gcp-prod approval)"
         type: boolean
         default: false
 
 permissions:
   contents: read
-  issues: write # the manual-approval gate opens/updates an approval issue
+  issues: read
+  actions: read # staging-released reads the Staging Gate run history
 
 concurrency:
   group: prod-deploy
@@ -186,492 +166,74 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ─────────────────────────────────────────────────────────────────
-  # 4. STAGING RELEASED & TESTED — a ready staging deploy must be healthy
-  #    AND share history with this main commit in either direction, i.e.
-  #    this commit's content was deployed + tested on staging first.
-  #    (Two earlier versions were too strict: requiring the SHAs to be
-  #    identical, which merge commits can never satisfy; then requiring
-  #    staging to be an ancestor of main, which broke whenever staging
-  #    advanced ahead of a queued main run.)
+  # 4. STAGING RELEASED & TESTED — exact-content proof, not "similar history".
+  #
+  # Earlier versions of this check went wrong in both directions: requiring
+  # identical SHAs (a merge commit can never satisfy that) and then requiring
+  # ancestry (broke whenever staging moved ahead of a queued main run). Neither
+  # answers the question that matters for a PROMOTION: "is what I am about to
+  # ship byte-for-byte what staging validated?" Git answers that exactly:
+  # equal TREE hashes. A merge commit and its second parent have different SHAs
+  # and the same tree.
+  #
+  # A main-only change (a commit that never went through staging) makes the
+  # trees differ and this job fails with the reason — merge it to staging first.
   # ─────────────────────────────────────────────────────────────────
   staging-released:
     name: "Staging Released & Tested"
     needs: [test-suites, vulnerabilities, open-defects]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.proof.outputs.tag }}
+      promote: ${{ steps.proof.outputs.promote }}
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0 # full history for the ancestor check
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: ".node-version"
-          cache: "npm"
-      - run: npm ci
-
-      - name: Verify staging deploy is live, contained in main, and its Functions manifest is complete
-        run: |
-          set -e
-          echo "Checking ready staging deploys against $GITHUB_SHA..."
-          RESP=$(curl -s \
-            -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
-            "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys?per_page=20&context=branch-deploy")
-          STAGING_SHAS=$(echo "$RESP" \
-            | jq -r '[.[] | select(.branch == "staging" and .state == "ready") | .commit_ref // empty] | unique | .[]')
-          if [ -z "$STAGING_SHAS" ]; then
-            echo "✗ no ready staging deploy found on Netlify"
-            exit 1
-          fi
-          echo "  ready staging deploys: $(echo "$STAGING_SHAS" | tr '\n' ' ')"
-
-          # The policy is "everything in this main commit was released to staging
-          # and tested there first". That holds in EITHER direction:
-          #   staging ⊆ main  → staging shipped first, main merged it (normal case)
-          #   main ⊆ staging  → staging has since moved on but still contains this
-          #                     commit, so it was deployed + tested on staging.
-          # Requiring only the first direction made any later staging push
-          # retroactively fail an older, still-queued main run (run #22: staging
-          # was at 14dd570 while this run was gating its own ancestor bded77d).
-          # We also scan every ready staging deploy, not just the newest one.
-          MATCH=""
-          for SHA in $STAGING_SHAS; do
-            git cat-file -e "$SHA^{commit}" 2>/dev/null || continue
-            if git merge-base --is-ancestor "$SHA" "$GITHUB_SHA"; then
-              MATCH="$SHA"; REL="staging commit is contained in main — staging was released first"
-              break
-            fi
-            if git merge-base --is-ancestor "$GITHUB_SHA" "$SHA"; then
-              MATCH="$SHA"; REL="main commit is contained in a newer staging deploy — it was released and tested on staging"
-              break
-            fi
-          done
-
-          if [ -z "$MATCH" ]; then
-            echo "✗ none of the ready staging deploys share history with $GITHUB_SHA."
-            echo "  Release to staging (and let it pass the Staging Gate) before releasing main."
-            exit 1
-          fi
-          echo "  ✓ matched staging deploy $MATCH: $REL"
-
-          # Same Functions-manifest check as staging-gate.yml, run against the
-          # MATCHED deploy's own manifest (not necessarily the newest deploy —
-          # see the "either direction" note above). No network access to the
-          # gated staging host required; see the note on "Local smoke test"
-          # below for why this job no longer probes it directly.
-          EXPECTED_FUNCTIONS="extract extractions ai admin-auth admin-monitoring admin-health billing-lifecycle billing-purge scheduled-runner health-monitor payment-webhook create-checkout verify-payment"
-          FUNCS=$(printf '%s' "$RESP" | jq -r --arg sha "$MATCH" '
-            [.[] | select(.branch == "staging" and .commit_ref == $sha)]
-            | .[0].available_functions // [] | map(.n) | .[]')
-          MISSING=""
-          for f in $EXPECTED_FUNCTIONS; do
-            echo "$FUNCS" | grep -qx "$f" || MISSING="$MISSING $f"
-          done
-          if [ -n "$MISSING" ]; then
-            echo "✗ matched staging deploy is missing expected function(s):$MISSING"
-            exit 1
-          fi
-          echo "  ✓ all expected functions are present in the deploy manifest"
-
-      - name: Build (this commit, matching what staging already released)
-        run: npm run build
-
-      - name: Local smoke test (vite preview of the built artifact)
-        # ⚠️ 2026-08-02: the staging branch-deploy host is no longer publicly
-        # reachable — Netlify's `sso_login` visitor-access control was enabled
-        # for non-production contexts as a deliberate security decision (kept
-        # ON; do not "fix" this by turning it off). It's a real SSO/OAuth gate,
-        # not the classic site password, so there is no Basic-Auth or bypass
-        # token an anonymous `curl`/`fetch` can present — every path, including
-        # plain static files, answers 401 with Netlify's own login-redirect
-        # HTML. Full reasoning: staging-gate.yml, job `deploy-verified`.
-        #
-        # This step verifies the SAME commit two other ways instead: the
-        # Functions-manifest check above (via the Netlify API, not the gated
-        # host), and this local `vite preview` of the identical build output
-        # for the SPA-routing / marketing-asset / help-site probes.
-        # `SMOKE_SKIP_API=1` because a bare static preview has no Netlify
-        # Functions runtime behind it — that's covered by the manifest check
-        # and by the contract-test suite in the Test Suites job.
+          fetch-depth: 0 # tree hashes of other commits need the history
+      - name: Find a successful Staging Gate run for this exact content
+        id: proof
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BYPASS: ${{ inputs.bypass_staging_check == true }}
         run: |
           set -euo pipefail
-          npx vite preview --port 4319 --strictPort &
-          PREVIEW_PID=$!
-          trap 'kill "$PREVIEW_PID" 2>/dev/null || true' EXIT
-
-          echo "Waiting for local preview server on :4319..."
-          for i in $(seq 1 30); do
-            if curl -fsS "http://localhost:4319/" >/dev/null 2>&1; then
-              echo "  ✓ preview server is up"
-              break
+          if [ "$BYPASS" = "true" ]; then
+            echo "::warning::bypass_staging_check — staging proof SKIPPED; prod images will be BUILT, not promoted"
+            { echo "tag="; echo "promote=false"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          MAIN_TREE=$(git rev-parse "${GITHUB_SHA}^{tree}")
+          echo "main ${GITHUB_SHA:0:8} has tree ${MAIN_TREE:0:12}"
+          # Newest first. Status "success" is the WHOLE run: all three gates AND
+          # the GCP deploy + smoke job, so a red deploy can never qualify.
+          RUNS=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "Staging Gate" \
+                   --branch staging --event push --status success --limit 100 \
+                   --json headSha --jq '.[].headSha')
+          for SHA in $RUNS; do
+            git cat-file -e "${SHA}^{commit}" 2>/dev/null || continue
+            if [ "$(git rev-parse "${SHA}^{tree}")" = "$MAIN_TREE" ]; then
+              echo "✓ staging commit ${SHA:0:8} passed the Staging Gate (deploy + smoke) with identical content"
+              { echo "tag=$SHA"; echo "promote=true"; } >> "$GITHUB_OUTPUT"
+              exit 0
             fi
-            if [ "$i" = "30" ]; then
-              echo "✗ local preview server never came up"
-              exit 1
-            fi
-            sleep 1
           done
-
-          SMOKE_SKIP_API=1 node scripts/smoke-prod.mjs "http://localhost:4319"
-        env:
-          NODE_OPTIONS: --dns-result-order=ipv4first
-
-  # ─────────────────────────────────────────────────────────────────
-  # 5. MANUAL APPROVAL — free-plan replacement for the Pro-only
-  #    Environment "required reviewers" gate. Opens an approval issue and
-  #    BLOCKS until an authorized approver comments `approved` (or `denied`
-  #    to cancel). Works on a private repo on the GitHub Free plan.
-  #
-  #    The `production-release` environment is intentionally KEPT on the
-  #    deploy job below (for the deployment URL + branch-policy restriction
-  #    to `main`, both of which DO work on Free). If you later upgrade to
-  #    Pro / go public and add required reviewers to that environment, you
-  #    get a belt-and-suspenders double gate at no extra cost — delete this
-  #    job then if you want a single approval prompt.
-  # ─────────────────────────────────────────────────────────────────
-  approve:
-    name: Await Manual Approval
-    needs: [test-suites, vulnerabilities, open-defects, staging-released]
-    if: |
-      always() &&
-      needs.test-suites.result == 'success' &&
-      needs.vulnerabilities.result == 'success' &&
-      needs.open-defects.result == 'success' &&
-      (needs.staging-released.result == 'success' ||
-       (github.event_name == 'workflow_dispatch' && inputs.bypass_staging_check == true))
-    runs-on: ubuntu-latest
-    # Generous timeout — this is a human gate. Adjust to your review SLA.
-    timeout-minutes: 1440
-    steps:
-      - name: Wait for an approver to comment "approved"
-        uses: trstringer/manual-approval@v1
-        with:
-          secret: ${{ secrets.GITHUB_TOKEN }}
-          # Comma-separated GitHub usernames allowed to approve/deny.
-          approvers: vikashkaruna
-          minimum-approvals: 1
-          issue-title: "🚦 Approve production release of ${{ github.sha }}"
-          issue-body: >
-            All production gates are green (tests, vulnerabilities, open
-            defects, staging released & tested).
-
-
-            ⚠️ **TWO STEPS ARE REQUIRED — approving alone will not ship.**
-
-
-            **1. Unlock production on Netlify.** Netlify → Deploys → the
-            published production deploy → *Unlock deploys* (or "Resume auto
-            publishing"). Production is kept locked between releases so no push
-            to `main` can publish itself, and the deploy job deliberately does
-            NOT lift that lock for you — an unlock is a hands-on confirmation
-            that a human intends to change what datiq.app serves right now.
-
-
-            **2. Then comment `approved`** to ship ${{ github.sha }} to
-            https://datiq.app, or **denied** to cancel.
-
-
-            If you approve while production is still locked, `Deploy to
-            Production` fails immediately with instructions and nothing is
-            published — unlock and re-run the job. After a successful deploy
-            (or an auto-rollback) the `Re-lock Production` job locks production
-            again, so the next release needs a fresh manual unlock.
-          # Auto-close the approval issue when the workflow finishes.
-          exclude-workflow-initiator-as-approver: false
+          echo "::error::No successful Staging Gate run has the same content as this main commit."
+          echo "Route is staging first: merge this change to staging, wait for its Staging Gate"
+          echo "(which deploys + smokes GCP staging) to go green, then merge staging to main."
+          echo "Hotfix only: re-run this workflow manually with bypass_staging_check."
+          exit 1
 
   # ─────────────────────────────────────────────────────────────────
-  # 6. PRODUCTION DEPLOY — runs only after the manual approval passes.
+  # 5. PRODUCTION DEPLOY — gcp-prod.yml, behind the gcp-prod environment's
+  #    required reviewers (the approval pause happens inside that job).
   # ─────────────────────────────────────────────────────────────────
   deploy-production:
     name: Deploy to Production
-    needs: approve
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment:
-      name: production-release
-      url: https://datiq.app
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: ".node-version"
-          cache: "npm"
-          # Both lockfiles, so the deploy toolchain is served from the runner
-          # cache too and the release depends on the registry as little as
-          # possible at the moment it is least able to absorb a surprise.
-          cache-dependency-path: |
-            package-lock.json
-            tools/netlify-cli/package-lock.json
-      - run: npm ci
-
-      # Build with the PRODUCTION env vars (read from the `production-release`
-      # GitHub environment secrets, falling back to repo secrets). The build is
-      # fully reproducible from CI without relying on Netlify env state.
-      - name: Build
-        run: npm run build -- --mode production
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_RAZORPAY_KEY_ID: ${{ secrets.VITE_RAZORPAY_KEY_ID }}
-          VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.VITE_STRIPE_PUBLISHABLE_KEY }}
-          VITE_AI_MODEL: claude-3-5-haiku-20241022
-          VITE_PAYMENT_PROVIDER: auto
-          VITE_WEBHOOK_URL: ${{ secrets.VITE_WEBHOOK_URL }}
-          VITE_LINK_CHANGELOG: https://datiq.app/changelog
-          VITE_LINK_ABOUT: https://datiq.app/about
-          VITE_LINK_BLOG: https://datiq.app/blog
-          VITE_FIRECRAWL_API_KEY: ""
-
-      # Production deploys are kept LOCKED between releases. That is what stops
-      # Netlify auto-publishing every push to `main` and bypassing this gate.
-      # A lock blocks ALL publishing, including this job's own
-      # `netlify deploy --prod`, which fails with:
-      #   Error: Deployments are "locked" for production context of this project
-      #
-      # By deliberate policy the workflow does NOT unlock for you. Lifting the
-      # lock is a hands-on confirmation, in the Netlify UI, that a human intends
-      # to change what datiq.app serves right now — a second control that does
-      # not live in this repo and cannot be satisfied by merging code. So this
-      # step only VERIFIES the unlock and fails fast with instructions if it is
-      # missing, rather than papering over it.
-      #
-      # `relock-production` (job 8) locks production again at the end of the
-      # run, so every release needs a fresh manual unlock.
-      #
-      # Do NOT "fix" a lock failure by switching to `--prod-if-unlocked`, which
-      # the CLI suggests in its own error message: while locked that silently
-      # produces a DRAFT deploy, the smoke job then tests the still-old
-      # production and passes, and the run reports a successful release that
-      # never shipped.
-      - name: Require manual unlock of production
-        run: |
-          set -euo pipefail
-          SITE_JSON=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID")
-          PUBLISHED=$(echo "$SITE_JSON" | jq -r '.published_deploy.id // empty')
-          LOCKED=$(echo "$SITE_JSON"    | jq -r '.published_deploy.locked // false')
-
-          if [ -z "$PUBLISHED" ]; then
-            echo "no published production deploy yet (first release) — nothing to unlock"
-            exit 0
-          fi
-
-          echo "published deploy : $PUBLISHED"
-          echo "locked           : $LOCKED"
-
-          if [ "$LOCKED" = "true" ]; then
-            echo "::error title=Production is locked::Unlock production on Netlify, then re-run this job."
-            cat <<'MSG'
-
-          ✗ Production deploys are LOCKED, so this deploy cannot publish.
-
-            This gate requires the unlock to be done by a human, on purpose:
-
-              Netlify → Deploys → the published production deploy
-                      → "Unlock deploys" / "Resume auto publishing"
-
-            Then re-run this job (Actions → this run → Re-run failed jobs).
-            Nothing has been published, and production is untouched.
-
-            After the deploy and smoke test finish, "Re-lock Production"
-            locks production again, so the next release needs a fresh unlock.
-          MSG
-            exit 1
-          fi
-
-          echo "  ✓ production is unlocked — proceeding to deploy"
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-
-      # The deploy tool is installed from a COMMITTED LOCKFILE
-      # (tools/netlify-cli/package-lock.json), never resolved from the registry
-      # at release time.
-      #
-      # This step exists because `npx --yes netlify-cli` — which is what used to
-      # be here — re-resolves ~1,160 transitive `^` ranges against the live npm
-      # registry every single run, and on 2026-08-27 that broke a release that
-      # had passed every gate: @netlify/dev@5.0.4 was published at 19:43Z
-      # declaring a dependency on @netlify/ai@^1.0.1, a version that has never
-      # existed. The deploy ran 27 minutes later, npm answered ETARGET, and the
-      # job died AFTER manual approval, with production hand-unlocked.
-      #
-      # Note what pinning `netlify-cli@<version>` alone would NOT have fixed:
-      # the break arrived through a floating transitive range, not through the
-      # top-level one. Only a lockfile freezes the whole tree.
-      #
-      # It is also its own step, before the deploy, so a toolchain problem is
-      # reported as a toolchain problem and nothing has touched production yet.
-      #
-      # `--ignore-scripts` on purpose. The CLI's tree carries native postinstall
-      # builds (sharp, unix-dgram) that belong to `netlify dev` — the local dev
-      # server and its image transforms. `netlify deploy` uploads a directory
-      # and never loads them. Skipping those builds takes the install from
-      # minutes to ~7s and, more importantly, removes node-gyp and the prebuilt
-      # binary downloads from the release path: fewer moving parts between
-      # "approved" and "published". The next step proves the CLI still runs.
-      - name: Install the pinned deploy toolchain
-        run: npm ci --prefix tools/netlify-cli --ignore-scripts
-
-      # Fail here, with production untouched, rather than half-way through a
-      # deploy. Loading `deploy --help` exercises the command's own module graph,
-      # which is what would break if `--ignore-scripts` ever mattered to it.
-      - name: Verify the deploy toolchain runs
-        run: |
-          set -euo pipefail
-          ./tools/netlify-cli/node_modules/.bin/netlify --version
-          ./tools/netlify-cli/node_modules/.bin/netlify deploy --help > /dev/null
-          echo "  ✓ pinned netlify CLI is executable and its deploy command loads"
-
-      - name: Deploy to Netlify (production)
-        run: |
-          ./tools/netlify-cli/node_modules/.bin/netlify deploy \
-            --prod \
-            --dir=dist \
-            --auth=$NETLIFY_AUTH_TOKEN \
-            --site=$NETLIFY_SITE_ID \
-            --message="phase-gate: ${{ github.event.head_commit.message }}"
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-
-  # ─────────────────────────────────────────────────────────────────
-  # 7. PRODUCTION SMOKE — auto-rollback on failure
-  # ─────────────────────────────────────────────────────────────────
-  smoke-production:
-    name: Smoke Test — Production
-    needs: deploy-production
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: ".node-version"
-          cache: "npm"
-      - run: npm ci
-
-      - name: Wait for Netlify CDN to converge
-        run: sleep 30
-
-      - name: Run smoke test against production
-        run: node scripts/smoke-prod.mjs https://datiq.app
-        env:
-          # Node 18+ (undici) resolves IPv6 first. GitHub runners frequently have
-          # no working IPv6 route, so `fetch` fails with an opaque
-          # "fetch failed (ENETUNREACH)" where curl on the same box succeeds.
-          # Forcing IPv4 removes that whole class of phantom gate failure.
-          NODE_OPTIONS: --dns-result-order=ipv4first
-          SMOKE_ADMIN_PIN: ${{ secrets.PRODUCTION_ADMIN_PIN }}
-
-      # 🔴 This used to run `netlify rollback`. THAT COMMAND DOES NOT EXIST.
-      # netlify-cli has no `rollback` — it exits 2 with the generic help text, so
-      # the safety net that is supposed to pull a bad release off datiq.app has
-      # only ever printed a usage message and failed the step. Verified against
-      # the CLI's own command list (claim/deploy/init/watch/…, no rollback) and
-      # `grep -ri rollback` over its dist, which finds nothing.
-      #
-      # Restoring a deploy now goes through the documented REST endpoint
-      # (`restoreSiteDeploy` — POST /sites/{id}/deploys/{id}/restore), the same
-      # way this workflow already verifies the lock and re-locks afterwards. It
-      # needs no toolchain at all, so the recovery path cannot be taken out by an
-      # npm install — which is exactly how the deploy step failed on 2026-08-27.
-      #
-      # Production is UNLOCKED for the duration of this run (the operator lifted
-      # the lock by hand before `deploy-production`) and `relock-production` runs
-      # after this job, so the restore is permitted inside this window.
-      - name: Auto-rollback on smoke failure
-        if: failure()
-        run: |
-          set -euo pipefail
-          echo "✗ production smoke failed — restoring the last good production deploy"
-
-          API="https://api.netlify.com/api/v1"
-
-          BAD=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "$API/sites/$NETLIFY_SITE_ID" | jq -r '.published_deploy.id // empty')
-          echo "  currently published (bad) deploy: ${BAD:-<unknown>}"
-
-          # Newest READY production deploy that is not the one that just failed.
-          TARGET=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "$API/sites/$NETLIFY_SITE_ID/deploys?per_page=50&context=production" \
-            | jq -r --arg bad "$BAD" \
-                '[.[] | select(.state == "ready") | select(.id != $bad)][0].id // empty')
-
-          if [ -z "$TARGET" ]; then
-            echo "::error title=Rollback failed::No earlier ready production deploy to restore."
-            echo "  Roll back by hand: Netlify → Deploys → a known-good deploy → Publish deploy."
-            exit 1
-          fi
-
-          echo "  restoring deploy $TARGET"
-          curl -sf -X POST -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "$API/sites/$NETLIFY_SITE_ID/deploys/$TARGET/restore" -o /dev/null
-
-          NOW=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "$API/sites/$NETLIFY_SITE_ID" | jq -r '.published_deploy.id // empty')
-
-          # Assert the restore actually changed what datiq.app serves. A rollback
-          # that reports success while the bad build is still live is worse than
-          # one that fails loudly, because nobody goes and looks.
-          if [ "$NOW" != "$TARGET" ]; then
-            echo "::error title=Rollback did not take effect::published_deploy is still ${NOW:-<unknown>}."
-            echo "  Roll back by hand: Netlify → Deploys → $TARGET → Publish deploy."
-            exit 1
-          fi
-          echo "  ✓ production rolled back to $TARGET"
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-
-      - name: Notify on smoke failure
-        if: failure()
-        uses: slackapi/slack-github-action@v3.0.3
-        with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "text": "🚨 DatIQ production smoke FAILED. Auto-rollback executed. Commit: ${{ github.sha }}\nActor: ${{ github.actor }}\nWorkflow: ${{ github.workflow }} #${{ github.run_number }}"
-            }
-        continue-on-error: true
-
-  # ─────────────────────────────────────────────────────────────────
-  # 8. RE-LOCK PRODUCTION — restores the "no auto-publish" protection that the
-  #    operator lifted by hand in order to let this release publish, so the
-  #    NEXT release needs a fresh manual unlock.
-  #
-  #    Runs LAST and `always()`, so it also covers the rollback path:
-  #    `netlify rollback` publishes a previous deploy and is itself blocked
-  #    by a lock, so the lock must stay off until smoke-production is done.
-  #
-  #    If this job is skipped (run cancelled mid-flight), production is left
-  #    UNLOCKED and the next push to `main` would auto-publish, bypassing the
-  #    gate. Re-lock by hand in that case: Netlify → Deploys → the published
-  #    deploy → "Stop auto publishing".
-  # ─────────────────────────────────────────────────────────────────
-  relock-production:
-    name: Re-lock Production
-    needs: [deploy-production, smoke-production]
-    if: always() && needs.deploy-production.result != 'skipped'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Lock the currently published deploy
-        run: |
-          set -euo pipefail
-          PUBLISHED=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" | jq -r '.published_deploy.id // empty')
-          if [ -z "$PUBLISHED" ]; then
-            echo "::error::could not resolve the published deploy — production may be left UNLOCKED"
-            exit 1
-          fi
-          echo "locking published deploy $PUBLISHED"
-          curl -sf -X POST -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/deploys/$PUBLISHED/lock" -o /dev/null
-          LOCKED=$(curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" | jq -r '.published_deploy.locked')
-          echo "  published_deploy.locked = $LOCKED"
-          [ "$LOCKED" = "true" ] || { echo "::error::lock did not take effect"; exit 1; }
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    needs: [test-suites, vulnerabilities, open-defects, staging-released]
+    uses: ./.github/workflows/gcp-prod.yml
+    with:
+      confirm_env: prod
+      promote_from_staging: ${{ needs.staging-released.outputs.promote == 'true' }}
+      staging_img_tag: ${{ needs.staging-released.outputs.tag }}
+    secrets: inherit

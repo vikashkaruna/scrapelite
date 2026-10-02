@@ -10,32 +10,35 @@
 # the env file is the single source of truth, identical to what the operator
 # scripts read locally. Treat ENV_FILE as the most sensitive secret in the repo.
 #
-# NOTE: the push trigger skips the Cloud SQL step by default (SKIP_DB=1): the
-# runner has no Supabase CLI login and the rehearsal dumps are gitignored. Run
-# the DB migration via workflow_dispatch (skip_db=false) from a machine that
-# has `supabase login`, or with SOURCE_DB_URL set as a secret.
+# NOTE: the Cloud SQL step is skipped by default (skip_db=true): the runner has
+# no Supabase CLI login and the rehearsal dumps are gitignored. Run the DB
+# migration from an operator machine (cutover-db.sh) — never from CI.
 name: gcp-staging
 
 on:
+  # Reusable: the Staging Gate calls this ONLY after its three gates are green,
+  # so a push to `staging` can never deploy past a red gate. There is
+  # deliberately NO push trigger here — a second, ungated path to the same
+  # environment is exactly what this layout removes.
+  workflow_call:
+    inputs:
+      skip_db:
+        type: boolean
+        default: true
+      skip_scheduler:
+        type: boolean
+        default: false
+  # Manual run (Actions → gcp-staging → Run workflow): same steps, no gate.
   workflow_dispatch:
     inputs:
       skip_db:
         description: "Skip the Cloud SQL dump/restore step"
         type: boolean
-        default: false
+        default: true
       skip_scheduler:
         description: "Skip Cloud Scheduler job creation"
         type: boolean
         default: false
-  push:
-    branches: [staging]
-    paths:
-      - "deployment/**"
-      - "netlify/functions/**"
-      - "src/**"
-      - "public/**"
-      - "netlify.toml"
-      - "package-lock.json"
 
 concurrency:
   group: gcp-staging
@@ -87,9 +90,9 @@ jobs:
 
       - name: Deploy everything (skips per inputs)
         env:
-          # workflow_dispatch: tick the box to skip; push trigger: always skip
-          # (no Supabase CLI login and no rehearsal dumps on a fresh runner).
-          SKIP_DB: ${{ (inputs.skip_db == true || github.event_name == 'push') && '1' || '' }}
+          # Default skip: a fresh runner has no Supabase CLI login and no rehearsal
+          # dumps. Run the DB migration from an operator machine instead.
+          SKIP_DB: ${{ inputs.skip_db && '1' || '' }}
           SKIP_SCHEDULER: ${{ inputs.skip_scheduler && '1' || '' }}
           SKIP_BUILD: ""
           # Infra (APIs, SAs, bucket, AR repo, IAM) is a one-time operator step;
@@ -100,5 +103,10 @@ jobs:
           chmod +x deployment/scripts/gcp/*.sh
           ./deployment/scripts/gcp/deploy-staging.sh staging
 
-      - name: Smoke the deployed URL
-        run: ./deployment/scripts/gcp/smoke.sh staging
+      - name: Smoke the deployed URL (retried once for CDN propagation)
+        run: |
+          ./deployment/scripts/gcp/smoke.sh staging || {
+            echo "::warning::first smoke failed — waiting 60s for CDN propagation, then retrying once"
+            sleep 60
+            ./deployment/scripts/gcp/smoke.sh staging
+          }

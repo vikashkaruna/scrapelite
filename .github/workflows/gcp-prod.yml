@@ -1,8 +1,9 @@
 # .github/workflows/gcp-prod.yml — GCP production deploy (doc 05 §3b/§3c).
 #
 # HOW AND WHEN PROD DEPLOYS TRIGGER (the direction):
-#   - NEVER on push. There is no push trigger here by design — production moves
-#     only when a human clicks "Run workflow".
+#   - NEVER directly on push. Production moves only via phase-gate.yml (which
+#     calls this after gates + staging proof) or a human clicking "Run workflow";
+#     either way the gcp-prod environment's required reviewer must approve.
 #   - Only after staging has gone green (gcp-staging.yml) AND the soak checklist
 #     passed (doc 08 §3b): OAuth round-trips, extraction chain, payments
 #     test-mode, Resend test email, n8n round-trip, admin, monitoring.
@@ -28,6 +29,22 @@
 name: gcp-prod
 
 on:
+  # Called by phase-gate.yml after the production gates are green AND the commit
+  # has been proven released + tested on staging. The `gcp-prod` environment's
+  # required reviewers still apply to the called job, so a human approval sits
+  # between every merge to main and production.
+  workflow_call:
+    inputs:
+      confirm_env:
+        type: string
+        required: true
+      promote_from_staging:
+        type: boolean
+        default: true
+      staging_img_tag:
+        description: "Staging image tag to promote (the staging commit that passed the Staging Gate)"
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       confirm_env:
@@ -38,6 +55,10 @@ on:
         description: "Promote staging digests (false = build fresh prod images)"
         type: boolean
         default: true
+      staging_img_tag:
+        description: "Staging image tag to promote (blank = the STAGING_IMG_TAG variable / ENV_FILE value)"
+        type: string
+        default: ""
 
 concurrency:
   group: gcp-prod
@@ -96,6 +117,11 @@ jobs:
                       "STAGING_IMG_TAG=${{ vars.STAGING_IMG_TAG }}"; do
             [ -n "${pair#*=}" ] && echo "$pair" >> deployment/env/.env.prod
           done
+          # An explicit tag from the caller (the exact staging commit the gate
+          # verified) beats both the variable and the file.
+          if [ -n "${{ inputs.staging_img_tag }}" ]; then
+            echo "STAGING_IMG_TAG=${{ inputs.staging_img_tag }}" >> deployment/env/.env.prod
+          fi
 
       - name: Deploy prod shadow (digest promotion, OPS_JOBS_DISABLED honored from the contract)
         env:
@@ -110,5 +136,10 @@ jobs:
             ./deployment/scripts/gcp/up.sh prod --build
           fi
 
-      - name: Smoke the deployed URL
-        run: ./deployment/scripts/gcp/smoke.sh prod
+      - name: Smoke the deployed URL (retried once for CDN propagation)
+        run: |
+          ./deployment/scripts/gcp/smoke.sh prod || {
+            echo "::warning::first smoke failed — waiting 60s for CDN propagation, then retrying once"
+            sleep 60
+            ./deployment/scripts/gcp/smoke.sh prod
+          }
