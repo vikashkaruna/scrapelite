@@ -92,6 +92,9 @@ jobs:
           SKIP_DB: ${{ (inputs.skip_db == true || github.event_name == 'push') && '1' || '' }}
           SKIP_SCHEDULER: ${{ inputs.skip_scheduler && '1' || '' }}
           SKIP_BUILD: ""
+          # Infra (APIs, SAs, bucket, AR repo, IAM) is a one-time operator step;
+          # CI must not touch IAM, so its SA needs no bootstrap-level roles.
+          SKIP_BOOTSTRAP: "1"
           RUNTIME_ENV_FILE: deployment/env/.env.staging
         run: |
           chmod +x deployment/scripts/gcp/*.sh
