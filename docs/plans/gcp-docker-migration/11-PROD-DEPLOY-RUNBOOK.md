@@ -252,6 +252,49 @@ Recommended rhythm: staging merge → `gcp-staging.yml` green → soak checklist
 dispatch `gcp-prod`. For the cutover window itself, run the scripts locally
 (the window needs `SOURCE_DB_URL` pasted interactively anyway).
 
+### 7.1 Deploy model after the cutover (added 2026-10-02)
+
+- **GCP is the only target you deploy to.** `gcp-staging.yml` runs on push to
+  `staging` (paths: `deployment/**`, `netlify/functions/**`, `src/**`,
+  `public/**`, `netlify.toml`, `package-lock.json`; Cloud SQL step skipped by
+  default). `gcp-prod.yml` is `workflow_dispatch` only, behind the `gcp-prod`
+  environment's required reviewers — never on push. GitHub keeps deploying to
+  GCP; nothing about the cutover disables them.
+- **Netlify keeps deploying until you stop it.** Pushes to `staging`/`main` still
+  run `staging-gate.yml`/`phase-gate.yml` (Netlify staging smoke, manual
+  unlock + `approved`, Netlify prod deploy). Per doc 09 §6 leave Netlify
+  deployed and frozen (crons off) through the rollback window — it IS the
+  rollback. To stop it afterwards: disable `phase-gate.yml`'s deploy job (or the
+  workflow), stop Netlify builds for `main`, then follow doc 09 §8 decommission.
+  Do both only after the window; stopping Netlify early removes the rollback.
+- **Merge timing for the feature branch (`docker-desktop-build`).** Not needed to
+  run the cutover (scripts run locally; promoted images are already built).
+  Merge to `staging` after the cutover soak passes — it triggers `gcp-staging`
+  (redeploys GCP staging) and the Netlify staging gate — then to `main` via
+  phase-gate, which needs the Netlify unlock. The branch carries user-visible
+  doc/API-base changes (`/api/v1`), so it is not docs-only.
+
+### 7.2 Lessons recorded 2026-10-02 (so they are not re-learned)
+
+- **Secret source = `deployment/env/.env.<env>` only.** `bootstrap-secrets.sh`
+  used to prefer the legacy `scripts/env/<env>.env` and re-pushed stale staging
+  Razorpay test keys, so Secret Manager held a different Razorpay account than
+  the browser bundle (checkout: "Something went wrong"; Razorpay answers "The id
+  provided does not exist"). `scripts/env/*.env` are old Netlify-era files and are
+  now ignored (a warning prints if present; `RUNTIME_ENV_FILE=<path>` opts in).
+- **Changing a secret:** edit `.env.<env>` → `bootstrap-secrets.sh <env>` →
+  `update-env.sh <env>` (or `update-env.sh <env> --with-secrets`). A NEW secret
+  also needs a line in `deployment/gcp/secrets.manifest`; a NEW plain variable
+  needs adding to `deploy-run.sh` (`APP_ENV_VARS` / the `_opt` list). Nothing
+  edits the manifest for you. Run `node deployment/scripts/gcp/env-parity.mjs
+  <env>` after adding variables.
+- **A 404/missing-header smoke right after `firebase deploy` is propagation**,
+  not a bug: re-run `smoke.sh` after ~30s.
+- **Live Razorpay on the shadow host is not a valid test** (website allow-list):
+  use `rzp_test_` keys on the shadow; real UPI is validated on `datiq.app`.
+- **Never put the DB password in a command line** (shell history, transcripts):
+  `read -rs DB_URL </dev/tty` then pass `"$DB_URL"`. Rotate if it was exposed.
+
 ## 8. Troubleshooting
 
 | Symptom | Fix |

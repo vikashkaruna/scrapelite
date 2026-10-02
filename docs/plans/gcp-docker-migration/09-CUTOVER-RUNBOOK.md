@@ -86,6 +86,43 @@ Full mapping and rationale: [doc 06 §11](06-NAMING-AND-ENV-CONVENTIONS.md). Com
 - [ ] Provider consoles prepared (done at the moment the host goes live, not before): Google/Microsoft/GitHub callback `https://datiq.app/auth/v1/callback`; **keep** the old `https://api.datiq.app/auth/v1/callback` registered until the flip is verified (instant rollback).
 - [ ] `https://api.datiq.app` and `https://datiq.app` listed in `GOTRUE_URI_ALLOW_LIST`.
 
+### 1.0 Freezing the Netlify crons — what, how, and WHEN (added 2026-10-02)
+
+**When: BEFORE `cutover-db.sh prod` (before step 2), not merely before step 5.**
+The script only *requires* it before the cron handoff (step 5), but Netlify
+keeps serving users and running crons against hosted Supabase until the DNS
+flip, so anything a Netlify cron writes after the step-2 copy never reaches
+Cloud SQL. With no customers the loss is theoretical; freezing first is still
+the cleanest ("never both owners") and costs one Netlify redeploy.
+
+**What: THIRTEEN scheduled functions, not five.** `netlify.toml` declares
+`scheduled-runner, reengagement, billing-lifecycle, billing-purge,
+health-monitor, discoverability-monitor, watchlist-monitor, bulk-runner,
+engagement-dispatcher, signal-retry, workflow-orchestrator-cron,
+sxo-analytics-import-worker, prompt-monitor`. Freezing only the original five
+leaves eight crons running (the engagement dispatcher among them).
+
+**How — two mechanisms, pick one:**
+
+| | A. `OPS_JOBS_DISABLED` env on Netlify prod | B. Comment the `[functions."…"] schedule` blocks in `netlify.toml` |
+|---|---|---|
+| Code change / PR | none | yes — must travel branch → staging → main → phase-gate |
+| Tests | unaffected | `monitoringModel`/cron-registry parity + `netlify-toml.test.mjs` assert the registry and toml agree; they must be updated in the same change |
+| Reversible | delete the env var + redeploy | revert the commit + full pipeline |
+| Risk | ⚠ **4KB Lambda env cap** (2026-09-25 incident): the value is ~220 bytes on a site already near the cap, and the var needs Functions scope | none of that |
+| Failure mode | read from `process.env`, so it cannot fail open | a removed block silently un-schedules, by design here |
+
+Either way the Netlify change only takes effect on a **production deploy**, and
+production is LOCKED by design: unlock in the Netlify UI, then comment
+`approved` on the phase-gate issue (doc: CLAUDE.md "Netlify deploy"). Never
+force it with `--prod-if-unlocked`. Env vars are injected into functions **at
+deploy time**, so setting the variable alone changes nothing until that deploy.
+Value for A (all thirteen ids, from `AUTOMATION_JOBS`):
+`OPS_JOBS_DISABLED=scheduled-runner,reengagement,billing-lifecycle,billing-purge,health-monitor,discoverability-monitor,watchlist-monitor,bulk-runner,engagement-dispatcher,signal-retry,workflow-orchestrator-cron,sxo-analytics-import-worker,prompt-monitor`.
+Verify after the deploy in `/admin/monitoring` (each job shows Stopped, source
+`env`) — a stopped job cannot be restarted from the UI by design.
+Rollback = remove the variable (or restore the blocks) and redeploy.
+
 ## 1. Freeze (doc 05 §3d step 1)
 
 ```bash
