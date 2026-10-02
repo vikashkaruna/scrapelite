@@ -1,0 +1,104 @@
+# .github/workflows/gcp-staging.yml — GCP staging deploy CI (doc 05 §3a).
+# Runs the SAME operator scripts against the SAME .env contract; GitHub
+# Environment "gcp-staging" holds ONLY secrets (doc 06 golden rule 1: every
+# non-secret value comes from deployment/env/.env.staging.example, which the
+# grep step appends verbatim — change the deployment by editing the env files,
+# never this workflow).
+#
+# Required Environment secrets (gcp-staging): GCP_SA_KEY (deploy SA JSON) and
+# ENV_FILE (the whole contents of deployment/env/.env.staging). Nothing else —
+# the env file is the single source of truth, identical to what the operator
+# scripts read locally. Treat ENV_FILE as the most sensitive secret in the repo.
+#
+# NOTE: the push trigger skips the Cloud SQL step by default (SKIP_DB=1): the
+# runner has no Supabase CLI login and the rehearsal dumps are gitignored. Run
+# the DB migration via workflow_dispatch (skip_db=false) from a machine that
+# has `supabase login`, or with SOURCE_DB_URL set as a secret.
+name: gcp-staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_db:
+        description: "Skip the Cloud SQL dump/restore step"
+        type: boolean
+        default: false
+      skip_scheduler:
+        description: "Skip Cloud Scheduler job creation"
+        type: boolean
+        default: false
+  push:
+    branches: [staging]
+    paths:
+      - "deployment/**"
+      - "netlify/functions/**"
+      - "src/**"
+      - "public/**"
+      - "netlify.toml"
+      - "package-lock.json"
+
+concurrency:
+  group: gcp-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: gcp-staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install CLIs
+        run: npm i -g firebase-tools
+
+      - name: Parameterisation gate (doc 06 §9 — no literals outside env/*.example)
+        run: bash deployment/scripts/check-parameterisation.sh
+
+      - name: Write the deploy env file from the ENV_FILE secret
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          mkdir -p deployment/env
+          if [ -z "${ENV_FILE}" ]; then
+            echo "::error::Environment secret ENV_FILE is empty — paste deployment/env/.env.staging into it."
+            exit 1
+          fi
+          # Passed through env (never interpolated into the script) so $ and
+          # backticks inside values are written verbatim.
+          printf '%s\n' "${ENV_FILE}" > deployment/env/.env.staging
+          # Guard against pasting the wrong environment's file.
+          if ! grep -qE '^DATIQ_ENV=staging[[:space:]]*$' deployment/env/.env.staging; then
+            echo "::error::ENV_FILE does not declare DATIQ_ENV=staging — wrong file pasted?"
+            exit 1
+          fi
+          # Per-run values appended LAST (later lines win).
+          echo "IMG_TAG=${{ github.sha }}" >> deployment/env/.env.staging
+
+      - name: Deploy everything (skips per inputs)
+        env:
+          # workflow_dispatch: tick the box to skip; push trigger: always skip
+          # (no Supabase CLI login and no rehearsal dumps on a fresh runner).
+          SKIP_DB: ${{ (inputs.skip_db == true || github.event_name == 'push') && '1' || '' }}
+          SKIP_SCHEDULER: ${{ inputs.skip_scheduler && '1' || '' }}
+          SKIP_BUILD: ""
+          # Infra (APIs, SAs, bucket, AR repo, IAM) is a one-time operator step;
+          # CI must not touch IAM, so its SA needs no bootstrap-level roles.
+          SKIP_BOOTSTRAP: "1"
+          RUNTIME_ENV_FILE: deployment/env/.env.staging
+        run: |
+          chmod +x deployment/scripts/gcp/*.sh
+          ./deployment/scripts/gcp/deploy-staging.sh staging
+
+      - name: Smoke the deployed URL
+        run: ./deployment/scripts/gcp/smoke.sh staging
