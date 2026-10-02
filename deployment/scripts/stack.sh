@@ -33,6 +33,10 @@ done
 
 load_env "$ENV_NAME"
 
+# shellcheck disable=SC1091
+source "$HERE/scripts/lib/docker-power.sh"
+case "$VERB" in start|restart|unpause) ensure_docker_running ;; esac
+
 COMPOSE="docker compose --env-file $HERE/env/.env.${DATIQ_ENV} -f $HERE/compose/compose.yaml"
 if [ "${DATA_MODE:-local-db}" = "local-db" ]; then COMPOSE="$COMPOSE -f $HERE/compose/compose.local.yaml"; fi
 

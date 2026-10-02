@@ -28,6 +28,9 @@ on:
       skip_scheduler:
         type: boolean
         default: false
+      sleep_after:
+        type: boolean
+        default: false
   # Manual run (Actions → gcp-staging → Run workflow): same steps, no gate.
   workflow_dispatch:
     inputs:
@@ -37,6 +40,10 @@ on:
         default: true
       skip_scheduler:
         description: "Skip Cloud Scheduler job creation"
+        type: boolean
+        default: false
+      sleep_after:
+        description: "After a green smoke, put staging back to sleep (stop Cloud SQL, pause crons — nothing deleted)"
         type: boolean
         default: false
 
@@ -110,3 +117,9 @@ jobs:
             sleep 60
             ./deployment/scripts/gcp/smoke.sh staging
           }
+
+      # Cost saving, opt-in. Runs only after a GREEN smoke, so a failed deploy
+      # stays awake for debugging. Soft shutdown only — see power.sh.
+      - name: Put staging back to sleep (opt-in)
+        if: success() && inputs.sleep_after
+        run: ./deployment/scripts/gcp/power.sh staging sleep

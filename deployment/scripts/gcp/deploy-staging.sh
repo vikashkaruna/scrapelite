@@ -15,6 +15,11 @@ load_gcp_env "$ENV_NAME"
 
 step() { echo; echo "━━━ $1 ━━━"; }
 
+# A sleeping staging (power.sh sleep) has Cloud SQL stopped — auth/rest cannot
+# start without it. Wake is idempotent and a no-op when already running.
+if [ "$ENV_NAME" = "staging" ] && [ -z "${SKIP_WAKE:-}" ]; then
+  step "wake (Cloud SQL + scheduler, if asleep)"; "$HERE/power.sh" staging wake
+fi
 step "bootstrap";   [ -n "${SKIP_BOOTSTRAP:-}" ]   || "$HERE/bootstrap.sh" "$ENV_NAME"
 step "secrets";     [ -n "${SKIP_SECRETS:-}" ]     || "$HERE/bootstrap-secrets.sh" "$ENV_NAME"
 if [ -z "${SKIP_BUILD:-}" ]; then
