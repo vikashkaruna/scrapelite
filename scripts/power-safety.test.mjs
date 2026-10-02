@@ -69,16 +69,24 @@ describe("gcp/down.sh --sleep", () => {
 
 describe("local down.sh --sleep", () => {
   const src = read("down.sh");
+  const branch = src.slice(src.indexOf('if [ "$SLEEP" = "1" ]; then\n  if docker info'), src.indexOf('elif [ "$WIPE"'));
   it("is mutually exclusive with -r and -v", () => {
     expect(src).toMatch(/--sleep is the non-destructive mode — it cannot be combined with -r or -v/);
   });
   it("only ever stops containers — the sleep branch has no removal", () => {
-    const branch = src.slice(src.indexOf('if [ "$SLEEP" = "1" ]; then\n  # shellcheck'), src.indexOf('elif [ "$WIPE"'));
     expect(branch).toMatch(/\$COMPOSE stop/);
     expect(branch).not.toMatch(DESTRUCTIVE);
   });
-  it("rejects unit names (quitting Docker stops every unit)", () => {
-    expect(src).toMatch(/cannot be limited to/);
+  it("leaves Docker Desktop running unless --quit-docker is given", () => {
+    // The quit call must sit behind the opt-in flag, never run unconditionally.
+    const q = branch.indexOf("quit_docker_desktop");
+    expect(q).toBeGreaterThan(-1);
+    expect(branch.slice(0, q)).toMatch(/if \[ "\$QUIT_DOCKER" = "1" \]; then/);
+    expect(branch).toMatch(/Docker Desktop left running/);
+  });
+  it("--quit-docker needs --sleep and cannot target single units", () => {
+    expect(src).toMatch(/--quit-docker only applies with --sleep/);
+    expect(src).toMatch(/--quit-docker stops EVERY unit/);
   });
 });
 

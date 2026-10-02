@@ -8,11 +8,14 @@
 #   deployment/scripts/down.sh -v / --wipe            # remove containers AND
 #                                                     #   volumes — deletes the
 #                                                     #   local database data
-#   deployment/scripts/down.sh --sleep                # STOP + quit Docker Desktop
-#                                                     #   (frees the VM's RAM;
-#                                                     #   NOTHING is removed —
-#                                                     #   up.sh / stack.sh start
-#                                                     #   bring it all back)
+#   deployment/scripts/down.sh --sleep                # STOP containers only —
+#                                                     #   NOTHING removed, Docker
+#                                                     #   Desktop stays running
+#   deployment/scripts/down.sh --sleep --quit-docker  # ...and ALSO quit Docker
+#                                                     #   Desktop to free the VM's
+#                                                     #   RAM (opt-in; up.sh and
+#                                                     #   stack.sh start bring it
+#                                                     #   back)
 #
 # The default is `docker compose stop`: containers are retained exactly as
 # they are — databases included — so local test data survives and
@@ -22,15 +25,16 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Usage: down.sh [env-name] [unit...] [-r|--remove] [-v|--wipe] — any order
 # (the README has always documented `down.sh -v`).
-ENV_NAME="local"; REMOVE=0; WIPE=0; SLEEP=0; UNITS=""
+ENV_NAME="local"; REMOVE=0; WIPE=0; SLEEP=0; QUIT_DOCKER=0; UNITS=""
 for arg in "$@"; do
   case "$arg" in
     -r|--remove) REMOVE=1 ;;
     -v|--wipe) WIPE=1 ;;
     --sleep) SLEEP=1 ;;
+    --quit-docker) QUIT_DOCKER=1 ;;
     local|staging|prod) ENV_NAME="$arg" ;;
     gateway|web|admin|trackers|api|jobs|scheduler|db|auth|rest|mailpit|pg-meta|studio) UNITS="$UNITS $arg" ;;
-    *) echo "✗ unknown arg: $arg (env name, unit name, -r|--remove, -v|--wipe or --sleep)"; exit 1 ;;
+    *) echo "✗ unknown arg: $arg (env name, unit name, -r|--remove, -v|--wipe, --sleep or --quit-docker)"; exit 1 ;;
   esac
 done
 # shellcheck disable=SC1091
@@ -44,19 +48,26 @@ if [ "$SLEEP" = "1" ] && { [ "$WIPE" = "1" ] || [ "$REMOVE" = "1" ]; }; then
   echo "✗ --sleep is the non-destructive mode — it cannot be combined with -r or -v" >&2; exit 1
 fi
 
-if [ "$SLEEP" = "1" ] && [ -n "$UNITS" ]; then
-  echo "✗ --sleep quits Docker Desktop, which stops EVERY unit — it cannot be limited to:$UNITS" >&2; exit 1
+if [ "$QUIT_DOCKER" = "1" ] && [ "$SLEEP" != "1" ]; then
+  echo "✗ --quit-docker only applies with --sleep" >&2; exit 1
+fi
+if [ "$QUIT_DOCKER" = "1" ] && [ -n "$UNITS" ]; then
+  echo "✗ --quit-docker stops EVERY unit — it cannot be limited to:$UNITS" >&2; exit 1
 fi
 
 if [ "$SLEEP" = "1" ]; then
-  # shellcheck disable=SC1091
-  source "$HERE/scripts/lib/docker-power.sh"
-  if docker_running; then
+  if docker info >/dev/null 2>&1; then
     $COMPOSE stop $UNITS
-    echo "✓ stack stopped — containers retained, data safe"
+    echo "✓ stack stopped — containers retained, data safe, Docker Desktop left running"
+  else
+    echo "  = Docker is not running — nothing to stop"
   fi
-  quit_docker_desktop
-  echo "    wake: deployment/scripts/up.sh (or stack.sh start) — starts Docker Desktop for you"
+  if [ "$QUIT_DOCKER" = "1" ]; then
+    # shellcheck disable=SC1091
+    source "$HERE/scripts/lib/docker-power.sh"
+    quit_docker_desktop
+  fi
+  echo "    wake: deployment/scripts/up.sh (or stack.sh start)"
 elif [ "$WIPE" = "1" ]; then
   echo "⚠  -v: volumes will be deleted — the local database data does not survive this"
   $COMPOSE down -v --remove-orphans

@@ -3,7 +3,8 @@
 #
 # Stopping containers (down.sh / stack.sh stop) frees what they use, but the
 # Docker Desktop VM keeps its reserved RAM until the app quits. These helpers
-# let `down.sh --sleep` release it and `up.sh` / `stack.sh start` bring it back.
+# let `down.sh --sleep --quit-docker` (opt-in) release it, and `up.sh` /
+# `stack.sh start` bring Docker back whenever it was quit.
 # Neither removes a container, image, network or volume — quitting Docker
 # Desktop only stops the VM; everything is intact on the next start.
 #

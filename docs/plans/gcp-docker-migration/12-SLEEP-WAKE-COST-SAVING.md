@@ -9,15 +9,15 @@ Status: implemented 2026-10-03. Staging and local only. **Nothing is ever delete
   `ALWAYS`; CPU/RAM are billed every hour whether or not anything uses it.
 - **Cloud Scheduler wakes things.** 13 jobs would call Cloud Run (which would
   connect to a stopped database and error), so they are paused with the database.
-- **Locally,** `down.sh` already stops containers, but the Docker Desktop VM
-  keeps its reserved RAM until the app itself quits.
+- **Locally,** stopping containers frees what they use; the Docker Desktop VM
+  keeps its reserved RAM until the app itself quits (opt-in `--quit-docker`).
 
 ## Commands
 
 | Where | Sleep | Wake |
 |---|---|---|
 | GCP staging | `deployment/scripts/gcp/down.sh staging --sleep` or `gcp/power.sh staging sleep` | `gcp/power.sh staging wake` (also automatic at the start of every deploy) |
-| Local | `deployment/scripts/down.sh --sleep` | `deployment/scripts/up.sh` or `stack.sh start` (they start Docker Desktop for you) |
+| Local | `deployment/scripts/down.sh --sleep` (containers only; Docker Desktop stays running) · add `--quit-docker` to also free the VM's RAM | `deployment/scripts/up.sh` or `stack.sh start` (they start Docker Desktop if it was quit) |
 | Inspect | `gcp/power.sh staging status` | |
 | Rehearse | `DRY_RUN=1 gcp/power.sh staging sleep` (prints every action, changes nothing) | `DRY_RUN=1 … wake` |
 
@@ -45,10 +45,10 @@ CI wakes it automatically (see below).
 Both are idempotent: sleeping a sleeping environment or waking an awake one is a
 no-op that says so.
 
-**Local sleep** (`down.sh --sleep`): `docker compose stop` (containers, images,
-networks and volumes all kept), then quits Docker Desktop to release the VM's RAM.
-`--sleep` cannot be combined with `-r`/`-v` or with unit names (quitting Docker
-stops every unit).
+**Local sleep** (`down.sh --sleep`): `docker compose stop` only — containers, images,
+networks and volumes all kept, and **Docker Desktop is left running**. Quitting the
+app (to free the VM's reserved RAM) is a separate opt-in: `--sleep --quit-docker`,
+which cannot target single units. `--sleep` cannot be combined with `-r`/`-v`.
 
 ## CI integration
 - `deploy-staging.sh` runs `power.sh staging wake` first (skip with `SKIP_WAKE=1`),
