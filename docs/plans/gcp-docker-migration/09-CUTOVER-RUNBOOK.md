@@ -137,14 +137,26 @@ anything repoints. After the run, double-check:
 | Stripe | webhook endpoint URL → `https://datiq.app/api/payment-webhook` (or the shadow URL first) |
 | Razorpay | same webhook URL change in the Razorpay dashboard |
 | Resend | webhook URL update |
-| Google/Microsoft OAuth | add `https://api.datiq.app` (GoTrue) + `https://datiq.app` to the redirect allow-lists |
+| Google/Microsoft/GitHub OAuth | register `https://<APP_BASE_URL>/auth/v1/callback` for prod (`https://datiq.app/auth/v1/callback` after the flip). The callback registered today is the Supabase custom auth domain `https://api.datiq.app/auth/v1/callback`; keep it registered until the flip is verified so a rollback needs no console change |
+| Resend (engagement) | new webhook endpoint `https://datiq.app/api/engagement-webhook?provider=resend` is the SAME URL as today's, so the existing `whsec_` secret stays valid after the flip. Before the flip, GCP prod must carry Netlify's `ENGAGEMENT_UNSUBSCRIBE_SECRET`, or unsubscribe links in mail already sent stop verifying |
 | n8n | callback base URL → production origin |
 
 ## 5. DNS flip (doc 05 §3d step 7) — MANUAL and LAST
 
 1. Firebase Hosting console → Hosting → Add custom domain for
-   `datiq.app`, `www.datiq.app`, and `api.datiq.app` (custom domain → Cloud Run
-   rewrites for `/api/**`).
+   `datiq.app`, `www.datiq.app`, and `api.datiq.app`.
+   ⚠️ `api.datiq.app` today is a CNAME to the prod Supabase project (its custom
+   auth domain: confirmation/reset-email links and the OAuth callback live at
+   `https://api.datiq.app/auth/v1/…`). After the flip it must answer
+   `/auth/v1/**` and `/rest/v1/**` from the SAME Hosting site — those rewrites
+   are path-based and host-agnostic, so adding the domain is enough; no separate
+   rewrite is needed. Verify BEFORE changing the registrar record:
+   `curl --resolve api.datiq.app:443:<hosting-IP> https://api.datiq.app/auth/v1/health`
+   → 200. Re-point the `api` CNAME LAST, after `datiq.app` is verified.
+   ℹ️ `https://api.datiq.app/v1/…` (the base URL in the developer docs and the
+   browser extension) returns 404 today: the real public API is
+   `https://datiq.app/api/v1/…`. Fix the docs/extension or add a `/v1/**` rewrite;
+   it is a pre-existing mismatch, not caused by the migration.
 2. Verify TLS (SSL cert provisioning completes; test `https://datiq.app`).
 3. Only then update the DNS records at the registrar.
 4. Verify: `curl -I https://datiq.app` + full smoke against the custom domain.
