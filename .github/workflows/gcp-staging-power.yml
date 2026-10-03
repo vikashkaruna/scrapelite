@@ -1,0 +1,113 @@
+# .github/workflows/gcp-staging-power.yml — staging cost control.
+#
+#   * NIGHTLY: puts GCP staging to sleep (pause scheduler jobs + stop Cloud SQL).
+#   * MANUAL BUTTON: Actions → "gcp-staging-power" → Run workflow → wake | sleep
+#     | status. Use "wake" before testing stg.datiq.app (takes ~1–3 minutes);
+#     it works from the GitHub mobile app too.
+#
+# SOFT shutdown only — nothing is ever deleted (see deployment/scripts/gcp/
+# power.sh and docs/plans/gcp-docker-migration/12-SLEEP-WAKE-COST-SAVING.md).
+# Staging only: power.sh refuses prod, and this workflow only enters the
+# `gcp-staging` environment.
+#
+# NOTES
+#   * GitHub only runs `schedule` triggers from the DEFAULT branch (main), so the
+#     nightly sleep starts working once this file reaches main via the normal
+#     staging → main release. Until then use the manual button or power.sh.
+#   * GitHub may delay a scheduled run by several minutes at busy times, and
+#     disables scheduled workflows after 60 days without repo activity.
+#   * Cron is UTC. 17:00 UTC = 22:30 IST. Change it here; nothing else reads it.
+name: gcp-staging-power
+
+on:
+  schedule:
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do to GCP staging"
+        type: choice
+        options: [wake, sleep, status]
+        default: wake
+
+permissions:
+  contents: read
+  actions: read # the recent-deploy guard reads the Staging Gate run history
+
+# Same group as the deploy: a sleep/wake queues behind a running deploy instead
+# of racing it (a half-finished deploy against a stopping database is the one
+# thing this must never cause). Never cancelled mid-flight.
+concurrency:
+  group: gcp-staging
+  cancel-in-progress: false
+
+jobs:
+  power:
+    runs-on: ubuntu-latest
+    environment: gcp-staging
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      # A scheduled sleep right after a deploy would switch the database off
+      # under someone who is testing the build. Skip it; tomorrow's run (or the
+      # manual button) handles it. Manual runs are never skipped.
+      - name: Skip the scheduled sleep if staging was deployed recently
+        id: guard
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUIET_MINUTES: "120"
+        run: |
+          set -euo pipefail
+          LAST=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "Staging Gate" \
+                   --branch staging --event push --limit 1 --json createdAt \
+                   --jq '.[0].createdAt // empty')
+          if [ -n "$LAST" ]; then
+            AGE=$(( ( $(date -u +%s) - $(date -u -d "$LAST" +%s) ) / 60 ))
+            echo "last staging deploy run: $LAST (${AGE} min ago)"
+            if [ "$AGE" -lt "$QUIET_MINUTES" ]; then
+              echo "::notice::staging was deployed ${AGE} min ago (< ${QUIET_MINUTES}) — skipping tonight's sleep"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@v2
+        if: steps.guard.outputs.skip != 'true'
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: actions/setup-node@v5
+        if: steps.guard.outputs.skip != 'true'
+        with:
+          node-version-file: ".node-version"
+
+      - name: Write the staging env file from the ENV_FILE secret
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          mkdir -p deployment/env
+          if [ -z "${ENV_FILE}" ]; then
+            echo "::error::Environment secret ENV_FILE is empty — paste deployment/env/.env.staging into it."
+            exit 1
+          fi
+          printf '%s\n' "${ENV_FILE}" > deployment/env/.env.staging
+          if ! grep -qE '^DATIQ_ENV=staging[[:space:]]*$' deployment/env/.env.staging; then
+            echo "::error::ENV_FILE does not declare DATIQ_ENV=staging — wrong file pasted?"
+            exit 1
+          fi
+
+      - name: Run power.sh
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          ACTION: ${{ github.event_name == 'schedule' && 'sleep' || inputs.action }}
+        run: |
+          chmod +x deployment/scripts/gcp/*.sh
+          ./deployment/scripts/gcp/power.sh staging "$ACTION"
+          if [ "$ACTION" != "status" ]; then
+            echo
+            ./deployment/scripts/gcp/power.sh staging status
+          fi

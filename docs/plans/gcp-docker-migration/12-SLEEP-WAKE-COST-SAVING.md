@@ -19,6 +19,7 @@ Status: implemented 2026-10-03. Staging and local only. **Nothing is ever delete
 | GCP staging | `deployment/scripts/gcp/down.sh staging --sleep` or `gcp/power.sh staging sleep` | `gcp/power.sh staging wake` (also automatic at the start of every deploy) |
 | Local | `deployment/scripts/down.sh --sleep` (containers only; Docker Desktop stays running) · add `--quit-docker` to also free the VM's RAM | `deployment/scripts/up.sh` or `stack.sh start` (they start Docker Desktop if it was quit) |
 | Inspect | `gcp/power.sh staging status` | |
+| Nightly + button | `.github/workflows/gcp-staging-power.yml` (see below) | Actions → gcp-staging-power → Run workflow → `wake` |
 | Rehearse | `DRY_RUN=1 gcp/power.sh staging sleep` (prints every action, changes nothing) | `DRY_RUN=1 … wake` |
 
 Wake takes about 1–3 minutes (Cloud SQL start). **Nothing wakes staging on a
@@ -61,6 +62,28 @@ which cannot target single units. `--sleep` cannot be combined with `-r`/`-v`.
 - Prod is untouched: `power.sh` refuses anything but staging, and no prod
   workflow references it.
 
+## Nightly sleep + manual wake button — `gcp-staging-power.yml`
+- **Nightly:** `cron: "0 17 * * *"` (UTC; = 22:30 IST) runs `power.sh staging sleep`.
+  Change the time in the workflow file; nothing else reads it.
+- **Button:** Actions → *gcp-staging-power* → Run workflow → `wake` (default),
+  `sleep` or `status`. Works from the GitHub mobile app. Wake takes ~1–3 min.
+- **A scheduled run can only ever sleep** — the action is forced to `sleep` for the
+  schedule trigger.
+- **Won't sleep a fresh deploy:** a scheduled run skips itself if the last
+  Staging Gate push run on `staging` was less than 120 minutes ago (so it cannot
+  switch the database off under someone testing a new build). Manual runs are
+  never skipped.
+- **Never races a deploy:** it shares the `gcp-staging` concurrency group with
+  `gcp-staging.yml`, so it queues behind a running deploy.
+- **Staging only:** enters only the `gcp-staging` environment, verifies the env
+  file declares `DATIQ_ENV=staging`, and `power.sh` itself refuses prod.
+- **Limitation:** GitHub runs `schedule` triggers only from the *default branch*
+  (`main`), so the nightly part starts working once this file reaches `main` via
+  the normal staging → main release. Until then use the button on a branch run
+  of the workflow dispatch — which also needs the file on `main` — or run
+  `power.sh` locally. GitHub can also delay scheduled runs and disables them
+  after 60 days without repo activity.
+
 ## One-time IAM for CI (APPLIED 2026-10-03 to the staging CI service account only)
 The CI service account needs a **narrow** custom role, not `cloudsql.admin`
 (which can delete instances). Scheduler pause/resume and the bucket write are
@@ -91,10 +114,13 @@ account deliberately does NOT get it (`power.sh` refuses prod).
 - **Saving is modest** for `db-f1-micro` (a few dollars a month); it pays off if
   staging sits idle most days. Cloud Run, Hosting, Secret Manager and Artifact
   Registry have no meaningful idle cost to switch off.
-- **No auto-wake on traffic** and **no nightly auto-sleep yet.** A nightly
-  sleep would be a Cloud Scheduler job calling the Cloud SQL Admin API (or a
-  scheduled workflow, which GitHub only runs from the default branch). Not built;
-  `sleep_after` and the manual command cover it for now.
+- **No auto-wake on traffic.** Cloud SQL cannot start itself when a request
+  arrives, so a visit to a sleeping staging fails until someone wakes it (the
+  button below, `power.sh staging wake`, or any deploy). Options considered and
+  not built: a small always-reachable "waker" Cloud Run service behind Hosting
+  (real auto-wake, but new infra plus a public endpoint that can start the
+  database), or giving the API's runtime service account the start permission
+  (widens a runtime account's rights for a few dollars a month).
 - **Image cleanup policies** in Artifact Registry would save storage but they
   *delete* images, so they are deliberately out of scope here.
 - **Stopped Cloud SQL still pays for storage**, and automated backups do not run

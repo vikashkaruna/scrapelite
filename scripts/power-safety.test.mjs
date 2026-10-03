@@ -116,3 +116,31 @@ describe("deploy wakes a sleeping staging", () => {
     expect(wf).toMatch(/sleep_after:\s*\n\s+type: boolean\s*\n\s+default: false/);
   });
 });
+
+describe("gcp-staging-power.yml — nightly sleep + manual wake button", () => {
+  const wf = readFileSync(resolve(D, "..", "..", ".github", "workflows", "gcp-staging-power.yml"), "utf8");
+  const wfCode = code(wf);
+  it("has a nightly schedule and a manual dispatch with wake/sleep/status", () => {
+    expect(wf).toMatch(/schedule:\s*\n\s+- cron: "[^"]+"/);
+    expect(wf).toMatch(/options: \[wake, sleep, status\]/);
+  });
+  it("a scheduled run can only ever SLEEP", () => {
+    expect(wf).toMatch(/github\.event_name == 'schedule' && 'sleep' \|\| inputs\.action/);
+  });
+  it("shares the deploy's concurrency group and never cancels", () => {
+    expect(wf).toMatch(/group: gcp-staging\s*\n\s+cancel-in-progress: false/);
+  });
+  it("only enters the gcp-staging environment and verifies the env file is staging's", () => {
+    expect(wf).toMatch(/environment: gcp-staging/);
+    expect(wf).not.toMatch(/gcp-prod/);
+    expect(wf).toMatch(/DATIQ_ENV=staging/);
+  });
+  it("skips the scheduled sleep right after a deploy, but never skips a manual run", () => {
+    expect(wf).toMatch(/id: guard\s*\n\s+if: github\.event_name == 'schedule'/);
+    expect(wf).toMatch(/steps\.guard\.outputs\.skip != 'true'/);
+  });
+  it("drives everything through power.sh and contains no deletion verb", () => {
+    expect(wfCode).toMatch(/power\.sh staging "\$ACTION"/);
+    expect(wfCode).not.toMatch(DESTRUCTIVE);
+  });
+});
