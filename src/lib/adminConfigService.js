@@ -2,6 +2,8 @@
 // Reads/writes via /api/admin-ai-config; POST sends the admin session token
 // (issued by admin-auth.js, stored by adminService.js) as a Bearer header.
 
+import { mergeServerCoupons, buildCouponsSyncPayload, buildCouponCatalogPayload } from "./adminService.js";
+
 const ENDPOINT = "/api/admin-ai-config";
 const ADMIN_AUTH_KEY = "scrapelite.adminAuth"; // session token (see adminService.js)
 
@@ -95,16 +97,37 @@ export async function getCouponsConfig() {
   return res.json(); // { ok, coupons, persisted }
 }
 
-/** Replace the checkout-facing coupon map. `coupons` is {CODE: {value,planId,expiresAt,active,maxUses}}. */
-export async function saveCouponsConfig(coupons) {
+/**
+ * Replace the checkout-facing coupon map. `coupons` is {CODE: {value,planId,expiresAt,active,maxUses}}
+ * (credit coupons carry `credits`). `catalog`, when given, is the admin's full list and is stored
+ * alongside so every browser sees the same coupons.
+ */
+export async function saveCouponsConfig(coupons, catalog) {
   const res = await fetch(COUPONS_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken()}` },
-    body: JSON.stringify({ coupons }),
+    body: JSON.stringify({ coupons, ...(catalog ? { catalog } : {}) }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Save failed (${res.status})`);
   return data;
+}
+
+/**
+ * Load the server's coupon list into this browser's and, if this browser holds
+ * coupons the server has never seen (legacy localStorage-only ones), push the
+ * merged list up so they become durable. Returns the merged list, or `null`
+ * when the server could not be reached (caller keeps the local list).
+ */
+export async function syncCouponsFromServer() {
+  let cfg;
+  try { cfg = await getCouponsConfig(); } catch { return null; }
+  const { merged, localOnly } = mergeServerCoupons({ catalog: cfg.catalog, checkoutMap: cfg.coupons, uses: cfg.uses });
+  // Push when the server has no catalog yet or lacks something this browser has.
+  if (cfg.persisted !== false && (cfg.catalog == null || localOnly.length > 0)) {
+    try { await saveCouponsConfig(buildCouponsSyncPayload(merged), buildCouponCatalogPayload(merged)); } catch { /* retried next load */ }
+  }
+  return merged;
 }
 
 // ── General / global settings ────────────────────────────────────────────────

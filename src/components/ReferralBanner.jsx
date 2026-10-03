@@ -27,6 +27,7 @@ import { useBilling } from "./BillingProvider.jsx";
 import { useAuth } from "./AuthProvider.jsx";
 import { buildReferralUrl, fetchReferralStatus, REFERRAL_BONUS } from "../lib/referralService.js";
 import { creditPressure } from "../lib/credits/creditPressure.js";
+import { useAutoDismissBanner, bannerAutoHidden, announceBannerChange, BANNER_CHANGE_EVENT } from "../hooks/useAutoDismissBanner.js";
 
 const DISMISS_KEY = "datiq.referralDismissedMonth";
 
@@ -87,13 +88,31 @@ export default function ReferralBanner() {
   // than the upsell banner's own band so the two do not both appear at once;
   // the upsell is the first nudge, this is the second.
   const pressure = creditPressure({ credits, allowance: plan?.limits?.credits });
-  if (!pressure.known) return null;
-  if (!pressure.empty && !(pressure.remainingPct !== null && pressure.remainingPct <= REFERRAL_TRIGGER_PCT)) return null;
-  if (dismissed) return null;
+  const lowEnough = pressure.known
+    && (pressure.empty || (pressure.remainingPct !== null && pressure.remainingPct <= REFERRAL_TRIGGER_PCT));
   // No real code → no banner. Signed-out visitors and a store that cannot
   // answer both land here. Showing an invite link that nobody can be credited
   // for is worse than showing nothing.
-  if (!myCode) return null;
+  // One advisory at a time: while the usage-limit banner is up (it is the more
+  // urgent of the two) this one waits, then takes its slot when that leaves.
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const on = () => bump((n) => n + 1);
+    window.addEventListener(BANNER_CHANGE_EVENT, on);
+    return () => window.removeEventListener(BANNER_CHANGE_EVENT, on);
+  }, []);
+  let upsellUp = false;
+  try {
+    upsellUp = pressure.known && pressure.low
+      && localStorage.getItem("datiq.upsellDismissedMonth") !== getCurrentMonth()
+      && !bannerAutoHidden("usage-upsell");
+  } catch { /* storage blocked: assume not showing */ }
+  const visible = lowEnough && !dismissed && !!myCode && !upsellUp;
+
+  // Leaves on its own once read, like the GA4 bar — see useAutoDismissBanner.
+  // (Hooks run before the early return, hence `visible` above.)
+  const { phase, hoverProps } = useAutoDismissBanner("referral", { active: visible, textLength: 150 });
+  if (!visible || phase === "gone") return null;
 
   const handleCopy = async () => {
     try {
@@ -123,15 +142,19 @@ export default function ReferralBanner() {
   const dismiss = () => {
     setDismissed(true);
     try { localStorage.setItem(DISMISS_KEY, getCurrentMonth()); } catch {}
+    announceBannerChange();
   };
 
   return (
-    <div className="usage-upsell-banner-wrap referral-banner-wrap">
-      <div className="usage-upsell-banner referral-banner">
+    <div
+      className={"usage-upsell-banner-wrap referral-banner-wrap" + (phase === "leaving" ? " uub-leaving" : "")}
+      {...hoverProps}
+    >
+      <div className="usage-upsell-banner referral-banner" role="status">
         <div className="uub-icon">
           <Icon name="gift" size={16} />
         </div>
-        <div className="uub-content">
+        <div className="uub-content uub-flow">
           <span className="uub-title">
             {pressure.empty ? "Out of credits?" : "Running low?"} Invite a friend, get {REFERRAL_BONUS} more.
           </span>

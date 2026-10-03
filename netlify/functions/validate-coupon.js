@@ -2,8 +2,8 @@
 //
 //   POST /api/validate-coupon   body: { code, planId? }
 //   → { found: false }                                            — no such
-//     server-canonical coupon (extraction-bonus / manual-assign coupons are
-//     deliberately local-only and never reach here — see adminService.js)
+//     server-canonical coupon (manual-assign coupons are deliberately not
+//     self-redeemable and never reach here — see admin-coupons-config.js)
 //   → { found: true, active, expired, exhausted, planId, type, value }
 //
 // ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
@@ -89,7 +89,9 @@ export const handler = async (event) => {
     expired,
     exhausted,
     planId: coupon.planId || null,
-    type: "percent",
-    value: coupon.value,
+    // A credit coupon grants credits, not a discount — the client must route it
+    // to the redemption endpoint instead of treating it as "0% off".
+    type: Number(coupon.credits) > 0 ? "credits" : "percent",
+    value: Number(coupon.credits) > 0 ? Number(coupon.credits) : coupon.value,
   });
 };

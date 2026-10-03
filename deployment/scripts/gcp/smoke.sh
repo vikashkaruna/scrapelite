@@ -39,8 +39,12 @@ check "security header on /" \
   "nosniff" "$(curl -s -m 30 -D - -o /dev/null "$BASE/" | grep -i 'x-content-type-options:' | awk '{print $2}' | tr -d '\r')"
 check "admin noindex header" \
   "yes" "$(curl -s -m 30 -D - -o /dev/null "$BASE/dashboard" | grep -qi 'x-robots-tag: noindex' && echo yes || echo no)"
+# File, not a pipe: `curl | grep -q` lets grep exit on first match, curl dies
+# with SIGPIPE and pipefail turns a present marker into a false "no".
+SMOKE_RC="$(mktemp)"; trap 'rm -f "$SMOKE_HOME" "$SMOKE_RC"' EXIT
+body "$BASE/runtime-config.js" > "$SMOKE_RC"
 check "runtime-config.js ships (branch routing for *.web.app)" \
-  "yes" "$(body "$BASE/runtime-config.js" | grep -q '_GCP_PROD_HOSTS' && echo yes || echo no)"
+  "yes" "$(grep -q '_GCP_PROD_HOSTS' "$SMOKE_RC" && echo yes || echo no)"
 
 echo "→ API rewrite (through Firebase Hosting → Cloud Run ${CLOUD_RUN_API})"
 # workflow-orchestrator is POST-only and token-gated (identical on Netlify):

@@ -227,9 +227,9 @@ describe("active and free accounts are unaffected", () => {
     entMocks.loadEntitlement.mockResolvedValue(null);
     render(<Tree />);
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("active"));
-    // Free plan: CSV yes, PDF no — the pre-existing plan rules still apply.
+    // Free plan: every export format is included (an export is the customer's own data).
     expect(screen.getByTestId("csv").textContent).toBe("true");
-    expect(screen.getByTestId("pdf").textContent).toBe("false");
+    expect(screen.getByTestId("pdf").textContent).toBe("true");
     expect(screen.getByTestId("extract").textContent).toBe("true");
   });
 

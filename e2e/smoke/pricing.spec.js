@@ -31,7 +31,7 @@ test("Annual toggle: each paid card shows /yr, /mo, strikethrough and Save amoun
   await page.locator(".billing-toggle-btn", { hasText: "Annual" }).first().click();
   // Every non-free plan card should now show the annual price layout.
   for (const name of ["Go", "Select", "Pro", "Business", "Agency"]) {
-    const card = page.locator(".plan-card").filter({ hasText: name }).first();
+    const card = page.locator(".plan-card").filter({ has: page.locator(".plan-name", { hasText: new RegExp(`^${name}$`) }) }).first();
     await expect(card).toBeVisible();
     await expect(card.locator(".plan-price-annual")).toBeVisible();
     // Per-year amount + "/yr"
@@ -63,12 +63,12 @@ test("Enterprise plan card has a dashed border (.enterprise-card)", async ({ pag
   await expect(page.locator(".plan-card.enterprise-card")).toBeVisible();
 });
 
-test("Developer plan card is marked 'coming soon' (CTA = 'Notify me', badge 'Coming H3 2026')", async ({ page }) => {
+test("Developer plan card is marked 'coming soon' (CTA = 'Notify me', badge 'Upcoming')", async ({ page }) => {
   await page.goto("/pricing");
   const devCard = page.locator(".plan-card.plan-coming-soon");
   await expect(devCard).toBeVisible();
   // The Developer card CTA is "Notify me" (disabled), per R4.
   await expect(devCard.getByRole("button", { name: /Notify me/i })).toBeVisible();
-  // The badge text is "Coming H3 2026" (was H2 — pushed back one half).
-  await expect(devCard.locator(".plan-badge")).toContainText(/Coming H3 2026/);
+  // The badge text is "Upcoming" (no dated promise).
+  await expect(devCard.locator(".plan-badge")).toContainText(/Upcoming/);
 });

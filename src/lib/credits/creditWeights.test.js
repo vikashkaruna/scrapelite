@@ -68,7 +68,7 @@ describe("Free's reservation tracks the weight it reserves for", () => {
   });
 
   it("leaves a usable pool behind the reservation", () => {
-    expect(FREE_GRANT).toBe(100);
+    expect(FREE_GRANT).toBe(500);
     expect(FREE_GRANT - FREE_DISCOVERABILITY_RESERVE).toBeGreaterThan(50);
   });
 });

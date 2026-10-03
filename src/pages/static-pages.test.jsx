@@ -241,7 +241,7 @@ describe("F-17 — Integrations page", () => {
     // available, no UI)". This used to be "Coming Soon" before the UI landed.)
     expect(labels).toContain("Available");
     // Salesforce → "Roadmap"
-    expect(labels).toContain("Roadmap");
+    expect(labels).toContain("Upcoming");
     // Mature features → plain "Available"
     expect(labels.filter((l) => l === "Available").length).toBeGreaterThan(0);
   });

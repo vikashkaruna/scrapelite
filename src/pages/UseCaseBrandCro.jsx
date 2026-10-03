@@ -35,7 +35,7 @@ export default function UseCaseBrandCro() {
         title: "“Not measured” is never “zero”",
         body: "A signal DatIQ could not measure is left out and its weight redistributed, and every score carries its coverage — so a third-party outage never shows up as a drop in your score.",
       }}
-      cta={{ title: "Set up your truth record", body: "Free to start — 100 credits, no credit card required.", label: "Open the template hub", to: "/templates?filter=brand-growth" }}
+      cta={{ title: "Set up your truth record", body: "Free to start — 500 credits, no credit card required.", label: "Open the template hub", to: "/templates?filter=brand-growth" }}
       related={[
         { label: "AI Visibility", path: "/use-cases/ai-visibility" },
         { label: "SEO Audit", path: "/use-cases/seo-audit" },

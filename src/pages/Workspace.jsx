@@ -77,7 +77,7 @@ export default function Workspace() {
   useSeo({
     title: "DatIQ Workspace — your team and usage at a glance | DatIQ.app",
     description:
-      "DatIQ Workspace — your team's shared extractions, usage, and seats at a glance. DatIQ.app is the zero-code web data extraction platform for agencies and multi-seat teams.",
+      "DatIQ Workspace — your team's shared extractions, usage, and seats at a glance. DatIQ.app is the AI-enabled web data extraction platform for agencies and multi-seat teams.",
     canonical: "https://datiq.app/workspace",
   });
   const { user, userName } = useAuth();

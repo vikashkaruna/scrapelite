@@ -532,7 +532,7 @@ Discoverability scores describe how findable and extractable a page is **today**
 
 What you get instead is a reproducible measurement, the evidence behind it, and a list of specific things to change — so that when the outcome does move, you know what moved it.
 
-Free accounts get three audits a month. Paste a URL and see where your page actually stands.
+Free accounts start with 500 credits — enough for roughly 26 audits. Paste a URL and see where your page actually stands.
     `.trim(),
   },
   {
@@ -768,7 +768,7 @@ The result is a clean JSON object with plan names, prices, billing periods, and 
 
 ## What's next
 
-DatIQ's scheduled monitoring feature (coming on Pro plan) will let you set a URL and get an alert whenever pricing changes. Perfect for sales teams who want to know the moment a competitor drops their price.
+DatIQ's scheduled monitoring feature (available on every plan, with more monitors on higher plans) lets you set a URL and get an alert whenever pricing changes. Perfect for sales teams who want to know the moment a competitor drops their price.
     `.trim(),
   },
   {
@@ -931,7 +931,7 @@ The persona system is used to feed AI prompts too. A Sales persona extracts cont
   {
     slug: "zero-code-enrichment-pipeline",
     tag: "Engineering",
-    title: "How We Built a Zero-Code Enrichment Pipeline",
+    title: "How We Built an AI-Enabled Enrichment Pipeline",
     excerpt: "A look under the hood at how DatIQ chains Firecrawl extraction, Anthropic AI enrichment, and a Supabase persistence layer — all without the user writing a line of code.",
     date: "April 25, 2026",
     readTime: "8 min read",
@@ -968,11 +968,11 @@ Extraction results are saved to a Supabase PostgreSQL database, keyed by session
 
 When Supabase isn't configured (local dev or demo mode), DatIQ falls back to localStorage automatically.
 
-## The no-code part
+## The AI-enabled part
 
 The user sees none of this. They paste a URL, click a button, and get structured data. The entire pipeline — scraping, AI enrichment, persistence — runs transparently in the background, with progress shown via the animated loading screen.
 
-This is what "zero-code" actually means in practice: not just no scraping scripts, but no infrastructure, no API keys, no configuration. Just data.
+This is what "AI-enabled" actually means in practice: not just no scraping scripts, but no infrastructure, no API keys, no configuration. Just data.
     `.trim(),
   },
 ];

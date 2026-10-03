@@ -11,7 +11,7 @@ export default function PaymentCancel() {
   useSeo({
     title: "Payment cancelled — no charge was made | DatIQ.app",
     description:
-      "DatIQ payment cancelled — no charge was made. Your existing plan and extractions are unchanged. DatIQ.app is the zero-code web data extraction platform for marketers and researchers.",
+      "DatIQ payment cancelled — no charge was made. Your existing plan and extractions are unchanged. DatIQ.app is the AI-enabled web data extraction platform for marketers and researchers.",
     canonical: "https://datiq.app/payment/cancel",
     robots: "noindex, nofollow",
   });

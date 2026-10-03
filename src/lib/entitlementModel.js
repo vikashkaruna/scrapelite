@@ -53,6 +53,7 @@ export const CAPS = Object.freeze([
   "export.markdown",
   "export.json",
   "export.email",
+  "import.csv",
   "schedules",
   "integrations",
   "webhooks",
@@ -634,6 +635,12 @@ export function can(ent, capability, ctx = {}) {
         : deny("NOT_IN_PLAN", `${fmt.toUpperCase()} export is not available on your current plan.`);
     }
 
+    // Importing a CSV of URLs: every PAID plan. Free can still paste URLs.
+    case "import.csv":
+      return L.csv_import
+        ? ok()
+        : deny("NOT_IN_PLAN", "CSV import is available on every paid plan.", 0, "go");
+
     case "export.email":
       return L.email_export
         ? ok()
@@ -896,14 +903,15 @@ export function can(ent, capability, ctx = {}) {
             "select",
           );
 
-    // Entitlement flag only — see the CAPS comment. Same taster-tier split as
-    // integrations: Free and Go don't get it, Select and up do.
+    // Entitlement flag only — see the CAPS comment. The extension is UPCOMING
+    // (not yet on the browser stores), so /pricing no longer sells it as a plan
+    // feature; the flag is kept so the gate is ready the day it ships.
     case "browser_extension":
       return L.browser_extension
         ? ok()
         : deny(
             "NOT_IN_PLAN",
-            "The DatIQ browser extension is available from the Select plan upward.",
+            "The DatIQ browser extension is upcoming and not yet available.",
             0,
             "select",
           );

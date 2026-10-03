@@ -101,7 +101,7 @@ describe("fail CLOSED on an explicit non-active status", () => {
 
   it("denies schedules for a suspended subscriber", async () => {
     entitlementRow(paidSuspended);
-    const { check } = await mod.requireCapability(ev(), "schedules");
+    const { check } = await mod.requireCapability(ev(), "integrations");
     expect(check.allowed).toBe(false);
   });
 
@@ -134,7 +134,12 @@ describe("signed-in user with no entitlement row", () => {
     expect(allowed.check.allowed).toBe(true);
 
     entitlementRow(null);
-    const denied = await mod.requireCapability(ev(), "export.pdf"); // Free has no PDF
+    // Export is every plan's own data (Free included); a capability Free does
+    // not have is the one to prove it is still plan-gated.
+    const exp = await mod.requireCapability(ev(), "export.pdf");
+    expect(exp.check.allowed).toBe(true);
+    entitlementRow(null);
+    const denied = await mod.requireCapability(ev(), "integrations");
     expect(denied.check.allowed).toBe(false);
     expect(denied.check.code).toBe("NOT_IN_PLAN");
   });
@@ -175,10 +180,12 @@ describe("denyResponse", () => {
 
   it("marks plan-limit denials as non-lifecycle so the client routes to upgrade", async () => {
     entitlementRow(null);
-    const { check } = await mod.requireCapability(ev(), "schedules");
+    const { check } = await mod.requireCapability(ev(), "integrations");
     const body = JSON.parse(mod.denyResponse(check).body);
     expect(body.lifecycle).toBe(false);
-    expect(body.upgradeTo).toBe("select");
+    // Free no longer lacks scheduled monitoring (1 slot since the 2026-10 sheet),
+    // so the denial under test is the integrations one, which names no target.
+    expect(body.code).toBeTruthy();
   });
 
   it("never leaks the service key into a response body", async () => {

@@ -35,7 +35,7 @@ export default function UseCaseRevOps() {
         title: "An honest gap beats a confident guess",
         body: "A company that does not publish its size gets no size — not an estimate. Unmeasured criteria are excluded and their weight redistributed, so your routing decides on what was actually read.",
       }}
-      cta={{ title: "Score your first list", body: "Free to start — 100 credits, no credit card required.", label: "Open the template hub", to: "/templates?filter=revops" }}
+      cta={{ title: "Score your first list", body: "Free to start — 500 credits, no credit card required.", label: "Open the template hub", to: "/templates?filter=revops" }}
       related={[
         { label: "Account Intelligence", path: "/use-cases/account-intelligence" },
         { label: "Lead Generation", path: "/use-cases/lead-generation" },

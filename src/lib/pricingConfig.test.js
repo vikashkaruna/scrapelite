@@ -23,6 +23,7 @@ const ALLOWED_LIMIT_KEYS = new Set([
   // `extractions` and `audits` below are now DESCRIPTIVE — three public
   // surfaces still print them — and are no longer what any gate reads.
   "credits",
+  "csv_import",
   "extractions",
   // Separate from batch_max_urls since the 2026-09-23 repricing: Free gets a
   // 5-URL batch but NO bulk account list, which one shared key could not say.
@@ -116,7 +117,9 @@ describe("ENTERPRISE_PLAN + plan count (U-13)", () => {
   it("ENTERPRISE_PLAN has price = 'Custom' and required fields", () => {
     expect(ENTERPRISE_PLAN.id).toBe("enterprise");
     expect(ENTERPRISE_PLAN.name).toBe("Enterprise");
-    expect(ENTERPRISE_PLAN.tagline).toMatch(/Custom/i);
+    expect(ENTERPRISE_PLAN.tagline).toBeTruthy();
+    expect(ENTERPRISE_PLAN.priceNote).toMatch(/\$1,000/);
+    expect(ENTERPRISE_PLAN.cta.primary).toBeTruthy();
     expect(Array.isArray(ENTERPRISE_PLAN.features)).toBe(true);
   });
 
@@ -152,17 +155,17 @@ describe("ENTERPRISE_PLAN + plan count (U-13)", () => {
       expect(plan.limits.integrations, `${id} should have integrations`).toBe(true);
       expect(plan.limits.browser_extension, `${id} should have the browser extension flag`).toBe(true);
     }
-    expect(go.limits.scheduled_monitoring).toBe(0);
+    expect(go.limits.scheduled_monitoring).toBe(2); // 2026-10 sheet: a slot count, not an exclusion
     expect(go.limits.integrations).toBe(false);
     expect(go.limits.browser_extension).toBe(false);
     expect(PLAN_BY_ID.free.limits.integrations).toBe(false);
     expect(PLAN_BY_ID.free.limits.browser_extension).toBe(false);
   });
 
-  it("Developer plan is marked 'coming soon' with a 'Coming H3 2026' badge", () => {
+  it("Developer plan is marked 'coming soon' with an 'Upcoming' badge", () => {
     const dev = PLAN_BY_ID.developer;
     expect(dev.comingSoon).toBe(true);
-    expect(dev.badge).toBe("Coming H3 2026");
+    expect(dev.badge).toBe("Upcoming");
   });
 
   it("Agency is the only 'Best Value' plan (the trigger for the amber border highlight)", () => {
@@ -252,8 +255,8 @@ describe("credit pools", () => {
 
   it("holds the §4.1 table exactly", () => {
     expect(Object.fromEntries(PLANS.map((p) => [p.id, p.limits.credits]))).toEqual({
-      free: 100, go: 750, select: 2500, pro: 6000,
-      developer: 25000, business: 40000, agency: 100000,
+      free: 500, go: 1500, select: 5000, pro: 10000,
+      developer: 25000, business: 50000, agency: 150000,
     });
   });
 
@@ -325,9 +328,9 @@ describe("top-ups sell capacity, never consumption", () => {
 describe("credit packs", () => {
   it("ship the §4.4 table", () => {
     expect(CREDIT_PACKS.map((p) => [p.credits, p.price_usd]))
-      .toEqual([[500, 5], [2000, 19], [10000, 89]]);
+      .toEqual([[750, 5], [3000, 19], [15000, 89]]);
     expect(CREDIT_PACKS.map((p) => [p.credits, p.price_inr]))
-      .toEqual([[500, 490], [2000, 1849], [10000, 8719]]);
+      .toEqual([[750, 490], [3000, 1849], [15000, 8749]]);
   });
 
   // 🔴 THE GUARD THAT WOULD HAVE CAUGHT THE ₹11,449 TYPO. The large pack was

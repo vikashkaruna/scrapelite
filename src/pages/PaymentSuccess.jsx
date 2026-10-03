@@ -18,7 +18,7 @@ export default function PaymentSuccess() {
   useSeo({
     title: "Payment successful — welcome to DatIQ | DatIQ.app",
     description:
-      "Welcome to DatIQ — your payment was successful and your plan is now active. Start extracting structured data from any URL. DatIQ.app is the zero-code web data extraction platform.",
+      "Welcome to DatIQ — your payment was successful and your plan is now active. Start extracting structured data from any URL. DatIQ.app is the AI-enabled web data extraction platform.",
     canonical: "https://datiq.app/payment/success",
     robots: "noindex, nofollow",
   });

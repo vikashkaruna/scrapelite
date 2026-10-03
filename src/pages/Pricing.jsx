@@ -192,9 +192,10 @@ function PlanCard({ plan, currency, billingPeriod, rates, currentPlanId, onSelec
       </Button>
       <ul className="plan-features">
         {plan.features.map((f) => (
-          <li key={f.label} className={"pf-item" + (f.included ? "" : " pf-excluded")}>
-            <Icon name={f.included ? "check-circle" : "x"} size={15} />
+          <li key={f.label} className={"pf-item" + (f.included ? "" : " pf-excluded") + (f.upcoming ? " pf-upcoming" : "")}>
+            <Icon name={f.included ? "check-circle" : f.upcoming ? "clock" : "x"} size={15} />
             <span>{f.label}</span>
+            {f.upcoming && <span className="pf-upcoming-tag">Upcoming</span>}
           </li>
         ))}
       </ul>
@@ -202,9 +203,10 @@ function PlanCard({ plan, currency, billingPeriod, rates, currentPlanId, onSelec
   );
 }
 
-function EnterpriseCard({ onContact }) {
+function EnterpriseCard({ onContact, onDemo }) {
   return (
     <div className="plan-card enterprise-card">
+      {ENTERPRISE_PLAN.badge && <div className="plan-badge enterprise-badge">{ENTERPRISE_PLAN.badge}</div>}
       <div className="plan-header">
         <div className="plan-name">{ENTERPRISE_PLAN.name}</div>
         <div className="plan-tagline">{ENTERPRISE_PLAN.tagline}</div>
@@ -213,9 +215,21 @@ function EnterpriseCard({ onContact }) {
         <span className="price-amount">Custom</span>
         <span className="price-period"> pricing</span>
       </div>
-      <Button variant="secondary" size="sm" fullWidth onClick={onContact}>
-        Contact sales
+      <div className="enterprise-price-note">{ENTERPRISE_PLAN.priceNote}</div>
+      <div className="enterprise-highlights">
+        {ENTERPRISE_PLAN.highlights.map((h) => (
+          <div key={h.label} className="enterprise-highlight">
+            <strong>{h.value}</strong><span>{h.label}</span>
+          </div>
+        ))}
+      </div>
+      <Button variant="primary" size="sm" fullWidth onClick={onContact}>
+        {ENTERPRISE_PLAN.cta.primary}
       </Button>
+      <button type="button" className="enterprise-demo-link" onClick={onDemo}>
+        {ENTERPRISE_PLAN.cta.secondary} →
+      </button>
+      <div className="enterprise-includes">{ENTERPRISE_PLAN.includesNote}</div>
       <ul className="plan-features">
         {ENTERPRISE_PLAN.features.map((f) => (
           <li key={f.label} className="pf-item">
@@ -249,6 +263,13 @@ function TopupCard({ bundle, currency, onBuy, loading }) {
       <div className="topup-body">
         <div className="topup-name">{bundle.name}</div>
         <div className="topup-desc">{bundle.description}</div>
+        {Array.isArray(bundle.benefits) && (
+          <ul className="topup-benefits">
+            {bundle.benefits.map((b) => (
+              <li key={b.label}><Icon name={b.icon} size={12} />{b.label}</li>
+            ))}
+          </ul>
+        )}
       </div>
       <div className="topup-right">
         <div className="topup-price">
@@ -277,7 +298,7 @@ export default function Pricing() {
   const navigate  = useNavigate();
   const showToast = useToast();
   const {
-    currency, rates, setCurrency, planId: currentPlanId,
+    currency, rates, setCurrency, planId: currentPlanId, plan: currentPlan,
     initiatePayment, purchaseBatchPack, paymentLoading, paymentError, setPaymentError,
     paymentProvider, hasPayment, subscription,
   } = useBilling();
@@ -352,9 +373,19 @@ export default function Pricing() {
     handleSelect(planId);
   };
 
-  const handleContactSales = () => {
-    window.open("mailto:admin@datiq.app?subject=Enterprise%20Inquiry&body=Hi%2C%20I%27m%20interested%20in%20DatIQ%20Enterprise.%20Please%20share%20pricing%20and%20onboarding%20details.", "_blank");
+  // Opens the Contact page on the "Enterprise / agency" enquiry type with the
+  // subject and a starter message already filled in (editable before sending).
+  const goContact = (subject, message) => {
+    const q = new URLSearchParams({ type: "enterprise", subject, message });
+    navigate(`/contact?${q.toString()}`);
   };
+  const handleContactSales = () =>
+    goContact(
+      "Enterprise enquiry",
+      "Hi, I'm interested in DatIQ Enterprise. Please share pricing and onboarding details.\n\nTeam size: \nExpected monthly volume: \nWhat we want to do with DatIQ: ",
+    );
+  const handleBookDemo = () =>
+    goContact("Enterprise demo request", "Hi, I'd like a demo of DatIQ Enterprise.\n\nPreferred time / timezone: \nTeam size: ");
 
   const showError = localError || paymentError;
 
@@ -434,7 +465,7 @@ export default function Pricing() {
               loading={loadingPlan}
             />
           ))}
-          <EnterpriseCard onContact={handleContactSales} />
+          <EnterpriseCard onContact={handleContactSales} onDemo={handleBookDemo} />
         </div>
 
         {currency === "INR" && (
@@ -480,6 +511,18 @@ export default function Pricing() {
           </div>
         </div>
 
+        <p className="topup-plan-note">
+          <Icon name="info" size={13} />
+          <span>
+            Credits are what you spend; capacity is what you may run. Your {currentPlan?.name || "current"} plan allows batches of up to{" "}
+            <strong>{(currentPlan?.limits?.batch_max_urls || 0) + (subscription?.bonusBatchUrls || 0)}</strong> URLs,{" "}
+            <strong>{currentPlan?.limits?.bulk_list_max ?? currentPlan?.limits?.batch_max_urls ?? 0}</strong>-row account lists,{" "}
+            <strong>{currentPlan?.limits?.scheduled_monitoring ?? 0}</strong> scheduled {(currentPlan?.limits?.scheduled_monitoring ?? 0) === 1 ? "monitor" : "monitors"} and{" "}
+            <strong>{currentPlan?.limits?.workspaces ?? 1}</strong> {(currentPlan?.limits?.workspaces ?? 1) === 1 ? "workspace" : "workspaces"} — buying credits does not change those.
+            Raise them with the capacity bundles below.
+          </span>
+        </p>
+
         <div className="topup-section">
           <div className="topup-section-head">
             <h2 className="topup-section-title">Top-up bundles</h2>
@@ -489,7 +532,7 @@ export default function Pricing() {
             </p>
           </div>
           <div className="topup-grid">
-            {bundles.filter((b) => !b.hidden).map((bundle) => (
+            {[...bundles].filter((b) => !b.hidden).sort((a, b) => a.price_usd - b.price_usd).map((bundle) => (
               <TopupCard
                 key={bundle.id}
                 bundle={bundle}
@@ -527,7 +570,7 @@ export default function Pricing() {
           <div className="pricing-faq-row">
             <div className="pricing-faq-item">
               <Icon name="gift" size={16} />
-              <span>Free plan includes <strong>100 credits</strong> at signup — no card required, and they never expire.</span>
+              <span>Free plan includes <strong>500 credits</strong> at signup — no card required, and they never expire.</span>
             </div>
             <div className="pricing-faq-item">
               <Icon name="shield" size={16} />

@@ -207,7 +207,7 @@ export default function Schedules() {
   useSeo({
     title: "DatIQ Schedules — recurring extractions and change monitoring | DatIQ.app",
     description:
-      "DatIQ Schedules — set up recurring extractions and get notified the moment a page changes. DatIQ.app is the zero-code web data extraction platform for monitoring competitor pricing, job posts, and more.",
+      "DatIQ Schedules — set up recurring extractions and get notified the moment a page changes. DatIQ.app is the AI-enabled web data extraction platform for monitoring competitor pricing, job posts, and more.",
     canonical: "https://datiq.app/schedules",
   });
   const navigate = useNavigate();

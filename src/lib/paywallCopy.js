@@ -35,7 +35,7 @@ function fmtInr(n) {
  * @returns {object|null}  The plan, with annual + monthly prices attached.
  */
 export function pickRecommendedPlan(ctx = {}) {
-  let planId = "pro"; // default: Pro unlocks 1,000 extractions/mo, JSON export, CSV import
+  let planId = "pro"; // default: Pro unlocks 10,000 credits/mo, integrations and signal routing
   if (ctx.kind === "batch") {
     const urls = ctx.urls || 0;
     if (urls > 250) planId = "agency";      // Agency = up to 500 URLs/run
@@ -48,7 +48,7 @@ export function pickRecommendedPlan(ctx = {}) {
     else if (ctx.format === "pdf" || ctx.format === "markdown") planId = "go"; // PDF/MD = Go+
     else planId = "go";
   } else if (ctx.kind === "schedule") {
-    planId = "select"; // Scheduled monitoring first appears on Select (Go is 0)
+    planId = "select"; // More monitor slots: Free 1, Go 2, Select 5
   } else if (ctx.kind === "integrations") {
     planId = "select"; // Push integrations first appear on Select (Free/Go are excluded)
   } else if (ctx.kind === "api") {
@@ -124,14 +124,14 @@ export function buildPaywallCopy({ route, usage = {}, currentPlan, ctx, currency
       break;
     }
     case "schedule": {
-      title = `Scheduled monitoring starts at ${plan.name}`;
-      body = `Monitor a URL daily and get email alerts when content changes. Includes ${plan.limits?.extractions?.toLocaleString() || "more"} extractions/mo.`;
+      title = `More scheduled monitors on ${plan.name}`;
+      body = `${plan.limits?.scheduled_monitoring ?? "More"} scheduled monitors — check a URL daily and get an email alert when content changes. Includes ${plan.limits?.credits?.toLocaleString() || "more"} credits/mo.`;
       ctaLabel = `Upgrade to ${plan.name} — ${annualStr}/mo, billed annually`;
       break;
     }
     case "api": {
       title = `API access is on ${plan.name} and above`;
-      body = `Build apps on top of DatIQ with REST API keys, webhooks, and 1,000 extractions/mo included.`;
+      body = `Build apps on top of DatIQ with REST API keys and webhooks, with ${plan.limits?.credits?.toLocaleString() || "more"} credits/mo included.`;
       ctaLabel = `Upgrade to ${plan.name} — ${annualStr}/mo, billed annually`;
       break;
     }
@@ -144,7 +144,7 @@ export function buildPaywallCopy({ route, usage = {}, currentPlan, ctx, currency
           ? `You've used all ${capLabel} free extractions`
           : `You've used all ${capLabel} extractions this month`
         : `You're close to your monthly limit`;
-      body = `${plan.name} gives you ${plan.limits?.extractions?.toLocaleString() || "more"} extractions/mo, JSON export, and CSV import — for ${annualStr}/mo, billed annually.`;
+      body = `${plan.name} gives you ${plan.limits?.credits?.toLocaleString() || "more"} credits/mo, CSV import and ${plan.limits?.scheduled_monitoring ?? "more"} scheduled monitors — for ${annualStr}/mo, billed annually.`;
       ctaLabel = `Upgrade to ${plan.name} — ${annualStr}/mo, billed annually`;
     }
   }

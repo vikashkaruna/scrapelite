@@ -1,7 +1,7 @@
 // AdminCoupons.jsx — coupon CRUD management.
-import { useState } from "react";
-import { getCoupons, saveCoupon, deleteCoupon, buildCouponsSyncPayload } from "../../lib/adminService.js";
-import { saveCouponsConfig } from "../../lib/adminConfigService.js";
+import { useState, useEffect } from "react";
+import { getCoupons, saveCoupon, deleteCoupon, buildCouponsSyncPayload, buildCouponCatalogPayload } from "../../lib/adminService.js";
+import { saveCouponsConfig, syncCouponsFromServer } from "../../lib/adminConfigService.js";
 import { useToast } from "../../components/Toast.jsx";
 import Icon from "../../components/Icon.jsx";
 import Button from "../../components/Button.jsx";
@@ -54,6 +54,17 @@ export default function AdminCoupons() {
   const [formError, setFormError] = useState("");
   const [syncing, setSyncing] = useState(false);
 
+  // The browser's localStorage is only a cache: pull the server's list in (and
+  // push up anything only this browser has) so every admin session sees the
+  // same coupons, bonus and manual-assign ones included.
+  useEffect(() => {
+    let alive = true;
+    syncCouponsFromServer().then((merged) => {
+      if (alive && merged) setCoupons(merged.filter((c) => c.planId !== "manual"));
+    });
+    return () => { alive = false; };
+  }, []);
+
   const handleField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   // Pushes the current local coupon list to the checkout-facing store (see
@@ -63,7 +74,7 @@ export default function AdminCoupons() {
   async function syncToServer(nextCoupons) {
     setSyncing(true);
     try {
-      const res = await saveCouponsConfig(buildCouponsSyncPayload(nextCoupons));
+      const res = await saveCouponsConfig(buildCouponsSyncPayload(nextCoupons), buildCouponCatalogPayload(nextCoupons));
       if (res.persisted === false) {
         showToast(res.warning || "Saved locally only — coupon can't be used at checkout yet.");
       }

@@ -177,6 +177,59 @@ describe("admin-coupons-config POST", () => {
   });
 });
 
+describe("admin-coupons-config — credit coupons + admin catalog", () => {
+  const authed = () => ({ authorization: `Bearer ${makeAdminToken()}` });
+
+  it("accepts a credit coupon into the checkout map as {credits} with value 0 (never a discount)", async () => {
+    process.env.SUPABASE_URL = "https://x.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "svc";
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [] });
+    const h = await loadHandler();
+    const r = await h({ httpMethod: "POST", headers: authed(), body: JSON.stringify({
+      coupons: { BONUS50: { credits: 50, maxUses: 10, active: true } },
+    }) });
+    expect(r.statusCode).toBe(200);
+    expect(JSON.parse(r.body).coupons.BONUS50).toMatchObject({ value: 0, credits: 50, maxUses: 10 });
+  });
+
+  it("persists the full catalog (manual-assign included) under its own pricing_config row", async () => {
+    process.env.SUPABASE_URL = "https://x.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "svc";
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [] });
+    const h = await loadHandler();
+    const r = await h({ httpMethod: "POST", headers: authed(), body: JSON.stringify({
+      coupons: {},
+      catalog: [
+        { id: "m1", code: "vip 15", type: "percent", value: 15, planId: "manual" },
+        { code: "BONUS", type: "extractions", value: 25 },
+        { code: "BAD", type: "percent", value: 500 },   // out of range → dropped
+      ],
+    }) });
+    expect(r.statusCode).toBe(200);
+    const catalog = JSON.parse(r.body).catalog;
+    expect(catalog.map((c) => c.code)).toEqual(["VIP15", "BONUS"]);
+    expect(catalog[0].planId).toBe("manual");
+    const keys = fetchMock.mock.calls.map(([, o]) => o?.body && JSON.parse(o.body).key).filter(Boolean);
+    expect(keys).toEqual(["coupons", "coupon_catalog"]);
+  });
+
+  it("GET returns the stored catalog and real redemption counts", async () => {
+    process.env.SUPABASE_URL = "https://x.supabase.co";
+    process.env.SUPABASE_SERVICE_KEY = "svc";
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("key=eq.coupon_catalog")) return { ok: true, json: async () => [{ value: [{ code: "VIP", type: "percent", value: 5 }] }] };
+      if (u.includes("coupon_counters")) return { ok: true, json: async () => [{ coupon_code: "VIP", uses: 3 }] };
+      return { ok: true, json: async () => [] };
+    });
+    const h = await loadHandler();
+    const r = await h({ httpMethod: "GET", headers: authed() });
+    const body = JSON.parse(r.body);
+    expect(body.catalog).toEqual([{ code: "VIP", type: "percent", value: 5 }]);
+    expect(body.uses).toEqual({ VIP: 3 });
+  });
+});
+
 describe("admin-coupons-config — method handling", () => {
   it("PUT / DELETE / PATCH → 405", async () => {
     const h = await loadHandler();

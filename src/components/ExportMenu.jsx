@@ -100,7 +100,7 @@ export default function ExportMenu({
   };
 
   const onSendEmail = async (emails, format) => {
-    if (!checkCanEmail()) { showToast("Email export requires the Go plan or higher."); setEmailOpen(false); return; }
+    if (!checkCanEmail()) { showToast("Email export isn't available on your current plan."); setEmailOpen(false); return; }
     if (!gate(format, format.toUpperCase())) return;
     const res = await apiClient.sendExportEmail({
       to: emails, items: list, format, brandKit: readBrandKit(),
