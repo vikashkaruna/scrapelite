@@ -285,7 +285,7 @@ export default function Account() {
   useSeo({
     title: "DatIQ Account — plan, billing, invoices, API keys | DatIQ.app",
     description:
-      "DatIQ Account — manage your plan, billing, invoices, API keys, white-label template, and integrations. DatIQ.app is the zero-code web data extraction platform for individuals and teams.",
+      "DatIQ Account — manage your plan, billing, invoices, API keys, white-label template, and integrations. DatIQ.app is the AI-enabled web data extraction platform for individuals and teams.",
     canonical: "https://datiq.app/account",
   });
   const navigate = useNavigate();
@@ -739,7 +739,7 @@ export default function Account() {
                   <Icon name="info" size={13} /> Sign in to manage integrations.
                 </div>
               )}
-              {plan?.limits?.browser_extension && (
+              {(
                 <div className="int-row" style={{ marginTop: 8 }}>
                   <div className="int-row-icon">
                     <Icon name="puzzle" size={18} />
@@ -748,7 +748,7 @@ export default function Account() {
                     <div className="int-row-name">Browser extension</div>
                     <div className="int-row-status">
                       <span className="int-row-status-dot" />
-                      Coming soon — included on your plan once it ships
+                      Upcoming — we'll tell you when it's available
                     </div>
                   </div>
                 </div>

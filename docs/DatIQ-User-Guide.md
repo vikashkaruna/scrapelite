@@ -145,7 +145,7 @@ no separate "Batch" screen to go to first; paste what you have and DatIQ works o
 
 **The toolbar (bottom of the box):**
 
-- **＋** — the options menu: **Import CSV** (upload a list of URLs), **Add multiple URLs** (switch the box to
+- **＋** — the options menu: **Import CSV** (upload a list of URLs — paid plans), **Add multiple URLs** (switch the box to
   a multi-line list), and **Run in background** (see below). A dot on the ＋ means background mode is on.
 - **Batch** — force batch mode for multiple URLs.
 - **Discover** — shown when the box holds exactly one URL. Takes that page to the **Discoverability** screen
@@ -260,7 +260,7 @@ navigation; **Extract** covers it.
 
 How it works:
 
-1. **Paste URLs** (one per line) into the Home composer, or **Import CSV**, or drag a CSV onto the box.
+1. **Paste URLs** (one per line) into the Home composer, or **Import CSV** (paid plans), or drag a CSV onto the box.
 2. Choose an **intent** (the same chips as single extraction), and any **Advanced options** you want.
 3. Click **Extract**.
 4. Watch progress in the **dock** — `Extracting 3 / 12 URLs…` with the current URL and a **Cancel** button.
@@ -775,8 +775,7 @@ workflow runs ended up with no export at all until it was noticed.
 | **Email** | Send selected extractions to yourself, as a real file attachment. |
 | **Copy to clipboard** | Markdown, JSON or CSV, straight onto the clipboard. |
 
-Some formats need a paid plan — the menu shows which, and the check runs again when you click, so what
-the menu offers and what you are actually allowed are always the same answer.
+Every format — including email — is available on every plan, Free included: an export is your own data, so it is never a paid feature. (Importing a CSV of URLs is the paid one.)
 
 ### Push to your tools
 
@@ -998,7 +997,7 @@ blocks the fix list generates — so it is usable on its own.
 
 ### Watching a page
 
-On Pro and above you can put a page on a schedule — daily, weekly or monthly.
+On every plan you can put a page on a schedule — daily, weekly or monthly. Free includes 1 scheduled monitor, Go 2, and higher plans more.
 DatIQ re-audits it in the background and emails you only when something material
 moves: the overall score past a threshold you set, or a new critical issue.
 
@@ -1030,15 +1029,15 @@ credits on nothing else:
 
 | Plan | Credits / month | ≈ audits |
 |---|---|---|
-| Free | 100 (one-time) | 5 |
-| Go | 750 | 39 |
-| Select | 2,500 | 131 |
-| Pro | 6,000 | 315 |
+| Free | 500 (one-time) | 26 |
+| Go | 1,500 | 78 |
+| Select | 5,000 | 263 |
+| Pro | 10,000 | 526 |
 | Developer | 25,000 | 1,315 |
-| Business | 40,000 | 2,105 |
-| Agency | 100,000 | 5,263 |
+| Business | 50,000 | 2,631 |
+| Agency | 150,000 | 7,894 |
 
-Scheduled monitoring needs Select or above. Benchmarks need Select or above.
+Free includes 1 scheduled monitor and Go includes 2; Select and above get more. Benchmarks need Select or above.
 
 ### What it does not promise
 
@@ -1082,15 +1081,17 @@ cheaper per month.
 
 | Plan | Per month | Credits / month | Batch | Bulk list | Monitors |
 |---|---|---|---|---|---|
-| Free | Free | 100, one-time | 5 | — | — |
-| Go | $5 · ₹490 | 750 | 20 | 20 | — |
-| Select | $15 · ₹1,449 | 2,500 | 50 | 50 | 5 |
-| Pro | $25 · ₹2,449 | 6,000 | 100 | 100 | 10 |
-| Developer | $55 · ₹5,449 | 25,000 | 250 | 250 | 10 |
-| Business | $85 · ₹7,849 | 40,000 | 250 | 250 | 25 |
-| Agency | $200 · ₹19,449 | 100,000 | 500 | 500 | 100 |
+| Free | Free | 500, one-time | 5 | 1 | 1 |
+| Go | $5 · ₹449 | 1,500 | 20 | 20 | 2 |
+| Select | $15 · ₹1,449 | 5,000 | 50 | 50 | 5 |
+| Pro | $25 · ₹2,449 | 10,000 | 100 | 100 | 10 |
+| Developer | $55 · ₹5,449 | 25,000 | 250 | 200 | 10 |
+| Business | $85 · ₹7,849 | 50,000 | 250 | 250 | 25 |
+| Agency | $200 · ₹19,449 | 150,000 | 500 | 500 | 100 |
 
-Free's 100 credits are granted once and never reset. Every paid plan's credits
+Every plan — Free included — exports in every format (PDF, JSON, CSV and Markdown), emails an export, and pushes to Google Sheets. CSV import of a URL list is on every paid plan. Each plan includes scheduled monitors (1 on Free, 2 on Go, more above). The browser extension is upcoming.
+
+Free's 500 credits are granted once and never reset. Every paid plan's credits
 renew monthly and **roll over for one month**, so you can hold at most two
 months' worth — unused credits are not lost the moment the month turns, and they
 do not accumulate for ever either.
@@ -1103,11 +1104,11 @@ sales.
 
 Two different things, and the difference matters:
 
-- **Credit packs** buy credits outright — 500 for $5 / ₹490, 2,000 for
-  $19 / ₹1,849, 10,000 for $89 / ₹8,719. They work on any plan including Free,
+- **Credit packs** buy credits outright — 750 for $5 / ₹490, 3,000 for
+  $19 / ₹1,849, 15,000 for $89 / ₹8,749. They work on any plan including Free,
   and **they never expire**.
 - **Capacity add-ons** buy the *right* to do something: a Scheduled Monitor slot
-  ($5 / ₹490), a Batch Pack of 50 extra rows ($9 / ₹879), an Extra Workspace
+  ($5 / ₹449), a Batch Pack of 50 extra rows ($9 / ₹849), an Extra Workspace
   ($19 / ₹1,849). The doing still costs credits — an add-on raises a ceiling, it
   does not come with a budget attached.
 

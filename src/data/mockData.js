@@ -112,7 +112,7 @@ export function mockCustomExtraction(url, prompt) {
   if (/mission|value proposition|what.*do/.test(p)) {
     return {
       mission: `${brand} helps fast-moving teams turn complexity into clarity.`,
-      value_proposition: `${brand} delivers measurable outcomes with a zero-code experience.`,
+      value_proposition: `${brand} delivers measurable outcomes with an AI-enabled experience.`,
       summary: `${brand} is a modern platform focused on speed, simplicity, and trust.`,
     };
   }

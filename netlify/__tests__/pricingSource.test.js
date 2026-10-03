@@ -210,7 +210,7 @@ describe("ALLOWED_PLANS / ALLOWED_BUNDLES", () => {
     expect(ALLOWED_PLANS.has("go")).toBe(true);
     expect(ALLOWED_PLANS.has("unknown")).toBe(false);
     expect(ALLOWED_BUNDLES.has("batch-pack")).toBe(true);
-    expect(ALLOWED_BUNDLES.has("credits-500")).toBe(true);
+    expect(ALLOWED_BUNDLES.has("credits-750")).toBe(true);
     // 🔴 D15 — the Extractions Bundle sold pure consumption at 14x the
     // cheapest plan's credit rate. It has to be gone from the SERVER too, or
     // it stays purchasable by anyone who hand-builds the request, through a

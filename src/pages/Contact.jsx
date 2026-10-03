@@ -25,13 +25,18 @@ export default function Contact() {
   const { search } = useLocation();
   const showToast = useToast();
 
-  const initialType = normalizeContactType(new URLSearchParams(search).get("type"));
+  const qs = new URLSearchParams(search);
+  const initialType = normalizeContactType(qs.get("type"));
+  // Optional prefill from a deep link (e.g. the Enterprise tile on /pricing).
+  // Plain text only, length-capped — it lands in editable inputs, never as HTML.
+  const prefillSubject = (qs.get("subject") || "").slice(0, 120);
+  const prefillMessage = (qs.get("message") || "").slice(0, 1000);
 
   const [type,    setType]    = useState(initialType);
   const [name,    setName]    = useState("");
   const [email,   setEmail]   = useState("");
-  const [subject, setSubject] = useState(initialType === "bug" ? "Bug report: " : "");
-  const [message, setMessage] = useState("");
+  const [subject, setSubject] = useState(prefillSubject || (initialType === "bug" ? "Bug report: " : ""));
+  const [message, setMessage] = useState(prefillMessage);
   const [status,  setStatus]  = useState("idle"); // idle | submitting | sent | error
   const [errorMsg, setErrorMsg] = useState("");
   const [fallbackMailto, setFallbackMailto] = useState("");

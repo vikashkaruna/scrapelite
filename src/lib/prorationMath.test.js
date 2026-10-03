@@ -110,7 +110,7 @@ describe("describePlanChange", () => {
   it("lists concrete losses on a downgrade", () => {
     const d = describePlanChange(PLAN_BY_ID.business, PLAN_BY_ID.select);
     expect(d.direction).toBe("downgrade");
-    expect(d.losses.join(" | ")).toMatch(/Extractions per month drops from 10,000 to 500/);
+    expect(d.losses.join(" | ")).toMatch(/Extractions per month drops from 10,000 to 1,000/);
     expect(d.losses.join(" | ")).toMatch(/URLs per batch drops from 250 to 50/);
     // Business and Select both include every export format (JSON included) —
     // white-label PDF and API access are the real exclusive losses here.
@@ -141,7 +141,7 @@ describe("describePlanChange", () => {
   it("describes a drop from unlimited in words rather than as a number", () => {
     const unlimited = { ...PLAN_BY_ID.agency, limits: { ...PLAN_BY_ID.agency.limits, extractions: Infinity } };
     const d = describePlanChange(unlimited, PLAN_BY_ID.pro);
-    expect(d.losses.join(" | ")).toMatch(/Extractions per month drops from unlimited to 1,000/);
+    expect(d.losses.join(" | ")).toMatch(/Extractions per month drops from unlimited to 2,500/);
   });
 
   it("no shipped plan is unlimited any more — the ladder is finite end to end", () => {

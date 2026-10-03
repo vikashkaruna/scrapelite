@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import {
-  isAdminAuthed, adminLogin, adminLogout,
+  isAdminAuthed, adminLogin, adminLogout, installAdminSessionGuard,
   getAdminLock, recordAdminFailure, clearAdminFailures, ADMIN_MAX_ATTEMPTS,
 } from "../../lib/adminService.js";
 import { setNoIndex, setPublicDefaultMeta } from "../../lib/seoMeta.js";
@@ -27,7 +27,7 @@ const NAV = [
 const LS_COL = "datiq.adminSidebarCollapsed";
 const LS_PIN = "datiq.adminSidebarPinned";
 
-function PinGate({ onAuthed }) {
+function PinGate({ onAuthed, notice = "" }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -73,6 +73,7 @@ function PinGate({ onAuthed }) {
         </div>
         <h2 className="admin-gate-title">Admin Access</h2>
         <p className="admin-gate-sub">Enter your admin PIN to continue.</p>
+        {notice && <div className="admin-gate-error" role="alert">{notice}</div>}
         <form className="admin-gate-form" onSubmit={submit}>
           <input
             type="password"
@@ -99,6 +100,15 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [authed, setAuthed] = useState(isAdminAuthed);
+  const [gateNotice, setGateNotice] = useState("");
+
+  // Any 401 from an authenticated admin call = the session is invalid. Clear the
+  // token and show the PIN prompt now, instead of every page silently rendering
+  // an empty state. See installAdminSessionGuard in adminService.js.
+  useEffect(() => installAdminSessionGuard(() => {
+    setGateNotice("Your admin session is no longer valid. Enter the PIN to continue.");
+    setAuthed(false);
+  }), []);
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(LS_COL) === "1");
   const [pinned, setPinned] = useState(() => localStorage.getItem(LS_PIN) !== "0");
@@ -146,7 +156,7 @@ export default function AdminLayout() {
     localStorage.setItem(LS_PIN, next ? "1" : "0");
   };
 
-  if (!authed) return <PinGate onAuthed={() => setAuthed(true)} />;
+  if (!authed) return <PinGate notice={gateNotice} onAuthed={() => { setGateNotice(""); setAuthed(true); }} />;
 
   return (
     <div className={"admin-layout" + (isExpanded ? "" : " sidebar-collapsed")}>

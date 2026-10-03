@@ -40,9 +40,22 @@ fi
 # all its plugins. A fresh clone, a git worktree, or a post-`down.sh -v` run
 # may have an empty or missing node_modules.
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-if [ ! -x "$REPO_ROOT/node_modules/.bin/vite" ]; then
-  echo "→ node_modules incomplete — running npm install (needed for Vite build)"
-  npm install --prefix "$REPO_ROOT"
+# ⚠️ Checking for the vite binary alone is NOT enough: a node_modules installed
+# from an OLDER package.json still has vite, and the build then dies deep inside
+# PostCSS ("Cannot find module '@tailwindcss/postcss'") — the Tailwind 3→4 bump
+# is exactly how this bit. So verify EVERY declared dependency is present.
+MISSING_DEPS="$(node -e '
+  const fs = require("fs"), path = require("path");
+  const root = process.argv[1];
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+  const missing = names.filter((n) => !fs.existsSync(path.join(root, "node_modules", n, "package.json")));
+  process.stdout.write(missing.join(" "));
+' "$REPO_ROOT" 2>/dev/null || echo "?")"
+if [ ! -x "$REPO_ROOT/node_modules/.bin/vite" ] || [ -n "$MISSING_DEPS" ]; then
+  echo "→ node_modules out of date${MISSING_DEPS:+ (missing: $MISSING_DEPS)} — running npm install"
+  # A scratch --cache sidesteps root-owned ~/.npm/_cacache entries (EACCES).
+  npm install --prefix "$REPO_ROOT" --cache "${TMPDIR:-/tmp}/datiq-npm-cache"
 fi
 
 # ⚠️ THE WEB IMAGE IS nginx + A PREBUILT dist/ — THE DOCKERFILE COPIES dist/ AND

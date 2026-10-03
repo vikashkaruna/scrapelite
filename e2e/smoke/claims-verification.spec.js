@@ -59,7 +59,7 @@ test("CLAIM: each plan card shows the configured price, in both currencies", asy
   const paid = PLANS.filter((p) => p.price_usd > 0 && !p.comingSoon);
 
   for (const plan of paid) {
-    const card = page.locator(".plan-card").filter({ hasText: plan.name }).first();
+    const card = page.locator(".plan-card").filter({ has: page.locator(".plan-name", { hasText: new RegExp(`^${plan.name}$`) }) }).first();
     await expect(card.getByText(usd(plan.price_usd), { exact: false }).first(),
       `${plan.name} should show ${usd(plan.price_usd)}`).toBeVisible();
   }
@@ -74,7 +74,7 @@ test("CLAIM: each plan card shows the configured price, in both currencies", asy
   await page.getByRole("option", { name: /INR/ }).click();
 
   for (const plan of paid) {
-    const card = page.locator(".plan-card").filter({ hasText: plan.name }).first();
+    const card = page.locator(".plan-card").filter({ has: page.locator(".plan-name", { hasText: new RegExp(`^${plan.name}$`) }) }).first();
     const inr = `₹${plan.price_inr.toLocaleString("en-IN")}`;
     await expect(card.getByText(inr, { exact: false }).first(),
       `${plan.name} should show ${inr}`).toBeVisible();

@@ -24,8 +24,8 @@ beforeEach(() => {
 
 describe("credit-pack overrides", () => {
   it("an override changes the price the app reads", () => {
-    setCreditPackOverride("credits-500", { price_usd: 7, price_inr: 690 });
-    const pack = getEffectiveCreditPacks().find((p) => p.id === "credits-500");
+    setCreditPackOverride("credits-750", { price_usd: 7, price_inr: 690 });
+    const pack = getEffectiveCreditPacks().find((p) => p.id === "credits-750");
     expect(pack.price_usd).toBe(7);
     expect(pack.price_inr).toBe(690);
   });
@@ -34,18 +34,18 @@ describe("credit-pack overrides", () => {
     // `credits` is what verify-payment writes to the ledger. A screen that let
     // an admin move the price but not the grant would sell one thing and
     // deliver another.
-    setCreditPackOverride("credits-500", { credits: 600 });
-    expect(getEffectiveCreditPacks().find((p) => p.id === "credits-500").credits).toBe(600);
+    setCreditPackOverride("credits-750", { credits: 600 });
+    expect(getEffectiveCreditPacks().find((p) => p.id === "credits-750").credits).toBe(600);
   });
 
   it("leaves untouched packs exactly as shipped", () => {
-    setCreditPackOverride("credits-500", { price_usd: 7 });
-    const other = getEffectiveCreditPacks().find((p) => p.id === "credits-2000");
-    expect(other).toEqual(CREDIT_PACKS.find((p) => p.id === "credits-2000"));
+    setCreditPackOverride("credits-750", { price_usd: 7 });
+    const other = getEffectiveCreditPacks().find((p) => p.id === "credits-3000");
+    expect(other).toEqual(CREDIT_PACKS.find((p) => p.id === "credits-3000"));
   });
 
   it("reset puts every pack back", () => {
-    setCreditPackOverride("credits-500", { price_usd: 7, credits: 1 });
+    setCreditPackOverride("credits-750", { price_usd: 7, credits: 1 });
     resetCreditPackOverrides();
     expect(getEffectiveCreditPacks()).toEqual(CREDIT_PACKS);
   });

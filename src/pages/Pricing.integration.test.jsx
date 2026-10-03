@@ -11,7 +11,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { PLANS } from "../lib/pricingConfig.js";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import Pricing from "./Pricing.jsx";
 import { AuthProvider } from "../components/AuthProvider.jsx";
@@ -36,6 +36,9 @@ const usageRepoMocks = vi.hoisted(() => ({
   logPaymentEvent: vi.fn(() => Promise.resolve()),
   getSessionId: vi.fn(() => "sess_test"),
 }));
+
+const mockNavigate = vi.hoisted(() => vi.fn());
+vi.mock("react-router", async (orig) => ({ ...(await orig()), useNavigate: () => mockNavigate }));
 
 vi.mock("../lib/apiClient.js", () => ({ setAuthToken: vi.fn() }));
 
@@ -118,17 +121,20 @@ describe("I-39 — Pricing: 8 plan cards + monthly default + INR", () => {
     await act(async () => { await Promise.resolve(); });
     const badge = PLANS.find((p) => p.comingSoon)?.badge;
     expect(badge).toBeTruthy();
-    expect(screen.getByText(badge)).toBeInTheDocument();
+    // "Upcoming" also tags the browser-extension rows, so look at the card's badge.
+    const cardBadge = document.querySelector(".plan-coming-soon .plan-badge");
+    expect(cardBadge?.textContent).toBe(badge);
     expect(screen.getByRole("button", { name: /notify me/i })).toBeDisabled();
   });
 
   it("Enterprise card has a 'Contact sales' mailto link", async () => {
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
-    // The Enterprise card CTA is a mailto: link to hello@datiq.app.
-    const mailto = document.querySelector('a[href^="mailto:"]');
-    expect(mailto).not.toBeNull();
-    expect(mailto.getAttribute("href")).toMatch(/mailto:hello@datiq\.app/);
+    // Contact sales opens the Contact page prefilled for an Enterprise enquiry
+    // (it routes to admin@datiq.app server-side — contactRouting.js).
+    const btn = within(document.querySelector(".enterprise-card")).getByRole("button", { name: /talk to sales/i });
+    await act(async () => { btn.click(); });
+    expect(mockNavigate).toHaveBeenCalledWith(expect.stringMatching(/^\/contact\?type=enterprise&subject=Enterprise\+enquiry/));
   });
 
   it("Monthly billing is the default toggle state", async () => {
@@ -161,7 +167,7 @@ describe("I-39 — Pricing: 8 plan cards + monthly default + INR", () => {
 describe("I-39 — Pricing: comparison matrix prices match the plan cards", () => {
   function cardMonthlyPrices() {
     return Array.from(document.querySelectorAll(".plans-grid .plan-card"))
-      .filter((c) => !c.classList.contains("enterprise-card") && !c.classList.contains("plan-coming-soon"))
+      .filter((c) => !c.classList.contains("enterprise-card"))
       .map((c) => {
         const sub = c.querySelector(".price-amount-sub");
         const main = c.querySelector(".price-amount");

@@ -63,6 +63,44 @@ export function adminLogout() {
   localStorage.removeItem(ADMIN_EXP_KEY);
 }
 
+// ── Session-invalid guard ─────────────────────────────────────────────────────
+// A server-side 401 on any admin call means the token is no good (expired, the
+// server's PIN/secret changed, or a dev-mode `local.*` token meeting a real
+// server) even though the browser still believes it is signed in — the client
+// only knew the token's own `exp`. Every admin page then "loaded" a blank,
+// empty state with no error anywhere. One wrapper over fetch covers all ~40
+// admin call sites instead of patching each: on a 401 from an authenticated
+// /api/admin* call, drop the token and hand control back to the PIN prompt.
+//
+// /api/admin-auth itself is exempt — its 401 means "wrong PIN", which the
+// PIN form already reports. Calls with no Bearer header (the public
+// admin-general-config GET) are exempt too: nothing was invalidated.
+export function isAdminApiRequest(input, init) {
+  const url = typeof input === "string" ? input : (input && input.url) || "";
+  let path = url;
+  try { path = new URL(url, "http://x").pathname; } catch { /* keep raw */ }
+  if (!/^\/api\/admin/.test(path) || /^\/api\/admin-auth(\/|$)/.test(path)) return false;
+  const h = (init && init.headers) || (input && input.headers) || {};
+  const auth = typeof h.get === "function" ? h.get("Authorization") : (h.Authorization || h.authorization);
+  return /^Bearer\s+\S/i.test(String(auth || ""));
+}
+
+/** Installs the guard; returns an uninstall function. `onInvalid` runs once per invalidation. */
+export function installAdminSessionGuard(onInvalid) {
+  if (typeof window === "undefined" || typeof window.fetch !== "function") return () => {};
+  const original = window.fetch;
+  const guarded = async function (input, init) {
+    const res = await original.call(this, input, init);
+    if (res && res.status === 401 && isAdminApiRequest(input, init) && isAdminAuthed()) {
+      adminLogout();
+      try { onInvalid && onInvalid(); } catch { /* never break the caller */ }
+    }
+    return res;
+  };
+  window.fetch = guarded;
+  return () => { if (window.fetch === guarded) window.fetch = original; };
+}
+
 // ── Failed-attempt lockout (client-side UX; server adds a fixed delay too) ───────
 export function getAdminLock() {
   const v = ls(ADMIN_LOCK_KEY);
@@ -163,13 +201,78 @@ export function validateCoupon(code, currentPlanId, opts = {}) {
 export function buildCouponsSyncPayload(coupons = getCoupons()) {
   const out = {};
   for (const c of coupons) {
-    if (c.type !== "percent" || c.planId === "manual" || !c.code) continue;
-    out[String(c.code).toUpperCase()] = {
-      value: c.value, planId: c.planId || null, expiresAt: c.expiresAt || null,
-      active: c.active !== false, maxUses: c.maxUses || 0,
-    };
+    if (c.planId === "manual" || !c.code) continue;
+    const code = String(c.code).toUpperCase();
+    const common = { planId: c.planId || null, expiresAt: c.expiresAt || null, active: c.active !== false, maxUses: c.maxUses || 0 };
+    if (c.type === "percent") out[code] = { value: c.value, ...common };
+    // Bonus coupons redeem server-side through POST /api/credits, which reads
+    // `credits` off this map — so they must be here or the code is "invalid".
+    else if (c.type === "extractions") out[code] = { value: 0, credits: Number(c.value) || 0, ...common };
   }
   return out;
+}
+
+/** The admin's FULL list (every type, manual-assign included) for the server-side catalog. */
+export function buildCouponCatalogPayload(coupons = getCoupons()) {
+  return coupons
+    .filter((c) => c && c.code)
+    .map((c) => ({
+      id: c.id, code: String(c.code).toUpperCase(), type: c.type, value: c.value,
+      maxUses: c.maxUses || 0, planId: c.planId || null, expiresAt: c.expiresAt || null,
+      active: c.active !== false, createdAt: c.createdAt || null,
+    }));
+}
+
+/**
+ * Merge the server's coupon list into this browser's, by code.
+ *
+ *  - The SERVER wins on every field it holds (it is the durable copy).
+ *  - `uses` is the highest of local / catalog / the real redemption counter —
+ *    a per-browser tally can only undercount.
+ *  - Coupons that exist only locally are KEPT (legacy localStorage-only coupons
+ *    must not be lost the first time this runs); the caller pushes them up.
+ *  - `checkoutMap` entries with no catalog row (percent coupons synced before the
+ *    catalog existed) are lifted into the list so they stop being invisible here.
+ *
+ * Returns `{ merged, localOnly }` — `localOnly` is the codes the server lacks.
+ */
+export function mergeServerCoupons({ catalog, checkoutMap, uses } = {}) {
+  const local = getCoupons();
+  const byCode = new Map(local.map((c) => [String(c.code).toUpperCase(), c]));
+  const serverCodes = new Set();
+  const usesMap = uses || {};
+
+  const absorb = (code, rec) => {
+    serverCodes.add(code);
+    const l = byCode.get(code);
+    byCode.set(code, {
+      ...l, ...rec, code,
+      id: l?.id ?? rec.id ?? `c${code}`,
+      uses: Math.max(Number(l?.uses) || 0, Number(rec.uses) || 0, Number(usesMap[code]) || 0),
+    });
+  };
+
+  if (Array.isArray(catalog)) {
+    for (const rec of catalog) absorb(String(rec.code).toUpperCase(), rec);
+  }
+  for (const [rawCode, c] of Object.entries(checkoutMap || {})) {
+    const code = rawCode.toUpperCase();
+    if (serverCodes.has(code) || byCode.has(code)) { if (byCode.has(code)) serverCodes.add(code); continue; }
+    absorb(code, {
+      type: Number(c.credits) > 0 ? "extractions" : "percent",
+      value: Number(c.credits) > 0 ? Number(c.credits) : c.value,
+      maxUses: c.maxUses || 0, planId: c.planId || null, expiresAt: c.expiresAt || null, active: c.active !== false,
+    });
+  }
+  for (const [code, n] of Object.entries(usesMap)) {
+    const l = byCode.get(code);
+    if (l && !serverCodes.has(code)) byCode.set(code, { ...l, uses: Math.max(Number(l.uses) || 0, n) });
+  }
+
+  const merged = [...byCode.values()];
+  lsSet(COUPONS_KEY, merged);
+  const localOnly = merged.filter((c) => !serverCodes.has(String(c.code).toUpperCase())).map((c) => c.code);
+  return { merged, localOnly };
 }
 
 /**
@@ -179,9 +282,9 @@ export function buildCouponsSyncPayload(coupons = getCoupons()) {
  * check below (which has no way to see real usage from other sessions).
  *
  * Returns `{ found, active, expired, exhausted, planId, type, value }` for a
- * coupon the server recognizes, or `null` when the server doesn't have this
- * code (fall back to `validateCoupon` below — covers extraction-bonus and
- * manual-assign coupons, which are deliberately local-only) or the request
+ * coupon the server recognizes (`type` is "percent" or "credits"), or `null`
+ * when the server doesn't have this code (fall back to `validateCoupon`
+ * below — manual-assign coupons are not self-redeemable) or the request
  * itself failed (network/offline — same fallback, consistent with this
  * codebase's fail-open-on-infra posture; the real money gate at checkout is
  * unaffected either way).

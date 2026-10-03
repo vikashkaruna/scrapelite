@@ -18,6 +18,7 @@ import Icon from "./Icon.jsx";
 import { useExtraction } from "./ExtractionProvider.jsx";
 import { useBatchRun } from "./BatchRunProvider.jsx";
 import { useToast } from "./Toast.jsx";
+import { useBilling } from "./BillingProvider.jsx";
 import { ingestUrls } from "../lib/urlIngest.js";
 import { classifyInput, extractUrls, normalizeUrl } from "../lib/utils.js";
 import { knownDisallowedHost } from "../lib/scrapeConsentService.js";
@@ -44,6 +45,7 @@ export default function HeroComposer({
 }) {
   const navigate = useNavigate();
   const showToast = useToast();
+  const billing = useBilling();
   const { extract } = useExtraction();
   const { startBatchRun } = useBatchRun();
 
@@ -142,6 +144,11 @@ export default function HeroComposer({
   // is just the FileReader + dataTransfer glue + state updates.
   const importIngested = useCallback((text, sourceLabel) => {
     const { urls, source } = ingestUrls(text);
+    // CSV import is a paid-plan feature; pasted or dropped plain text is not.
+    if (source === "csv" && billing?.checkCanImportCsv?.() === false) {
+      showToast("CSV import is available on every paid plan — upgrade to import a list. You can still paste URLs, one per line.", "alert-circle");
+      return 0;
+    }
     if (urls.length === 0) {
       showToast("No URLs found. Add one URL per line or a CSV with a 'url' column.");
       return 0;
@@ -151,7 +158,7 @@ export default function HeroComposer({
     const via = source === "csv" ? "CSV" : "text";
     showToast(`${urls.length} URL${urls.length === 1 ? "" : "s"} imported from ${sourceLabel} (${via})`, "file-up");
     return urls.length;
-  }, [onChange, showToast]);
+  }, [onChange, showToast, billing]);
 
   const importFile = useCallback((file) => {
     if (!file) return;

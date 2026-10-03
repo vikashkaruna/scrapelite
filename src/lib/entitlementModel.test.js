@@ -297,21 +297,31 @@ describe("active accounts fall through to plan limits", () => {
     expect(r.reason).toMatch(/batch limit|not available/i);
   });
 
-  it("blocks scheduled monitoring below Select and points at Select", () => {
-    const free = can(activeEntitlement("free"), "schedules", ctx());
-    expect(free.allowed).toBe(false);
-    expect(free.upgradeTo).toBe("select");
-    expect(can(activeEntitlement("go"), "schedules", ctx()).allowed).toBe(false);
-    expect(can(activeEntitlement("select"), "schedules", ctx()).allowed).toBe(true);
+  // 2026-10 sheet: Free gets 1 monitor slot and Go 2, so every plan can schedule —
+  // what a plan's slot count does is cap how many, not whether.
+  it("scheduled monitoring is a per-plan slot count: Free 1, Go 2, Select 5", () => {
+    expect(PLAN_BY_ID.free.limits.scheduled_monitoring).toBe(1);
+    expect(PLAN_BY_ID.go.limits.scheduled_monitoring).toBe(2);
+    for (const id of ["free", "go", "select"]) {
+      expect(can(activeEntitlement(id), "schedules", ctx()).allowed, id).toBe(true);
+    }
   });
 
   it("gates export formats by plan", () => {
-    expect(can(activeEntitlement("free"), "export.pdf", ctx()).allowed).toBe(false);
-    expect(can(activeEntitlement("free"), "export.csv", ctx()).allowed).toBe(true);
-    expect(can(activeEntitlement("free"), "export.json", ctx()).allowed).toBe(false);
-    expect(can(activeEntitlement("go"), "export.json", ctx()).allowed).toBe(true);
-    expect(can(activeEntitlement("select"), "export.json", ctx()).allowed).toBe(true);
-    expect(can(activeEntitlement("pro"), "export.json", ctx()).allowed).toBe(true);
+    // 2026-10: every plan — Free included — exports in every format and can email it.
+    for (const id of ["free", "go", "select", "pro", "business", "agency"]) {
+      for (const f of ["csv", "pdf", "markdown", "json"]) {
+        expect(can(activeEntitlement(id), `export.${f}`, ctx()).allowed, `${id} ${f}`).toBe(true);
+      }
+      expect(can(activeEntitlement(id), "export.email", ctx()).allowed, `${id} email`).toBe(true);
+    }
+  });
+
+  it("CSV import is a paid-plan feature", () => {
+    expect(can(activeEntitlement("free"), "import.csv", ctx()).allowed).toBe(false);
+    for (const id of ["go", "select", "pro", "business", "agency"]) {
+      expect(can(activeEntitlement(id), "import.csv", ctx()).allowed, id).toBe(true);
+    }
   });
 
   it("gates push integrations and the browser extension flag by plan (Select and up; Free/Go excluded)", () => {
@@ -591,12 +601,13 @@ describe("bulk.enrich — answers to its OWN allowance, not the batch one", () =
   // batch 5 / bulk 0, so the shared key would have kept handing Free a 5-row
   // account list — a product it is not sold. A batch fetches pages; a bulk list
   // fetches, enriches and ICP-scores each row at 3 credits apiece.
-  it("Free has a batch allowance and NO bulk allowance", () => {
+  it("Free has a batch allowance and a one-row bulk allowance", () => {
     expect(PLAN_BY_ID.free.limits.batch_max_urls).toBeGreaterThan(0);
-    expect(PLAN_BY_ID.free.limits.bulk_list_max).toBe(0);
-    const r = can(free, "bulk.enrich", ctx({ rowCount: 1 }));
+    expect(PLAN_BY_ID.free.limits.bulk_list_max).toBe(1);
+    expect(can(free, "bulk.enrich", ctx({ rowCount: 1 })).allowed).toBe(true);
+    const r = can(free, "bulk.enrich", ctx({ rowCount: 2 }));
     expect(r.allowed).toBe(false);
-    expect(r.code).toBe("NOT_IN_PLAN");
+    expect(r.code).toBe("PLAN_LIMIT");
   });
 
   it("allows a list within the plan's bulk allowance", () => {
@@ -645,15 +656,15 @@ describe("bulk.enrich — answers to its OWN allowance, not the batch one", () =
 });
 
 describe("watchlist.create — answers to the scheduled-monitoring allowance", () => {
-  it("denies a plan that includes no scheduled monitoring", () => {
+  it("denies once a plan has used all its scheduled-monitoring slots", () => {
     // A watchlist crawls forever on a cadence. A user who may keep no
     // schedules must not acquire the right to keep them via a different object
     // — the same reasoning audit.schedule already documents.
     const free = { plan_id: "free", status: "active" };
-    expect(PLAN_BY_ID.free.limits.scheduled_monitoring).toBe(0);
-    const r = can(free, "watchlist.create", ctx({ watchlistCount: 0 }));
+    expect(PLAN_BY_ID.free.limits.scheduled_monitoring).toBe(1);
+    const r = can(free, "watchlist.create", ctx({ watchlistCount: 1 }));
     expect(r.allowed).toBe(false);
-    expect(r.code).toBe("PLAN_REQUIRED");
+    expect(r.code).toBe("PLAN_LIMIT");
   });
 
   it("allows a plan that does, up to its cap", () => {

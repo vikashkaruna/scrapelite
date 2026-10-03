@@ -179,7 +179,7 @@ export default function Preview() {
   useSeo({
     title: "DatIQ Preview — review your extraction | DatIQ.app",
     description:
-      "DatIQ Preview — review your extracted data, run Quick Enrichment, save to Dashboard, and export to CSV or PDF. DatIQ.app is the zero-code web data extraction platform for marketers and researchers.",
+      "DatIQ Preview — review your extracted data, run Quick Enrichment, save to Dashboard, and export to CSV or PDF. DatIQ.app is the AI-enabled web data extraction platform for marketers and researchers.",
     canonical: "https://datiq.app/preview",
   });
   const navigate = useNavigate();
@@ -481,17 +481,17 @@ export default function Preview() {
     showToast("Copied table to clipboard & opened Google Sheets! Press Cmd+V (or Ctrl+V) in cell A1 to paste.", "sheet");
   };
   const onDownloadMarkdown = () => {
-    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Go plan or higher."); return; }
+    if (!checkCanExport("markdown")) { showToast("Markdown export isn't available on your current plan."); return; }
     markdownDownload([data], { brandKit: readBrandKit() });
     showToast("Exported to Markdown", "file-code");
   };
   const onDownloadJson = () => {
-    if (!checkCanExport("json")) { showToast("JSON export requires the Go plan or higher."); return; }
+    if (!checkCanExport("json")) { showToast("JSON export isn't available on your current plan."); return; }
     jsonDownload([data], { brandKit: readBrandKit() });
     showToast("Exported to JSON", "file-json");
   };
   const onDownloadPdf = async () => {
-    if (!checkCanExport("pdf")) { showToast("PDF export requires the Go plan or higher."); return; }
+    if (!checkCanExport("pdf")) { showToast("PDF export isn't available on your current plan."); return; }
     try {
       const { extractionsToPdf } = await import("../lib/pdfExport.js");
       // White-label PDF: Business & Agency users can upload a branded template
@@ -530,13 +530,13 @@ export default function Preview() {
     else showToast(`Copy failed (${out.reason || "unknown"}).`, "alert-triangle");
   };
   const onCopyMarkdown = async () => {
-    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Go plan or higher."); return; }
+    if (!checkCanExport("markdown")) { showToast("Markdown export isn't available on your current plan."); return; }
     const out = await copyToClipboard([data], "markdown");
     if (out.ok) showToast("Markdown copied to clipboard", "clipboard-copy");
     else showToast(`Copy failed (${out.reason || "unknown"}).`, "alert-triangle");
   };
   const onCopyJson = async () => {
-    if (!checkCanExport("json")) { showToast("JSON export requires the Go plan or higher."); return; }
+    if (!checkCanExport("json")) { showToast("JSON export isn't available on your current plan."); return; }
     const out = await copyToClipboard([data], "json");
     if (out.ok) showToast("JSON copied to clipboard", "clipboard-copy");
     else showToast(`Copy failed (${out.reason || "unknown"}).`, "alert-triangle");
@@ -551,7 +551,7 @@ export default function Preview() {
   };
 
   const handleSendEmail = async (emails, format) => {
-    if (!checkCanEmail()) { showToast("Email export requires the Go plan or higher."); setEmailOpen(false); return; }
+    if (!checkCanEmail()) { showToast("Email export isn't available on your current plan."); setEmailOpen(false); return; }
     if (!checkCanExport(format)) { showToast(`${format.toUpperCase()} export is not available on your current plan.`); return; }
     const res = await apiClient.sendExportEmail({ to: emails, items: [data], format, brandKit: readBrandKit() });
     setEmailOpen(false);

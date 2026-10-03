@@ -124,7 +124,7 @@ const STATUS_META = {
   beta:         { label: "Available (Beta)", cls: "int-status-beta" },
   "coming-soon": { label: "Coming Soon",  cls: "int-status-coming"   },
   "agency-plan": { label: "Business plan and up", cls: "int-status-agency"   },
-  roadmap:       { label: "Roadmap",      cls: "int-status-roadmap"  },
+  roadmap:       { label: "Upcoming",      cls: "int-status-roadmap"  },
 };
 
 export default function Integrations() {
