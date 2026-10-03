@@ -145,9 +145,16 @@ require_image() {
   # which the CI service account does not (and should not) hold — it reported a
   # present image as missing (2026-10-03). `images list --include-tags` needs only
   # Artifact Registry read, which artifactregistry.writer already carries.
-  local repo="${img%:*}" tag="${img##*:}" found=""
+  # A digest ref (repo@sha256:…, what promote-prod.sh hands us) has no tag: the
+  # old split on the last ':' turned it into repo "…@sha256" + tag "<hex>", which
+  # can never match, so every digest promotion would fail here AFTER resolving.
+  local repo tag filter found=""
+  case "$img" in
+    *@sha256:*) repo="${img%@*}"; tag="${img##*@}"; filter="version=${tag}" ;;
+    *)          repo="${img%:*}"; tag="${img##*:}"; filter="tags:${tag}" ;;
+  esac
   for attempt in 1 2 3 4 5; do
-    if found="$(gcloud artifacts docker images list "$repo" --include-tags --filter="tags:${tag}" --format='value(package)' --project="$GCP_PROJECT_ID" 2>"${TMPDIR:-/tmp}/require_image.err")" && [ -n "$found" ]; then
+    if found="$(gcloud artifacts docker images list "$repo" --include-tags --filter="${filter}" --format='value(package)' --project="$GCP_PROJECT_ID" 2>"${TMPDIR:-/tmp}/require_image.err")" && [ -n "$found" ]; then
       return 0
     fi
     err="$(tail -3 "${TMPDIR:-/tmp}/require_image.err" 2>/dev/null)"

@@ -37,10 +37,22 @@ elif [ "${DIGESTS_FROM:-staging}" = "staging" ]; then
   staging_base="${staging_region}-docker.pkg.dev/${staging_project}/${staging_repo}"
   for kind in api admin trackers; do
     var="IMG_$(printf '%s' "$kind" | tr '[:lower:]' '[:upper:]')"
-    digest="$(gcloud artifacts docker images describe \
-      "${staging_base}/datiq-${DATIQ_PROJECT_CODE}-ctr-${kind}:${staging_tag}" \
-      --project="$staging_project" --format='value(image_summary.fully_qualified_digest)' 2>/dev/null || true)"
-    [ -n "$digest" ] || { echo "✗ no staging digest for ctr-${kind}:${staging_tag} in ${staging_base} — run build-images.sh staging first"; exit 1; }
+    pkg="${staging_base}/datiq-${DATIQ_PROJECT_CODE}-ctr-${kind}"
+    # `images list --include-tags` needs only Artifact Registry read. `images
+    # describe` ALSO calls Container Analysis, which the CI service account does
+    # not hold — it reported a present image as missing (2026-10-03), and the
+    # old `2>/dev/null || true` hid why. stderr is kept so the cause is visible.
+    err_file="$(mktemp)"
+    version="$(gcloud artifacts docker images list "$pkg" --include-tags \
+      --filter="tags:${staging_tag}" --format='value(version)' \
+      --project="$staging_project" 2>"$err_file" | head -n1 || true)"
+    if [ -z "$version" ]; then
+      echo "✗ no staging digest for ctr-${kind}:${staging_tag} in ${staging_base} — run build-images.sh staging first"
+      echo "  gcloud said: $(tail -3 "$err_file" | tr '\n' ' ' | cut -c1-400)"
+      rm -f "$err_file"; exit 1
+    fi
+    rm -f "$err_file"
+    digest="${pkg}@${version}"
     export "DATIQ_IMG_${var#IMG_}_OVERRIDE=$digest"
   done
 else
