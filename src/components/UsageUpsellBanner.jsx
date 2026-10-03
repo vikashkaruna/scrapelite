@@ -23,9 +23,9 @@ import { useBilling } from "./BillingProvider.jsx";
 import { buildPaywallCopy } from "../lib/paywallCopy.js";
 import { readPublicCount } from "../lib/publicQuota.js";
 import { creditPressure } from "../lib/credits/creditPressure.js";
-import { useAutoDismissBanner } from "../hooks/useAutoDismissBanner.js";
+import { useAutoDismissBanner, announceBannerChange } from "../hooks/useAutoDismissBanner.js";
 
-const DISMISS_KEY = "datiq.upsellDismissedMonth";
+export const DISMISS_KEY = "datiq.upsellDismissedMonth";
 
 function getCurrentMonth() {
   const d = new Date();
@@ -52,6 +52,7 @@ export default function UsageUpsellBanner() {
   const dismiss = () => {
     setDismissed(true);
     try { localStorage.setItem(DISMISS_KEY, getCurrentMonth()); } catch {}
+    announceBannerChange();
   };
 
   const pressure = creditPressure({ credits, allowance: plan?.limits?.credits });

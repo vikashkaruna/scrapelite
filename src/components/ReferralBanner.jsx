@@ -27,7 +27,7 @@ import { useBilling } from "./BillingProvider.jsx";
 import { useAuth } from "./AuthProvider.jsx";
 import { buildReferralUrl, fetchReferralStatus, REFERRAL_BONUS } from "../lib/referralService.js";
 import { creditPressure } from "../lib/credits/creditPressure.js";
-import { useAutoDismissBanner } from "../hooks/useAutoDismissBanner.js";
+import { useAutoDismissBanner, bannerAutoHidden, announceBannerChange, BANNER_CHANGE_EVENT } from "../hooks/useAutoDismissBanner.js";
 
 const DISMISS_KEY = "datiq.referralDismissedMonth";
 
@@ -93,7 +93,21 @@ export default function ReferralBanner() {
   // No real code → no banner. Signed-out visitors and a store that cannot
   // answer both land here. Showing an invite link that nobody can be credited
   // for is worse than showing nothing.
-  const visible = lowEnough && !dismissed && !!myCode;
+  // One advisory at a time: while the usage-limit banner is up (it is the more
+  // urgent of the two) this one waits, then takes its slot when that leaves.
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const on = () => bump((n) => n + 1);
+    window.addEventListener(BANNER_CHANGE_EVENT, on);
+    return () => window.removeEventListener(BANNER_CHANGE_EVENT, on);
+  }, []);
+  let upsellUp = false;
+  try {
+    upsellUp = pressure.known && pressure.low
+      && localStorage.getItem("datiq.upsellDismissedMonth") !== getCurrentMonth()
+      && !bannerAutoHidden("usage-upsell");
+  } catch { /* storage blocked: assume not showing */ }
+  const visible = lowEnough && !dismissed && !!myCode && !upsellUp;
 
   // Leaves on its own once read, like the GA4 bar — see useAutoDismissBanner.
   // (Hooks run before the early return, hence `visible` above.)
@@ -128,6 +142,7 @@ export default function ReferralBanner() {
   const dismiss = () => {
     setDismissed(true);
     try { localStorage.setItem(DISMISS_KEY, getCurrentMonth()); } catch {}
+    announceBannerChange();
   };
 
   return (

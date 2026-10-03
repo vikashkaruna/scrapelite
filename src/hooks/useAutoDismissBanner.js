@@ -33,6 +33,16 @@ function wasAutoHidden(id) {
 }
 function markAutoHidden(id) {
   try { sessionStorage.setItem(seenKey(id), "1"); } catch { /* private mode */ }
+  announceBannerChange();
+}
+
+/** True once a banner has auto-hidden this session (lets a sibling banner take its slot). */
+export function bannerAutoHidden(id) { return wasAutoHidden(id); }
+
+export const BANNER_CHANGE_EVENT = "datiq:banner-change";
+/** Tell sibling banners a slot freed up (auto-hide or an explicit ✕). */
+export function announceBannerChange() {
+  try { window.dispatchEvent(new Event(BANNER_CHANGE_EVENT)); } catch { /* no window */ }
 }
 
 /**
