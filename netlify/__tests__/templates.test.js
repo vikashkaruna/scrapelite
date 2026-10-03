@@ -20,7 +20,7 @@ const TEMPLATE_ROW = {
   extraction_schema: { fields: [] },
   output_schema: { blocks: [{ kind: "summary", title: "x" }] },
   prompt_bundle: { extract: "PROMPT" },
-  credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 2 },
+  credit_cost: { base: 1, per_page: 1, pages_per_unit: 3 },
   plan_entitlement: "template.run", min_plan: "free",
 };
 
@@ -111,8 +111,9 @@ describe("templates — estimate", () => {
     const r = await h(post({ action: "estimate", templateKey: "account_brief", input: { domain: "acme.com" } }));
     const b = JSON.parse(r.body);
     expect(r.statusCode).toBe(200);
-    // base 1 + 3 pages x1 + 2 ai x2 = 8
-    expect(b.estimate.credits).toBe(8);
+    // base 1 + 3 pages x1 + 1 extraction ai x deep 5 = 9 (the stub bundle
+    // declares no synthesis prompts, so none are quoted)
+    expect(b.estimate.credits).toBe(9);
     expect(b.estimate.breakdown.map((x) => x.unit)).toEqual(["run", "page", "ai_call"]);
     const wrote = fetchMock.mock.calls.some(([u, i]) =>
       String(u).includes("/template_runs") && i?.method === "POST");
@@ -156,7 +157,7 @@ describe("templates — start", () => {
     expect(r.statusCode).toBe(200);
     expect(b.guest).toBe(true);
     expect(b.runId).toBeNull();
-    expect(b.estimate.credits).toBe(8);
+    expect(b.estimate.credits).toBe(9);
     expect(b.note).toMatch(/Sign in/);
   });
 
@@ -180,7 +181,7 @@ describe("templates — start", () => {
     expect(b.runId).toMatch(/^trun_/);
     expect(b.template.prompt_bundle.extract).toBe("PROMPT");
     expect(inserted[0].user_id).toBe("user-1");
-    expect(inserted[0].credits_estimated).toBe(8);
+    expect(inserted[0].credits_estimated).toBe(9);
     // The version is PINNED on the run, which is what makes it reproducible.
     expect(inserted[0].template_version).toBe(2);
   });

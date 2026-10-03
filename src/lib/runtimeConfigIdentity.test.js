@@ -34,29 +34,43 @@ function claims(key) {
 const refFromUrl = (url) => new URL(url).hostname.split(".")[0];
 
 /**
- * Pull the (url, anonKey) pairs out of the file, matched by ternary branch.
+ * Pull the (url, anonKey) pairs out of the file.
  *
  * Deliberately regex over the source rather than importing it: the module
  * assigns to `window` and branches on `location.hostname`, so evaluating it
  * needs a DOM and would only ever exercise ONE branch. We want every committed
  * pair checked, including the ones this environment would not select.
  *
- * Both settings are written as `_isMain ? <production> : <everything-else>`,
- * so branch 0 of one lines up with branch 0 of the other. Pairing by branch
- * rather than by document order also means an intentionally-empty key (which
- * defers to the Netlify env) stays correctly associated with its URL.
+ * Shape since the prod-cutover prep (2026-10-01): each setting is
+ * `_isMain ? <prodVar> : <stagingVar>` and BOTH values live in
+ * `var _prodSupabase…` / `var _stagingSupabase…` declarations — the prod pair
+ * gained the same patchable seam the staging one has, so cutover-db.sh can
+ * swap it for one hosting deploy. The pairs are
+ * [prod-var-value, staging-var-value].
  */
 function ternaryBranches(src, field) {
-  const m = new RegExp(`${field}:\\s*_isMain\\s*\\?\\s*("[^"]*")\\s*:\\s*("[^"]*")`).exec(src);
+  const m = new RegExp(`${field}:\\s*_isMain\\s*\\?\\s*([\\w"]+)\\s*:\\s*(\\w+)`).exec(src);
   if (!m) return null;
-  return [JSON.parse(m[1]), JSON.parse(m[2])];
+  return [m[1].replace(/"/g, ""), m[2]];
+}
+
+/** Value of `var <ident> = "…"` in the source (a variable OR a bare literal). */
+function varValue(src, ident) {
+  if (!/^_/.test(ident)) return ident;   // already a literal from the regex
+  const m = new RegExp(`var ${ident}\\s*=\\s*("[^"]*")`).exec(src);
+  return m ? JSON.parse(m[1]) : null;
 }
 
 function readPairs() {
   const src = readFileSync(RUNTIME_CONFIG, "utf8");
   const urls = ternaryBranches(src, "supabaseUrl");
   const keys = ternaryBranches(src, "supabaseAnonKey");
-  return { urls, keys, src };
+  // Resolve the identifier branches into their committed values.
+  return {
+    urls: urls ? [varValue(src, urls[0]), varValue(src, urls[1])] : null,
+    keys: keys ? [varValue(src, keys[0]), varValue(src, keys[1])] : null,
+    src,
+  };
 }
 
 describe("public/runtime-config.js — committed Supabase identities", () => {
@@ -118,5 +132,19 @@ describe("public/runtime-config.js — committed Supabase identities", () => {
     // every /rest/v1 call with nothing behind it — production's exact fault.
     const { src } = readPairs();
     expect(src).not.toMatch(/supabaseUrl:\s*[\s\S]{0,120}api\.datiq\.app/);
+  });
+
+  it("the COMMITTED staging pair stays the hosted dev project", () => {
+    // The staging DB cutover (12-STAGING-DB-CUTOVER.md) repoints staging to
+    // the self-hosted trio, but it does so by patching runtime-config.js for
+    // the duration of ONE hosting deploy and restoring the committed form
+    // after. A committed flip would ship the self-hosted pair to Netlify
+    // branch deploys BEFORE the /auth/v1+/rest/v1 rewrites exist, breaking
+    // every non-production deploy. This is the tripwire that stops a flip
+    // being committed by mistake.
+    const { urls, keys } = readPairs();
+    expect(urls[1]).toBe("https://aubwooslkkrprdxuiyvj.supabase.co");
+    // The staging key must remain the hosted dev project's publishable key.
+    expect(keys[1]).toBe("sb_publishable_NXSVmJA_neFWqLGEiCmkEg_j8I03VLG");
   });
 });

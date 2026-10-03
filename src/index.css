@@ -1,6 +1,37 @@
 /* Tailwind layers — utilities are available alongside the design system.
    The design system itself (tokens, components) lives in the imported CSS
    files below and is the source of truth for DatIQ's look. */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind 4. `source(none)` + the two @source lines below reproduce v3's
+   the v3 `content` list (index.html plus every .js/.jsx under src) EXACTLY. v4 otherwise scans
+   the whole repo (docs, markdown…) and mints utilities like `.col-1` or
+   `.shadow\/prod` from prose, which can collide with hand-written class names. */
+@import "tailwindcss" source(none);
+@source "../index.html";
+@source "./**/*.{js,jsx}";
+/* The JS config (design-token colours, radii, shadows) is still the source for
+   utilities. */
+@config "../tailwind.config.js";
+
+/* ── v3 → v4 preflight compatibility (from Tailwind's upgrade guide) ─────────
+   v4 changed three base defaults. The app was built against v3's, so restore
+   them rather than let every bordered box, button and input shift silently:
+   · default border colour: gray-200 → currentColor
+   · buttons: cursor pointer → default
+   · placeholder text: gray-400 → currentColor @ 50% */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400, #9ca3af);
+  }
+}

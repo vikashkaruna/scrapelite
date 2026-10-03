@@ -13,14 +13,18 @@
 #   Staging Gate: Open Issues/Defects  → no open bug/defect/vulnerability issues
 #                                        (unless labeled gate-bypass with a TODO)
 #   Staging Gate: Deployed & Smoke Tested
-#                                      → after push to staging, waits for the
-#                                        Netlify branch deploy to converge,
-#                                        confirms its function manifest via
-#                                        the Netlify API, and smoke-tests a
-#                                        LOCAL `vite preview` of the identical
-#                                        build artifact — see the job below
-#                                        for why it no longer probes the live
-#                                        branch-deploy URL over the network.
+#                                      → push to staging only, and ONLY after the
+#                                        three gates above are green: calls
+#                                        gcp-staging.yml (build → Cloud Run →
+#                                        Hosting → Scheduler → smoke against the
+#                                        live GCP staging URL). Deploy and gate
+#                                        are one run, so a red gate cannot be
+#                                        deployed past, and the commit that was
+#                                        gated is the commit that was deployed.
+#
+# Release route: feature branch → PR into staging → merge (this gate deploys
+# GCP staging) → PR staging → main (phase-gate.yml verifies this run succeeded
+# for the commit, then deploys prod behind the gcp-prod reviewer approval).
 #
 # The three named checks above are exactly what branch protection should
 # require on `staging` (and at minimum "Staging Gate: Test Suites" on `main`).
@@ -58,7 +62,10 @@ permissions:
 
 concurrency:
   group: staging-gate-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a PUSH run: it may be mid-deploy, and killing a deploy half way
+  # leaves Cloud Run, Hosting and Scheduler on different revisions. PR runs are
+  # pure checks and are safe to supersede.
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   # ─────────────────────────────────────────────────────────────────
@@ -176,261 +183,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ─────────────────────────────────────────────────────────────────
-  # 4. DEPLOY VERIFIED — push-to-staging only. Netlify auto-deploys the
-  #    staging branch to the branch-deploy host; this waits for that
-  #    deploy to converge on the pushed commit, confirms its Functions
-  #    manifest via the Netlify API, then smoke-tests a LOCAL `vite
-  #    preview` of the identical build artifact.
+  # 4. DEPLOY + SMOKE — push-to-staging only, after every gate above.
+  #    Reusable workflow: the `gcp-staging` environment (secrets GCP_SA_KEY and
+  #    ENV_FILE) is entered inside the called job.
   # ─────────────────────────────────────────────────────────────────
   deploy-verified:
     name: "Staging Gate: Deployed & Smoke Tested"
     if: github.event_name == 'push'
     needs: [test-suites, vulnerabilities, open-defects]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Where staging actually is: the branch-deploy host. Do NOT point this at
-    # staging.datiq.app.
-    #
-    # History. This used to fail on TLS: staging.datiq.app CNAMEd to
-    # `staging--datiq.netlify.app` (site slug `datiq`, which 404s) rather than
-    # `staging--datiqapp.netlify.app` (slug `datiqapp`, this site), no site
-    # claimed the hostname, and Netlify served its `*.netlify.app` wildcard —
-    # a cert that cannot cover a .datiq.app name, so probes died on
-    # ERR_TLS_CERT_ALTNAME_INVALID while the deploy itself was green.
-    #
-    # ⚠️ It has since been "fixed" in the WORST possible way, verified
-    # 2026-07-27: staging.datiq.app is covered by the production cert
-    # (CN=datiq.app, SAN includes staging.datiq.app) because it was added as a
-    # plain DOMAIN ALIAS on the production site — so it serves the site's
-    # PUBLISHED (production) deploy, not the staging branch deploy. Proof by
-    # build identity: staging.datiq.app and datiq.app both serve
-    # /assets/index-BFw7HNTs.js while the branch deploy serves index-ngjyYV0n.js.
-    #
-    # ⚠️ DNS IS NOT THE CAUSE AND CANNOT FIX IT. The CNAME has already been
-    # repointed to staging--datiqapp.netlify.app (confirmed on the authoritative
-    # NS) and the served content did not change. Both that host and
-    # datiqapp.netlify.app resolve to the SAME Netlify edge IPs; Netlify chooses
-    # the deploy from the Host header, not the IP or the CNAME target. The fix is
-    # in Netlify Domain management: remove staging.datiq.app as a domain alias,
-    # then re-add it as a BRANCH SUBDOMAIN bound to the `staging` branch.
-    #
-    # So the old advice that used to live here — "once staging.datiq.app is a
-    # domain alias and its cert issues, set STAGING_URL to it" — is a TRAP.
-    # Following it now would make this job, and the phase-gate's staging smoke,
-    # test PRODUCTION while reporting on staging: green, and meaningless. Same
-    # silent-pass shape as `netlify deploy --prod-if-unlocked` while locked.
-    #
-    # A plain domain alias always serves the published deploy. To give staging a
-    # vanity hostname you need a Netlify BRANCH-DEPLOY domain (branch subdomain)
-    # bound to the `staging` branch — not an alias. Only after that is confirmed
-    # to serve the branch deploy should STAGING_URL be set to it.
-    #
-    # ⚠️ 2026-08-02: STAGING_URL IS NO LONGER PUBLICLY REACHABLE, ON PURPOSE.
-    # The site's `sso_login` visitor-access control is enabled with
-    # `sso_login_context: "non_production"` — a deliberate security decision
-    # to require a Netlify team login on every branch-deploy and deploy-preview
-    # URL. That's a real OAuth/SSO gate (Netlify calls it "Visitor access
-    # control"), not the classic site password, so there is no Basic-Auth or
-    # bypass-token a script can send — an anonymous `curl`/`fetch` gets a 401
-    # and Netlify's own login-redirect HTML no matter what path it requests,
-    # including plain static files. Hitting STAGING_URL from this job would
-    # therefore ALWAYS fail, telling you nothing about the deploy itself.
-    #
-    # This job verifies the SAME commit's deploy two other ways instead:
-    #   1. "Wait for a ready staging deploy that contains this commit" — asks
-    #      the Netlify API whether any HEALTHY staging deploy has shipped this
-    #      commit's content, by ANCESTRY rather than SHA equality (see the long
-    #      comment on the step for the run this distinction fixed), PLUS a check
-    #      that the matched deploy's Functions manifest (returned by the same
-    #      API call, no network access to the gated host required) contains
-    #      every function this app depends on. Catches "functions failed to
-    #      bundle" without needing to reach the gated URL.
-    #   2. "Local smoke test" — builds this exact commit and runs
-    #      `vite preview` locally, then points scripts/smoke-prod.mjs at that
-    #      LOCAL server instead of the network. It is the identical artifact
-    #      Netlify would publish (same `npm run build`, same `dist/`), so the
-    #      SPA-routing / marketing-asset / help-site probes are just as
-    #      meaningful as they were against the live host. `SMOKE_SKIP_API=1`
-    #      because a bare static preview has no Netlify Functions runtime
-    #      behind it — function correctness is covered separately by (1) here
-    #      and by the contract-test suite (`npm run test:contract`) in the
-    #      Test Suites job, which exercises the actual function handlers.
-    # If SSO protection is ever turned off for non-production, the live-host
-    # probe can be restored — see git history on this file for the prior form.
-    env:
-      STAGING_URL: ${{ vars.STAGING_URL || 'https://staging--datiqapp.netlify.app' }}
-    environment:
-      name: staging-release
-      url: ${{ vars.STAGING_URL || 'https://staging--datiqapp.netlify.app' }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          # Full history: the convergence check below asks whether a deployed
-          # commit CONTAINS this one, and `git merge-base` cannot answer that
-          # from the shallow clone actions/checkout takes by default.
-          fetch-depth: 0
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: ".node-version"
-          cache: "npm"
-      - run: npm ci
-
-      - name: Wait for a ready staging deploy that contains this commit (+ verify Functions manifest)
-        run: |
-          set -euo pipefail
-          echo "Looking for a ready staging deploy containing $GITHUB_SHA..."
-
-          # ── WHY THIS IS AN ANCESTRY CHECK AND NOT A SHA COMPARISON ───────────
-          #
-          # This step used to require the NEWEST staging deploy's commit_ref to
-          # EQUAL $GITHUB_SHA. That is unsatisfiable the moment staging moves,
-          # and it is not a transient failure — it can never recover, because
-          # the newest deploy only ever gets newer.
-          #
-          # Run 32995206476 is the worked example. It gated c4330e8. By the time
-          # it ran, staging was at 24985b0 and Netlify had published THAT. All 30
-          # attempts printed `latest_staging=24985b0 state=ready` and the step
-          # failed — even though 24985b0 is a DESCENDANT of c4330e8 and therefore
-          # contains every byte of it. A newer deploy containing the commit under
-          # test is a strictly stronger result than the one being demanded.
-          #
-          # The structural cause is an asymmetry worth knowing about: 24985b0 was
-          # docs-only, so it matched this workflow's `paths-ignore` and started NO
-          # GitHub run. `concurrency: cancel-in-progress` therefore had nothing to
-          # cancel, and the doomed c4330e8 run was never superseded. Netlify has no
-          # paths-ignore and deployed it regardless. Expect that to recur; the fix
-          # is for the check to tolerate it, not for the pushes to stop.
-          #
-          # So the question this asks is "has a healthy staging deploy shipped my
-          # commit's content?", answered with `git merge-base --is-ancestor`.
-          # Deliberately ONE-directional, unlike phase-gate.yml's check: this
-          # workflow runs ON staging, so a deploy that is an ANCESTOR of the commit
-          # under test is an OLDER deploy and proves nothing about this push.
-          #
-          # It also scans EVERY ready staging deploy rather than only the newest —
-          # the one we want may have been pushed off `.[0]` by a later build.
-          #
-          # A single imperfect poll must not kill the whole wait. The Netlify API
-          # can answer with something that is not an array of deploy objects — an
-          # error envelope ({"message":"Not Found"}), a bare number, an HTML error
-          # page from a proxy, or an empty body on a blip. Feeding any of those to
-          # jq makes it exit non-zero and, under `set -e`, fails the step on what
-          # is really a transient blip. Hardening: `curl -fsS` (HTTP >= 400 yields
-          # no body to misparse), `|| true` (a failed poll is non-fatal), and an
-          # `if type=="array"` guard so a non-array body cannot crash jq.
-          #
-          # Functions this app cannot run without — same list `npm run readiness`
-          # and the contract-test suite guard the source of. Keep in sync if a new
-          # critical function is added.
-          EXPECTED_FUNCTIONS="extract extractions ai admin-auth admin-monitoring admin-health billing-lifecycle billing-purge scheduled-runner health-monitor payment-webhook create-checkout verify-payment"
-
-          for i in $(seq 1 30); do
-            RESP=$(curl -fsS \
-              -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
-              "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys?per_page=50&context=branch-deploy" \
-              2>/dev/null || true)
-
-            # Every READY staging deploy, newest first, de-duplicated.
-            READY_SHAS=$(printf '%s' "$RESP" | jq -r '
-              if type == "array"
-              then [.[] | select(type == "object" and .branch == "staging" and .state == "ready")
-                        | .commit_ref // empty] | unique | .[]
-              else empty end' 2>/dev/null || true)
-
-            NEWEST=$(printf '%s' "$RESP" | jq -r '
-              if type == "array"
-              then ([.[] | select(type == "object" and .branch == "staging")] | .[0].commit_ref // "unknown")
-              else "unknown" end' 2>/dev/null || echo "unknown")
-            STATE=$(printf '%s' "$RESP" | jq -r '
-              if type == "array"
-              then ([.[] | select(type == "object" and .branch == "staging")] | .[0].state // "unknown")
-              else "unknown" end' 2>/dev/null || echo "unknown")
-
-            echo "  attempt $i/30: newest_staging=$NEWEST state=$STATE ready=$(printf '%s' "$READY_SHAS" | tr '\n' ' ')"
-
-            MATCH=""
-            REL=""
-            for SHA in $READY_SHAS; do
-              # A deploy of a commit this clone has never heard of tells us
-              # nothing; skip it rather than letting merge-base error out.
-              git cat-file -e "${SHA}^{commit}" 2>/dev/null || continue
-              if [ "$SHA" = "$GITHUB_SHA" ]; then
-                MATCH="$SHA"; REL="this exact commit is deployed"; break
-              fi
-              if git merge-base --is-ancestor "$GITHUB_SHA" "$SHA"; then
-                MATCH="$SHA"; REL="a newer staging deploy contains this commit"; break
-              fi
-            done
-
-            if [ -n "$MATCH" ]; then
-              echo "  ✓ matched ready staging deploy $MATCH — $REL"
-
-              # Read the manifest off the MATCHED deploy, not off .[0]. Checking
-              # the newest deploy's functions would be verifying something other
-              # than the artifact we just decided proves this commit shipped.
-              FUNCS=$(printf '%s' "$RESP" | jq -r --arg sha "$MATCH" '
-                ([.[] | select(type == "object" and .branch == "staging"
-                               and .state == "ready" and .commit_ref == $sha)]
-                 | .[0].available_functions // []) | map(.n) | .[]')
-              MISSING=""
-              for f in $EXPECTED_FUNCTIONS; do
-                echo "$FUNCS" | grep -qx "$f" || MISSING="$MISSING $f"
-              done
-              if [ -n "$MISSING" ]; then
-                echo "  ✗ deploy manifest is missing expected function(s):$MISSING"
-                exit 1
-              fi
-              echo "  ✓ all expected functions are present in the deploy manifest"
-              exit 0
-            fi
-
-            # Only fail fast when the FAILED deploy is the one we are waiting for.
-            # A newer unrelated build erroring is not this commit's problem, and
-            # treating it as one was how a red gate could be inherited.
-            if [ "$STATE" = "error" ] && [ "$NEWEST" = "$GITHUB_SHA" ]; then
-              echo "  ✗ Netlify reports the staging deploy of $GITHUB_SHA FAILED — not waiting out the timeout"
-              exit 1
-            fi
-            sleep 10
-          done
-          echo "✗ no ready staging deploy contained $GITHUB_SHA within 5 minutes"
-          exit 1
-
-      - name: Build (identical to what Netlify publishes for this commit)
-        run: npm run build
-
-      - name: Local smoke test (vite preview of the built artifact)
-        # STAGING_URL itself cannot be probed anonymously — see the job-level
-        # comment above. This exercises the same build output against a local
-        # static server instead, so a broken SPA route, a missing marketing/SEO
-        # asset, or a missing help page still fails the gate.
-        run: |
-          set -euo pipefail
-          npx vite preview --port 4319 --strictPort &
-          PREVIEW_PID=$!
-          trap 'kill "$PREVIEW_PID" 2>/dev/null || true' EXIT
-
-          echo "Waiting for local preview server on :4319..."
-          for i in $(seq 1 30); do
-            if curl -fsS "http://localhost:4319/" >/dev/null 2>&1; then
-              echo "  ✓ preview server is up"
-              break
-            fi
-            if [ "$i" = "30" ]; then
-              echo "✗ local preview server never came up"
-              exit 1
-            fi
-            sleep 1
-          done
-
-          # No SMOKE_SKIP_PRERENDER here, deliberately. `vite preview` used to do
-          # no directory-index resolution and apply no netlify.toml rules, so a
-          # prerendered-document assertion could not hold — the first version of
-          # this step opted out of it, which deleted the check in the one place
-          # it actually runs. vite.config.js's `datiq-netlify-like-preview`
-          # plugin now applies the two rules that decide which bytes a URL gets
-          # (the forced `/` rewrite and directory-index lookup), so the preview
-          # routes like production and the assertion is real here.
-          SMOKE_SKIP_API=1 node scripts/smoke-prod.mjs "http://localhost:4319"
-        env:
-          NODE_OPTIONS: --dns-result-order=ipv4first
+    uses: ./.github/workflows/gcp-staging.yml
+    with:
+      skip_db: true
+    secrets: inherit

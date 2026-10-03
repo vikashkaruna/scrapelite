@@ -51,10 +51,15 @@ describe("template synthesis (the step that was never wired)", () => {
     expect(aiMock).toHaveBeenCalledTimes(2);
     expect(r.summary).toMatch(/mid-market/);
     expect(r.output.talking_points).toEqual(["Mention the pricing page", "Name a customer"]);
-    // Both synthesis calls billed, and the extraction is on the synthesis area
-    // so it gets that area's model tier rather than the classification one.
-    expect(r.events.filter((e) => e.unit === "ai_call")).toHaveLength(2);
+    // Both landed synthesis calls billed, plus the extraction's own AI call
+    // (enrichment_meta.ok — priced at the deep tier the areas ship on).
+    const aiEvents = r.events.filter((e) => e.unit === "ai_call");
+    expect(aiEvents).toHaveLength(3);
+    expect(aiEvents[0]).toMatchObject({ credits: 5 }); // extraction, deep tier
     expect(aiMock.mock.calls[0][0].area).toBe("synthesis");
+    // The whole run is template-scoped: the choke points must not bill it too.
+    expect(aiMock.mock.calls[0][0].meterScope).toBe("template_run");
+    expect(extractMock.mock.calls[0][1].meterScope).toBe("template_run");
   });
 
   it("a failed synthesis is FREE and does not fail the run", async () => {

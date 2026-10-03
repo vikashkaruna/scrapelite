@@ -22,6 +22,11 @@
 // credit_ledger.unit — the estimate and the charge are denominated in the same
 // things, which is what makes drift between them meaningful rather than noise.
 
+// PURE, same rule as this module: the shared price list the choke points
+// charge from, so an estimate and a ledger row cannot disagree about what a
+// fast/deep AI call costs.
+import { aiCredits } from "../credits/creditWeights.js";
+
 export const TEMPLATE_SCHEMA_VERSION = 1;
 
 /** Input kinds a template may ask for. Drives the runner form. */
@@ -64,13 +69,21 @@ export const TEMPLATE_STATUS = Object.freeze({
   SUPERSEDED: "superseded", ARCHIVED: "archived",
 });
 
-/** Default cost weights, used when a template does not override them. */
+/**
+ * Default cost weights, used when a template does not override them.
+ *
+ * `per_ai_call` / `ai_calls_per_unit` are RETIRED: the estimate now itemises
+ * AI work the way the runner actually spends it — one extraction call per unit
+ * (`extraction_ai_per_unit`) plus one call per prompt in the synthesis bundle —
+ * priced from CREDIT_WEIGHTS' tier weights, not from a per-call constant. A
+ * per-call constant could not follow the area tiers, and the two drifted: the
+ * table said 2 while the areas ran deep-tier models (5).
+ */
 export const DEFAULT_CREDIT_COST = Object.freeze({
   base: 1,
   per_page: 1,
-  per_ai_call: 2,
+  extraction_ai_per_unit: 1,
   pages_per_unit: 1,
-  ai_calls_per_unit: 1,
 });
 
 const MAX_LIST_UNITS = 500; // hard ceiling; per-plan caps are entitlements' job
@@ -273,7 +286,36 @@ export function validateInput(template, input) {
     }
   }
 
-  return { ok: errors.length === 0, errors, value };
+  return { ok: errors.length === 0, errors, value: { ...value, ...customization(value, input) } };
+}
+
+/**
+ * The "Customize Workflow & Fields" panel inputs. These are NOT declared in
+ * any template's input_schema (they are the panel every template shares), so
+ * the schema-field loop above would silently drop them — which it did: a
+ * typed custom_fields list never reached the run, and the user's "Products,
+ * Services, Pricing, Credentials" request had zero effect. Whitelisted here,
+ * the same shape estimateCredits() already reads.
+ */
+function customization(declared, input) {
+  const src = isPlainObject(input) ? input : {};
+  const out = {};
+  const cf = src.custom_fields;
+  if (Array.isArray(cf)) {
+    const clean = cf.map((s) => String(s).trim()).filter(Boolean).slice(0, 20);
+    if (clean.length) out.custom_fields = clean;
+  } else if (typeof cf === "string" && cf.trim()) {
+    const clean = cf.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20);
+    if (clean.length) out.custom_fields = clean;
+  }
+  if (typeof src.custom_prompt === "string" && src.custom_prompt.trim()) {
+    out.custom_prompt = src.custom_prompt.trim().slice(0, 600);
+  }
+  const depth = String(src.ai_depth || "standard");
+  if (depth === "quick" || depth === "deep" || depth === "standard") out.ai_depth = depth;
+  const extra = Number(src.extra_subpages || 0);
+  if (Number.isFinite(extra) && extra > 0) out.extra_subpages = Math.min(4, Math.round(extra));
+  return out;
 }
 
 // ── cost ────────────────────────────────────────────────────────────────────
@@ -281,38 +323,54 @@ export function validateInput(template, input) {
 /**
  * How many entities this run covers. A domain_list run over 40 domains is 40
  * units; a single-domain run is 1. Units are what every per-unit cost scales by.
+ *
+ * `credit_cost.units_extra` adds fixed units on top of the list — the AI
+ * Visibility Brief reads YOUR domain in addition to the competitor list, and
+ * quoting only the list under-counted every page and AI call by one company.
  */
 export function countUnits(template, input) {
+  const extraUnits = Math.max(0, Math.round(Number(template?.credit_cost?.units_extra) || 0));
   const fields = template?.input_schema?.fields;
-  if (!Array.isArray(fields)) return 1;
+  if (!Array.isArray(fields)) return 1 + extraUnits;
   const listField = fields.find((f) => f.kind === "domain_list");
-  if (!listField) return 1;
+  if (!listField) return 1 + extraUnits;
   const v = input?.[listField.name];
-  if (Array.isArray(v)) return Math.max(1, v.length);
-  const { domains } = parseDomainList(v ?? "");
-  return Math.max(1, domains.length);
+  const listCount = Array.isArray(v)
+    ? v.length
+    : parseDomainList(v ?? "").domains.length;
+  return Math.max(1, listCount) + extraUnits;
 }
 
 /**
  * Deterministic, itemised credit estimate.
  * Units line up with credit_ledger.unit so estimate and actual are comparable.
+ *
+ * The AI line mirrors what the runner actually spends (templatesClient):
+ *   • one structured-extraction call per unit — the enrichment area ships on
+ *     the deep tier, so it prices at CREDIT_WEIGHTS.ai_deep;
+ *   • one call per prompt in the template's synthesis bundle (summarize,
+ *     talking_points, questions, comparison) at the shipped synthesis tier;
+ *   • ai_depth "quick" runs extraction-only, so no synthesis is quoted —
+ *     quoting calls that never happen is how an estimate loses the right to
+ *     be believed. "deep" buys a bigger token budget at the same per-call
+ *     price: the weights count provider CALLS, not tokens.
+ * Custom fields ride INSIDE the extraction call — the schema grows, the call
+ * count does not — so they add no charge. extra_subpages add page fetches.
  */
 export function estimateCredits(template, input = {}) {
   const cost = { ...DEFAULT_CREDIT_COST, ...(template?.credit_cost || {}) };
   const units = countUnits(template, input);
   const extraPages = Number(input?.extra_subpages || 0);
-  const customFieldsCount = Array.isArray(input?.custom_fields)
-    ? input.custom_fields.length
-    : (typeof input?.custom_fields === "string" && input.custom_fields.trim()
-        ? input.custom_fields.split(",").map((s) => s.trim()).filter(Boolean).length
-        : 0);
+  const depth = input?.ai_depth === "deep" || input?.ai_depth === "quick" ? input.ai_depth : "standard";
+  const runsSynthesis = depth !== "quick";
 
   const basePages = Math.round(units * (cost.pages_per_unit ?? 1));
   const pages = basePages + (Number.isFinite(extraPages) && extraPages > 0 ? extraPages * units : 0);
 
-  const baseAiCalls = Math.round(units * (cost.ai_calls_per_unit ?? 1));
-  const extraAiCalls = customFieldsCount > 0 ? Math.ceil(customFieldsCount / 3) * units : 0;
-  const aiCalls = baseAiCalls + extraAiCalls;
+  const extractionCalls = Math.round(units * (cost.extraction_ai_per_unit ?? 1));
+  const synthesisCalls = runsSynthesis
+    ? Math.round(units * countSynthesisPrompts(template))
+    : 0;
 
   const breakdown = [];
   if (cost.base > 0) breakdown.push({ unit: "run", quantity: 1, credits: cost.base, label: "Workflow setup" });
@@ -324,12 +382,20 @@ export function estimateCredits(template, input = {}) {
       label: extraPages > 0 ? `Pages fetched (${basePages} base + ${extraPages * units} custom)` : "Pages fetched",
     });
   }
-  if (aiCalls > 0 && cost.per_ai_call > 0) {
+  if (extractionCalls > 0) {
     breakdown.push({
       unit: "ai_call",
-      quantity: aiCalls,
-      credits: aiCalls * cost.per_ai_call,
-      label: customFieldsCount > 0 ? `AI analysis (${baseAiCalls} base + ${extraAiCalls} custom fields)` : "AI analysis",
+      quantity: extractionCalls,
+      credits: extractionCalls * aiCredits("deep"),
+      label: "AI extraction",
+    });
+  }
+  if (synthesisCalls > 0) {
+    breakdown.push({
+      unit: "ai_call",
+      quantity: synthesisCalls,
+      credits: synthesisCalls * aiCredits("deep"),
+      label: depth === "deep" ? "AI synthesis (rigorous cross-check)" : "AI synthesis",
     });
   }
 
@@ -338,6 +404,23 @@ export function estimateCredits(template, input = {}) {
     credits: breakdown.reduce((sum, b) => sum + b.credits, 0),
     breakdown,
   };
+}
+
+/**
+ * How many synthesis calls the runner will make for this template: one per
+ * synthesis prompt it declares and executes (the same keys executeRun and
+ * executeVisibilityBrief read). A delegate bundle ({delegate: …}) promises no
+ * synthesis of its own — the delegated module bills its own AI work — so it
+ * counts 0.
+ */
+const SYNTHESIS_PROMPT_KEYS = Object.freeze([
+  "summarize", "talking_points", "questions", "comparison",
+]);
+
+function countSynthesisPrompts(template) {
+  const bundle = template?.prompt_bundle;
+  if (!bundle || typeof bundle !== "object") return 0;
+  return SYNTHESIS_PROMPT_KEYS.filter((key) => typeof bundle[key] === "string" && bundle[key].trim()).length;
 }
 
 /** The entitlement capability a template runs under. */

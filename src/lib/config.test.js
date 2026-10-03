@@ -26,6 +26,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.resetModules();
   delete window.__DATIQ_RUNTIME__;
+  // stubEnv writes through to import.meta.env, so leaving it set would leak a
+  // fake project URL into every later spec in this file.
+  vi.unstubAllEnvs();
 });
 
 describe("booleans flip on env presence (U-77)", () => {
@@ -86,53 +89,89 @@ describe("outbound endpoints are made absolute", () => {
   });
 });
 
-// ── Netlify secret-scanner redaction fallback ──────────────────────────────
-// The scanner's "smart detection" replaces JWT-shaped values with
-// `****************<last4>` in the build output. That breaks the Supabase
-// anon key and (less critically) the webhook URL. We detect the redaction
-// pattern in config.js and prefer the runtime-config value when it
-// matches. This is the defense-in-depth path; the primary fix is in
-// netlify.toml `SECRETS_SCAN_OMIT_KEYS`.
+// ── Supabase resolution: WHICH INPUT WINS ──────────────────────────────────
+//
+// ⚠️ These used to re-implement the resolution expression inline and assert
+// against THAT copy — four tests, none of which imported config.js. They passed
+// identically whether the module preferred the baked value or the runtime one,
+// and one of them explicitly asserted the old contract ("a real
+// VITE_SUPABASE_ANON_KEY is NOT overridden by the runtime value"). So the
+// precedence rule that sent the local stack's browser to the dev cloud project
+// was pinned by the suite, in a copy of the logic, while the module did
+// something else.
+//
+// Every test below now drives the REAL module. vi.stubEnv writes through
+// vitest's import.meta.env shim, so both inputs are set explicitly and the
+// assertion is about the module's answer, not a restatement of the rule.
 
-describe("Netlify scanner redaction is detected and overridden", () => {
-  it("a stripped VITE_SUPABASE_ANON_KEY is replaced with the runtime value", async () => {
-    // Simulate the production bundle where the scanner has replaced the
-    // anon key with the 16-stars + 4-char fingerprint. We can't change
-    // import.meta.env in vitest, so we re-implement the resolution logic
-    // against the same building blocks and assert the behaviour.
-    const runtime = { supabaseAnonKey: "eyJhbGciOiJIUzI1NiI…real-key" };
-    const env = "****************uqwM"; // what the scanner leaves behind
-    const looksStrippedByNetlify = (v) =>
-      typeof v === "string" && /^\*{16,}[A-Za-z0-9]{2,6}$/.test(v);
-    const resolved = (env && !looksStrippedByNetlify(env) ? env : "") || runtime.supabaseAnonKey || "";
-    expect(resolved).toBe("eyJhbGciOiJIUzI1NiI…real-key");
+const RUNTIME_URL = "http://localhost:8080";
+const RUNTIME_KEY = "eyJhbGciOiJIUzI1NiJ9.runtime-key";
+const BAKED_URL = "https://baked-project.supabase.co";
+const BAKED_KEY = "eyJhbGciOiJIUzI1NiJ9.baked-key";
+
+async function resolveWith({ runtime, bakedUrl, bakedKey }) {
+  vi.resetModules();
+  if (runtime === null) delete window.__DATIQ_RUNTIME__;
+  else window.__DATIQ_RUNTIME__ = { supabaseUrl: runtime?.url, supabaseAnonKey: runtime?.key };
+  vi.stubEnv("VITE_SUPABASE_URL", bakedUrl ?? "");
+  vi.stubEnv("VITE_SUPABASE_ANON_KEY", bakedKey ?? "");
+  const mod = await import("./config.js");
+  return { url: mod.SUPABASE_URL, key: mod.SUPABASE_ANON_KEY };
+}
+
+describe("the per-deployment runtime config outranks the per-build baked value", () => {
+  it("runtime-config.js wins even when the baked value looks perfectly real", async () => {
+    // This is the local Docker stack. Both values are well-formed; they simply
+    // point at different projects, and only one of them is the one every
+    // container in the stack is talking to.
+    const r = await resolveWith({
+      runtime: { url: RUNTIME_URL, key: RUNTIME_KEY },
+      bakedUrl: BAKED_URL,
+      bakedKey: BAKED_KEY,
+    });
+    expect(r.url).toBe(RUNTIME_URL);
+    expect(r.key).toBe(RUNTIME_KEY);
   });
 
-  it("a real VITE_SUPABASE_ANON_KEY is NOT overridden by the runtime value", async () => {
-    const runtime = { supabaseAnonKey: "stale-runtime-value" };
-    const env = "eyJhbGciOiJIUzI1NiI…real-key"; // real anon key
-    const looksStrippedByNetlify = (v) =>
-      typeof v === "string" && /^\*{16,}[A-Za-z0-9]{2,6}$/.test(v);
-    const resolved = (env && !looksStrippedByNetlify(env) ? env : "") || runtime.supabaseAnonKey || "";
-    // Build-time env wins when it looks like a real value.
-    expect(resolved).toBe("eyJhbGciOiJIUzI1NiI…real-key");
+  it("the baked value is still used when runtime-config.js is absent", async () => {
+    // A Netlify deploy with no runtime-config.js must not lose auth entirely.
+    const r = await resolveWith({ runtime: null, bakedUrl: BAKED_URL, bakedKey: BAKED_KEY });
+    expect(r.url).toBe(BAKED_URL);
+    expect(r.key).toBe(BAKED_KEY);
   });
 
-  it("a stripped VITE_SUPABASE_URL is replaced with the runtime value", async () => {
-    const runtime = { supabaseUrl: "https://aubwooslkkrprdxuiyvj.supabase.co" };
-    const env = "****************co"; // scanner pattern
-    const looksStrippedByNetlify = (v) =>
-      typeof v === "string" && /^\*{16,}[A-Za-z0-9]{2,6}$/.test(v);
-    const resolved = (env && !looksStrippedByNetlify(env) ? env : "") || runtime.supabaseUrl || "";
-    expect(resolved).toBe("https://aubwooslkkrprdxuiyvj.supabase.co");
+  it("a REDACTED baked value never wins, even with a runtime override present", async () => {
+    const r = await resolveWith({
+      runtime: { url: RUNTIME_URL, key: RUNTIME_KEY },
+      bakedUrl: "****************co",
+      bakedKey: "****************uqwM",
+    });
+    expect(r.url).toBe(RUNTIME_URL);
+    expect(r.key).toBe(RUNTIME_KEY);
   });
 
-  it("falls back to empty string when both env and runtime are missing/stripped", async () => {
-    const runtime = {};
-    const env = "****************xx";
-    const looksStrippedByNetlify = (v) =>
-      typeof v === "string" && /^\*{16,}[A-Za-z0-9]{2,6}$/.test(v);
-    const resolved = (env && !looksStrippedByNetlify(env) ? env : "") || runtime.supabaseAnonKey || "";
-    expect(resolved).toBe("");
+  it("falls back to a real baked value when the runtime one is blank", async () => {
+    // Per-deployment overrides are per-FIELD: analytics.js distinguishes an
+    // absent key from an empty one for the same reason.
+    const r = await resolveWith({
+      runtime: { url: "", key: "" },
+      bakedUrl: BAKED_URL,
+      bakedKey: BAKED_KEY,
+    });
+    expect(r.url).toBe(BAKED_URL);
+    expect(r.key).toBe(BAKED_KEY);
+  });
+
+  it("resolves to empty when both inputs are unusable — the localStorage fallback path", async () => {
+    const r = await resolveWith({
+      runtime: { url: "", key: "" },
+      bakedUrl: "****************xx",
+      bakedKey: "****************yy",
+    });
+    expect(r.url).toBe("");
+    expect(r.key).toBe("");
+    const mod = await import("./config.js");
+    expect(mod.hasSupabase).toBe(false);
   });
 });
+

@@ -13,6 +13,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { activateFromInvoice, finalizeInvoice } from "./lib/invoiceService.js";
 import { sendInvoiceEmail } from "./lib/invoiceEmail.js";
+import { buildPaymentLedger } from "./lib/paymentLedger.js";
 
 function unsignedWebhooksAllowed() {
   return process.env.DATIQ_ALLOW_UNSIGNED_WEBHOOKS === "1" &&
@@ -20,52 +21,8 @@ function unsignedWebhooksAllowed() {
 }
 
 // ── Lightweight Supabase REST client (no SDK required in Functions) ───────────
-function getDb() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_KEY;
-  if (!url || !key) return null;
-
-  const base = {
-    apikey:          key,
-    Authorization:   `Bearer ${key}`,
-    "Content-Type":  "application/json",
-  };
-
-  async function req(path, method, body, extra = {}) {
-    const res = await fetch(`${url}/rest/v1${path}`, {
-      method,
-      headers: { ...base, ...extra },
-      ...(body != null ? { body: JSON.stringify(body) } : {}),
-    });
-    if (!res.ok && res.status !== 404 && res.status !== 409) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Supabase ${method} ${path} → HTTP ${res.status}: ${text}`);
-    }
-    return res;
-  }
-
-  return {
-    upsertSubscription: (data) =>
-      req("/subscriptions", "POST", data, { Prefer: "resolution=merge-duplicates,return=minimal" }),
-
-    patchSubscription: (sessionId, patch) =>
-      req(`/subscriptions?session_id=eq.${encodeURIComponent(sessionId)}`, "PATCH", patch),
-
-    // Idempotent: skip if an event with the same provider_event_id already exists.
-    // Prevents double-logging when both the client handler and the webhook fire.
-    insertPaymentEvent: async (data) => {
-      if (data.provider_event_id) {
-        const check = await req(
-          `/payment_events?provider_event_id=eq.${encodeURIComponent(data.provider_event_id)}&select=id&limit=1`,
-          "GET"
-        );
-        const rows = await check.json().catch(() => []);
-        if (Array.isArray(rows) && rows.length > 0) return check; // already recorded
-      }
-      return req("/payment_events", "POST", data, { Prefer: "return=minimal" });
-    },
-  };
-}
+// Shared with verify-payment.js via lib/paymentLedger.js — the webhook and the
+// browser verify write the same rows and must not be two implementations.
 
 export const handler = async (event) => {
   const headers = { "Content-Type": "application/json", "Cache-Control": "no-store" };
@@ -75,7 +32,7 @@ export const handler = async (event) => {
   }
 
   const provider = event.queryStringParameters?.provider || "stripe";
-  const db       = getDb();
+  const db       = buildPaymentLedger();
   const now      = new Date().toISOString();
 
   // ── Stripe webhook ──────────────────────────────────────────────────────────

@@ -123,7 +123,7 @@ export const handler = async (event) => {
         tier: chain.tier,
         // The model each provider WOULD use for this area right now.
         resolvedModels: Object.fromEntries(
-          chain.order.map((p) => [p, modelForTier(chain, p, chain.tier)])
+          chain.order.map((p) => [p, modelForTier(chain, p, chain.tier, area)])
         ),
         enabled: chain.enabled,
         isDefault: !config.pillars?.[area] || Object.keys(config.pillars[area]).length === 0,

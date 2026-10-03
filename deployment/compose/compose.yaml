@@ -1,0 +1,100 @@
+# deployment/compose/compose.yaml — app services (mode-agnostic base).
+# Paths resolve relative to THIS file. All values come from --env-file
+# deployment/env/.env.<env> (doc 06) — no literals here.
+#
+# Lifecycle: every long-running service below is `restart: unless-stopped` —
+# deliberately, because that policy keeps local stop/pause meaningful. A
+# container you stopped (down.sh / stack.sh stop) or paused (stack.sh pause)
+# STAYS that way across Docker Desktop restarts; only containers that were
+# still RUNNING when the daemon went away come back automatically. One-shots
+# stay one-shots: db-passwords (restart: "no", seeds once) and migrator
+# (profile-gated, run with --rm) declare no always-on policy.
+name: ${COMPOSE_PROJECT_NAME:-datiq-local}
+
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/gateway/Dockerfile
+    image: datiq-local-ctr-gateway:${IMAGE_TAG:-local}
+    ports:
+      - "${LOCAL_GATEWAY_PORT:-8080}:${LOCAL_GATEWAY_PORT:-8080}"
+    environment:
+      LOCAL_GATEWAY_PORT: ${LOCAL_GATEWAY_PORT:-8080}
+      WEB_UPSTREAM: web:80
+      ADMIN_UPSTREAM: admin:80
+      TRACKERS_UPSTREAM: trackers:80
+      API_UPSTREAM: api:8080
+      AUTH_UPSTREAM: auth:${AUTH_PORT:-9999}
+      REST_UPSTREAM: rest:${REST_PORT:-3000}
+    depends_on:
+      - web
+      - admin
+      - trackers
+      - api
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/web/Dockerfile
+    image: datiq-local-ctr-web:${IMAGE_TAG:-local}
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/admin/Dockerfile
+    image: datiq-local-ctr-admin:${IMAGE_TAG:-local}
+    restart: unless-stopped
+
+  trackers:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/trackers/Dockerfile
+    image: datiq-local-ctr-trackers:${IMAGE_TAG:-local}
+    volumes:
+      - ../generated/runtime-config.js:/usr/share/nginx/html/runtime-config.js:ro
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/api/Dockerfile
+    image: datiq-local-ctr-api:${IMAGE_TAG:-local}
+    env_file:
+      - ../env/.env.local
+      - ../generated/api-keys.env
+    environment:
+      PORT: 8080
+    restart: unless-stopped
+
+  # Same artifact as api, different entrypoint + no published ports — the local
+  # equivalent of Cloud Run's no-public-ingress jobs service (Scheduler+OIDC).
+  jobs:
+    image: datiq-local-ctr-api:${IMAGE_TAG:-local}
+    command: ["node", "adapter/server.mjs", "jobs"]
+    env_file:
+      - ../env/.env.local
+      - ../generated/api-keys.env
+    environment:
+      PORT: 8080
+      JOBS_TOKEN: ${JOBS_TOKEN}
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # Local Cloud Scheduler stand-in: fires the 13 cron jobs with the jobs token.
+  scheduler:
+    image: datiq-local-ctr-api:${IMAGE_TAG:-local}
+    command: ["node", "adapter/jobs-cron-sim.mjs"]
+    healthcheck:
+      disable: true          # cron-sim is a client, not a server — image healthcheck doesn't apply
+    environment:
+      JOBS_URL: http://jobs:8080
+      JOBS_TOKEN: ${JOBS_TOKEN}
+      DAILY_HOUR_UTC: ${DAILY_HOUR_UTC:-3}
+      SCHEDULES_JSON: ${SCHEDULES_JSON:-}
+    depends_on:
+      - jobs
+    restart: unless-stopped

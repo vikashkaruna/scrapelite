@@ -444,6 +444,17 @@ export async function authenticateBearer(event, { label = "supabase" } = {}) {
     return { ok: false, status: 503, body: { error: message, reason: problem } };
   }
 
+  return finalizeBearerAuth({ client, jwt, label, authHeader });
+}
+
+/**
+ * Shared tail of the bearer flow — getUser(jwt) against a resolved scoped
+ * client. Split out so optional-auth callers (payment verify, invoice
+ * claiming) can resolve the user ONCE and share the same error taxonomy.
+ *
+ * @returns {Promise<{ok: boolean, user: object|null, status?: number, body?: object}>}
+ */
+export async function finalizeBearerAuth({ client, jwt, label = "supabase", authHeader }) {
   let user = null;
   let error = null;
   try {

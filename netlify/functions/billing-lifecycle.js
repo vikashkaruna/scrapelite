@@ -24,6 +24,7 @@ import { pickDueNotice, noticeCopy } from "../../src/lib/billingNotices.js";
 import { PLAN_BY_ID } from "../../src/lib/pricingConfig.js";
 import { withJobRun } from "./lib/jobControl.js";
 import { wrapEmail } from "../../src/lib/emailBranding.js";
+import { mailReady, sendMail } from "./lib/mailTransport.js";
 
 // NOTE: this `config` export does NOT register the cron — it is only honoured
 // for v2 functions (`export default`), and this is a v1 handler. The real
@@ -33,7 +34,6 @@ export const config = { schedule: "@daily" };
 
 const LOOKAHEAD_DAYS = 8; // enough to catch renewal_t7 plus a day of slack
 const DAY = 24 * 60 * 60 * 1000;
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const PAGE = 500;
 
 function sb() {
@@ -186,30 +186,26 @@ function noticeHtml({ heading, body, cta }, ctaUrl, urgent) {
 }
 
 async function sendNotice({ to, kind, copy, siteUrl, urgent }) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key || !to) return false;
+  if (!mailReady() || !to) return false;
   const from = process.env.BILLING_EMAIL_FROM || "DatIQ Billing <billing@datiq.app>";
   try {
-    const res = await fetch(RESEND_ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        reply_to: "hello@datiq.app",
-        subject: copy.subject,
-        html: noticeHtml(copy, `${siteUrl}/account`, urgent),
-        text: `${copy.heading}\n\n${copy.body}\n\n${siteUrl}/account`,
-        tags: [
-          { name: "stream", value: "billing" },
-          { name: "kind", value: kind },
-        ],
-      }),
+    const r = await sendMail({
+      from,
+      to: [to],
+      reply_to: "hello@datiq.app",
+      subject: copy.subject,
+      html: noticeHtml(copy, `${siteUrl}/account`, urgent),
+      text: `${copy.heading}\n\n${copy.body}\n\n${siteUrl}/account`,
+      tags: [
+        { name: "stream", value: "billing" },
+        { name: "kind", value: kind },
+      ],
     });
     // Never echo the response body — it can contain the key.
-    if (!res.ok) console.error(`[billing-lifecycle] Resend HTTP ${res.status} for ${kind}`);
-    return res.ok;
+    if (!r.ok) console.error(`[billing-lifecycle] Resend HTTP ${r.status} for ${kind}`);
+    return r.ok;
   } catch (err) {
+    // Defensive: sendMail maps transport failures to its result, never throws.
     console.error("[billing-lifecycle] send threw:", err?.message);
     return false;
   }

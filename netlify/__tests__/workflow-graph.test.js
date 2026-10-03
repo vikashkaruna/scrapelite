@@ -42,6 +42,20 @@ describe("/api/workflow-graph", () => {
     expect(r.statusCode).toBe(401);
   });
 
+  it("forwards a 503 deployment fault verbatim instead of 'Sign in'", async () => {
+    // 2026-09-29 stg incident: authenticateBearer's 503 (revoked server anon
+    // key) was collapsed into 401 "Sign in to view your workflow." — telling a
+    // signed-in user to re-authenticate for an outage no sign-in could fix.
+    mocks.authenticateBearer.mockResolvedValue({
+      ok: false,
+      status: 503,
+      body: { error: "Supabase rejected this server's API key…", reason: "invalid_api_key" },
+    });
+    const r = await get();
+    expect(r.statusCode).toBe(503);
+    expect(JSON.parse(r.body).reason).toBe("invalid_api_key");
+  });
+
   it("an auth FAILURE is never treated as an anonymous request", async () => {
     // The defect this guards: `auth.ok ? auth.user?.id : null` turned a failure
     // into userId=null, and the stores' `if (userId)` filters then applied NO

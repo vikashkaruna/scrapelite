@@ -1,0 +1,125 @@
+# .github/workflows/gcp-staging.yml — GCP staging deploy CI (doc 05 §3a).
+# Runs the SAME operator scripts against the SAME .env contract; GitHub
+# Environment "gcp-staging" holds ONLY secrets (doc 06 golden rule 1: every
+# non-secret value comes from deployment/env/.env.staging.example, which the
+# grep step appends verbatim — change the deployment by editing the env files,
+# never this workflow).
+#
+# Required Environment secrets (gcp-staging): GCP_SA_KEY (deploy SA JSON) and
+# ENV_FILE (the whole contents of deployment/env/.env.staging). Nothing else —
+# the env file is the single source of truth, identical to what the operator
+# scripts read locally. Treat ENV_FILE as the most sensitive secret in the repo.
+#
+# NOTE: the Cloud SQL step is skipped by default (skip_db=true): the runner has
+# no Supabase CLI login and the rehearsal dumps are gitignored. Run the DB
+# migration from an operator machine (cutover-db.sh) — never from CI.
+name: gcp-staging
+
+on:
+  # Reusable: the Staging Gate calls this ONLY after its three gates are green,
+  # so a push to `staging` can never deploy past a red gate. There is
+  # deliberately NO push trigger here — a second, ungated path to the same
+  # environment is exactly what this layout removes.
+  workflow_call:
+    inputs:
+      skip_db:
+        type: boolean
+        default: true
+      skip_scheduler:
+        type: boolean
+        default: false
+      sleep_after:
+        type: boolean
+        default: false
+  # Manual run (Actions → gcp-staging → Run workflow): same steps, no gate.
+  workflow_dispatch:
+    inputs:
+      skip_db:
+        description: "Skip the Cloud SQL dump/restore step"
+        type: boolean
+        default: true
+      skip_scheduler:
+        description: "Skip Cloud Scheduler job creation"
+        type: boolean
+        default: false
+      sleep_after:
+        description: "After a green smoke, put staging back to sleep (stop Cloud SQL, pause crons — nothing deleted)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: gcp-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: gcp-staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install CLIs
+        run: npm i -g firebase-tools
+
+      - name: Parameterisation gate (doc 06 §9 — no literals outside env/*.example)
+        run: bash deployment/scripts/check-parameterisation.sh
+
+      - name: Write the deploy env file from the ENV_FILE secret
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          mkdir -p deployment/env
+          if [ -z "${ENV_FILE}" ]; then
+            echo "::error::Environment secret ENV_FILE is empty — paste deployment/env/.env.staging into it."
+            exit 1
+          fi
+          # Passed through env (never interpolated into the script) so $ and
+          # backticks inside values are written verbatim.
+          printf '%s\n' "${ENV_FILE}" > deployment/env/.env.staging
+          # Guard against pasting the wrong environment's file.
+          if ! grep -qE '^DATIQ_ENV=staging[[:space:]]*$' deployment/env/.env.staging; then
+            echo "::error::ENV_FILE does not declare DATIQ_ENV=staging — wrong file pasted?"
+            exit 1
+          fi
+          # Per-run values appended LAST (later lines win).
+          echo "IMG_TAG=${{ github.sha }}" >> deployment/env/.env.staging
+
+      - name: Deploy everything (skips per inputs)
+        env:
+          # Default skip: a fresh runner has no Supabase CLI login and no rehearsal
+          # dumps. Run the DB migration from an operator machine instead.
+          SKIP_DB: ${{ inputs.skip_db && '1' || '' }}
+          SKIP_SCHEDULER: ${{ inputs.skip_scheduler && '1' || '' }}
+          SKIP_BUILD: ""
+          # Infra (APIs, SAs, bucket, AR repo, IAM) is a one-time operator step;
+          # CI must not touch IAM, so its SA needs no bootstrap-level roles.
+          SKIP_BOOTSTRAP: "1"
+          RUNTIME_ENV_FILE: deployment/env/.env.staging
+        run: |
+          chmod +x deployment/scripts/gcp/*.sh
+          ./deployment/scripts/gcp/deploy-staging.sh staging
+
+      - name: Smoke the deployed URL (retried once for CDN propagation)
+        run: |
+          ./deployment/scripts/gcp/smoke.sh staging || {
+            echo "::warning::first smoke failed — waiting 60s for CDN propagation, then retrying once"
+            sleep 60
+            ./deployment/scripts/gcp/smoke.sh staging
+          }
+
+      # Cost saving, opt-in. Runs only after a GREEN smoke, so a failed deploy
+      # stays awake for debugging. Soft shutdown only — see power.sh.
+      - name: Put staging back to sleep (opt-in)
+        if: success() && inputs.sleep_after
+        run: ./deployment/scripts/gcp/power.sh staging sleep

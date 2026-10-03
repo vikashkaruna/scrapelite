@@ -301,7 +301,7 @@ export const CUSTOM_INSTRUCTION_PREFIX =
 export const SCHEMA_KEYS = Object.keys(CAPABILITY_SCHEMAS);
 
 /** Resolve the schema + instruction for a capability key and optional free-text prompt. */
-export function resolveExtractionPlan(enrichKey, customPrompt) {
+export function resolveExtractionPlan(enrichKey, customPrompt, callerPlan = null) {
   const cap = enrichKey ? CAPABILITY_SCHEMAS[enrichKey] : null;
   if (cap) {
     // A user who typed extra wording on top of a capability gets both: the
@@ -317,6 +317,31 @@ export function resolveExtractionPlan(enrichKey, customPrompt) {
       structured: true,
     };
   }
+  // ── Caller-supplied plan (template runs) ──────────────────────────────────
+  // A template declares the fields it PROMISES in extraction_schema, and
+  // templatesClient sends a JSON schema built from exactly those fields plus
+  // the operator's custom_fields. Accepting it here (instead of the loose
+  // CUSTOM_SCHEMA) is what makes a template run return the promised fields
+  // with per-field not_found — and it is bounded: one schema per request,
+  // depth-capped, size-capped, drawn from a fixed property vocabulary, so a
+  // caller cannot smuggle in an unbounded prompt-shaped schema.
+  const caller = callerPlan && typeof callerPlan === "object" ? callerPlan : null;
+  if (caller && caller.schema && typeof caller.schema === "object") {
+    const schema = sanitizeCallerSchema(caller.schema);
+    if (schema) {
+      const instruction = String(caller.instruction || customPrompt || "").trim().slice(0, 4000);
+      return {
+        key: enrichKey || "template",
+        schema,
+        groups: Array.isArray(caller.groups) && caller.groups.length
+          ? caller.groups.slice(0, 12).map((g) => ({ key: String(g?.key || "").slice(0, 60), label: String(g?.label || g?.key || "").slice(0, 80) }))
+          : null,
+        label: "Template extraction",
+        instruction: instruction || "Extract the requested fields from the page content.",
+        structured: true,
+      };
+    }
+  }
   return {
     key: enrichKey || "custom",
     schema: CUSTOM_SCHEMA,
@@ -325,6 +350,55 @@ export function resolveExtractionPlan(enrichKey, customPrompt) {
     instruction: CUSTOM_INSTRUCTION_PREFIX + (customPrompt || "").trim(),
     structured: false,
   };
+}
+
+const CALLER_SCHEMA_MAX_PROPS = 60;
+const CALLER_SCHEMA_MAX_DEPTH = 3;
+const CALLER_SCHEMA_MAX_LEN = 24_000;
+
+/**
+ * Bound a caller-supplied schema to a safe, fixed vocabulary: only `object`,
+ * `array`, `string`, `boolean`, `null` types; properties limited to a
+ * reasonable count; description text length-capped; depth capped. Returns
+ * null when the schema fails the bounds — the caller falls back to the
+ * custom shape rather than running an unbounded one.
+ */
+function sanitizeCallerSchema(schema) {
+  try {
+    const json = JSON.stringify(schema);
+    if (!json || json.length > CALLER_SCHEMA_MAX_LEN) return null;
+  } catch {
+    return null;
+  }
+  const walk = (node, depth) => {
+    if (depth > CALLER_SCHEMA_MAX_DEPTH || !node || typeof node !== "object" || Array.isArray(node)) return null;
+    const out = {};
+    if (node.type === "object" || node.type === "array") {
+      out.type = node.type;
+    } else if (node.type === "string" || node.type === "boolean" || node.type === "null") {
+      out.type = node.type;
+    } else {
+      // No other type words are expressible in our sanitized vocabulary.
+      return null;
+    }
+    const desc = String(node.description || "").slice(0, 500);
+    if (desc) out.description = desc;
+    if (node.type === "object" && node.properties && typeof node.properties === "object") {
+      const props = {};
+      const keys = Object.keys(node.properties).slice(0, CALLER_SCHEMA_MAX_PROPS);
+      for (const k of keys) {
+        const child = walk(node.properties[k], depth + 1);
+        if (child) props[k] = child;
+      }
+      out.properties = props;
+    }
+    if (node.type === "array" && node.items && typeof node.items === "object") {
+      const items = walk(node.items, depth + 1);
+      if (items) out.items = items;
+    }
+    return out;
+  };
+  return walk(schema, 0);
 }
 
 /**

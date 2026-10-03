@@ -94,7 +94,7 @@ export const HEALTH_COMPONENTS = [
     group: "services",
     critical: false,
     description:
-      "Enrichment chain (Gemini → Claude → OpenAI). Reported from key presence only — " +
+      "Enrichment chain (OpenAI → Gemini → Claude). Reported from key presence only — " +
       "probing it would spend tokens on every dashboard refresh.",
   },
   {

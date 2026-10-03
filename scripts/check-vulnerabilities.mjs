@@ -75,19 +75,12 @@ function activeBypassFor(ghsaIds, pkgName) {
 
 // ── every lockfile in the repo, not just the root one ───────────────
 //
-// This gate audited ONLY the repo root until 2026-09-03, and that was a blind
-// spot on the release path specifically. `tools/netlify-cli/` is a SECOND,
-// independently-locked tree — 1,000+ packages — and it is the one that runs
-// with production deploy credentials in phase-gate.yml. Auditing everything
-// except the tool that publishes production is the wrong way round.
-//
-// The blind spot was found by a disagreement, which is the only way an
-// unmonitored thing ever gets found: GitHub reported high advisories on the
-// default branch while `npm audit` at the root reported none. Dependabot scans
-// every lockfile; this gate scanned one.
+// Add an entry here for any independently-locked tree that runs on the release
+// path. (tools/netlify-cli/ was one until 2026-10-03, when Netlify stopped
+// being a deploy target and the whole toolchain was deleted — the audit list
+// shrinks with the thing it audited. See .github/gate-bypass/vulnerabilities.json.)
 const AUDIT_ROOTS = [
   { label: "root", cwd: repoRoot },
-  { label: "tools/netlify-cli", cwd: `${repoRoot}/tools/netlify-cli` },
 ];
 
 function runAudit({ label, cwd }) {

@@ -10,7 +10,12 @@ const tpl = (over = {}) => ({
   title: "Account Brief",
   input_schema: { fields: [{ name: "domain", kind: "domain", required: true, label: "Company domain" }] },
   output_schema: { blocks: ["summary", "fields", "sources"] },
-  credit_cost: { base: 1, per_page: 1, per_ai_call: 2, pages_per_unit: 3, ai_calls_per_unit: 1 },
+  credit_cost: { base: 1, per_page: 1, pages_per_unit: 3 },
+  prompt_bundle: {
+    extract: "read it",
+    summarize: "summarize",
+    talking_points: "points",
+  },
   ...over,
 });
 
@@ -207,6 +212,35 @@ describe("validateInput", () => {
     expect(validateInput(t, { deep: "true" }).value.deep).toBe(true);
     expect(validateInput(t, { deep: false }).value.deep).toBe(false);
   });
+
+  describe("the shared Customize panel inputs (regression: they used to be dropped)", () => {
+    it("keeps custom_fields as a cleaned array", () => {
+      const r = validateInput(tpl(), { domain: "x.com", custom_fields: "Products, Services,  pricing , credentials" });
+      expect(r.value.custom_fields).toEqual(["Products", "Services", "pricing", "credentials"]);
+    });
+
+    it("keeps custom_prompt trimmed and capped", () => {
+      const r = validateInput(tpl(), { domain: "x.com", custom_prompt: "  Focus on enterprise compliance.  " });
+      expect(r.value.custom_prompt).toBe("Focus on enterprise compliance.");
+    });
+
+    it("keeps a valid ai_depth and rejects unknown ones", () => {
+      expect(validateInput(tpl(), { domain: "x.com", ai_depth: "deep" }).value.ai_depth).toBe("deep");
+      expect(validateInput(tpl(), { domain: "x.com", ai_depth: "quick" }).value.ai_depth).toBe("quick");
+      expect(validateInput(tpl(), { domain: "x.com", ai_depth: "sideways" }).value.ai_depth).toBeUndefined();
+    });
+
+    it("keeps extra_subpages capped at 4", () => {
+      expect(validateInput(tpl(), { domain: "x.com", extra_subpages: 2 }).value.extra_subpages).toBe(2);
+      expect(validateInput(tpl(), { domain: "x.com", extra_subpages: 9 }).value.extra_subpages).toBe(4);
+    });
+
+    it("drops blank customization values", () => {
+      const r = validateInput(tpl(), { domain: "x.com", custom_fields: " , ", custom_prompt: "  " });
+      expect(r.value.custom_fields).toBeUndefined();
+      expect(r.value.custom_prompt).toBeUndefined();
+    });
+  });
 });
 
 describe("countUnits / estimateCredits", () => {
@@ -222,18 +256,19 @@ describe("countUnits / estimateCredits", () => {
 
   it("itemises the estimate in the same units the ledger charges in", () => {
     const e = estimateCredits(tpl(), { domain: "acme.com" });
-    // base 1 + (1 unit x 3 pages x 1) + (1 unit x 1 ai x 2) = 6
-    expect(e.credits).toBe(6);
+    // base 1 + (1 unit x 3 pages x 1) + extraction 1 x deep 5 + synthesis 2 x deep 5 = 19
+    expect(e.credits).toBe(19);
     expect(e.units).toBe(1);
-    expect(e.breakdown.map((b) => b.unit)).toEqual(["run", "page", "ai_call"]);
+    expect(e.breakdown.map((b) => b.unit)).toEqual(["run", "page", "ai_call", "ai_call"]);
     expect(e.breakdown.find((b) => b.unit === "page")).toMatchObject({ quantity: 3, credits: 3 });
+    expect(e.breakdown.filter((b) => b.unit === "ai_call").map((b) => b.credits)).toEqual([5, 10]);
   });
 
   it("scales linearly with units, so a 10-domain list costs what a user can predict", () => {
     const t = tpl({ input_schema: { fields: [{ name: "domains", kind: "domain_list" }] } });
     const one = estimateCredits(t, { domains: ["a.com"] });
     const ten = estimateCredits(t, { domains: Array.from({ length: 10 }, (_, i) => `d${i}.com`) });
-    expect(ten.credits).toBe(one.credits + 9 * (3 * 1 + 1 * 2));
+    expect(ten.credits).toBe(one.credits + 9 * (3 * 1 + 1 * 5 + 2 * 5));
   });
 
   it("falls back to defaults when a template declares no cost", () => {
@@ -242,8 +277,31 @@ describe("countUnits / estimateCredits", () => {
   });
 
   it("omits zero-cost lines rather than showing '0 x AI analysis'", () => {
-    const e = estimateCredits(tpl({ credit_cost: { base: 0, per_page: 1, per_ai_call: 0, pages_per_unit: 2 } }), {});
+    const e = estimateCredits(tpl({
+      prompt_bundle: { delegate: "module" },
+      credit_cost: { base: 0, per_page: 1, extraction_ai_per_unit: 0, pages_per_unit: 2 },
+    }), {});
     expect(e.breakdown.map((b) => b.unit)).toEqual(["page"]);
+  });
+
+  it("ai_depth quick quotes no synthesis; deep quotes the same calls at the same per-call price", () => {
+    const standard = estimateCredits(tpl(), { domain: "acme.com", ai_depth: "standard" });
+    const quick = estimateCredits(tpl(), { domain: "acme.com", ai_depth: "quick" });
+    const deep = estimateCredits(tpl(), { domain: "acme.com", ai_depth: "deep" });
+    // quick still pays for the extraction call and the pages, just not synthesis
+    expect(quick.credits).toBe(standard.credits - 2 * 5);
+    // deep buys a bigger token budget, not more provider calls — the weights
+    // count calls, not tokens
+    expect(deep.credits).toBe(standard.credits);
+  });
+
+  it("counts the visibility brief's own domain via credit_cost.units_extra", () => {
+    const t = tpl({
+      input_schema: { fields: [{ name: "competitors", kind: "domain_list" }] },
+      credit_cost: { base: 2, per_page: 1, pages_per_unit: 3, units_extra: 1 },
+    });
+    expect(countUnits(t, { competitors: ["a.com", "b.com"] })).toBe(3);
+    expect(countUnits(t, { competitors: [] })).toBe(2);
   });
 });
 

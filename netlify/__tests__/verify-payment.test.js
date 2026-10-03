@@ -358,3 +358,126 @@ describe("verify-payment Stripe (C-19)", () => {
     expect(r.statusCode).toBe(405);
   });
 });
+
+// ── C-20: the paid-upgrade write path (JWT stamping + activation + ledger) ──
+// These tests give the function a configured Supabase and prove the exact
+// server-side writes a SIGNED-IN buyer's verify must perform — the writes the
+// client cannot make itself (subscriptions is RLS-revoked, entitlements is
+// service-key-only). Auth is mocked at the supabase-js boundary (repo
+// convention, see supabaseServerClient.test.js); the REST/RPC layer runs
+// against a routing fetch stub.
+const mockGetUser = vi.hoisted(() => vi.fn());
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: vi.fn(() => ({ auth: { getUser: mockGetUser } })),
+}));
+
+describe("verify-payment Razorpay (C-20) — signed-in activation path", () => {
+  const calls = [];
+  let fetchRouter;
+
+  beforeEach(() => {
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_ANON_KEY;
+    delete process.env.SUPABASE_SERVICE_KEY;
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "anon-key";
+    process.env.SUPABASE_SERVICE_KEY = "service-key";
+    calls.length = 0;
+    mockGetUser.mockReset();
+    fetchRouter = vi.fn(async (url, opts = {}) => {
+      const u = String(url);
+      const method = (opts.method || "GET").toUpperCase();
+      calls.push({ u, method, opts });
+      const json = (obj, status = 200) =>
+        ({ ok: status >= 200 && status < 300, status, json: async () => obj, text: async () => JSON.stringify(obj) });
+      if (u.includes("/rest/v1/invoice_drafts")) {
+        // Draft read: user_id reflects whether the stamp PATCH has landed yet.
+        if (method === "GET") {
+          const stamped = calls.some((c) => c.method === "PATCH" && c.u.includes("invoice_drafts") && JSON.parse(c.opts.body)?.user_id);
+          return json([{ order_id: "order_1", user_id: stamped ? "user-1" : null }]);
+        }
+        return json({}, 204);
+      }
+      if (u.includes("/rest/v1/rpc/issue_invoice")) {
+        const stamped = calls.some((c) => c.method === "PATCH" && c.u.includes("invoice_drafts") && JSON.parse(c.opts.body)?.user_id);
+        return json({
+          invoice: { id: "inv-1", order_id: "order_1", user_id: stamped ? "user-1" : null, plan_id: "pro", billing_period: "monthly", email: null },
+          created: true,
+        });
+      }
+      if (u.includes("/rest/v1/entitlements")) return json([]);
+      if (u.includes("/rest/v1/scheduled_tasks")) return json({}, 204);
+      if (u.includes("/rest/v1/subscriptions")) return json({}, 201);
+      if (u.includes("/rest/v1/payment_events")) return json([]);
+      throw new Error(`unexpected fetch ${method} ${u}`);
+    });
+    vi.stubGlobal("fetch", fetchRouter);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_ANON_KEY;
+    delete process.env.SUPABASE_SERVICE_KEY;
+  });
+
+  it("a signed-in verify stamps the draft, activates entitlements and writes the ledger", async () => {
+    process.env.RAZORPAY_KEY_ID = "rzp_test";
+    process.env.RAZORPAY_KEY_SECRET = "rzp_secret";
+    mockGetUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    const orderId = "order_1", paymentId = "pay_1";
+    rzpPaymentsFetch.mockResolvedValueOnce({ id: paymentId, order_id: orderId, amount: 10000, currency: "INR", status: "captured" });
+    rzpOrdersFetch.mockResolvedValueOnce({ id: orderId, amount: 10000, currency: "INR" });
+    const h = await loadHandler();
+    const r = await h({
+      httpMethod: "POST",
+      headers: { Authorization: "Bearer good.jwt" },
+      body: JSON.stringify({
+        provider: "razorpay", orderId, paymentId, signature: rzpSig(orderId, paymentId, "rzp_secret"),
+        planId: "pro", sessionId: "sess_abc", billingPeriod: "monthly",
+      }),
+    });
+    expect(r.statusCode).toBe(200);
+    expect(JSON.parse(r.body).verified).toBe(true);
+
+    // 1. the draft got the user stamped from the JWT (before finalize)
+    const stamp = calls.find((c) => c.method === "PATCH" && c.u.includes("invoice_drafts") && JSON.parse(c.opts.body)?.user_id);
+    expect(stamp).toBeTruthy();
+    expect(JSON.parse(stamp.opts.body)).toEqual({ user_id: "user-1" });
+    // 2. entitlements were activated server-side (POST, not just a GET)
+    const entPost = calls.find((c) => c.method === "POST" && c.u.includes("/rest/v1/entitlements"));
+    expect(entPost).toBeTruthy();
+    expect(JSON.parse(entPost.opts.body).plan_id).toBe("pro");
+    // 3. subscriptions + payment event written with the service key (webhook parity)
+    const subPost = calls.find((c) => c.method === "POST" && c.u.includes("/rest/v1/subscriptions"));
+    expect(subPost).toBeTruthy();
+    expect(JSON.parse(subPost.opts.body)).toMatchObject({ session_id: "sess_abc", plan_id: "pro", provider: "razorpay" });
+    const evPost = calls.find((c) => c.method === "POST" && c.u.includes("/rest/v1/payment_events"));
+    expect(evPost).toBeTruthy();
+    expect(JSON.parse(evPost.opts.body)).toMatchObject({ provider_event_id: paymentId, event_type: "payment.captured" });
+  });
+
+  it("a guest verify (no valid JWT) writes the ledger but never touches entitlements", async () => {
+    process.env.RAZORPAY_KEY_ID = "rzp_test";
+    process.env.RAZORPAY_KEY_SECRET = "rzp_secret";
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: { message: "invalid session" } });
+    const orderId = "order_1", paymentId = "pay_1";
+    rzpPaymentsFetch.mockResolvedValueOnce({ id: paymentId, order_id: orderId, amount: 10000, currency: "INR", status: "captured" });
+    rzpOrdersFetch.mockResolvedValueOnce({ id: orderId, amount: 10000, currency: "INR" });
+    const h = await loadHandler();
+    const r = await h({
+      httpMethod: "POST",
+      body: JSON.stringify({
+        provider: "razorpay", orderId, paymentId, signature: rzpSig(orderId, paymentId, "rzp_secret"),
+        planId: "pro", sessionId: "sess_abc", billingPeriod: "monthly",
+      }),
+    });
+    expect(r.statusCode).toBe(200);
+    expect(JSON.parse(r.body).verified).toBe(true);
+    // No draft user-stamp (no valid JWT), no entitlements write — activation happens on claim.
+    expect(calls.some((c) => c.method === "PATCH" && c.u.includes("invoice_drafts") && JSON.parse(c.opts.body)?.user_id)).toBe(false);
+    expect(calls.some((c) => c.method === "POST" && c.u.includes("/rest/v1/entitlements"))).toBe(false);
+    // The subscriptions row still lands so the sign-in claim path can merge it.
+    expect(calls.some((c) => c.method === "POST" && c.u.includes("/rest/v1/subscriptions"))).toBe(true);
+  });
+});

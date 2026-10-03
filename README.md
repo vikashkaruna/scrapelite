@@ -317,6 +317,27 @@ npm run preview
 
 > **Note:** Vite reads `.env` once at startup. After changing any `VITE_*` variable, restart the dev server.
 
+### Testing & deployment quick commands
+
+```bash
+npm run test:all            # THE gate: readiness, unit + contract + integration
+                            # + system, deployment config, db, dependency-vuln +
+                            # open-defect gates, build, prerender, security,
+                            # Playwright smoke
+npm run test:all -- --quick # pre-push subset (no e2e smoke)
+npm run verify:supabase -- staging   # Supabase URL/anon-key pair check (offline
+                                     # ref match + LIVE rotation probe)
+```
+
+Deploy quick commands per environment (local Docker, GCP staging, prod —
+including incremental variants and guarded teardown) live in
+[`deployment/README.md`](deployment/README.md#environment-quick-commands-local--staging--prod)
+and the per-environment runbooks under
+[`docs/plans/gcp-docker-migration/`](docs/plans/gcp-docker-migration/):
+**10-LOCAL-DEPLOY-RUNBOOK.md**, **08-STAGING-DEPLOY-RUNBOOK.md**,
+**11-PROD-DEPLOY-RUNBOOK.md** (prod includes the guarded `down.sh prod` and the
+GitHub-trigger direction).
+
 ---
 
 ## 9. Environment Variables

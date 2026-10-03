@@ -41,6 +41,66 @@ describe("initiateCheckout — demo mode (U-59)", () => {
   });
 });
 
+describe("initiateRazorpayCheckout — verify failure settles the promise (C-20a)", () => {
+  // The Razorpay SDK invokes the async success handler WITHOUT awaiting it.
+  // A verify response that is not JSON used to throw .json() outside every
+  // catch — the handler died, the outer promise never settled, and the
+  // processing modal spun forever. Every failure path must reject instead.
+  it("a non-JSON verify response rejects with a recoverable error, not a hang", async () => {
+    vi.stubEnv("VITE_RAZORPAY_KEY_ID", "rzp_test_key");
+    vi.stubEnv("VITE_STRIPE_PUBLISHABLE_KEY", "");
+    vi.stubEnv("VITE_PAYMENT_PROVIDER", "razorpay");
+
+    window.Razorpay = class {
+      constructor(opts) {
+        this.options = opts;
+      }
+      on() {}
+      open() {
+        // Fire the success callback the way the real SDK does — no await.
+        const handler = this.options.handler;
+        void Promise.resolve().then(() => handler({
+          razorpay_order_id: "order_1",
+          razorpay_payment_id: "pay_1",
+          razorpay_signature: "sig".repeat(20),
+        }));
+      }
+    };
+
+    // create-checkout → real order; verify-payment → gateway HTML (non-JSON)
+    vi.stubGlobal("fetch", vi.fn(async (url) => {
+      if (String(url).includes("/create-checkout")) {
+        return { ok: true, status: 200, json: async () => ({ status: "ok", orderId: "order_1", amount: 10000, currency: "INR" }) };
+      }
+      if (String(url).includes("/verify-payment")) {
+        return { ok: false, status: 502, json: async () => { throw new Error("Unexpected token <"); } };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+
+    vi.resetModules();
+    const { initiateCheckout: freshInitiate } = await import("./paymentService.js");
+    const originalCtor = window.Razorpay;
+    try {
+      const p = freshInitiate({ planId: "pro", currency: "INR", billingPeriod: "monthly", sessionId: "sess_1" });
+      // Attach handlers synchronously (as BillingProvider does) so the SDK's
+      // async success callback never observes an unhandled rejection, then
+      // settle on whichever outcome the promise produces.
+      const outcome = await p.then(
+        () => ({ rejected: null }),
+        (e) => ({ rejected: e }),
+      );
+      expect(outcome.rejected).toBeTruthy();
+      expect(outcome.rejected.message).toMatch(/unexpected response/i);
+      expect(outcome.rejected.message).toMatch(/Payment ID: pay_1/);
+    } finally {
+      window.Razorpay = originalCtor;
+      vi.unstubAllGlobals();
+      delete window.Razorpay;
+    }
+  });
+});
+
 describe("readPendingPayment / savePendingPayment / clearPendingPayment (U-61)", () => {
   it("round-trips a payment record", () => {
     savePendingPayment({ planId: "pro", provider: "stripe" });

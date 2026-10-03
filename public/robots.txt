@@ -183,5 +183,60 @@ Disallow: /api/
 Disallow: /admin
 Disallow: /admin/
 
+User-agent: Bingbot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: DuckDuckBot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: Baiduspider
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: YandexBot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: ia_archiver
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /account
+Disallow: /preview
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+
+User-agent: Diffbot
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /admin/
+
 Sitemap: https://datiq.app/sitemap.xml
 

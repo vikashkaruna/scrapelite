@@ -252,9 +252,15 @@ describe("I-39 — Account: Integrations rich status (2026-08-11)", () => {
     });
     render(<Tree />);
     // Wait for the status fetch to land and the row to render.
-    await waitFor(() => {
-      expect(screen.getByText(/secret…abcd/)).toBeInTheDocument();
-    });
+    // 5s wait: under the pre-push gate's full-suite load this render has
+    // flaked past the 1s default even though the mocked fetch resolves
+    // immediately (event-loop starvation, not a product bug).
+    await waitFor(
+      () => {
+        expect(screen.getByText(/secret…abcd/)).toBeInTheDocument();
+      },
+      { timeout: 5000 }
+    );
     // The Notion row should show database ID, title column, and column count.
     expect(screen.getByText(/abcdef0123…6789/i)).toBeInTheDocument();
     expect(screen.getByText(/^Name$/)).toBeInTheDocument();

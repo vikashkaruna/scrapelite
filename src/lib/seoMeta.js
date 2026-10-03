@@ -152,11 +152,47 @@ function applyBreadcrumb(url) {
  * /admin/*, the sitemap has none of those URLs, and robots.txt disallows
  * them for every user-agent.
  */
+const BOT_NAMES = [
+  "googlebot", "bingbot", "slurp", "duckduckbot", "baiduspider", "yandex",
+  "gptbot", "chatgpt-user", "claudebot", "anthropic-ai",
+  "perplexitybot", "cohere-ai", "ccbot", "applebot",
+  "meta-externalagent", "google-extended"
+];
+
+/**
+ * Block search engines and AI crawlers from indexing, following, caching or
+ * generating a snippet of the current page.
+ *
+ * Applied to /admin/* — see AdminLayout.jsx. The combination of:
+ *   - <meta name="robots" content="noindex, nofollow, ...">
+ *   - search-engine specific bot directives (googlebot, bingbot, etc.)
+ *   - AI/GEO/AEO bot directives (gptbot, claudebot, perplexitybot, etc.)
+ *   - removal of structured data (application/ld+json and breadcrumbs)
+ *   - neutral og:title / og:description / og:url / twitter:* overrides
+ *   - canonical link removed
+ *   - document.title neutralised
+ * covers the path where a crawler bypasses robots.txt, ignores the meta
+ * robots tag, ignores the X-Robots-Tag HTTP header, and tries to extract a
+ * snippet anyway. There is no public page in the SPA that links to
+ * /admin/*, the sitemap has none of those URLs, and robots.txt disallows
+ * them for every user-agent.
+ */
 export function setNoIndex() {
   if (typeof document === "undefined") return;
-  // 1. The decisive signal.
+  // 1. The decisive signal for standard crawlers.
   setMetaTag("name", "robots", "noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, noydir");
-  // 2. Neutralise every tag a snippet could leak from. Keep the public
+  // 2. Specific search engine bots and AI / GEO / AEO crawlers.
+  setMetaTag("name", "googlebot", "noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate");
+  setMetaTag("name", "bingbot", "noindex, nofollow, noarchive, nosnippet, noimageindex");
+  setMetaTag("name", "slurp", "noindex, nofollow, noarchive, nosnippet");
+  setMetaTag("name", "duckduckbot", "noindex, nofollow");
+  setMetaTag("name", "baiduspider", "noindex, nofollow");
+  setMetaTag("name", "yandex", "noindex, nofollow, noarchive");
+  for (const bot of ["gptbot", "chatgpt-user", "claudebot", "anthropic-ai", "perplexitybot", "cohere-ai", "ccbot", "applebot", "meta-externalagent", "google-extended"]) {
+    setMetaTag("name", bot, "noindex, nofollow");
+  }
+
+  // 3. Neutralise every tag a snippet could leak from. Keep the public
   //    DatIQ brand so the page is not obviously broken, but say nothing
   //    about the actual admin content.
   document.title = NOINDEX_NEUTRAL_TITLE;
@@ -170,15 +206,19 @@ export function setNoIndex() {
   setMetaTag("name", "twitter:title", NOINDEX_NEUTRAL_TITLE);
   setMetaTag("name", "twitter:description", NOINDEX_NEUTRAL_DESC);
   removeMetaTag("name", "twitter:image");
-  // 3. Drop the canonical link — without it, crawlers must fall back to
+
+  // 4. Drop the canonical link — without it, crawlers must fall back to
   //    the URL in the request, which is /admin/*, and X-Robots-Tag
   //    forbids indexing that anyway.
   removeMetaTag("rel", "canonical");
-  // Some crawlers also accept a rel="canonical" on a <link> element.
   const linkCanon = document.head.querySelector('link[rel="canonical"]');
   if (linkCanon) linkCanon.remove();
-  // (setLinkRel is now used by setMeta for the canonical — the old
-  // unused-symbol suppression that lived here is gone.)
+
+  // 5. Strip any JSON-LD / schema structured data so GEO/AEO bots extract no entities
+  const ldScripts = document.head.querySelectorAll('script[type="application/ld+json"]');
+  for (const s of ldScripts) s.remove();
+  const breadcrumb = document.head.querySelector('script[data-datiq-breadcrumb]');
+  if (breadcrumb) breadcrumb.remove();
 }
 
 /**
@@ -193,6 +233,9 @@ export function setPublicDefaultMeta() {
   if (typeof document === "undefined") return;
   setMetaTag("name", "robots", "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1");
   setLinkRel("canonical", "https://datiq.app/");
+  for (const bot of BOT_NAMES) {
+    removeMetaTag("name", bot);
+  }
   // The rest of the public tags (title, description, og:*, twitter:*) get
   // reset by setMeta() on the public page that mounts next; we only own
   // the ones we set aggressively in setNoIndex().
@@ -208,4 +251,7 @@ export function _clearMetaForTests() {
   }
   removeMetaTag("name", "robots");
   removeMetaTag("rel", "canonical");
+  for (const bot of BOT_NAMES) {
+    removeMetaTag("name", bot);
+  }
 }

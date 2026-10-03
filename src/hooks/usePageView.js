@@ -40,6 +40,23 @@ export function usePageView() {
   const lastGooglePath = useRef(null);
 
   useEffect(() => {
+    if (isPrivatePath(location.pathname)) {
+      try {
+        if (typeof window !== "undefined") {
+          window.__datiqSuppressAdminTrackers?.();
+          window.posthog?.stopSessionRecording?.();
+          window.posthog?.opt_out_capturing?.();
+        }
+      } catch { /* ignore */ }
+      return;
+    } else {
+      try {
+        if (typeof window !== "undefined") {
+          window.__datiqResumeTrackers?.();
+        }
+      } catch { /* ignore */ }
+    }
+
     const path = `${location.pathname}${location.search || ""}`;
     if (path === lastPath.current) return;
 
@@ -55,8 +72,6 @@ export function usePageView() {
     //
     // Recording the send when it actually happens makes a cancelled schedule
     // harmless — the next run simply schedules again.
-
-    if (isPrivatePath(location.pathname)) return;
 
     // A macrotask, NOT requestAnimationFrame.
     //
@@ -96,6 +111,7 @@ export function usePageView() {
     }
 
     function sendGoogle(details = {}) {
+      if (isPrivatePath(location.pathname) || isPrivatePath(path)) return;
       const consent = window.__datiqConsent;
       // In production the bridge is present and strict-gates the tag. The
       // fallback keeps this hook harmless in tests/builds without analytics.js.

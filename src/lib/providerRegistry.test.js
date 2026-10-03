@@ -9,6 +9,7 @@ import {
   PROVIDERS, PROVIDER_KEYS, AI_PROVIDERS, SCRAPE_PROVIDERS_LIST, INTEL_PROVIDERS,
   FUNCTION_AREAS, FUNCTION_AREA_KEYS, AI_AREA_KEYS, MODEL_TIER, PROVIDER_KIND,
   areasForProvider, keyEnvNames, readKey, defaultModel,
+  RETIRED_GEMINI_MODELS, isRetiredGeminiModel,
 } from "./providerRegistry.js";
 import { CAPABILITY_SCHEMAS } from "./extractionSchemas.js";
 import { RELATED_PAGE_HINTS, QUICK_ACTION_BY_KEY } from "./extractionPresets.js";
@@ -99,9 +100,23 @@ describe("function areas", () => {
 describe("key + model resolution", () => {
   it("reads the primary env var, then the fallback, and never leaks a default", () => {
     expect(readKey("gemini", { GEMINI_API_KEY: "g" })).toBe("g");
-    expect(readKey("anthropic", { VITE_AI_API_KEY: "legacy" })).toBe("legacy");
-    expect(readKey("anthropic", { AI_API_KEY: "primary", VITE_AI_API_KEY: "legacy" })).toBe("primary");
+    expect(readKey("anthropic", { ANTHROPIC_API_KEY: "explicit" })).toBe("explicit");
+    // AI_API_KEY is the LEGACY name, kept so staging/production keep resolving
+    // the credential they resolve today — reordering the list must never double
+    // as a key rotation.
+    expect(readKey("anthropic", { AI_API_KEY: "legacy" })).toBe("legacy");
+    expect(readKey("anthropic", { ANTHROPIC_API_KEY: "explicit", AI_API_KEY: "legacy" })).toBe("explicit");
     expect(readKey("gemini", {})).toBe("");
+  });
+
+  it("a VITE_-prefixed name is never a server key source", () => {
+    // 🔴 This assertion used to be the OPPOSITE — the suite pinned
+    // `VITE_AI_API_KEY` as the anthropic fallback, so the "fix" that put a live
+    // `sk-ant-api03-…` in the public browser bundle was, by the repo's own
+    // tests, correct behaviour. A `VITE_` name is inlined into the shipped JS
+    // by definition, so it cannot be a server credential.
+    expect(readKey("anthropic", { VITE_AI_API_KEY: "sk-ant-browser" })).toBe("");
+    expect(keyEnvNames("anthropic")).not.toContain("VITE_AI_API_KEY");
   });
 
   it("a single *_MODEL env var pins BOTH tiers", () => {
@@ -113,9 +128,108 @@ describe("key + model resolution", () => {
     expect(defaultModel("gemini", MODEL_TIER.DEEP, env)).toBe("gemini-pinned");
   });
 
+  it("tier-specific env vars override fast and deep individually", () => {
+    const env = {
+      GEMINI_MODEL_FAST: "gemini-custom-fast",
+      GEMINI_MODEL_DEEP: "gemini-custom-deep",
+    };
+    expect(defaultModel("gemini", MODEL_TIER.FAST, env)).toBe("gemini-custom-fast");
+    expect(defaultModel("gemini", MODEL_TIER.DEEP, env)).toBe("gemini-custom-deep");
+  });
+
+  it("tier-specific env vars take precedence over generic GEMINI_MODEL", () => {
+    const env = {
+      GEMINI_MODEL: "gemini-generic",
+      GEMINI_MODEL_FAST: "gemini-specific-fast",
+    };
+    expect(defaultModel("gemini", MODEL_TIER.FAST, env)).toBe("gemini-specific-fast");
+    expect(defaultModel("gemini", MODEL_TIER.DEEP, env)).toBe("gemini-generic");
+  });
+
   it("falls back to the registry tier defaults with no env", () => {
     expect(defaultModel("gemini", MODEL_TIER.FAST, {})).toBe(PROVIDERS.gemini.models.fast);
     expect(defaultModel("gemini", MODEL_TIER.DEEP, {})).toBe(PROVIDERS.gemini.models.deep);
+  });
+
+  it("pins the owner-set model defaults (2026-09-30)", () => {
+    // These encode the operator's tier decision, not just structure: OpenAI
+    // GPT-6 Luna (efficient GPT-6 for extraction/enrichment + fast jobs),
+    // Claude Haiku 4.5 (high-speed) / Sonnet 5 (everyday professional), and
+    // Gemini 3.8 Flash (speed & grounding) with Pro for deep synthesis.
+    expect(PROVIDERS.openai.models.fast).toBe("gpt-6-luna");
+    expect(PROVIDERS.openai.models.deep).toBe("gpt-6-luna");
+    expect(PROVIDERS.anthropic.models.fast).toBe("claude-haiku-4-5-20251001");
+    expect(PROVIDERS.anthropic.models.deep).toBe("claude-sonnet-5");
+    expect(PROVIDERS.gemini.models.fast).toBe("gemini-3.8-flash");
+    expect(PROVIDERS.gemini.models.deep).toBe("gemini-pro-latest");
+    expect(PROVIDERS.gemini.models.catalogue).toContain("gemini-3.5-flash-lite");
+  });
+
+  it("every AI provider exposes tier-specific env names (plus its legacy generic)", () => {
+    expect(PROVIDERS.openai.modelFastEnv).toBe("OPENAI_MODEL_FAST");
+    expect(PROVIDERS.openai.modelDeepEnv).toBe("OPENAI_MODEL_DEEP");
+    expect(PROVIDERS.openai.modelEnv).toBe("OPENAI_MODEL");
+    expect(PROVIDERS.anthropic.modelFastEnv).toBe("ANTHROPIC_MODEL_FAST");
+    expect(PROVIDERS.anthropic.modelDeepEnv).toBe("ANTHROPIC_MODEL_DEEP");
+    expect(PROVIDERS.anthropic.modelEnv).toBe("AI_MODEL"); // legacy, still honoured
+    expect(PROVIDERS.perplexity.modelFastEnv).toBe("PERPLEXITY_MODEL_FAST");
+    expect(PROVIDERS.perplexity.modelDeepEnv).toBe("PERPLEXITY_MODEL_DEEP");
+    expect(PROVIDERS.gemini.modelFastEnv).toBe("GEMINI_MODEL_FAST");
+    expect(PROVIDERS.gemini.modelDeepEnv).toBe("GEMINI_MODEL_DEEP");
+  });
+
+  it("OpenAI and Anthropic tier env vars override fast and deep individually", () => {
+    const env = {
+      OPENAI_MODEL_FAST: "oai-fast",
+      OPENAI_MODEL_DEEP: "oai-deep",
+      ANTHROPIC_MODEL_FAST: "ant-fast",
+      ANTHROPIC_MODEL_DEEP: "ant-deep",
+    };
+    expect(defaultModel("openai", MODEL_TIER.FAST, env)).toBe("oai-fast");
+    expect(defaultModel("openai", MODEL_TIER.DEEP, env)).toBe("oai-deep");
+    expect(defaultModel("anthropic", MODEL_TIER.FAST, env)).toBe("ant-fast");
+    expect(defaultModel("anthropic", MODEL_TIER.DEEP, env)).toBe("ant-deep");
+  });
+
+  it("the legacy AI_MODEL pin still covers both Anthropic tiers", () => {
+    const env = { AI_MODEL: "claude-pinned" };
+    expect(defaultModel("anthropic", MODEL_TIER.FAST, env)).toBe("claude-pinned");
+    expect(defaultModel("anthropic", MODEL_TIER.DEEP, env)).toBe("claude-pinned");
+  });
+
+  it("every AI area's chain follows the owner-set priority: openai → gemini → anthropic", () => {
+    for (const a of AI_AREA_KEYS) {
+      if (a === "citations") continue; // answer engines (perplexity → gemini), not the model chain
+      expect(FUNCTION_AREAS[a].defaultOrder, a).toEqual(["openai", "gemini", "anthropic"]);
+    }
+  });
+
+  it("classification ships a per-area lightweight-automation default for Gemini", () => {
+    // "Lightweight automation" (link tagging, bulk enrichment) runs the fast
+    // tier, but Flash-Lite is the honest price/quality point for it.
+    expect(defaultModel("gemini", MODEL_TIER.FAST, {}, "classification")).toBe("gemini-3.5-flash-lite");
+    // Areas without a defaultModels entry ride the registry pin.
+    expect(defaultModel("gemini", MODEL_TIER.FAST, {}, "discoverability")).toBe("gemini-3.8-flash");
+    expect(defaultModel("openai", MODEL_TIER.FAST, {}, "classification")).toBe("gpt-6-luna");
+  });
+
+  it("env vars outrank the area default, which outranks the registry pin", () => {
+    const env = { GEMINI_MODEL_FAST: "gemini-env-fast" };
+    expect(defaultModel("gemini", MODEL_TIER.FAST, env, "classification")).toBe("gemini-env-fast");
+    expect(defaultModel("gemini", MODEL_TIER.FAST, {}, "classification")).toBe("gemini-3.5-flash-lite");
+    expect(defaultModel("gemini", MODEL_TIER.FAST, {})).toBe("gemini-3.8-flash");
+  });
+
+  it("identifies retired Gemini models accurately", () => {
+    for (const retired of RETIRED_GEMINI_MODELS) {
+      expect(isRetiredGeminiModel(retired)).toBe(true);
+    }
+    expect(isRetiredGeminiModel("gemini-2.0-flash")).toBe(true);
+    expect(isRetiredGeminiModel("gemini-2.5-pro")).toBe(true);
+    expect(isRetiredGeminiModel("gemini-1.5-flash")).toBe(false);
+    expect(isRetiredGeminiModel("gemini-3.8-flash")).toBe(false);
+    expect(isRetiredGeminiModel("gemini-pro-latest")).toBe(false);
+    expect(isRetiredGeminiModel("gemini-flash-latest")).toBe(false);
   });
 });
 

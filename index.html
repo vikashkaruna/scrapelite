@@ -31,12 +31,72 @@
          can run. See public/analytics.js. -->
     <script src="/analytics.js"></script>
 
-    <!-- Privacy-friendly analytics by Plausible -->
-    <script async src="https://plausible.io/js/pa-Eg7Xhgb7lalkDtpfmY-qf.js"></script>
+    <!-- Privacy-friendly analytics by Plausible (strictly suppressed on admin screens) -->
     <script>
-      window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-      plausible.init()
+      (function() {
+        var path = (typeof window !== "undefined" && window.location && window.location.pathname) || "";
+        var isAdmin = path === "/admin" || path.indexOf("/admin/") === 0;
+
+        // Universal Network Shield: drop beacon/fetch/xhr to analytics domains on /admin or with /admin payload
+        if (typeof window !== "undefined") {
+          var TRACKER_HOSTS = ["plausible.io", "google-analytics.com", "analytics.google.com", "googletagmanager.com", "posthog.com", "i.posthog.com"];
+          var isTrackerTarget = function(url) {
+            if (!url) return false;
+            var s = String(url).toLowerCase();
+            return TRACKER_HOSTS.some(function(h) { return s.indexOf(h) !== -1; });
+          };
+          var containsAdmin = function(val) {
+            if (!val) return false;
+            if (typeof val === "string") return val.indexOf("/admin") !== -1;
+            if (typeof val === "object") {
+              try { return JSON.stringify(val).indexOf("/admin") !== -1; } catch (e) { return false; }
+            }
+            return false;
+          };
+
+          if (navigator && navigator.sendBeacon) {
+            var origBeacon = navigator.sendBeacon.bind(navigator);
+            navigator.sendBeacon = function(url, data) {
+              var curPath = (window.location && window.location.pathname) || "";
+              if (curPath.indexOf("/admin") === 0 || (isTrackerTarget(url) && (curPath.indexOf("/admin") === 0 || containsAdmin(data)))) {
+                return true;
+              }
+              return origBeacon(url, data);
+            };
+          }
+
+          if (window.fetch) {
+            var origFetch = window.fetch;
+            window.fetch = function(input, init) {
+              var url = typeof input === "string" ? input : (input && input.url ? input.url : "");
+              var curPath = (window.location && window.location.pathname) || "";
+              if (isTrackerTarget(url) && (curPath.indexOf("/admin") === 0 || containsAdmin(init && init.body))) {
+                return Promise.resolve(new Response(null, { status: 204, statusText: "No Content" }));
+              }
+              return origFetch.apply(this, arguments);
+            };
+          }
+        }
+
+        window.plausible = window.plausible || function() {
+          var curPath = (window.location && window.location.pathname) || "";
+          if (curPath.indexOf("/admin") === 0) return;
+          for (var i = 0; i < arguments.length; i++) {
+            var a = arguments[i];
+            if (typeof a === "string" && a.indexOf("/admin") !== -1) return;
+            if (a && typeof a === "object" && typeof a.u === "string" && a.u.indexOf("/admin") !== -1) return;
+          }
+          (window.plausible.q = window.plausible.q || []).push(arguments);
+        };
+        window.plausible.init = window.plausible.init || function(i) {
+          var curPath = (window.location && window.location.pathname) || "";
+          if (curPath.indexOf("/admin") === 0) return;
+          window.plausible.o = i || {};
+        };
+        window.plausible.init();
+      })();
     </script>
+    <script async src="https://plausible.io/js/pa-Eg7Xhgb7lalkDtpfmY-qf.js"></script>
 
     <!-- Supply the DatIQ mark in every browser-native format. The SVG keeps
          desktop tabs crisp, while ICO and PNG cover legacy/browser chrome and
@@ -94,14 +154,33 @@
               }
               el.setAttribute("content", content);
             };
-            setMeta("name", "robots", "noindex, nofollow, noarchive, nosnippet, noimageindex");
+            setMeta("name", "robots", "noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, noydir");
+            setMeta("name", "googlebot", "noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate");
+            setMeta("name", "bingbot", "noindex, nofollow, noarchive, nosnippet, noimageindex");
+            setMeta("name", "slurp", "noindex, nofollow, noarchive, nosnippet");
+            setMeta("name", "duckduckbot", "noindex, nofollow");
+            setMeta("name", "baiduspider", "noindex, nofollow");
+            setMeta("name", "yandex", "noindex, nofollow, noarchive");
+            var aebots = ["gptbot", "chatgpt-user", "claudebot", "anthropic-ai", "perplexitybot", "cohere-ai", "ccbot", "applebot", "meta-externalagent", "google-extended"];
+            for (var b = 0; b < aebots.length; b++) {
+              setMeta("name", aebots[b], "noindex, nofollow");
+            }
             setMeta("property", "og:title", "DatIQ");
             setMeta("property", "og:description", "Restricted area.");
             setMeta("property", "og:url", "");
             setMeta("name", "description", "Restricted area.");
+            setMeta("name", "twitter:title", "DatIQ");
+            setMeta("name", "twitter:description", "Restricted area.");
             var link = document.head.querySelector('link[rel="canonical"]');
             if (link) link.remove();
             document.title = "DatIQ";
+
+            if (path === "/admin" || path.indexOf("/admin/") === 0) {
+              var ldScripts = document.head.querySelectorAll('script[type="application/ld+json"]');
+              for (var i = 0; i < ldScripts.length; i++) {
+                ldScripts[i].remove();
+              }
+            }
           }
         } catch (e) { /* no-op */ }
       })();
