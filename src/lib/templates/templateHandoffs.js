@@ -80,7 +80,7 @@ export const HANDOFF = {
     to: "/schedules",
     module: "Schedules",
     label: "Set up the monitor",
-    why: "Monitoring runs in Schedules: each weekly audit uses your audit allowance and adds a point to the trend.",
+    why: "Monitoring runs in Schedules: each weekly audit spends credits (19 per run) and adds a point to the trend.",
     state: (input) => ({
       ...back("weekly_visibility_monitor", "Weekly AI Visibility Monitor"),
       openEditor: true,

@@ -532,7 +532,7 @@ Discoverability scores describe how findable and extractable a page is **today**
 
 What you get instead is a reproducible measurement, the evidence behind it, and a list of specific things to change — so that when the outcome does move, you know what moved it.
 
-Free accounts get three audits a month. Paste a URL and see where your page actually stands.
+Free accounts start with 500 credits — enough for roughly 26 audits. Paste a URL and see where your page actually stands.
     `.trim(),
   },
   {
@@ -768,7 +768,7 @@ The result is a clean JSON object with plan names, prices, billing periods, and 
 
 ## What's next
 
-DatIQ's scheduled monitoring feature (coming on Pro plan) will let you set a URL and get an alert whenever pricing changes. Perfect for sales teams who want to know the moment a competitor drops their price.
+DatIQ's scheduled monitoring feature (available on every plan, with more monitors on higher plans) lets you set a URL and get an alert whenever pricing changes. Perfect for sales teams who want to know the moment a competitor drops their price.
     `.trim(),
   },
   {

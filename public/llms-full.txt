@@ -157,9 +157,12 @@ Re-auditing compares against the previous run and reports resolved, remaining
 and newly introduced issues. A delta is only reported when both audits measured
 the same signal.
 
-Audits carry their own monthly allowance, separate from extraction credits:
-Free 3, Go 10, Select 25, Pro 100, Business 500, Agency 2,000. Scheduled
-monitoring requires Pro or above; competitive benchmarks require Select or above.
+Audits spend from the same credit pool as everything else — a standard run is
+19 credits. Scheduled audits and prompt monitors use monitor slots (Free 1, Go 2,
+Select 5, Pro 10, Business 25, Agency 100); competitive benchmarks and the
+intelligence modules (business truth record, entity graph, local & directory,
+schema & trust, Search-to-Outcome, Enterprise Discoverability OS) require Select
+or above.
 
 DatIQ makes no claim that a score predicts rankings, citations or traffic.
 

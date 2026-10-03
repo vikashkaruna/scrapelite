@@ -775,8 +775,7 @@ workflow runs ended up with no export at all until it was noticed.
 | **Email** | Send selected extractions to yourself, as a real file attachment. |
 | **Copy to clipboard** | Markdown, JSON or CSV, straight onto the clipboard. |
 
-Some formats need a paid plan — the menu shows which, and the check runs again when you click, so what
-the menu offers and what you are actually allowed are always the same answer.
+Every format — including email — is available on every plan, Free included: an export is your own data, so it is never a paid feature. (Importing a CSV of URLs is the paid one.)
 
 ### Push to your tools
 
@@ -998,7 +997,7 @@ blocks the fix list generates — so it is usable on its own.
 
 ### Watching a page
 
-On Pro and above you can put a page on a schedule — daily, weekly or monthly.
+On every plan you can put a page on a schedule — daily, weekly or monthly. Free includes 1 scheduled monitor, Go 2, and higher plans more.
 DatIQ re-audits it in the background and emails you only when something material
 moves: the overall score past a threshold you set, or a new critical issue.
 
@@ -1105,7 +1104,7 @@ sales.
 
 Two different things, and the difference matters:
 
-- **Credit packs** buy credits outright — 750 for $5 / ₹490, 2,000 for
+- **Credit packs** buy credits outright — 750 for $5 / ₹490, 3,000 for
   $19 / ₹1,849, 15,000 for $89 / ₹8,749. They work on any plan including Free,
   and **they never expire**.
 - **Capacity add-ons** buy the *right* to do something: a Scheduled Monitor slot
