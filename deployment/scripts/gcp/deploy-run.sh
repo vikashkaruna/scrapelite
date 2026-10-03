@@ -141,13 +141,16 @@ require_image() {
   # the image is missing. The old check threw gcloud's stderr away, so a CI
   # failure said "image not found" about an image that was in fact present
   # (2026-10-03, first gate-driven staging deploy) with no way to see why.
+  # `images describe` ALSO calls Container Analysis (containeranalysis.occurrences.list),
+  # which the CI service account does not (and should not) hold — it reported a
+  # present image as missing (2026-10-03). `images list --include-tags` needs only
+  # Artifact Registry read, which artifactregistry.writer already carries.
+  local repo="${img%:*}" tag="${img##*:}" found=""
   for attempt in 1 2 3 4 5; do
-    if err="$(gcloud artifacts docker images describe "$img" --project="$GCP_PROJECT_ID" 2>&1 >/dev/null)"; then
+    if found="$(gcloud artifacts docker images list "$repo" --include-tags --filter="tags:${tag}" --format='value(package)' --project="$GCP_PROJECT_ID" 2>"${TMPDIR:-/tmp}/require_image.err")" && [ -n "$found" ]; then
       return 0
     fi
-    if gcloud artifacts docker images describe "${img%%@*}" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
-      return 0
-    fi
+    err="$(tail -3 "${TMPDIR:-/tmp}/require_image.err" 2>/dev/null)"
     [ "$attempt" = "5" ] || { echo "  … image not visible yet (attempt $attempt/5), retrying in 10s"; sleep 10; }
   done
   echo "✗ image not found: $img"
