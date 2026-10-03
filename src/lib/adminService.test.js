@@ -5,6 +5,11 @@ import {
   isAdminAuthed,
   validateCoupon,
   buildCouponsSyncPayload,
+  buildCouponCatalogPayload,
+  mergeServerCoupons,
+  getCoupons,
+  isAdminApiRequest,
+  installAdminSessionGuard,
 } from "./adminService.js";
 
 /**
@@ -134,11 +139,13 @@ describe("buildCouponsSyncPayload — the checkout-facing subset of local coupon
     });
   });
 
-  it("drops extraction-bonus coupons — they never touch checkout", () => {
+  it("syncs bonus coupons as credit coupons — POST /api/credits reads `credits` off this map, so omitting them made every bonus code 'invalid'", () => {
     const out = buildCouponsSyncPayload([
       { code: "BONUS50", type: "extractions", value: 50, active: true },
     ]);
-    expect(out).toEqual({});
+    expect(out).toEqual({
+      BONUS50: { value: 0, credits: 50, planId: null, expiresAt: null, active: true, maxUses: 0 },
+    });
   });
 
   it("drops planId:'manual' coupons — admin-assign only, not checkout-redeemable", () => {
@@ -192,5 +199,90 @@ describe("Admin Grants (testing mode & local persistence)", () => {
     expect(replayRes.ok).toBe(true);
     expect(replayRes.plan_id).toBe("pro");
     expect(replayRes.alreadyRedeemed).toBe(true);
+  });
+});
+
+
+describe("coupon catalog — durable, server-side copy of the admin's list", () => {
+  it("buildCouponCatalogPayload keeps EVERY type, manual-assign included", () => {
+    const out = buildCouponCatalogPayload([
+      { id: "a", code: "p", type: "percent", value: 10 },
+      { id: "b", code: "b", type: "extractions", value: 25 },
+      { id: "c", code: "m", type: "percent", value: 15, planId: "manual" },
+    ]);
+    expect(out.map((c) => c.code)).toEqual(["P", "B", "M"]);
+    expect(out[2].planId).toBe("manual");
+  });
+
+  it("mergeServerCoupons: server wins on fields, uses is the highest seen, local-only coupons are kept and reported", () => {
+    localStorage.setItem("datiq.coupons", JSON.stringify([
+      { id: "c1", code: "SAVE", type: "percent", value: 10, uses: 2, active: true },
+      { id: "c9", code: "LEGACY", type: "percent", value: 5, uses: 0, active: true },
+    ]));
+    const { merged, localOnly } = mergeServerCoupons({
+      catalog: [
+        { id: "s1", code: "SAVE", type: "percent", value: 25, uses: 1, active: false },
+        { id: "s2", code: "BONUS", type: "extractions", value: 50, uses: 0, active: true },
+        { id: "s3", code: "MANUALX", type: "percent", value: 15, planId: "manual", active: true },
+      ],
+      uses: { SAVE: 7 },
+    });
+    const by = Object.fromEntries(merged.map((c) => [c.code, c]));
+    expect(by.SAVE.value).toBe(25);          // server wins
+    expect(by.SAVE.active).toBe(false);
+    expect(by.SAVE.uses).toBe(7);            // real counter beats local 2 and catalog 1
+    expect(by.SAVE.id).toBe("c1");           // local id preserved
+    expect(by.BONUS.type).toBe("extractions");
+    expect(by.MANUALX.planId).toBe("manual"); // manual coupons arrive too
+    expect(by.LEGACY).toBeTruthy();           // never dropped
+    expect(localOnly).toEqual(["LEGACY"]);    // …and flagged for upload
+    expect(getCoupons().map((c) => c.code).sort()).toEqual(["BONUS", "LEGACY", "MANUALX", "SAVE"]);
+  });
+
+  it("mergeServerCoupons lifts checkout-map entries that have no catalog row (synced before the catalog existed)", () => {
+    localStorage.setItem("datiq.coupons", JSON.stringify([]));
+    const { merged } = mergeServerCoupons({
+      catalog: null,
+      checkoutMap: { OLD20: { value: 20, planId: null, active: true, maxUses: 5 }, B10: { value: 0, credits: 10, active: true } },
+    });
+    const by = Object.fromEntries(merged.map((c) => [c.code, c]));
+    expect(by.OLD20).toMatchObject({ type: "percent", value: 20, maxUses: 5 });
+    expect(by.B10).toMatchObject({ type: "extractions", value: 10 });
+  });
+});
+
+describe("admin session-invalid guard — a 401 must not leave a silent empty admin", () => {
+  it("only authenticated /api/admin* calls count (not admin-auth, not unauthenticated reads)", () => {
+    const bearer = { headers: { Authorization: "Bearer abc" } };
+    expect(isAdminApiRequest("/api/admin-users", bearer)).toBe(true);
+    expect(isAdminApiRequest("/api/admin-monitoring?x=1", bearer)).toBe(true);
+    expect(isAdminApiRequest("/api/admin-auth", bearer)).toBe(false);   // a wrong PIN is not an invalid session
+    expect(isAdminApiRequest("/api/admin-general-config", {})).toBe(false); // public read, no token
+    expect(isAdminApiRequest("/api/extract", bearer)).toBe(false);
+  });
+
+  it("a 401 clears the token and fires onInvalid; other statuses do not", async () => {
+    localStorage.setItem("scrapelite.adminAuth", "tok.sig");
+    localStorage.setItem("scrapelite.adminAuthExp", String(Date.now() + 1_000_000));
+    const statuses = [200, 500, 401];
+    const orig = vi.fn(async () => ({ status: statuses.shift() }));
+    vi.stubGlobal("fetch", orig);
+    window.fetch = orig;
+    const onInvalid = vi.fn();
+    const uninstall = installAdminSessionGuard(onInvalid);
+    const init = { headers: { Authorization: "Bearer tok.sig" } };
+
+    await window.fetch("/api/admin-users", init);
+    await window.fetch("/api/admin-users", init);
+    expect(onInvalid).not.toHaveBeenCalled();
+    expect(isAdminAuthed()).toBe(true);
+
+    await window.fetch("/api/admin-users", init);
+    expect(onInvalid).toHaveBeenCalledTimes(1);
+    expect(isAdminAuthed()).toBe(false);
+
+    uninstall();
+    expect(window.fetch).toBe(orig);
+    vi.unstubAllGlobals();
   });
 });

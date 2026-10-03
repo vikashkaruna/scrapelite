@@ -4097,6 +4097,25 @@
 }
 .uub-dismiss:hover { color: var(--text); }
 
+/* Advisory banners (usage upsell, referral): same width as the GA4 consent bar
+   (min(1080px, viewport − 32px)), copy flowing as one paragraph instead of the
+   title / body / pills each wrapping onto their own flex row, and a collapse
+   animation so the page doesn't jump when the banner leaves on its own after
+   the reader has had time to read it (see useAutoDismissBanner). */
+.usage-upsell-banner-wrap {
+  overflow: hidden; max-height: 240px;
+  transition: max-height .35s ease, opacity .3s ease, border-bottom-width .35s ease;
+}
+.usage-upsell-banner-wrap.uub-leaving { max-height: 0; opacity: 0; border-bottom-width: 0; }
+.usage-upsell-banner { width: min(1080px, calc(100vw - 32px)); max-width: none; box-sizing: border-box; }
+.uub-content.uub-flow { display: block; line-height: 1.5; min-width: 0; }
+.uub-flow .uub-title { margin-right: 8px; }
+.uub-flow .uub-desc { display: inline; }
+.uub-flow .uub-savings, .uub-flow .uub-remaining, .uub-flow .uub-public { margin-left: 2px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .usage-upsell-banner-wrap { transition: none; }
+}
+
 /* ── Contact page ───────────────────────────────────────────────── */
 .contact-page { padding-top: 48px; padding-bottom: 80px; }
 .contact-hero { text-align: center; margin-bottom: 40px; }

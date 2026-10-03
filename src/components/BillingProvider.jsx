@@ -585,6 +585,21 @@ export function BillingProvider({ children }) {
       if (serverInfo.expired) { setCouponError("This coupon has expired."); return false; }
       if (serverInfo.exhausted) { setCouponError("This coupon has reached its usage limit."); return false; }
 
+      // A credit (bonus) coupon is stored on the server now, so a user's browser
+      // no longer needs a local copy to redeem it — go straight to the ledger.
+      if (serverInfo.type === "credits") {
+        try {
+          const res = await apiClient.redeemCredits(trimmed);
+          clearCreditsCache();
+          await refreshCredits();
+          setCouponSuccess(`Coupon applied — ${res.granted} credits added.`);
+          return true;
+        } catch (err) {
+          setCouponError(err?.message || "That coupon could not be applied.");
+          return false;
+        }
+      }
+
       const restrictTo = serverInfo.planId || null;
       const restrictedPlan = restrictTo ? planMap[restrictTo] : null;
       const restrictedLabel = restrictedPlan?.name || restrictTo;

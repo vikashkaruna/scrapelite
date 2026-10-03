@@ -23,6 +23,7 @@ import { useBilling } from "./BillingProvider.jsx";
 import { buildPaywallCopy } from "../lib/paywallCopy.js";
 import { readPublicCount } from "../lib/publicQuota.js";
 import { creditPressure } from "../lib/credits/creditPressure.js";
+import { useAutoDismissBanner } from "../hooks/useAutoDismissBanner.js";
 
 const DISMISS_KEY = "datiq.upsellDismissedMonth";
 
@@ -53,19 +54,15 @@ export default function UsageUpsellBanner() {
     try { localStorage.setItem(DISMISS_KEY, getCurrentMonth()); } catch {}
   };
 
-  if (dismissed) return null;
-
   const pressure = creditPressure({ credits, allowance: plan?.limits?.credits });
-  if (!pressure.known) return null;
-  if (!pressure.low) return null;
-
+  const visible = !dismissed && pressure.known && pressure.low;
   const remaining = pressure.available;
   const isOver = pressure.empty;
 
   // FA3 — derive task-aware copy from the current route + usage.
   // ⚠️ `extractions` is passed only so `buildPaywallCopy`'s own "are they over?"
-  // branch resolves; the decision to show this banner at all was already made
-  // above, from the credit pool. Passing the plan's own (unenforced) extraction
+  // branch resolves; the decision to show this banner at all is made from the
+  // credit pool (`visible`). Passing the plan's own (unenforced) extraction
   // limit when the pool is empty keeps that branch agreeing with the pool
   // rather than contradicting it.
   const paywall = buildPaywallCopy({
@@ -78,6 +75,13 @@ export default function UsageUpsellBanner() {
     currentPlan: plan,
     currency: subscription?.currency || "USD",
   });
+
+  // Leaves on its own after the reader has had time to read it (like the GA4
+  // bar). Hooks must run before any early return, hence `visible` above.
+  const textLength = (paywall.title?.length || 0) + (paywall.body?.length || 0) + (paywall.ctaLabel?.length || 0);
+  const { phase, hoverProps } = useAutoDismissBanner("usage-upsell", { active: visible, textLength });
+
+  if (!visible || phase === "gone") return null;
 
   const handleCta = () => {
     try {
@@ -94,12 +98,15 @@ export default function UsageUpsellBanner() {
   };
 
   return (
-    <div className={"usage-upsell-banner-wrap" + (isOver ? " usage-upsell-over" : "")}>
-      <div className="usage-upsell-banner">
+    <div
+      className={"usage-upsell-banner-wrap" + (isOver ? " usage-upsell-over" : "") + (phase === "leaving" ? " uub-leaving" : "")}
+      {...hoverProps}
+    >
+      <div className="usage-upsell-banner" role="status">
         <div className="uub-icon">
           <Icon name={isOver ? "alert-circle" : "zap"} size={16} />
         </div>
-        <div className="uub-content">
+        <div className="uub-content uub-flow">
           <span className="uub-title">{paywall.title}</span>
           <span className="uub-desc">
             {isOver && !paywall.body

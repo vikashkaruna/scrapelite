@@ -39,6 +39,21 @@
 // defensive filter even though the current /admin/coupons UI can no longer
 // create them.
 
+// ── SECOND ROW: THE ADMIN CATALOG (migrated off localStorage) ─────────────────
+// `datiq.coupons` in a browser used to be the ONLY home of the admin's coupon
+// list, so a coupon created in one browser was invisible in another, and the
+// bonus (credit) and manual-assign coupons — which the checkout map above
+// cannot express — lived nowhere durable at all. Two stores now, one purpose each:
+//   pricing_config 'coupons'        → what REDEEMS: percent coupons AND credit
+//                                     coupons ({credits}), read by checkout and
+//                                     by POST /api/credits.
+//   pricing_config 'coupon_catalog' → what the ADMIN sees: the full list (every
+//                                     type, manual-assign included), whole-value
+//                                     replace like every other admin-*-config row.
+// A manual coupon is catalog-only on purpose: it must never be self-redeemable
+// at checkout, and its per-user assignment lives with the user (auth metadata +
+// coupon_redemptions, written by admin-users.js).
+
 import { verifyAdminToken, bearerFromEvent } from "./lib/adminToken.js";
 import { loadPricing } from "./lib/pricingSource.js";
 
@@ -65,8 +80,23 @@ function sanitizeCoupons(input) {
     const code = String(rawCode).trim().toUpperCase().slice(0, 24);
     if (!code || !c || typeof c !== "object") continue;
     if (c.planId === "manual") continue; // admin-assign-only, never checkout-redeemable
+    // Credit (bonus) coupon: redeemed server-side by POST /api/credits, which
+    // reads `credits` off this same map. `value` stays 0 so checkout's percent
+    // resolver can never mistake it for a discount.
+    const credits = Math.floor(Number(c.credits));
+    if (credits > 0) {
+      out[code] = {
+        value: 0,
+        credits: Math.min(credits, 1_000_000),
+        planId: c.planId ? String(c.planId).trim().toLowerCase().slice(0, 40) : null,
+        expiresAt: c.expiresAt ? String(c.expiresAt).slice(0, 10) : null,
+        active: c.active !== false,
+        maxUses: Math.max(0, parseInt(c.maxUses, 10) || 0),
+      };
+      continue;
+    }
     const value = Number(c.value);
-    if (!(value > 0 && value <= 100)) continue; // percent coupons only, 1-100
+    if (!(value > 0 && value <= 100)) continue; // percent coupons: 1-100
     out[code] = {
       value,
       planId: c.planId ? String(c.planId).trim().toLowerCase().slice(0, 40) : null,
@@ -78,7 +108,70 @@ function sanitizeCoupons(input) {
   return out;
 }
 
-async function upsert(coupons) {
+// The admin's full coupon list (every type, manual-assign included). Same
+// bounded, well-formed-only discipline as sanitizeCoupons.
+const CATALOG_MAX = 500;
+export function sanitizeCatalog(input) {
+  if (!Array.isArray(input)) return null;
+  const seen = new Set();
+  const out = [];
+  for (const c of input) {
+    if (!c || typeof c !== "object") continue;
+    const code = String(c.code || "").trim().toUpperCase().replace(/\s+/g, "").slice(0, 24);
+    if (!code || seen.has(code)) continue;
+    const type = c.type === "extractions" ? "extractions" : "percent";
+    const value = Number(c.value);
+    if (!(value > 0)) continue;
+    if (type === "percent" && value > 100) continue;
+    seen.add(code);
+    out.push({
+      id: String(c.id || `c${code}`).slice(0, 40),
+      code, type,
+      value: type === "extractions" ? Math.min(Math.floor(value), 1_000_000) : value,
+      maxUses: Math.max(0, parseInt(c.maxUses, 10) || 0),
+      planId: c.planId ? String(c.planId).trim().toLowerCase().slice(0, 40) : null,
+      expiresAt: c.expiresAt ? String(c.expiresAt).slice(0, 10) : null,
+      active: c.active !== false,
+      createdAt: c.createdAt ? String(c.createdAt).slice(0, 10) : null,
+    });
+    if (out.length >= CATALOG_MAX) break;
+  }
+  return out;
+}
+
+async function readRow(key) {
+  const url = process.env.SUPABASE_URL;
+  const sk = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !sk) return null;
+  try {
+    const res = await fetch(`${url}/rest/v1/pricing_config?key=eq.${encodeURIComponent(key)}&select=value`, {
+      headers: { apikey: sk, Authorization: `Bearer ${sk}` },
+    });
+    if (!res.ok) return null;
+    const rows = await res.json().catch(() => null);
+    return Array.isArray(rows) && rows.length ? rows[0].value : null;
+  } catch { return null; }
+}
+
+// Real redemption counts, keyed by code — the admin list's `uses` column must
+// show what checkout/credits actually recorded, not a per-browser tally.
+async function readUses() {
+  const url = process.env.SUPABASE_URL;
+  const sk = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !sk) return {};
+  try {
+    const res = await fetch(`${url}/rest/v1/coupon_counters?select=coupon_code,uses`, {
+      headers: { apikey: sk, Authorization: `Bearer ${sk}` },
+    });
+    if (!res.ok) return {};
+    const rows = await res.json().catch(() => null);
+    const out = {};
+    for (const r of Array.isArray(rows) ? rows : []) out[String(r.coupon_code).toUpperCase()] = Number(r.uses) || 0;
+    return out;
+  } catch { return {}; }
+}
+
+async function upsert(value, rowKey = "coupons") {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) return false;
@@ -90,7 +183,7 @@ async function upsert(coupons) {
       "Content-Type": "application/json",
       Prefer: "resolution=merge-duplicates",
     },
-    body: JSON.stringify({ key: "coupons", value: coupons, updated_at: new Date().toISOString() }),
+    body: JSON.stringify({ key: rowKey, value, updated_at: new Date().toISOString() }),
   });
   return res.ok;
 }
@@ -105,7 +198,14 @@ export const handler = async (event) => {
     // whatever is actually in pricing_config) — so this is what the admin UI
     // can trust as "what checkout will really see", not a second guess at it.
     const pricing = await loadPricing();
-    return respond(200, { ok: true, coupons: pricing.coupons, persisted: SUPABASE_CONFIGURED(), demo: auth.demo });
+    const [catalog, uses] = await Promise.all([readRow("coupon_catalog"), readUses()]);
+    return respond(200, {
+      ok: true, coupons: pricing.coupons, persisted: SUPABASE_CONFIGURED(), demo: auth.demo,
+      // null = nothing stored yet (first load after this shipped) — the client
+      // then pushes its own list up instead of treating it as "no coupons".
+      catalog: Array.isArray(catalog) ? catalog : null,
+      uses,
+    });
   }
 
   if (event.httpMethod === "POST") {
@@ -125,7 +225,15 @@ export const handler = async (event) => {
     let saved = false;
     try { saved = await upsert(coupons); } catch { saved = false; }
     if (!saved) return respond(502, { ok: false, error: "Failed to persist coupons to Supabase." });
-    return respond(200, { ok: true, persisted: true, demo: auth.demo, coupons });
+
+    // The admin catalog is optional so an older client (coupons-only POST) keeps working.
+    const catalog = sanitizeCatalog(body.catalog);
+    if (catalog) {
+      let catalogSaved = false;
+      try { catalogSaved = await upsert(catalog, "coupon_catalog"); } catch { catalogSaved = false; }
+      if (!catalogSaved) return respond(502, { ok: false, error: "Coupons saved for checkout, but the admin list could not be persisted." });
+    }
+    return respond(200, { ok: true, persisted: true, demo: auth.demo, coupons, ...(catalog ? { catalog } : {}) });
   }
 
   return respond(405, { ok: false, error: "Method not allowed" });
