@@ -11,7 +11,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { PLANS } from "../lib/pricingConfig.js";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import Pricing from "./Pricing.jsx";
 import { AuthProvider } from "../components/AuthProvider.jsx";
@@ -36,6 +36,9 @@ const usageRepoMocks = vi.hoisted(() => ({
   logPaymentEvent: vi.fn(() => Promise.resolve()),
   getSessionId: vi.fn(() => "sess_test"),
 }));
+
+const mockNavigate = vi.hoisted(() => vi.fn());
+vi.mock("react-router", async (orig) => ({ ...(await orig()), useNavigate: () => mockNavigate }));
 
 vi.mock("../lib/apiClient.js", () => ({ setAuthToken: vi.fn() }));
 
@@ -127,11 +130,11 @@ describe("I-39 — Pricing: 8 plan cards + monthly default + INR", () => {
   it("Enterprise card has a 'Contact sales' mailto link", async () => {
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
-    // Enterprise enquiries route to admin@datiq.app (contactRouting.js); the
-    // tile also offers a "Book a demo" mailto alongside the Contact sales button.
-    const mailto = document.querySelector(".enterprise-card a.enterprise-demo-link");
-    expect(mailto).not.toBeNull();
-    expect(mailto.getAttribute("href")).toMatch(/mailto:admin@datiq\.app/);
+    // Contact sales opens the Contact page prefilled for an Enterprise enquiry
+    // (it routes to admin@datiq.app server-side — contactRouting.js).
+    const btn = within(document.querySelector(".enterprise-card")).getByRole("button", { name: /talk to sales/i });
+    await act(async () => { btn.click(); });
+    expect(mockNavigate).toHaveBeenCalledWith(expect.stringMatching(/^\/contact\?type=enterprise&subject=Enterprise\+enquiry/));
   });
 
   it("Monthly billing is the default toggle state", async () => {

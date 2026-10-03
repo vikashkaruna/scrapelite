@@ -203,7 +203,7 @@ function PlanCard({ plan, currency, billingPeriod, rates, currentPlanId, onSelec
   );
 }
 
-function EnterpriseCard({ onContact }) {
+function EnterpriseCard({ onContact, onDemo }) {
   return (
     <div className="plan-card enterprise-card">
       {ENTERPRISE_PLAN.badge && <div className="plan-badge enterprise-badge">{ENTERPRISE_PLAN.badge}</div>}
@@ -226,9 +226,9 @@ function EnterpriseCard({ onContact }) {
       <Button variant="primary" size="sm" fullWidth onClick={onContact}>
         {ENTERPRISE_PLAN.cta.primary}
       </Button>
-      <a className="enterprise-demo-link" href="mailto:admin@datiq.app?subject=DatIQ%20Enterprise%20demo&body=Hi%2C%20I%27d%20like%20a%20demo%20of%20DatIQ%20Enterprise.">
+      <button type="button" className="enterprise-demo-link" onClick={onDemo}>
         {ENTERPRISE_PLAN.cta.secondary} →
-      </a>
+      </button>
       <div className="enterprise-includes">{ENTERPRISE_PLAN.includesNote}</div>
       <ul className="plan-features">
         {ENTERPRISE_PLAN.features.map((f) => (
@@ -373,9 +373,19 @@ export default function Pricing() {
     handleSelect(planId);
   };
 
-  const handleContactSales = () => {
-    window.open("mailto:admin@datiq.app?subject=Enterprise%20Inquiry&body=Hi%2C%20I%27m%20interested%20in%20DatIQ%20Enterprise.%20Please%20share%20pricing%20and%20onboarding%20details.", "_blank");
+  // Opens the Contact page on the "Enterprise / agency" enquiry type with the
+  // subject and a starter message already filled in (editable before sending).
+  const goContact = (subject, message) => {
+    const q = new URLSearchParams({ type: "enterprise", subject, message });
+    navigate(`/contact?${q.toString()}`);
   };
+  const handleContactSales = () =>
+    goContact(
+      "Enterprise enquiry",
+      "Hi, I'm interested in DatIQ Enterprise. Please share pricing and onboarding details.\n\nTeam size: \nExpected monthly volume: \nWhat we want to do with DatIQ: ",
+    );
+  const handleBookDemo = () =>
+    goContact("Enterprise demo request", "Hi, I'd like a demo of DatIQ Enterprise.\n\nPreferred time / timezone: \nTeam size: ");
 
   const showError = localError || paymentError;
 
@@ -455,7 +465,7 @@ export default function Pricing() {
               loading={loadingPlan}
             />
           ))}
-          <EnterpriseCard onContact={handleContactSales} />
+          <EnterpriseCard onContact={handleContactSales} onDemo={handleBookDemo} />
         </div>
 
         {currency === "INR" && (

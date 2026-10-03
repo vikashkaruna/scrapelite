@@ -31,7 +31,7 @@ test("Annual toggle: each paid card shows /yr, /mo, strikethrough and Save amoun
   await page.locator(".billing-toggle-btn", { hasText: "Annual" }).first().click();
   // Every non-free plan card should now show the annual price layout.
   for (const name of ["Go", "Select", "Pro", "Business", "Agency"]) {
-    const card = page.locator(".plan-card").filter({ hasText: name }).first();
+    const card = page.locator(".plan-card").filter({ has: page.locator(".plan-name", { hasText: new RegExp(`^${name}$`) }) }).first();
     await expect(card).toBeVisible();
     await expect(card.locator(".plan-price-annual")).toBeVisible();
     // Per-year amount + "/yr"
