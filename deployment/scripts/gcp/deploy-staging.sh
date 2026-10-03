@@ -18,7 +18,10 @@ step() { echo; echo "━━━ $1 ━━━"; }
 # A sleeping staging (power.sh sleep) has Cloud SQL stopped — auth/rest cannot
 # start without it. Wake is idempotent and a no-op when already running.
 if [ "$ENV_NAME" = "staging" ] && [ -z "${SKIP_WAKE:-}" ]; then
-  step "wake (Cloud SQL + scheduler, if asleep)"; "$HERE/power.sh" staging wake
+  # Non-fatal: a failed wake must not block shipping code (Cloud Run needs no
+  # DB to deploy). If the DB really is asleep, the smoke step fails loudly.
+  step "wake (Cloud SQL + scheduler, if asleep)"
+  "$HERE/power.sh" staging wake || echo "::warning::wake step failed (see error above); continuing — smoke will fail if Cloud SQL is actually stopped"
 fi
 step "bootstrap";   [ -n "${SKIP_BOOTSTRAP:-}" ]   || "$HERE/bootstrap.sh" "$ENV_NAME"
 step "secrets";     [ -n "${SKIP_SECRETS:-}" ]     || "$HERE/bootstrap-secrets.sh" "$ENV_NAME"

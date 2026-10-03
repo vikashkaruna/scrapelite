@@ -57,7 +57,8 @@ WAKE_TIMEOUT="${WAKE_TIMEOUT_SECONDS:-600}"
 run() { if [ "$DRY_RUN" = "1" ]; then echo "  [dry-run] $*"; else "$@"; fi; }
 
 sql_field() { # sql_field <gcloud --format value expression>
-  gcloud sql instances describe "$SQL_INSTANCE" --project="$GCP_PROJECT_ID" --format="value($1)" 2>/dev/null || true
+  # stderr is shown (not swallowed): an unreadable instance must be diagnosable.
+  gcloud sql instances describe "$SQL_INSTANCE" --project="$GCP_PROJECT_ID" --format="value($1)" || true
 }
 sql_policy() { sql_field "settings.activationPolicy"; }
 sql_state()  { sql_field "state"; }
@@ -94,6 +95,7 @@ case "$ACTION" in
 
   sleep)
     policy="$(sql_policy)"
+    [ -n "$policy" ] || { echo "✗ cannot read Cloud SQL $SQL_INSTANCE (describe failed above) — refusing to change it"; exit 1; }
     echo "→ sleeping $ENV_NAME (nothing is deleted)"
     # 1) remember + pause the jobs that are currently ENABLED
     enabled="$(list_jobs | awk '$2=="ENABLED"{print $1}' | tr '\n' ' ')"
@@ -119,6 +121,8 @@ case "$ACTION" in
   wake)
     policy="$(sql_policy)"; state="$(sql_state)"
     echo "→ waking $ENV_NAME"
+    # Never patch an instance we could not read: an empty policy means describe failed.
+    [ -n "$policy" ] || { echo "✗ cannot read Cloud SQL $SQL_INSTANCE (describe failed above) — refusing to change it"; exit 1; }
     if [ "$policy" = "ALWAYS" ] && [ "$state" = "RUNNABLE" ]; then
       echo "  = Cloud SQL already running"
     else
