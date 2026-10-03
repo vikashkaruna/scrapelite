@@ -59,7 +59,19 @@
     "NO patched release exists) and the five packages that merely inherited its",
     "flag. Deleting the unused tree was the fix; a bypass would only have hidden",
     "it. brace-expansion/fastify had patches and were overridden first, then",
-    "went with the tree."
+    "went with the tree.",
+    "",
+    "━━━ 2026-10-03: braces (no patch) → Tailwind 3 → 4, not bypassed ━━━━━━━━━━━",
+    "braces <=3.0.3 (stack-exhaustion DoS, GHSA-vfj7-8cjw-p6xm) has NO patched",
+    "release — 3.0.3 is the latest — and reached the repo only through Tailwind 3's",
+    "chokidar/fast-glob/micromatch chain (5 high). npm's only remedy was the",
+    "Tailwind 4 major, so that is what was done, instead of bypassing.",
+    "Verified, not assumed: all 11 visual specs pass pixel-identical against",
+    "baselines freshly generated from Tailwind 3 on the same machine (the committed",
+    "baselines were already stale: the same 7 regenerate under v3). Three traps",
+    "handled in src/index.css: v4 auto-scans the whole repo (restored v3's exact",
+    "content scope with source(none) + @source), and three preflight defaults",
+    "changed (border colour, button cursor, placeholder colour — restored)."
   ],
   "bypasses": []
 }

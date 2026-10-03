@@ -4,6 +4,7 @@
 #
 #   down.sh staging --yes                       # full staging teardown
 #   down.sh staging                             # prints the plan, refuses without --yes
+#   down.sh staging --sleep                     # SOFT: pause crons + stop Cloud SQL, delete NOTHING
 #   down.sh prod --yes --delete-data            # FULL prod teardown INCLUDING Cloud SQL
 #   down.sh prod --yes                          # prod teardown, Cloud SQL PRESERVED
 #   DRY_RUN=1 down.sh <env> --yes [--delete-data]   # print every action, touch nothing
@@ -51,6 +52,17 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib-gcp.sh"
 ENV_NAME="${1:-}"
 shift || true
+
+# ── SOFT SHUTDOWN: `down.sh staging --sleep` ─────────────────────────────────
+# Pauses the scheduler and STOPS Cloud SQL (policy flip — data kept). Handled
+# FIRST and by exec, so no deletion code below can ever run in this mode.
+# Details, wake-up and what is guaranteed never to be deleted: power.sh.
+for arg in "$@"; do
+  if [ "$arg" = "--sleep" ]; then
+    [ "$#" -eq 1 ] || { echo "✗ --sleep is the non-destructive mode and cannot be combined with other flags"; exit 1; }
+    exec "$HERE/power.sh" "$ENV_NAME" sleep
+  fi
+done
 
 YES=0; DELETE_DATA=0
 for arg in "$@"; do

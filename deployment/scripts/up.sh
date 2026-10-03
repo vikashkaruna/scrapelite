@@ -20,6 +20,9 @@ for arg in "$@"; do
     *) echo "✗ unknown arg: $arg (compose service name or env name)"; exit 1 ;;
   esac
 done
+# shellcheck disable=SC1091
+source "$HERE/scripts/lib/docker-power.sh"
+ensure_docker_running   # wakes Docker Desktop after `down.sh --sleep`
 load_env "$ENV_NAME"
 require_vars COMPOSE_PROJECT_NAME DATA_MODE JWT_SECRET POSTGRES_PASSWORD JOBS_TOKEN LOCAL_GATEWAY_PORT PUBLIC_BASE_URL
 

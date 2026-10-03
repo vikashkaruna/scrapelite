@@ -135,14 +135,23 @@ REST_ENV_JSON="$(env_vars_file rest "PGRST_DB_SCHEMAS=public,storage" "PGRST_DB_
 #   update-env.sh $ENV_NAME          — env-only change, ride the live image
 #   DATIQ_IMG_TAG_OVERRIDE=<tag> …   — redeploy a known earlier build
 require_image() {
-  local img="$1"
-  if gcloud artifacts docker images describe "$img" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
-    return 0
-  fi
-  if gcloud artifacts docker images describe "${img%%@*}" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
-    return 0
-  fi
+  local img="$1" attempt err=""
+  # A tag pushed seconds ago can lag in Artifact Registry's index, and CI runs
+  # deploy-run.sh immediately after Cloud Build — so retry before concluding
+  # the image is missing. The old check threw gcloud's stderr away, so a CI
+  # failure said "image not found" about an image that was in fact present
+  # (2026-10-03, first gate-driven staging deploy) with no way to see why.
+  for attempt in 1 2 3 4 5; do
+    if err="$(gcloud artifacts docker images describe "$img" --project="$GCP_PROJECT_ID" 2>&1 >/dev/null)"; then
+      return 0
+    fi
+    if gcloud artifacts docker images describe "${img%%@*}" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+      return 0
+    fi
+    [ "$attempt" = "5" ] || { echo "  … image not visible yet (attempt $attempt/5), retrying in 10s"; sleep 10; }
+  done
   echo "✗ image not found: $img"
+  echo "  gcloud said: $(printf '%s' "$err" | tail -3 | tr '\n' ' ' | cut -c1-400)"
   echo "  Nothing was built at IMG_TAG=$(printf '%s' "$img" | sed 's/.*://'). Pick one:"
   echo "    $HERE/build-images.sh $ENV_NAME          # build + push the current tree"
   echo "    $HERE/update-env.sh $ENV_NAME            # env-only change, no rebuild"
