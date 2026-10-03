@@ -259,7 +259,7 @@ export default function Batch() {
   useSeo({
     title: "DatIQ Batch extraction — many URLs at once | DatIQ.app",
     description:
-      "DatIQ Batch — paste up to hundreds of URLs and extract structured data from every page in one run. DatIQ.app is the zero-code web data extraction platform for sales, SEO, and research teams.",
+      "DatIQ Batch — paste up to hundreds of URLs and extract structured data from every page in one run. DatIQ.app is the AI-enabled web data extraction platform for sales, SEO, and research teams.",
     canonical: "https://datiq.app/batch",
   });
   const navigate = useNavigate();
@@ -474,6 +474,10 @@ export default function Batch() {
   // ── CSV file handling ────────────────────────────────────────────────────────
   const processCsvFile = useCallback((file) => {
     if (!file) return;
+    if (billing?.checkCanImportCsv?.() === false) {
+      showToast("CSV import is available on every paid plan — upgrade to import a list, or paste URLs instead.");
+      return;
+    }
     setCsvFile(file);
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -483,7 +487,7 @@ export default function Batch() {
       setCsvColumn(column);
     };
     reader.readAsText(file);
-  }, []);
+  }, [billing, showToast]);
 
   const onFileChange = (e) => {
     processCsvFile(e.target.files?.[0] ?? null);
@@ -608,7 +612,7 @@ export default function Batch() {
 
   const onExportMarkdown = async () => {
     if (!billing?.checkCanExport?.("markdown")) {
-      showToast("Markdown export requires the Go plan or higher. Upgrade to unlock.");
+      showToast("Markdown export isn't available on your current plan.");
       return;
     }
     if (!successResults.length) return;
@@ -618,7 +622,7 @@ export default function Batch() {
 
   const onExportJson = async () => {
     if (!billing?.checkCanExport?.("json")) {
-      showToast("JSON export requires the Go plan or higher. Upgrade to unlock.");
+      showToast("JSON export isn't available on your current plan.");
       return;
     }
     if (!successResults.length) return;
@@ -628,7 +632,7 @@ export default function Batch() {
 
   const onExportPdf = async () => {
     if (!billing?.checkCanExport?.("pdf")) {
-      showToast("PDF export requires the Go plan or higher. Upgrade to unlock.");
+      showToast("PDF export isn't available on your current plan.");
       return;
     }
     if (!successResults.length) return;
@@ -673,7 +677,7 @@ export default function Batch() {
     else showToast(`Copy failed (${out.reason || "unknown"}). Use the Markdown download instead.`, "alert-triangle");
   };
   const onCopyJson = async () => {
-    if (!billing?.checkCanExport?.("json")) { showToast("JSON export requires Go+."); return; }
+    if (!billing?.checkCanExport?.("json")) { showToast("JSON export isn't available on your current plan."); return; }
     if (!successResults.length) return;
     const out = await copyToClipboard(successResults, "json");
     if (out.ok) showToast(`Copied ${successResults.length} pages to clipboard (JSON)`, "clipboard-copy");
@@ -681,7 +685,7 @@ export default function Batch() {
   };
 
   const handleSendEmail = async (emails, format) => {
-    if (!billing?.checkCanEmail?.()) { showToast("Email export requires the Go plan or higher."); setEmailOpen(false); return; }
+    if (!billing?.checkCanEmail?.()) { showToast("Email export isn't available on your current plan."); setEmailOpen(false); return; }
     if (!billing?.checkCanExport?.(format)) { showToast(`${format.toUpperCase()} export is not available on your current plan.`); return; }
     const res = await apiClient.sendExportEmail({ to: emails, items: successResults, format, brandKit: readBrandKit() });
     setEmailOpen(false);

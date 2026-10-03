@@ -53,9 +53,9 @@ describe("F13 — PricingMatrix", () => {
     expect(screen.queryByRole("rowheader", { name: /Enrichments per extraction/i })).toBeNull();
   });
 
-  it("groups rows under a Group label (Usage / Exports / Power / Team / Data)", () => {
+  it("groups rows under a Group label (Usage / Export & import / Power / Team / Data)", () => {
     render(<MemoryRouter><PricingMatrix /></MemoryRouter>);
-    for (const label of ["Usage", "Exports", "Power", "Team", "Data"]) {
+    for (const label of ["Usage", "Export & import", "Power", "Team", "Data"]) {
       expect(screen.getByText(new RegExp(`^${label}$`, "i"))).toBeInTheDocument();
     }
   });
@@ -98,7 +98,7 @@ describe("F13 — PricingMatrix", () => {
         );
         const shown = Array.from(container.querySelectorAll(".pm-plan-price"))
           .map((n) => n.firstChild.textContent.trim());
-        const expected = PLANS.filter((p) => !p.comingSoon)
+        const expected = PLANS
           .map((p) => formatPrice(resolvePlanPrice(p, billingPeriod, currency), currency));
         expect(shown).toEqual(expected);
       });

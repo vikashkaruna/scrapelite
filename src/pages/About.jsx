@@ -241,7 +241,7 @@ export default function About() {
               <p className="about-founder-bio">
                 DatIQ has been built after realizing the pain of manually copying data from websites into spreadsheets — a
                 workflow teams kept encountering across sales, research, and marketing. DatIQ is the answer: a
-                zero-code platform that turns any URL into structured, actionable intelligence in seconds.
+                AI-enabled platform that turns any URL into structured, actionable intelligence in seconds.
               </p>
               <a
                 href="https://www.linkedin.com/company/axiom-minds/about/"

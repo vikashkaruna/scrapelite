@@ -308,12 +308,20 @@ describe("active accounts fall through to plan limits", () => {
   });
 
   it("gates export formats by plan", () => {
-    expect(can(activeEntitlement("free"), "export.pdf", ctx()).allowed).toBe(false);
-    expect(can(activeEntitlement("free"), "export.csv", ctx()).allowed).toBe(true);
-    expect(can(activeEntitlement("free"), "export.json", ctx()).allowed).toBe(false);
-    expect(can(activeEntitlement("go"), "export.json", ctx()).allowed).toBe(true);
-    expect(can(activeEntitlement("select"), "export.json", ctx()).allowed).toBe(true);
-    expect(can(activeEntitlement("pro"), "export.json", ctx()).allowed).toBe(true);
+    // 2026-10: every plan — Free included — exports in every format and can email it.
+    for (const id of ["free", "go", "select", "pro", "business", "agency"]) {
+      for (const f of ["csv", "pdf", "markdown", "json"]) {
+        expect(can(activeEntitlement(id), `export.${f}`, ctx()).allowed, `${id} ${f}`).toBe(true);
+      }
+      expect(can(activeEntitlement(id), "export.email", ctx()).allowed, `${id} email`).toBe(true);
+    }
+  });
+
+  it("CSV import is a paid-plan feature", () => {
+    expect(can(activeEntitlement("free"), "import.csv", ctx()).allowed).toBe(false);
+    for (const id of ["go", "select", "pro", "business", "agency"]) {
+      expect(can(activeEntitlement(id), "import.csv", ctx()).allowed, id).toBe(true);
+    }
   });
 
   it("gates push integrations and the browser extension flag by plan (Select and up; Free/Go excluded)", () => {

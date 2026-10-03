@@ -23,6 +23,7 @@ const ALLOWED_LIMIT_KEYS = new Set([
   // `extractions` and `audits` below are now DESCRIPTIVE — three public
   // surfaces still print them — and are no longer what any gate reads.
   "credits",
+  "csv_import",
   "extractions",
   // Separate from batch_max_urls since the 2026-09-23 repricing: Free gets a
   // 5-URL batch but NO bulk account list, which one shared key could not say.
@@ -116,7 +117,9 @@ describe("ENTERPRISE_PLAN + plan count (U-13)", () => {
   it("ENTERPRISE_PLAN has price = 'Custom' and required fields", () => {
     expect(ENTERPRISE_PLAN.id).toBe("enterprise");
     expect(ENTERPRISE_PLAN.name).toBe("Enterprise");
-    expect(ENTERPRISE_PLAN.tagline).toMatch(/Custom/i);
+    expect(ENTERPRISE_PLAN.tagline).toBeTruthy();
+    expect(ENTERPRISE_PLAN.priceNote).toMatch(/\$1,000/);
+    expect(ENTERPRISE_PLAN.cta.primary).toBeTruthy();
     expect(Array.isArray(ENTERPRISE_PLAN.features)).toBe(true);
   });
 
@@ -159,10 +162,10 @@ describe("ENTERPRISE_PLAN + plan count (U-13)", () => {
     expect(PLAN_BY_ID.free.limits.browser_extension).toBe(false);
   });
 
-  it("Developer plan is marked 'coming soon' with a 'Coming H3 2026' badge", () => {
+  it("Developer plan is marked 'coming soon' with an 'Upcoming' badge", () => {
     const dev = PLAN_BY_ID.developer;
     expect(dev.comingSoon).toBe(true);
-    expect(dev.badge).toBe("Coming H3 2026");
+    expect(dev.badge).toBe("Upcoming");
   });
 
   it("Agency is the only 'Best Value' plan (the trigger for the amber border highlight)", () => {

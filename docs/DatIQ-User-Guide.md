@@ -145,7 +145,7 @@ no separate "Batch" screen to go to first; paste what you have and DatIQ works o
 
 **The toolbar (bottom of the box):**
 
-- **＋** — the options menu: **Import CSV** (upload a list of URLs), **Add multiple URLs** (switch the box to
+- **＋** — the options menu: **Import CSV** (upload a list of URLs — paid plans), **Add multiple URLs** (switch the box to
   a multi-line list), and **Run in background** (see below). A dot on the ＋ means background mode is on.
 - **Batch** — force batch mode for multiple URLs.
 - **Discover** — shown when the box holds exactly one URL. Takes that page to the **Discoverability** screen
@@ -260,7 +260,7 @@ navigation; **Extract** covers it.
 
 How it works:
 
-1. **Paste URLs** (one per line) into the Home composer, or **Import CSV**, or drag a CSV onto the box.
+1. **Paste URLs** (one per line) into the Home composer, or **Import CSV** (paid plans), or drag a CSV onto the box.
 2. Choose an **intent** (the same chips as single extraction), and any **Advanced options** you want.
 3. Click **Extract**.
 4. Watch progress in the **dock** — `Extracting 3 / 12 URLs…` with the current URL and a **Cancel** button.
@@ -1090,6 +1090,8 @@ cheaper per month.
 | Business | $85 · ₹7,849 | 50,000 | 250 | 250 | 25 |
 | Agency | $200 · ₹19,449 | 150,000 | 500 | 500 | 100 |
 
+Every plan — Free included — exports in every format (PDF, JSON, CSV and Markdown), emails an export, and pushes to Google Sheets. CSV import of a URL list is on every paid plan. Each plan includes scheduled monitors (1 on Free, 2 on Go, more above). The browser extension is upcoming.
+
 Free's 500 credits are granted once and never reset. Every paid plan's credits
 renew monthly and **roll over for one month**, so you can hold at most two
 months' worth — unused credits are not lost the moment the month turns, and they
@@ -1103,7 +1105,7 @@ sales.
 
 Two different things, and the difference matters:
 
-- **Credit packs** buy credits outright — 750 for $5 / ₹449, 2,000 for
+- **Credit packs** buy credits outright — 750 for $5 / ₹490, 2,000 for
   $19 / ₹1,849, 15,000 for $89 / ₹8,749. They work on any plan including Free,
   and **they never expire**.
 - **Capacity add-ons** buy the *right* to do something: a Scheduled Monitor slot

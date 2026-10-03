@@ -42,7 +42,7 @@ const GROUPS = [
     rows: [
       {
         criteria: "Setup time",
-        note: "Zero-code to first extraction",
+        note: "AI-enabled from the very first extraction",
         datiq: y("Under 30 seconds"),
         "browse-ai": p("2–5 min (robot setup)"),
         clay: p("5–15 min (table config)"),
@@ -51,9 +51,9 @@ const GROUPS = [
         phantombuster: p("3–10 min (phantom config)"),
       },
       {
-        criteria: "No-code required",
+        criteria: "AI-enabled, no scripting needed",
         note: "Non-technical users can self-serve",
-        datiq: y("Fully no-code"),
+        datiq: y("Fully AI-enabled"),
         "browse-ai": y("No-code"),
         clay: p("Low-code / formulas"),
         firecrawl: n("API only"),
@@ -63,7 +63,7 @@ const GROUPS = [
       {
         criteria: "Free tier",
         note: "Real features, no trial lock",
-        datiq: y("10 extractions/mo + 25 trial credits"),
+        datiq: y("500 credits, one-time — no card"),
         "browse-ai": p("Limited robot runs"),
         clay: y("100 credits/mo"),
         firecrawl: p("500 pages (scrape credits)"),
@@ -116,6 +116,16 @@ const GROUPS = [
         phantombuster: y("Multi-profile"),
       },
       {
+        criteria: "Bulk account lists + ICP scoring",
+        note: "Enrich and score a list against your ICP",
+        datiq: y("1–500 accounts by plan, with a review queue"),
+      },
+      {
+        criteria: "Paste raw text / HTML",
+        note: "Extract from content you already have",
+        datiq: y("Built in"),
+      },
+      {
         criteria: "Domain mapping",
         note: "Discover every URL on a site",
         datiq: y("Built in"),
@@ -157,12 +167,30 @@ const GROUPS = [
     rows: [
       {
         criteria: "Export formats",
-        datiq: y("CSV · PDF · Markdown · JSON"),
+        datiq: y("CSV · PDF · Markdown · JSON — every plan, Free included"),
         "browse-ai": p("CSV · JSON"),
         clay: p("CSV · Spreadsheet"),
         firecrawl: y("Markdown · JSON · HTML"),
         apify: y("CSV · JSON · Excel"),
         phantombuster: p("CSV · JSON"),
+      },
+      {
+        criteria: "Email export",
+        note: "Send a result as a real attachment",
+        datiq: y("Every plan, Free included"),
+      },
+      {
+        criteria: "Google Sheets push",
+        datiq: y("Every plan"),
+      },
+      {
+        criteria: "CRM & workspace integrations",
+        note: "Push results to where the team works",
+        datiq: y("HubSpot · Notion · Airtable · Slack (Select and above)"),
+      },
+      {
+        criteria: "CSV import of URL lists",
+        datiq: y("Every paid plan"),
       },
       {
         criteria: "Public shareable reports",
@@ -241,12 +269,34 @@ const GROUPS = [
     ],
   },
   {
+    group: "Discoverability & AI visibility",
+    rows: [
+      { criteria: "SEO / AEO / GEO audit & fix queue", note: "Scored, with copy-ready fixes", datiq: y("Every plan") },
+      { criteria: "Competitive benchmarks", datiq: y("Select and above") },
+      { criteria: "Scheduled audits & prompt monitors", note: "Track AI answer-engine citations over time", datiq: y("Select and above") },
+      { criteria: "Business truth record & entity graph", datiq: y("Select and above") },
+      { criteria: "Local & directory (NAP) intelligence", datiq: y("Select and above") },
+      { criteria: "Schema & trust intelligence", datiq: y("Select and above") },
+      { criteria: "Search-to-Outcome Intelligence", datiq: y("Select and above") },
+      { criteria: "Enterprise Discoverability OS", note: "Portfolio roll-ups across brands and locations", datiq: y("Select and above") },
+    ],
+  },
+  {
+    group: "Teams & white-label",
+    rows: [
+      { criteria: "Team seats & client workspaces", datiq: y("3 seats on Business · 5 workspaces on Agency") },
+      { criteria: "White-label PDF & Brand Kit", datiq: y("Business and above") },
+      { criteria: "Priority support", datiq: y("Business and above") },
+      { criteria: "Browser extension", datiq: p("Upcoming") },
+    ],
+  },
+  {
     group: "Scheduling & monitoring",
     rows: [
       {
         criteria: "Scheduled monitoring",
         note: "Auto-rerun with change alerts",
-        datiq: y("Select plan and above, email alerts"),
+        datiq: y("Every plan — 1 monitor on Free, 2 on Go, more above; email alerts"),
         "browse-ai": y("Scheduled robots"),
         clay: n("Manual refresh"),
         firecrawl: n("Self-implement with cron"),
@@ -303,7 +353,7 @@ export default function VsCompare() {
   useSeo({
     title: "DatIQ vs Browse.ai, Clay, Firecrawl, Apify & PhantomBuster (2026) | DatIQ.app",
     description:
-      "A side-by-side comparison of DatIQ against Browse.ai, Clay, Firecrawl, Apify and PhantomBuster: setup time, no-code support, custom extraction, AI summaries, batch mode, exports, scheduling, and INR billing.",
+      "A side-by-side comparison of DatIQ against Browse.ai, Clay, Firecrawl, Apify and PhantomBuster: setup time, AI-enabled support, custom extraction, AI summaries, batch mode, exports, scheduling, and INR billing.",
     canonical: "https://datiq.app/vs/compare",
     jsonLd: [
       {
@@ -392,7 +442,7 @@ export default function VsCompare() {
           <p className="vsc-legend">
             <span className="vsc-yes"><Icon name="check" size={11} strokeWidth={3} /></span> full support ·{" "}
             <span className="vsc-partial"><Icon name="minus" size={11} strokeWidth={3} /></span> partial or paid add-on ·{" "}
-            <span className="vsc-no"><Icon name="x" size={11} strokeWidth={3} /></span> not available.
+            <span className="vsc-no"><Icon name="x" size={11} strokeWidth={3} /></span> not available · — not compared for that tool.
             Competitor details reflect publicly documented features at the time of writing and can change.
           </p>
         </div>

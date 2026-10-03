@@ -291,7 +291,7 @@ const FEATURE_GROUPS = [
     icon: "credit-card",
     title: "Plans & payments",
     items: [
-      "7 plan tiers: Free, Go, Select, Pro, Business, Agency, Developer (coming H3 2026), Enterprise",
+      "7 plan tiers: Free, Go, Select, Pro, Business, Agency, Developer (upcoming), Enterprise",
       "Annual + monthly billing (~17% annual discount, computed live from each plan's prices)",
       "USD + INR pricing (INR promotional annual amounts, GST-inclusive)",
       "Razorpay one-time Order payments (INR) — server-authoritative amounts",

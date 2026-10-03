@@ -1,7 +1,7 @@
 // pricingConfig.js — V6 revised plan definitions, USD + INR only.
 
 // India-first: USD for all other regions, INR for Indian users.
-import { DISCOVERABILITY_BASE } from "./credits/creditWeights.js";
+import { DISCOVERABILITY_BASE, CREDIT_WEIGHTS } from "./credits/creditWeights.js";
 
 export const CURRENCIES = ["USD", "INR"];
 
@@ -129,12 +129,15 @@ function quantitativeFeatures(id) {
 
 function monitorFeature(t) {
   if (t.monitors === 0) return { label: "Scheduled monitoring", included: false };
-  return { label: `${n(t.monitors)} scheduled monitors`, included: true };
+  return { label: `${n(t.monitors)} scheduled ${t.monitors === 1 ? "monitor" : "monitors"}`, included: true };
 }
 
 function batchFeature(t) {
   return { label: `Batch mode (up to ${n(t.batch)} URLs)`, included: true };
 }
+
+/** Every plan exports every format — an export is the customer's own data. */
+const ALL_EXPORTS = ["csv", "pdf", "markdown", "json"];
 
 function limitsFor(id, extra = {}) {
   const t = PLAN_TABLE[id];
@@ -147,6 +150,9 @@ function limitsFor(id, extra = {}) {
     team_seats: t.seats,
     workspaces: t.workspaces,
     batch_max_urls: t.batch,
+    // CSV import (drop a CSV of URLs into the composer / batch page): every PAID
+    // plan. Free can paste URLs but not import a file.
+    csv_import: t.usd > 0,
     // ⚠️ Separate from batch_max_urls on purpose — see the table's header.
     // `bulk.enrich` reads this and falls back to batch_max_urls when an
     // operator override written against the older shape omits it.
@@ -168,8 +174,8 @@ export const PLANS = [
     badge: null,
     highlight: false,
     limits: limitsFor("free", {
-      exports: ["csv"],
-      email_export: false,
+      exports: ALL_EXPORTS,
+      email_export: true,
       extra_seat_usd: null,
       api_access: false,
       white_label_pdf: false,
@@ -180,23 +186,7 @@ export const PLANS = [
       integrations: false,
       browser_extension: false,
     }),
-    features: [
-      ...quantitativeFeatures("free").out,
-      { label: "Competitor watchlists", included: PLAN_TABLE.free.monitors > 0 },
-      { label: "Signal routing to Slack / email / webhook / CRM", included: false },
-      { label: "Fork & edit workflow templates", included: false },
-      { label: "Full AI features", included: true },
-      { label: "CSV export", included: true },
-      batchFeature(PLAN_TABLE.free),
-      { label: "PDF export", included: false },
-      { label: "Markdown / JSON export", included: false },
-      { label: "Email export", included: false },
-      monitorFeature(PLAN_TABLE.free),
-      { label: "Integrations (HubSpot, Notion, Airtable, Slack)", included: false },
-      { label: "Browser extension", included: false },
-      { label: "API access", included: false },
-      { label: "White-label PDF", included: false },
-    ],
+    // features: generated for every plan from ONE list — see featuresFor() below.
   },
   {
     id: "go",
@@ -210,7 +200,7 @@ export const PLANS = [
     badge: null,
     highlight: false,
     limits: limitsFor("go", {
-      exports: ["csv", "pdf", "markdown", "json"],
+      exports: ALL_EXPORTS,
       email_export: true,
       extra_seat_usd: null,
       api_access: false,
@@ -220,21 +210,7 @@ export const PLANS = [
       integrations: false,
       browser_extension: false,
     }),
-    features: [
-      ...quantitativeFeatures("go").out,
-      { label: "Competitor watchlists", included: PLAN_TABLE.go.monitors > 0 },
-      { label: "Signal routing to Slack / email / webhook / CRM", included: false },
-      { label: "Fork & edit workflow templates", included: true },
-      { label: "All enrichments", included: true },
-      { label: "CSV + PDF + Markdown + JSON export", included: true },
-      { label: "Email export", included: true },
-      batchFeature(PLAN_TABLE.go),
-      monitorFeature(PLAN_TABLE.go),
-      { label: "Integrations (HubSpot, Notion, Airtable, Slack)", included: false },
-      { label: "Browser extension", included: false },
-      { label: "API access", included: false },
-      { label: "White-label PDF", included: false },
-    ],
+    // features: generated for every plan from ONE list — see featuresFor() below.
   },
   {
     id: "select",
@@ -248,7 +224,7 @@ export const PLANS = [
     badge: null,
     highlight: false,
     limits: limitsFor("select", {
-      exports: ["csv", "pdf", "markdown", "json"],
+      exports: ALL_EXPORTS,
       email_export: true,
       extra_seat_usd: null,
       api_access: false,
@@ -258,21 +234,7 @@ export const PLANS = [
       integrations: true,
       browser_extension: true,
     }),
-    features: [
-      ...quantitativeFeatures("select").out,
-      { label: "Competitor watchlists", included: true },
-      { label: "Signal routing to Slack / email / webhook / CRM", included: true },
-      { label: "Fork & edit workflow templates", included: true },
-      { label: "All enrichments", included: true },
-      { label: "CSV + PDF + Markdown + JSON", included: true },
-      { label: "Email export", included: true },
-      batchFeature(PLAN_TABLE.select),
-      monitorFeature(PLAN_TABLE.select),
-      { label: "Integrations (HubSpot, Notion, Airtable, Slack)", included: true },
-      { label: "Browser extension", included: true },
-      { label: "API access", included: false },
-      { label: "White-label PDF", included: false },
-    ],
+    // features: generated for every plan from ONE list — see featuresFor() below.
   },
   {
     id: "pro",
@@ -286,7 +248,7 @@ export const PLANS = [
     badge: "Recommended",
     highlight: true,
     limits: limitsFor("pro", {
-      exports: ["csv", "pdf", "markdown", "json"],
+      exports: ALL_EXPORTS,
       email_export: true,
       extra_seat_usd: null,
       api_access: false,
@@ -296,22 +258,7 @@ export const PLANS = [
       integrations: true,
       browser_extension: true,
     }),
-    features: [
-      ...quantitativeFeatures("pro").out,
-      { label: "Competitor watchlists", included: true },
-      { label: "Signal routing to Slack / email / webhook / CRM", included: true },
-      { label: "Fork & edit workflow templates", included: true },
-      { label: "All enrichments", included: true },
-      { label: "CSV + PDF + Markdown + JSON", included: true },
-      { label: "Email export", included: true },
-      batchFeature(PLAN_TABLE.pro),
-      monitorFeature(PLAN_TABLE.pro),
-      { label: "Integrations (HubSpot, Notion, Airtable, Slack)", included: true },
-      { label: "Browser extension", included: true },
-      { label: "Google Sheets push", included: true },
-      { label: "API access", included: false },
-      { label: "White-label PDF", included: false },
-    ],
+    // features: generated for every plan from ONE list — see featuresFor() below.
   },
   {
     id: "business",
@@ -325,7 +272,7 @@ export const PLANS = [
     badge: null,
     highlight: false,
     limits: limitsFor("business", {
-      exports: ["csv", "pdf", "markdown", "json"],
+      exports: ALL_EXPORTS,
       email_export: true,
       extra_seat_usd: 9,
       api_access: true,
@@ -335,24 +282,7 @@ export const PLANS = [
       integrations: true,
       browser_extension: true,
     }),
-    features: [
-      ...quantitativeFeatures("business").out,
-      { label: "Competitor watchlists", included: true },
-      { label: "Signal routing to Slack / email / webhook / CRM", included: true },
-      { label: "Fork & edit workflow templates", included: true },
-      { label: "All enrichments", included: true },
-      { label: "CSV + PDF + Markdown + JSON", included: true },
-      { label: "Email export", included: true },
-      batchFeature(PLAN_TABLE.business),
-      { label: "CSV import enrichment", included: true },
-      monitorFeature(PLAN_TABLE.business),
-      { label: "API access", included: true },
-      { label: "Integrations (HubSpot, Notion, Airtable, Slack)", included: true },
-      { label: "Browser extension", included: true },
-      { label: `${n(PLAN_TABLE.business.seats)} seats + HubSpot CRM sync`, included: true },
-      { label: "White-label PDF", included: true },
-      { label: "Priority support", included: true },
-    ],
+    // features: generated for every plan from ONE list — see featuresFor() below.
   },
   {
     id: "agency",
@@ -366,7 +296,7 @@ export const PLANS = [
     badge: "Best Value",
     highlight: false,
     limits: limitsFor("agency", {
-      exports: ["csv", "pdf", "markdown", "json"],
+      exports: ALL_EXPORTS,
       email_export: true,
       extra_seat_usd: null,
       api_access: true,
@@ -376,25 +306,7 @@ export const PLANS = [
       integrations: true,
       browser_extension: true,
     }),
-    features: [
-      ...quantitativeFeatures("agency").out,
-      { label: "Competitor watchlists", included: true },
-      { label: "Signal routing to Slack / email / webhook / CRM", included: true },
-      { label: "Fork & edit workflow templates", included: true },
-      { label: "All enrichments", included: true },
-      { label: "CSV + PDF + Markdown + JSON", included: true },
-      { label: "Email export", included: true },
-      batchFeature(PLAN_TABLE.agency),
-      { label: "CSV import enrichment", included: true },
-      monitorFeature(PLAN_TABLE.agency),
-      { label: "API access", included: true },
-      { label: "Integrations (HubSpot, Notion, Airtable, Slack)", included: true },
-      { label: "Browser extension", included: true },
-      { label: `${n(PLAN_TABLE.agency.workspaces)} client workspaces`, included: true },
-      { label: "White-label PDF", included: true },
-      { label: "Slack routing", included: true },
-      { label: "Priority support", included: true },
-    ],
+    // features: generated for every plan from ONE list — see featuresFor() below.
   },
   {
     id: "developer",
@@ -405,11 +317,11 @@ export const PLANS = [
     price_inr_annual: PLAN_TABLE.developer.inr_annual,
     period: "month",
     tagline: "API-first, built for pipelines",
-    badge: "Coming H3 2026",
+    badge: "Upcoming",
     highlight: false,
     comingSoon: true,
     limits: limitsFor("developer", {
-      exports: ["csv", "pdf", "markdown", "json", "jsonl"],
+      exports: [...ALL_EXPORTS, "jsonl"],
       email_export: true,
       extra_seat_usd: null,
       api_access: true,
@@ -419,39 +331,90 @@ export const PLANS = [
       integrations: true,
       browser_extension: true,
     }),
-    features: [
-      ...quantitativeFeatures("developer").out,
-      { label: "Competitor watchlists", included: true },
-      { label: "Signal routing to Slack / email / webhook / CRM", included: true },
-      { label: "Fork & edit workflow templates", included: true },
-      { label: "API access (no UI required)", included: true },
-      batchFeature(PLAN_TABLE.developer),
-      { label: "CSV import enrichment", included: true },
-      { label: "JSONL / RAG export", included: true },
-      { label: "Webhook push", included: true },
-      { label: "All enrichments", included: true },
-      monitorFeature(PLAN_TABLE.developer),
-      { label: "Integrations (HubSpot, Notion, Airtable, Slack)", included: true },
-      { label: "Browser extension", included: true },
-      { label: "Team seats", included: false },
-      { label: "White-label PDF", included: false },
-    ],
+    // features: generated for every plan from ONE list — see featuresFor() below.
   },
 ];
 
-// Enterprise plan — custom pricing, displayed separately
+// ── ONE FEATURE LIST, GENERATED FOR EVERY PLAN ─────────────────────────────
+//
+// 🔴 Every plan card shows the SAME rows in the SAME order; only the values and
+// the check/cross differ. The cards used to be hand-written per plan, so Free
+// omitted "CSV import" and "Slack routing" appeared only on Agency — a visitor
+// comparing tiles could not tell "not included" from "not mentioned". Rows are
+// derived from `limits` and PLAN_TABLE so a card cannot promise what the gate
+// refuses (and vice versa).
+//
+// ⚠️ `upcoming: true` rows are shown with an "Upcoming" tag and are NOT counted
+// as included. The browser extension is built but not yet on the Chrome/Firefox
+// stores, so selling it as a plan feature would promise something nobody can
+// install.
+export const EXPORT_LABEL = "Export (PDF, JSON, CSV & Markdown)";
+
+function featuresFor(p) {
+  const id = p.id;
+  const L = p.limits;
+  const t = PLAN_TABLE[id];
+  const { out } = quantitativeFeatures(id);
+  const rows = [
+    out[0], // credits
+    { label: "Workflow template library", included: true },
+    { label: "Fork & edit workflow templates", included: !!L.template_duplicate },
+    { label: EXPORT_LABEL, included: ALL_EXPORTS.every((f) => (L.exports || []).includes(f)) },
+    { label: "Email export", included: !!L.email_export },
+    { label: "Google Sheets push", included: true },
+    batchFeature(t),
+    { label: `Bulk account lists (${n(t.bulk)} ${t.bulk === 1 ? "account" : "accounts"})`, included: t.bulk > 0 },
+    { label: "CSV import enrichment", included: !!L.csv_import },
+    monitorFeature(t),
+    { label: "Competitor watchlists", included: t.monitors > 0 },
+    { label: "Signal routing to Slack / email / webhook / CRM", included: !!L.integrations },
+    { label: "Integrations (HubSpot, Notion, Airtable, Slack)", included: !!L.integrations },
+    { label: "All AI enrichments", included: true },
+    { label: "Browser extension", included: false, upcoming: true },
+    { label: "API access", included: !!L.api_access },
+    { label: t.seats > 1 ? `${n(t.seats)} team seats` : "Team seats", included: t.seats > 1 },
+    { label: t.workspaces > 1 ? `${n(t.workspaces)} client workspaces` : "Client workspaces", included: t.workspaces > 1 },
+    { label: "White-label PDF", included: !!L.white_label_pdf },
+    { label: "Priority support", included: !!L.priority_support },
+  ];
+  if ((L.exports || []).includes("jsonl")) rows.splice(4, 0, { label: "JSONL / RAG export", included: true });
+  return rows;
+}
+for (const plan of PLANS) plan.features = featuresFor(plan);
+
+// Enterprise plan — custom pricing, displayed separately.
+//
+// Sold, not priced: the tile leads with what changes at this scale (volume,
+// security, support, rollout) and carries two ways in — talk to sales, or book a
+// demo. Everything on it is a contractual term negotiated per customer; nothing
+// here claims a certification the product does not hold.
 export const ENTERPRISE_PLAN = {
   id: "enterprise",
   name: "Enterprise",
-  tagline: "Custom (≥ $1,000 / mo)",
-  badge: null,
+  tagline: "Volume, security and rollout support for large teams",
+  priceNote: "Typically from $1,000 / mo, shaped to your volume",
+  badge: "For large teams",
+  includesNote: "Everything in Agency, plus:",
+  cta: { primary: "Talk to sales", secondary: "Book a demo" },
+  // Headline numbers a buyer scans first.
+  highlights: [
+    { value: "Custom", label: "credit volume" },
+    { value: "SSO", label: "SAML sign-in" },
+    { value: "SLA", label: "& DPA included" },
+  ],
   features: [
-    { label: "Custom extraction volume",      included: true },
-    { label: "SSO / SAML",                   included: true },
-    { label: "DPA & SLA",                    included: true },
-    { label: "On-prem deployment option",    included: true },
-    { label: "Dedicated support engineer",   included: true },
-    { label: "Custom integrations",          included: true },
+    { label: "Custom credit volume with committed-use pricing", included: true },
+    { label: "Unlimited seats and client workspaces (negotiated)", included: true },
+    { label: "SSO / SAML sign-in", included: true },
+    { label: "DPA, security review & vendor questionnaires", included: true },
+    { label: "Uptime SLA with named escalation path", included: true },
+    { label: "Dedicated support engineer & success manager", included: true },
+    { label: "Guided onboarding & workflow design for your team", included: true },
+    { label: "Custom integrations & API limits", included: true },
+    { label: "Custom data retention & residency options", included: true },
+    { label: "On-prem / private deployment option", included: true },
+    { label: "Invoice / PO billing", included: true },
+    { label: "Roadmap input & early access to upcoming features", included: true },
   ],
 };
 
@@ -490,7 +453,7 @@ export const ADDON_PRICES = Object.freeze({
   "workspace-addon": { usd: 19, inr: 1849, credits_consumed: "0 — no provider call" },
 });
 
-export const TOPUP_BUNDLES = [
+const _TOPUP_BUNDLES_UNSORTED = [
   {
     id: "batch-pack",
     name: "Batch Pack",
@@ -550,6 +513,9 @@ export const TOPUP_BUNDLES = [
   },
 ];
 
+/** Top-up bundles, cheapest first — the order shown on /pricing. */
+export const TOPUP_BUNDLES = [..._TOPUP_BUNDLES_UNSORTED].sort((a, b) => a.price_usd - b.price_usd);
+
 // ── Credit Packs (D18) ─────────────────────────────────────────────────────
 //
 // Anchored at roughly 3x the Select plan rate, with volume breaks: expensive
@@ -563,7 +529,24 @@ export const TOPUP_BUNDLES = [
 /** One sentence per pack, DERIVED — a hand-written "roughly 26 runs" goes stale
  *  the moment a weight moves, and nothing would fail when it did. */
 function packDescription(credits) {
-  return `Roughly ${n(Math.floor(credits / AUDIT_COST))} Discoverability runs, or ${n(credits)} page extractions.`;
+  const b = packBenefits(credits);
+  return `Spend them on any mix: ${b.map((x) => x.label).join(", ")}. Batch size, monitor slots and workspaces come from your plan or the add-ons below.`;
+}
+
+/**
+ * What a pack's credits buy, in the units people think in — DERIVED from the
+ * weights, so the card cannot quote a number the meter disagrees with. A pack
+ * is spend only: it does NOT raise batch size, monitor slots, workspaces or
+ * seats (those are plan or add-on capacity), and saying so on the card stops a
+ * buyer expecting a bigger batch from a bigger pack.
+ */
+export function packBenefits(credits) {
+  return [
+    { icon: "globe",     label: `${n(credits)} page extractions` },
+    { icon: "search",    label: `${n(Math.floor(credits / AUDIT_COST))} Discoverability runs` },
+    { icon: "users",     label: `${n(Math.floor(credits / CREDIT_WEIGHTS.enrichment))} enriched account-list rows` },
+    { icon: "clock",     label: `${n(credits)} monitor page checks` },
+  ];
 }
 
 export const CREDIT_PACKS = [
@@ -579,6 +562,7 @@ export const CREDIT_PACKS = [
     price_inr: 490,
     credits: 750,
     description: packDescription(750),
+    benefits: packBenefits(750),
     unit: "one-off",
     stackable: true,
   },
@@ -590,6 +574,7 @@ export const CREDIT_PACKS = [
     price_inr: 1849,
     credits: 3000,
     description: packDescription(3000),
+    benefits: packBenefits(3000),
     unit: "one-off",
     stackable: true,
     badge: "Best value",
@@ -602,6 +587,7 @@ export const CREDIT_PACKS = [
     price_inr: 8749,
     credits: 15000,
     description: packDescription(15000),
+    benefits: packBenefits(15000),
     unit: "one-off",
     stackable: true,
   },

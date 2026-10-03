@@ -118,17 +118,20 @@ describe("I-39 — Pricing: 8 plan cards + monthly default + INR", () => {
     await act(async () => { await Promise.resolve(); });
     const badge = PLANS.find((p) => p.comingSoon)?.badge;
     expect(badge).toBeTruthy();
-    expect(screen.getByText(badge)).toBeInTheDocument();
+    // "Upcoming" also tags the browser-extension rows, so look at the card's badge.
+    const cardBadge = document.querySelector(".plan-coming-soon .plan-badge");
+    expect(cardBadge?.textContent).toBe(badge);
     expect(screen.getByRole("button", { name: /notify me/i })).toBeDisabled();
   });
 
   it("Enterprise card has a 'Contact sales' mailto link", async () => {
     render(<Tree />);
     await act(async () => { await Promise.resolve(); });
-    // The Enterprise card CTA is a mailto: link to hello@datiq.app.
-    const mailto = document.querySelector('a[href^="mailto:"]');
+    // Enterprise enquiries route to admin@datiq.app (contactRouting.js); the
+    // tile also offers a "Book a demo" mailto alongside the Contact sales button.
+    const mailto = document.querySelector(".enterprise-card a.enterprise-demo-link");
     expect(mailto).not.toBeNull();
-    expect(mailto.getAttribute("href")).toMatch(/mailto:hello@datiq\.app/);
+    expect(mailto.getAttribute("href")).toMatch(/mailto:admin@datiq\.app/);
   });
 
   it("Monthly billing is the default toggle state", async () => {
@@ -161,7 +164,7 @@ describe("I-39 — Pricing: 8 plan cards + monthly default + INR", () => {
 describe("I-39 — Pricing: comparison matrix prices match the plan cards", () => {
   function cardMonthlyPrices() {
     return Array.from(document.querySelectorAll(".plans-grid .plan-card"))
-      .filter((c) => !c.classList.contains("enterprise-card") && !c.classList.contains("plan-coming-soon"))
+      .filter((c) => !c.classList.contains("enterprise-card"))
       .map((c) => {
         const sub = c.querySelector(".price-amount-sub");
         const main = c.querySelector(".price-amount");

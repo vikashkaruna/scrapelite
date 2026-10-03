@@ -134,7 +134,12 @@ describe("signed-in user with no entitlement row", () => {
     expect(allowed.check.allowed).toBe(true);
 
     entitlementRow(null);
-    const denied = await mod.requireCapability(ev(), "export.pdf"); // Free has no PDF
+    // Export is every plan's own data (Free included); a capability Free does
+    // not have is the one to prove it is still plan-gated.
+    const exp = await mod.requireCapability(ev(), "export.pdf");
+    expect(exp.check.allowed).toBe(true);
+    entitlementRow(null);
+    const denied = await mod.requireCapability(ev(), "integrations");
     expect(denied.check.allowed).toBe(false);
     expect(denied.check.code).toBe("NOT_IN_PLAN");
   });

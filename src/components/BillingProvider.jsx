@@ -541,6 +541,8 @@ export function BillingProvider({ children }) {
   const checkCanEnrich       = useCallback((url) => can(entitlement, "enrich", gateCtx({ url })), [entitlement, gateCtx, usage]);
   const checkCanExport       = useCallback((fmt) => can(entitlement, `export.${fmt}`, gateCtx()).allowed, [entitlement, gateCtx]);
   const checkCanEmail        = useCallback(() => can(entitlement, "export.email", gateCtx()).allowed, [entitlement, gateCtx]);
+  // CSV import of a URL list — every paid plan (Free can still paste URLs).
+  const checkCanImportCsv    = useCallback(() => can(entitlement, "import.csv", gateCtx()).allowed, [entitlement, gateCtx]);
   const checkCanBatch        = useCallback((urlCount) => can(entitlement, "batch", gateCtx({ urlCount })), [entitlement, gateCtx]);
   const checkCanExtractBatch = useCallback((urlCount) => can(entitlement, "extract.batch", gateCtx({ urlCount })), [entitlement, gateCtx, usage]);
   // Push integrations (HubSpot, Notion, Airtable, Slack) — Select and up.
@@ -751,7 +753,7 @@ export function BillingProvider({ children }) {
     // Payment stage (for PaymentProcessingModal — also useful for callers to poll)
     paymentStage, paymentStageMsg, dismissPaymentModal,
     trackExtraction, trackEnrichment,
-    checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
+    checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail, checkCanImportCsv,
     checkCanBatch, checkCanExtractBatch, checkCanIntegrations, whyCannot,
     entitlement, lifecycle, isSuspended, refreshEntitlement,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,
@@ -766,7 +768,7 @@ export function BillingProvider({ children }) {
     paymentHistory, dbSubscription,
     paymentStage, paymentStageMsg, dismissPaymentModal,
     trackExtraction, trackEnrichment,
-    checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail,
+    checkCanExtract, checkCanEnrich, checkCanExport, checkCanEmail, checkCanImportCsv,
     checkCanBatch, checkCanExtractBatch, checkCanIntegrations, whyCannot,
     entitlement, lifecycle, isSuspended, refreshEntitlement,
     applyBonus, applyCoupon, removeCoupon, refreshUsage,

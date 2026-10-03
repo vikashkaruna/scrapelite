@@ -17,7 +17,7 @@
 export const PAGE_SEO = {
   "/pricing": {
     "title": "DatIQ Pricing — Free, Go, Select, Pro, Business, Agency | DatIQ.app",
-    "description": "DatIQ pricing, in one unit — credits. Free (500 credits, one-time), Go ($5/mo · ₹449, 1,500), Select ($15/mo · ₹1,449, 5,000), Pro ($25/mo · ₹2,449, 10,000, recommended), Business ($85/mo · ₹7,849, 50,000), Agency ($200/mo · ₹19,449, 150,000 fair use, best value), Developer ($55/mo · ₹5,449, 25,000, coming H3 2026). Credit packs from $5. Cheaper on annual billing. INR is a set price, not a conversion.",
+    "description": "DatIQ pricing, in one unit — credits. Free (500 credits, one-time), Go ($5/mo · ₹449, 1,500), Select ($15/mo · ₹1,449, 5,000), Pro ($25/mo · ₹2,449, 10,000, recommended), Business ($85/mo · ₹7,849, 50,000), Agency ($200/mo · ₹19,449, 150,000 fair use, best value), Developer ($55/mo · ₹5,449, 25,000, upcoming). Credit packs from $5. Cheaper on annual billing. INR is a set price, not a conversion.",
     "canonical": "https://datiq.app/pricing",
     "jsonLd": [
       {
@@ -25,7 +25,7 @@ export const PAGE_SEO = {
         "@type": "Product",
         "name": "DatIQ",
         "alternateName": "DatIQ.app — The Unified Web Intelligence Platform",
-        "description": "DatIQ is a no-code web intelligence platform. Paste any public URL and get headings, links, contacts, pricing, AI summaries, and custom fields in seconds.",
+        "description": "DatIQ is an AI-enabled web intelligence platform. Paste any public URL and get headings, links, contacts, pricing, AI summaries, and custom fields in seconds.",
         "url": "https://datiq.app/pricing",
         "brand": {
           "@type": "Brand",
@@ -37,56 +37,56 @@ export const PAGE_SEO = {
             "name": "Free",
             "price": "0",
             "priceCurrency": "USD",
-            "description": "500 credits/month, no credit card"
+            "description": "500 credits (one-time), export in every format, no credit card"
           },
           {
             "@type": "Offer",
             "name": "Go",
-            "price": "4.80",
+            "price": "5",
             "priceCurrency": "USD",
-            "description": "1,500 credits/month, CSV/PDF/Markdown export, email export"
+            "description": "1,500 credits/month, CSV import, 2 scheduled monitors"
           },
           {
             "@type": "Offer",
             "name": "Select",
-            "price": "14.40",
+            "price": "15",
             "priceCurrency": "USD",
             "description": "5,000 credits/month, batch up to 50 URLs"
           },
           {
             "@type": "Offer",
             "name": "Pro",
-            "price": "20.40",
+            "price": "25",
             "priceCurrency": "USD",
             "description": "10,000 credits/month, scheduled monitoring, Google Sheets"
           },
           {
             "@type": "Offer",
             "name": "Business",
-            "price": "44.40",
+            "price": "85",
             "priceCurrency": "USD",
             "description": "50,000 credits/month, API, 3 seats, HubSpot CRM sync, white-label PDF"
           },
           {
             "@type": "Offer",
             "name": "Agency",
-            "price": "106.80",
+            "price": "200",
             "priceCurrency": "USD",
             "description": "Unlimited extractions, 5 workspaces, priority support"
           },
           {
             "@type": "Offer",
             "name": "Developer",
-            "price": "32.40",
+            "price": "55",
             "priceCurrency": "USD",
-            "description": "API-first, 10K row credits. Coming H3 2026"
+            "description": "API-first, 10K row credits. Upcoming"
           }
         ]
       }
     ]
   },
   "/about": {
-    "title": "About DatIQ — the no-code web intelligence platform | DatIQ.app",
+    "title": "About DatIQ — the AI-enabled web intelligence platform | DatIQ.app",
     "description": "DatIQ turns any public URL into structured, ready-to-use intelligence for sales, research, marketing, recruiting, and operations teams. No code, no setup, free to start.",
     "canonical": "https://datiq.app/about",
     "jsonLd": [
@@ -114,14 +114,14 @@ export const PAGE_SEO = {
   },
   "/blog": {
     "title": "DatIQ Blog — guides on web data extraction, AI summarization, scraping | DatIQ.app",
-    "description": "The DatIQ blog: product updates, use-case guides, and deep dives on no-code web data extraction, AI summarization, scheduled monitoring, custom extraction, and more. DatIQ.app is the no-code web intelligence platform.",
+    "description": "The DatIQ blog: product updates, use-case guides, and deep dives on AI-enabled web data extraction, AI summarization, scheduled monitoring, custom extraction, and more. DatIQ.app is the AI-enabled web intelligence platform.",
     "canonical": "https://datiq.app/blog",
     "jsonLd": [
       {
         "@context": "https://schema.org",
         "@type": "Blog",
         "name": "DatIQ Blog",
-        "description": "Product updates, use-case guides, and deep dives on no-code web data extraction from the DatIQ team.",
+        "description": "Product updates, use-case guides, and deep dives on AI-enabled web data extraction from the DatIQ team.",
         "url": "https://datiq.app/blog",
         "publisher": {
           "@type": "Organization",
@@ -231,7 +231,7 @@ export const PAGE_SEO = {
           },
           {
             "@type": "BlogPosting",
-            "headline": "Zero-Code Enrichment Pipeline: From URL to CRM in 5 Steps",
+            "headline": "AI-Enabled Enrichment Pipeline: From URL to CRM in 5 Steps",
             "datePublished": "2026-04-22",
             "url": "https://datiq.app/blog#enrichment-pipeline",
             "author": {
@@ -348,7 +348,7 @@ export const PAGE_SEO = {
             "name": "How many leads can I extract per month?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Every feature spends from one pool of credits, so there is no separate extraction, audit or enrichment allowance to reason about. 1 credit is one page fetch; a Discoverability audit is 19, a deep AI call 5, a fast one 2, an enrichment 3. The Free plan includes 500 credits, granted once and never resetting. Go ($5/mo · ₹449) is 1,500, Select ($15/mo · ₹1,449) is 5,000, Pro ($25/mo · ₹2,449) is 10,000, Business ($85/mo · ₹7,849) is 50,000, and Agency ($200/mo · ₹19,449) is 150,000 on fair use. Unused plan credits roll over for one month, so you can hold at most two months' worth. Annual billing is cheaper again, and USD and INR are set prices rather than conversions of one another. Credit packs — 750 for $5 / ₹449, 3,000 for $19 / ₹1,849, 15,000 for $89 / ₹8,749 — top up any plan and never expire. You can also batch-process up to 500 URLs in a single run, and enrich and ICP-score bulk account lists of up to 500 rows on Agency."
+              "text": "Every feature spends from one pool of credits, so there is no separate extraction, audit or enrichment allowance to reason about. 1 credit is one page fetch; a Discoverability audit is 19, a deep AI call 5, a fast one 2, an enrichment 3. The Free plan includes 500 credits, granted once and never resetting. Go ($5/mo · ₹449) is 1,500, Select ($15/mo · ₹1,449) is 5,000, Pro ($25/mo · ₹2,449) is 10,000, Business ($85/mo · ₹7,849) is 50,000, and Agency ($200/mo · ₹19,449) is 150,000 on fair use. Unused plan credits roll over for one month, so you can hold at most two months' worth. Annual billing is cheaper again, and USD and INR are set prices rather than conversions of one another. Credit packs — 750 for $5 / ₹490, 3,000 for $19 / ₹1,849, 15,000 for $89 / ₹8,749 — top up any plan and never expire. You can also batch-process up to 500 URLs in a single run, and enrich and ICP-score bulk account lists of up to 500 rows on Agency."
             }
           },
           {

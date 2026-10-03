@@ -442,7 +442,7 @@ export default function Dashboard() {
   useSeo({
     title: "DatIQ Dashboard — your saved extractions | DatIQ.app",
     description:
-      "DatIQ Dashboard — your saved extractions, search and filter, batch runs, collection grouping, CSV and PDF export, and integrations. DatIQ.app is the zero-code web data extraction platform.",
+      "DatIQ Dashboard — your saved extractions, search and filter, batch runs, collection grouping, CSV and PDF export, and integrations. DatIQ.app is the AI-enabled web data extraction platform.",
     canonical: "https://datiq.app/dashboard",
   });
   const navigate = useNavigate();
@@ -698,7 +698,7 @@ export default function Dashboard() {
   };
 
   const handleSend = async (emails, format) => {
-    if (!checkCanEmail()) { showToast("Email export requires the Go plan or higher."); setEmailOpen(false); return; }
+    if (!checkCanEmail()) { showToast("Email export isn't available on your current plan."); setEmailOpen(false); return; }
     if (!checkCanExport(format)) { showToast(`${format.toUpperCase()} export is not available on your current plan.`); return; }
     try {
       const res = await apiClient.sendExportEmail({ to: emails, items: selectedItems.map(withEnrichments), format, brandKit: readBrandKit() });
@@ -733,7 +733,7 @@ export default function Dashboard() {
   };
 
   const onExportPdf = async () => {
-    if (!checkCanExport("pdf")) { showToast("PDF export requires the Go plan or higher. Upgrade to unlock."); return; }
+    if (!checkCanExport("pdf")) { showToast("PDF export isn't available on your current plan."); return; }
     const targets = exportTargets();
     if (!targets.length) return;
     try {
@@ -762,7 +762,7 @@ export default function Dashboard() {
   };
 
   const onExportMarkdown = () => {
-    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Go plan or higher."); return; }
+    if (!checkCanExport("markdown")) { showToast("Markdown export isn't available on your current plan."); return; }
     const targets = exportTargets();
     if (!targets.length) return;
     markdownDownload(targets, { brandKit: readBrandKit() });
@@ -771,7 +771,7 @@ export default function Dashboard() {
   };
 
   const onExportJson = () => {
-    if (!checkCanExport("json")) { showToast("JSON export requires the Go plan or higher."); return; }
+    if (!checkCanExport("json")) { showToast("JSON export isn't available on your current plan."); return; }
     const targets = exportTargets();
     if (!targets.length) return;
     jsonDownload(targets, { brandKit: readBrandKit() });
@@ -793,7 +793,7 @@ export default function Dashboard() {
     }
   };
   const onCopyMarkdown = async () => {
-    if (!checkCanExport("markdown")) { showToast("Markdown export requires the Go plan or higher."); return; }
+    if (!checkCanExport("markdown")) { showToast("Markdown export isn't available on your current plan."); return; }
     const targets = exportTargets();
     if (!targets.length) return;
     const out = await copyToClipboard(targets, "markdown");
@@ -805,7 +805,7 @@ export default function Dashboard() {
     }
   };
   const onCopyJson = async () => {
-    if (!checkCanExport("json")) { showToast("JSON export requires the Go plan or higher."); return; }
+    if (!checkCanExport("json")) { showToast("JSON export isn't available on your current plan."); return; }
     const targets = exportTargets();
     if (!targets.length) return;
     const out = await copyToClipboard(targets, "json");

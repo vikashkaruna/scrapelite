@@ -147,9 +147,9 @@ describe("canEnrich (U-21)", () => {
 });
 
 describe("canExport / canEmailExport (U-22)", () => {
-  it("Free plan: PDF is not in the allowed exports array", () => {
-    expect(canExport("free", "pdf")).toBe(false);
-    expect(canExport("free", "markdown")).toBe(false);
+  it("Free plan: every export format is allowed", () => {
+    expect(canExport("free", "pdf")).toBe(true);
+    expect(canExport("free", "markdown")).toBe(true);
     expect(canExport("free", "csv")).toBe(true);
   });
 
@@ -159,12 +159,12 @@ describe("canExport / canEmailExport (U-22)", () => {
     expect(canExport("select", "pdf")).toBe(true);
   });
 
-  it("Free plan: JSON is not allowed (still CSV-only)", () => {
-    expect(canExport("free", "json")).toBe(false);
+  it("Free plan: JSON is allowed", () => {
+    expect(canExport("free", "json")).toBe(true);
   });
 
   it("canEmailExport reflects plan's email_export limit", () => {
-    expect(canEmailExport("free")).toBe(false);
+    expect(canEmailExport("free")).toBe(true);
     expect(canEmailExport("select")).toBe(true);
     expect(canEmailExport("pro")).toBe(true);
   });

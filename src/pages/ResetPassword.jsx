@@ -24,7 +24,7 @@ export default function ResetPassword() {
   useSeo({
     title: "Reset your DatIQ password | DatIQ.app",
     description:
-      "Reset your DatIQ password — enter your email and we'll send a recovery link. DatIQ.app is the zero-code web data extraction platform with no-code web data extraction for marketers.",
+      "Reset your DatIQ password — enter your email and we'll send a recovery link. DatIQ.app is the AI-enabled web data extraction platform for marketers.",
     canonical: "https://datiq.app/reset-password",
     robots: "noindex, nofollow",
   });
