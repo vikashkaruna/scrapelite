@@ -152,7 +152,7 @@ describe("ENTERPRISE_PLAN + plan count (U-13)", () => {
       expect(plan.limits.integrations, `${id} should have integrations`).toBe(true);
       expect(plan.limits.browser_extension, `${id} should have the browser extension flag`).toBe(true);
     }
-    expect(go.limits.scheduled_monitoring).toBe(0);
+    expect(go.limits.scheduled_monitoring).toBe(2); // 2026-10 sheet: a slot count, not an exclusion
     expect(go.limits.integrations).toBe(false);
     expect(go.limits.browser_extension).toBe(false);
     expect(PLAN_BY_ID.free.limits.integrations).toBe(false);
@@ -252,8 +252,8 @@ describe("credit pools", () => {
 
   it("holds the §4.1 table exactly", () => {
     expect(Object.fromEntries(PLANS.map((p) => [p.id, p.limits.credits]))).toEqual({
-      free: 100, go: 750, select: 2500, pro: 6000,
-      developer: 25000, business: 40000, agency: 100000,
+      free: 500, go: 1500, select: 5000, pro: 10000,
+      developer: 25000, business: 50000, agency: 150000,
     });
   });
 
@@ -325,9 +325,9 @@ describe("top-ups sell capacity, never consumption", () => {
 describe("credit packs", () => {
   it("ship the §4.4 table", () => {
     expect(CREDIT_PACKS.map((p) => [p.credits, p.price_usd]))
-      .toEqual([[500, 5], [2000, 19], [10000, 89]]);
+      .toEqual([[750, 5], [3000, 19], [15000, 89]]);
     expect(CREDIT_PACKS.map((p) => [p.credits, p.price_inr]))
-      .toEqual([[500, 490], [2000, 1849], [10000, 8719]]);
+      .toEqual([[750, 490], [3000, 1849], [15000, 8749]]);
   });
 
   // 🔴 THE GUARD THAT WOULD HAVE CAUGHT THE ₹11,449 TYPO. The large pack was

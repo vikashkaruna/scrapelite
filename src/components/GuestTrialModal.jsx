@@ -85,7 +85,7 @@ export default function GuestTrialModal() {
 
   const bodyText = isHard
     ? paywall.body
-    : "Create a free account to keep going. The free plan includes 100 credits that never expire, full AI summaries, and more.";
+    : "Create a free account to keep going. The free plan includes 500 credits that never expire, full AI summaries, and more.";
 
   return (
     <div

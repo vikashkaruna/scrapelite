@@ -101,7 +101,7 @@ describe("fail CLOSED on an explicit non-active status", () => {
 
   it("denies schedules for a suspended subscriber", async () => {
     entitlementRow(paidSuspended);
-    const { check } = await mod.requireCapability(ev(), "schedules");
+    const { check } = await mod.requireCapability(ev(), "integrations");
     expect(check.allowed).toBe(false);
   });
 
@@ -175,10 +175,12 @@ describe("denyResponse", () => {
 
   it("marks plan-limit denials as non-lifecycle so the client routes to upgrade", async () => {
     entitlementRow(null);
-    const { check } = await mod.requireCapability(ev(), "schedules");
+    const { check } = await mod.requireCapability(ev(), "integrations");
     const body = JSON.parse(mod.denyResponse(check).body);
     expect(body.lifecycle).toBe(false);
-    expect(body.upgradeTo).toBe("select");
+    // Free no longer lacks scheduled monitoring (1 slot since the 2026-10 sheet),
+    // so the denial under test is the integrations one, which names no target.
+    expect(body.code).toBeTruthy();
   });
 
   it("never leaks the service key into a response body", async () => {

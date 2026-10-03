@@ -527,7 +527,7 @@ export default function Pricing() {
           <div className="pricing-faq-row">
             <div className="pricing-faq-item">
               <Icon name="gift" size={16} />
-              <span>Free plan includes <strong>100 credits</strong> at signup — no card required, and they never expire.</span>
+              <span>Free plan includes <strong>500 credits</strong> at signup — no card required, and they never expire.</span>
             </div>
             <div className="pricing-faq-item">
               <Icon name="shield" size={16} />

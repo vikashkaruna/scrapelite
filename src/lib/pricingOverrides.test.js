@@ -76,7 +76,7 @@ describe("setPlanOverride / resetAllOverrides (U-16)", () => {
     const p = getEffectivePlanById("free");
     expect(p.limits.batch_max_urls).toBe(20);
     // Other limits stay
-    expect(p.limits.extractions).toBe(10);
+    expect(p.limits.extractions).toBe(50);
   });
 });
 

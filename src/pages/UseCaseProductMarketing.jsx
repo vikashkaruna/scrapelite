@@ -35,7 +35,7 @@ export default function UseCaseProductMarketing() {
         title: "A field that disappeared is not a deletion",
         body: "When a page stops showing a field, DatIQ reports it as no longer observed — usually a failed render — rather than telling you a competitor dropped their pricing. That is the false positive that costs the most.",
       }}
-      cta={{ title: "Build your first battlecard", body: "Free to start — 100 credits, no credit card required.", label: "Open the template hub", to: "/templates?filter=pmm" }}
+      cta={{ title: "Build your first battlecard", body: "Free to start — 500 credits, no credit card required.", label: "Open the template hub", to: "/templates?filter=pmm" }}
       related={[
         { label: "Competitive Monitoring", path: "/use-cases/competitive-monitoring" },
         { label: "Competitor Research", path: "/use-cases/competitor-research" },

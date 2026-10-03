@@ -87,7 +87,7 @@ export const DEFAULT_CITATION_PROMPTS = 5;
  * the one action that demonstrates the product fails for the user who spent
  * their pool on extractions first — which is the opposite of what a taster is.
  */
-export const FREE_GRANT = 100;
+export const FREE_GRANT = 500;
 export const FREE_DISCOVERABILITY_RESERVE = DISCOVERABILITY_BASE;
 
 /** Rolled-over credits expire at the end of the month AFTER the one granted. */

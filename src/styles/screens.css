@@ -8066,9 +8066,11 @@
 .uub-public { display: inline-block; padding: 2px 8px; background: color-mix(in srgb, #10b981 12%, transparent); color: #059669; border-radius: 999px; font-size: .75rem; font-weight: 600; }
 
 /* ── FA2: Referral banner ──────────────────────────────────────────── */
-.referral-banner-wrap { border-top: 1px solid var(--border); }
-.referral-banner { background: color-mix(in srgb, #f59e0b 6%, var(--surface-2)); border-left: 3px solid #f59e0b; }
-.referral-code-row { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; }
+/* The tint lives on the full-width wrap, never the 1080px inner box — a tinted
+   inner box on a differently tinted band reads as a second, narrower banner. */
+.referral-banner-wrap { border-top: 1px solid var(--border); background: color-mix(in srgb, #f59e0b 8%, var(--surface-2)); }
+.referral-banner { background: transparent; }
+.referral-code-row { display: inline-flex; align-items: center; gap: 8px; margin-left: 4px; vertical-align: middle; }
 .referral-code-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .82rem; font-weight: 700; letter-spacing: .04em; color: var(--text); }
 .referral-code-hint { font-size: .75rem; color: var(--text-2); }
 .referral-share-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text-2); cursor: pointer; transition: color .15s; }

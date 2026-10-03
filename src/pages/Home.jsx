@@ -289,8 +289,10 @@ export default function Home() {
     return () => { alive = false; };
   }, [user]);
   const tiles = useMemo(() => homeTiles({ engageAccess }), [engageAccess]);
-  const examples = persona ? persona.examples : ["lumio.io", "stripe.com/pricing", "notion.so/help"];
-  const defaultUrl = persona ? `https://${examples[0]}` : "https://lumio.io";
+  // A first-time visitor (no role chosen yet) sees DatIQ's own site in the box,
+  // so the first extraction demonstrates the product on a page we know renders.
+  const examples = persona ? persona.examples : ["datiq.app", "stripe.com/pricing", "notion.so/help"];
+  const defaultUrl = persona ? `https://${examples[0]}` : "https://datiq.app";
 
   // ── Single-URL input state ─────────────────────────────────────────────
   const [url, setUrl]       = useState(defaultUrl);

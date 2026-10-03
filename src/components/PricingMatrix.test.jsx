@@ -30,11 +30,11 @@ describe("F13 — PricingMatrix", () => {
     expect(screen.getByRole("rowheader", { name: /Credits \/ month/i })).toBeInTheDocument();
   });
 
-  it("shows plan-specific pools (Free = 100)", () => {
+  it("shows plan-specific pools (Free = 500)", () => {
     render(<MemoryRouter><PricingMatrix /></MemoryRouter>);
     const row = screen.getByRole("row", { name: /Credits \/ month/i });
     const cells = within(row).getAllByRole("cell");
-    expect(cells.map((c) => c.textContent.trim()).join("|")).toContain("100");
+    expect(cells.map((c) => c.textContent.trim()).join("|")).toContain("500");
   });
 
   // ⚠️ A raw credit count means nothing on its own. The table has to translate

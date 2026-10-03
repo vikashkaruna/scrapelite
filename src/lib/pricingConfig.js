@@ -82,13 +82,13 @@ export const CURRENCY_META = {
 // operator override written against the old shape resolves to.
 export const PLAN_TABLE = Object.freeze({
   //            USD/mo   USD/mo(annual)   INR/mo   INR/mo(annual)  credits   extract  discover  batch  bulk  monitors  seats  workspaces
-  free:      { usd:   0, usd_annual:   0, inr:     0, inr_annual:     0, credits:    100, extract:     10, discover:    1, batch:   5, bulk:   0, monitors:   0, seats: 1, workspaces: 1 },
-  go:        { usd:   5, usd_annual:   4, inr:   490, inr_annual:   409, credits:    750, extract:    200, discover:   10, batch:  20, bulk:  20, monitors:   0, seats: 1, workspaces: 1 },
-  select:    { usd:  15, usd_annual:  12, inr:  1449, inr_annual:  1209, credits:   2500, extract:    500, discover:   25, batch:  50, bulk:  50, monitors:   5, seats: 1, workspaces: 1 },
-  pro:       { usd:  25, usd_annual:  20, inr:  2449, inr_annual:  2049, credits:   6000, extract:   1000, discover:  100, batch: 100, bulk: 100, monitors:  10, seats: 1, workspaces: 1 },
-  developer: { usd:  55, usd_annual:  45, inr:  5449, inr_annual:  4549, credits:  25000, extract:  10000, discover:  250, batch: 250, bulk: 250, monitors:  10, seats: 1, workspaces: 1 },
-  business:  { usd:  85, usd_annual:  70, inr:  7849, inr_annual:  6549, credits:  40000, extract:  10000, discover:  500, batch: 250, bulk: 250, monitors:  25, seats: 3, workspaces: 1 },
-  agency:    { usd: 200, usd_annual: 165, inr: 19449, inr_annual: 16249, credits: 100000, extract: 100000, discover: 2000, batch: 500, bulk: 500, monitors: 100, seats: 5, workspaces: 5 },
+  free:      { usd:   0, usd_annual:   0, inr:     0, inr_annual:     0, credits:    500, extract:     50, discover:    3, batch:   5, bulk:   1, monitors:   1, seats: 1, workspaces: 1 },
+  go:        { usd:   5, usd_annual:   4, inr:   449, inr_annual:   379, credits:   1500, extract:    500, discover:   20, batch:  20, bulk:  20, monitors:   2, seats: 1, workspaces: 1 },
+  select:    { usd:  15, usd_annual:  12, inr:  1449, inr_annual:  1209, credits:   5000, extract:   1000, discover:   25, batch:  50, bulk:  50, monitors:   5, seats: 1, workspaces: 1 },
+  pro:       { usd:  25, usd_annual:  20, inr:  2449, inr_annual:  2049, credits:  10000, extract:   2500, discover:  100, batch: 100, bulk: 100, monitors:  10, seats: 1, workspaces: 1 },
+  developer: { usd:  55, usd_annual:  45, inr:  5449, inr_annual:  4549, credits:  25000, extract:  10000, discover:  200, batch: 250, bulk: 200, monitors:  10, seats: 1, workspaces: 1 },
+  business:  { usd:  85, usd_annual:  70, inr:  7849, inr_annual:  6549, credits:  50000, extract:  10000, discover:  500, batch: 250, bulk: 250, monitors:  25, seats: 3, workspaces: 1 },
+  agency:    { usd: 200, usd_annual: 165, inr: 19449, inr_annual: 16249, credits: 150000, extract: 100000, discover: 2000, batch: 500, bulk: 500, monitors: 100, seats: 5, workspaces: 5 },
 });
 
 /** Credits a standard Discoverability run costs. Imported rather than written
@@ -182,7 +182,7 @@ export const PLANS = [
     }),
     features: [
       ...quantitativeFeatures("free").out,
-      { label: "Competitor watchlists", included: false },
+      { label: "Competitor watchlists", included: PLAN_TABLE.free.monitors > 0 },
       { label: "Signal routing to Slack / email / webhook / CRM", included: false },
       { label: "Fork & edit workflow templates", included: false },
       { label: "Full AI features", included: true },
@@ -222,7 +222,7 @@ export const PLANS = [
     }),
     features: [
       ...quantitativeFeatures("go").out,
-      { label: "Competitor watchlists", included: false },
+      { label: "Competitor watchlists", included: PLAN_TABLE.go.monitors > 0 },
       { label: "Signal routing to Slack / email / webhook / CRM", included: false },
       { label: "Fork & edit workflow templates", included: true },
       { label: "All enrichments", included: true },
@@ -485,8 +485,8 @@ export const PLAN_BY_ID = Object.fromEntries(PLANS.map((p) => [p.id, p]));
  * still draws from the pool so the copy beside it cannot quietly drop the point.
  */
 export const ADDON_PRICES = Object.freeze({
-  "scheduler-addon": { usd: 5,  inr:  490, credits_consumed: "runs draw on the pool: page monitor 1/page, prompt monitor 2/prompt" },
-  "batch-pack":      { usd: 9,  inr:  879, credits_consumed: "rows draw on the pool at 3/row" },
+  "scheduler-addon": { usd: 5,  inr:  449, credits_consumed: "runs draw on the pool: page monitor 1/page, prompt monitor 2/prompt" },
+  "batch-pack":      { usd: 9,  inr:  849, credits_consumed: "rows draw on the pool at 3/row" },
   "workspace-addon": { usd: 19, inr: 1849, credits_consumed: "0 — no provider call" },
 });
 
@@ -568,36 +568,40 @@ function packDescription(credits) {
 
 export const CREDIT_PACKS = [
   {
-    id: "credits-500",
-    name: "500 credits",
+    id: "credits-750",
+    name: "750 credits",
     icon: "zap",
     price_usd: 5,
+    // ₹490, not the sheet's ₹449: at ₹449 this pack costs ₹0.599/credit — LESS than
+    // the 3,000 pack's ₹0.616 — so four Smalls would undercut one Medium. The
+    // sheet's own INR/credit column for this row (0.65333 × 750) is ₹490, and the
+    // "bigger pack is cheaper per credit, in both currencies" guard enforces it.
     price_inr: 490,
-    credits: 500,
-    description: packDescription(500),
+    credits: 750,
+    description: packDescription(750),
     unit: "one-off",
     stackable: true,
   },
   {
-    id: "credits-2000",
-    name: "2,000 credits",
+    id: "credits-3000",
+    name: "3,000 credits",
     icon: "zap",
     price_usd: 19,
     price_inr: 1849,
-    credits: 2000,
-    description: packDescription(2000),
+    credits: 3000,
+    description: packDescription(3000),
     unit: "one-off",
     stackable: true,
     badge: "Best value",
   },
   {
-    id: "credits-10000",
-    name: "10,000 credits",
+    id: "credits-15000",
+    name: "15,000 credits",
     icon: "zap",
     price_usd: 89,
-    price_inr: 8719,
-    credits: 10000,
-    description: packDescription(10000),
+    price_inr: 8749,
+    credits: 15000,
+    description: packDescription(15000),
     unit: "one-off",
     stackable: true,
   },
@@ -609,7 +613,7 @@ export const CREDIT_PACK_BY_ID = Object.fromEntries(CREDIT_PACKS.map((p) => [p.i
 // ⚠️ PUBLISH THIS. An undisclosed cap is the version that loses trust, and the
 // same is true of the overage rate and the rollover cap.
 export const AGENCY_OVERAGE = Object.freeze({
-  fairUseCredits: 100_000,
+  fairUseCredits: 150_000,
   usdPer1000: 2.0,
   // The soft landing: notify at 100%, require a commitment at 150%, NEVER
   // hard-stop mid-month. An agency has client deliverables, and a hard stop

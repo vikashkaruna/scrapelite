@@ -17,7 +17,7 @@
 export const PAGE_SEO = {
   "/pricing": {
     "title": "DatIQ Pricing — Free, Go, Select, Pro, Business, Agency | DatIQ.app",
-    "description": "DatIQ pricing, in one unit — credits. Free (100 credits, one-time), Go ($5/mo · ₹490, 750), Select ($15/mo · ₹1,449, 2,500), Pro ($25/mo · ₹2,449, 6,000, recommended), Business ($85/mo · ₹7,849, 40,000), Agency ($200/mo · ₹19,449, 100,000 fair use, best value), Developer ($55/mo · ₹5,449, 25,000, coming H3 2026). Credit packs from $5. Cheaper on annual billing. INR is a set price, not a conversion.",
+    "description": "DatIQ pricing, in one unit — credits. Free (500 credits, one-time), Go ($5/mo · ₹449, 1,500), Select ($15/mo · ₹1,449, 5,000), Pro ($25/mo · ₹2,449, 10,000, recommended), Business ($85/mo · ₹7,849, 50,000), Agency ($200/mo · ₹19,449, 150,000 fair use, best value), Developer ($55/mo · ₹5,449, 25,000, coming H3 2026). Credit packs from $5. Cheaper on annual billing. INR is a set price, not a conversion.",
     "canonical": "https://datiq.app/pricing",
     "jsonLd": [
       {
@@ -37,35 +37,35 @@ export const PAGE_SEO = {
             "name": "Free",
             "price": "0",
             "priceCurrency": "USD",
-            "description": "100 credits/month, no credit card"
+            "description": "500 credits/month, no credit card"
           },
           {
             "@type": "Offer",
             "name": "Go",
             "price": "4.80",
             "priceCurrency": "USD",
-            "description": "750 credits/month, CSV/PDF/Markdown export, email export"
+            "description": "1,500 credits/month, CSV/PDF/Markdown export, email export"
           },
           {
             "@type": "Offer",
             "name": "Select",
             "price": "14.40",
             "priceCurrency": "USD",
-            "description": "2,500 credits/month, batch up to 50 URLs"
+            "description": "5,000 credits/month, batch up to 50 URLs"
           },
           {
             "@type": "Offer",
             "name": "Pro",
             "price": "20.40",
             "priceCurrency": "USD",
-            "description": "6,000 credits/month, scheduled monitoring, Google Sheets"
+            "description": "10,000 credits/month, scheduled monitoring, Google Sheets"
           },
           {
             "@type": "Offer",
             "name": "Business",
             "price": "44.40",
             "priceCurrency": "USD",
-            "description": "40,000 credits/month, API, 3 seats, HubSpot CRM sync, white-label PDF"
+            "description": "50,000 credits/month, API, 3 seats, HubSpot CRM sync, white-label PDF"
           },
           {
             "@type": "Offer",
@@ -348,7 +348,7 @@ export const PAGE_SEO = {
             "name": "How many leads can I extract per month?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Every feature spends from one pool of credits, so there is no separate extraction, audit or enrichment allowance to reason about. 1 credit is one page fetch; a Discoverability audit is 19, a deep AI call 5, a fast one 2, an enrichment 3. The Free plan includes 100 credits, granted once and never resetting. Go ($5/mo · ₹490) is 750, Select ($15/mo · ₹1,449) is 2,500, Pro ($25/mo · ₹2,449) is 6,000, Business ($85/mo · ₹7,849) is 40,000, and Agency ($200/mo · ₹19,449) is 100,000 on fair use. Unused plan credits roll over for one month, so you can hold at most two months' worth. Annual billing is cheaper again, and USD and INR are set prices rather than conversions of one another. Credit packs — 500 for $5 / ₹490, 2,000 for $19 / ₹1,849, 10,000 for $89 / ₹8,719 — top up any plan and never expire. You can also batch-process up to 500 URLs in a single run, and enrich and ICP-score bulk account lists of up to 500 rows on Agency."
+              "text": "Every feature spends from one pool of credits, so there is no separate extraction, audit or enrichment allowance to reason about. 1 credit is one page fetch; a Discoverability audit is 19, a deep AI call 5, a fast one 2, an enrichment 3. The Free plan includes 500 credits, granted once and never resetting. Go ($5/mo · ₹449) is 1,500, Select ($15/mo · ₹1,449) is 5,000, Pro ($25/mo · ₹2,449) is 10,000, Business ($85/mo · ₹7,849) is 50,000, and Agency ($200/mo · ₹19,449) is 150,000 on fair use. Unused plan credits roll over for one month, so you can hold at most two months' worth. Annual billing is cheaper again, and USD and INR are set prices rather than conversions of one another. Credit packs — 750 for $5 / ₹449, 3,000 for $19 / ₹1,849, 15,000 for $89 / ₹8,749 — top up any plan and never expire. You can also batch-process up to 500 URLs in a single run, and enrich and ICP-score bulk account lists of up to 500 rows on Agency."
             }
           },
           {
@@ -437,7 +437,7 @@ export const PAGE_SEO = {
             "name": "How many competitors can I track?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Two separate things bound this. Your plan grants a number of monitor SLOTS — 5 on Select, 10 on Pro, 25 on Business, unlimited on Agency — and each run then spends credits from your pool at 1 credit per page read. A single recurring schedule re-runs every N hours/days, so a daily check of 10 competitors costs about 300 credits a month, comfortably inside Pro's 6,000. An add-on buys the slot; the running still costs credits."
+              "text": "Two separate things bound this. Your plan grants a number of monitor SLOTS — 1 on Free, 2 on Go, 5 on Select, 10 on Pro, 25 on Business, 100 on Agency — and each run then spends credits from your pool at 1 credit per page read. A single recurring schedule re-runs every N hours/days, so a daily check of 10 competitors costs about 300 credits a month, comfortably inside Pro's 10,000. An add-on buys the slot; the running still costs credits."
             }
           },
           {
@@ -712,7 +712,7 @@ export const PAGE_SEO = {
             "name": "How many accounts can I put in one list?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "A bulk list has its own size limit, separate from batch mode: none on Free, 20 rows on Go, 50 on Select, 100 on Pro, 250 on Developer and Business, and 500 on Agency — that is how many rows fit in one run. Each enriched row then costs 3 credits from your pool. Everything is priced in one unit: credits. 1 credit = one page fetch; a Discoverability audit is 19. Free includes 100 credits, one-time and never resetting, with no credit card. Paid plans start at $5 / ₹490 a month (Go, 750 credits). Select is $15 / ₹1,449 (2,500), Pro $25 / ₹2,449 (6,000), Business $85 / ₹7,849 (40,000) and Agency $200 / ₹19,449 (100,000 on fair use). USD and INR are set prices, not conversions of one another. Annual billing is cheaper again. Credit packs top up any plan and never expire, and a plan's price and limits are fixed for the period you bought."
+              "text": "A bulk list has its own size limit, separate from batch mode: 1 row on Free, 20 on Go, 50 on Select, 100 on Pro, 200 on Developer, 250 on Business, and 500 on Agency — that is how many rows fit in one run. Each enriched row then costs 3 credits from your pool. Everything is priced in one unit: credits. 1 credit = one page fetch; a Discoverability audit is 19. Free includes 500 credits, one-time and never resetting, with no credit card. Paid plans start at $5 / ₹449 a month (Go, 1,500 credits). Select is $15 / ₹1,449 (5,000), Pro $25 / ₹2,449 (10,000), Business $85 / ₹7,849 (50,000) and Agency $200 / ₹19,449 (150,000 on fair use). USD and INR are set prices, not conversions of one another. Annual billing is cheaper again. Credit packs top up any plan and never expire, and a plan's price and limits are fixed for the period you bought."
             }
           }
         ]
@@ -801,7 +801,7 @@ export const PAGE_SEO = {
             "name": "Where do the alerts go?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "A signal routing rule sends them to Slack, email, a webhook or HubSpot, with conditions you set - for example, only changes at high materiality or above. Every dispatch is recorded whether it succeeded or not, and an unreachable destination is retried rather than dropped. Watchlists use your plan's scheduled-monitoring allowance, which starts on Select. Everything is priced in one unit: credits. 1 credit = one page fetch; a Discoverability audit is 19. Free includes 100 credits, one-time and never resetting, with no credit card. Paid plans start at $5 / ₹490 a month (Go, 750 credits). Select is $15 / ₹1,449 (2,500), Pro $25 / ₹2,449 (6,000), Business $85 / ₹7,849 (40,000) and Agency $200 / ₹19,449 (100,000 on fair use). USD and INR are set prices, not conversions of one another. Annual billing is cheaper again. Credit packs top up any plan and never expire, and a plan's price and limits are fixed for the period you bought."
+              "text": "A signal routing rule sends them to Slack, email, a webhook or HubSpot, with conditions you set - for example, only changes at high materiality or above. Every dispatch is recorded whether it succeeded or not, and an unreachable destination is retried rather than dropped. Watchlists use your plan's scheduled-monitoring allowance, which starts on Select. Everything is priced in one unit: credits. 1 credit = one page fetch; a Discoverability audit is 19. Free includes 500 credits, one-time and never resetting, with no credit card. Paid plans start at $5 / ₹449 a month (Go, 1,500 credits). Select is $15 / ₹1,449 (5,000), Pro $25 / ₹2,449 (10,000), Business $85 / ₹7,849 (50,000) and Agency $200 / ₹19,449 (150,000 on fair use). USD and INR are set prices, not conversions of one another. Annual billing is cheaper again. Credit packs top up any plan and never expire, and a plan's price and limits are fixed for the period you bought."
             }
           }
         ]
@@ -890,7 +890,7 @@ export const PAGE_SEO = {
             "name": "How many audits do I get?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Discoverability audits no longer have a separate allowance — they spend from the same credit pool as everything else, at 19 credits for a standard run (add 2 per extra citation prompt beyond the five included). So Free's 100 credits cover five audits, Go's 750 cover about 39, and Pro's 6,000 cover about 315, if you spend them on nothing else. Competitive benchmarks need a plan of Select or above. Everything is priced in one unit: credits. 1 credit = one page fetch; a Discoverability audit is 19. Free includes 100 credits, one-time and never resetting, with no credit card. Paid plans start at $5 / ₹490 a month (Go, 750 credits). Select is $15 / ₹1,449 (2,500), Pro $25 / ₹2,449 (6,000), Business $85 / ₹7,849 (40,000) and Agency $200 / ₹19,449 (100,000 on fair use). USD and INR are set prices, not conversions of one another. Annual billing is cheaper again. Credit packs top up any plan and never expire, and a plan's price and limits are fixed for the period you bought."
+              "text": "Discoverability audits no longer have a separate allowance — they spend from the same credit pool as everything else, at 19 credits for a standard run (add 2 per extra citation prompt beyond the five included). So Free's 500 credits cover about 26 audits, Go's 1,500 cover about 78, and Pro's 10,000 cover about 526, if you spend them on nothing else. Competitive benchmarks need a plan of Select or above. Everything is priced in one unit: credits. 1 credit = one page fetch; a Discoverability audit is 19. Free includes 500 credits, one-time and never resetting, with no credit card. Paid plans start at $5 / ₹449 a month (Go, 1,500 credits). Select is $15 / ₹1,449 (5,000), Pro $25 / ₹2,449 (10,000), Business $85 / ₹7,849 (50,000) and Agency $200 / ₹19,449 (150,000 on fair use). USD and INR are set prices, not conversions of one another. Annual billing is cheaper again. Credit packs top up any plan and never expire, and a plan's price and limits are fixed for the period you bought."
             }
           }
         ]
@@ -979,7 +979,7 @@ export const PAGE_SEO = {
             "name": "Can I share the research with a candidate?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Publish any result as a report at its own link and choose who can open it - anyone with the link, your workspace, or named email addresses only. Non-public reports are not indexed by search engines, and a link can be permanently revoked. Sharing is free on every plan. Everything is priced in one unit: credits. 1 credit = one page fetch; a Discoverability audit is 19. Free includes 100 credits, one-time and never resetting, with no credit card. Paid plans start at $5 / ₹490 a month (Go, 750 credits). Select is $15 / ₹1,449 (2,500), Pro $25 / ₹2,449 (6,000), Business $85 / ₹7,849 (40,000) and Agency $200 / ₹19,449 (100,000 on fair use). USD and INR are set prices, not conversions of one another. Annual billing is cheaper again. Credit packs top up any plan and never expire, and a plan's price and limits are fixed for the period you bought."
+              "text": "Yes. Publish any result as a report at its own link and choose who can open it - anyone with the link, your workspace, or named email addresses only. Non-public reports are not indexed by search engines, and a link can be permanently revoked. Sharing is free on every plan. Everything is priced in one unit: credits. 1 credit = one page fetch; a Discoverability audit is 19. Free includes 500 credits, one-time and never resetting, with no credit card. Paid plans start at $5 / ₹449 a month (Go, 1,500 credits). Select is $15 / ₹1,449 (5,000), Pro $25 / ₹2,449 (10,000), Business $85 / ₹7,849 (50,000) and Agency $200 / ₹19,449 (150,000 on fair use). USD and INR are set prices, not conversions of one another. Annual billing is cheaper again. Credit packs top up any plan and never expire, and a plan's price and limits are fixed for the period you bought."
             }
           }
         ]
@@ -1311,7 +1311,7 @@ export const PAGE_SEO = {
             "name": "Can I control who sees a brief?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Each report has its own visibility: private, anyone with the link, workspace only, named email addresses only, or public. Only public reports are indexable; everything else carries a noindex instruction. A link can be revoked permanently, and reports can carry an expiry date. Everything is priced in one unit: credits. 1 credit = one page fetch; a Discoverability audit is 19. Free includes 100 credits, one-time and never resetting, with no credit card. Paid plans start at $5 / ₹490 a month (Go, 750 credits). Select is $15 / ₹1,449 (2,500), Pro $25 / ₹2,449 (6,000), Business $85 / ₹7,849 (40,000) and Agency $200 / ₹19,449 (100,000 on fair use). USD and INR are set prices, not conversions of one another. Annual billing is cheaper again. Credit packs top up any plan and never expire, and a plan's price and limits are fixed for the period you bought."
+              "text": "Yes. Each report has its own visibility: private, anyone with the link, workspace only, named email addresses only, or public. Only public reports are indexable; everything else carries a noindex instruction. A link can be revoked permanently, and reports can carry an expiry date. Everything is priced in one unit: credits. 1 credit = one page fetch; a Discoverability audit is 19. Free includes 500 credits, one-time and never resetting, with no credit card. Paid plans start at $5 / ₹449 a month (Go, 1,500 credits). Select is $15 / ₹1,449 (5,000), Pro $25 / ₹2,449 (10,000), Business $85 / ₹7,849 (50,000) and Agency $200 / ₹19,449 (150,000 on fair use). USD and INR are set prices, not conversions of one another. Annual billing is cheaper again. Credit packs top up any plan and never expire, and a plan's price and limits are fixed for the period you bought."
             }
           }
         ]
